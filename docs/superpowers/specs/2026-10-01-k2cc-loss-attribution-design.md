@@ -1,6 +1,6 @@
 # K2CC 丢包归属修复 —— 让控制器看到真实丢包（Phase 2 第一项）
 
-日期：2026-10-01 · 状态：**待评审（未实施）** · 范围：`k2/wire/k2cc/`、`k2/wire/cc_summary.go`、`k2/wire/quic.go`（仅服务端 sender 构造点）
+日期：2026-10-01 · 状态：**实施中**（实现已在 `feat/k2cc-loss-attribution`，默认关闭；实验室对比进行中，未上车队） · 范围：`k2/wire/k2cc/`、`k2/wire/cc_summary.go`、`k2/wire/quic.go`（仅服务端 sender 构造点）
 
 ## 1. 背景与已确认的事实
 
@@ -17,6 +17,10 @@
 | F7 | 默认集成测试中继每包一个 goroutine+timer，**空闲机器上也乱序**：配置 0 % 丢包，QUIC 判定 34.5 %。所有 `runBulkTransfer` 基准的名义丢包率与实际不符 | 集成测试 `reorder_*` 场景 |
 | F8 | α=4 是**解析推导**的，不是在 F7 的假丢包上拟合的（`fb4d27a` 0.5→5 按信号量级；`6de5f6b` 5→4 按容忍边界）| git 历史 |
 | F9 | kuic：同一 ACK 帧**先判丢包、后逐包确认**；`OnPacketSent` 对非 ack-eliciting 包也会调（这些包永远不会有 acked/lost 回调）；ECN 拥塞事件以 `lostBytes=0` 调 `OnCongestionEvent` | `sent_packet_handler.go:315/:453/:458-464/:893` |
+
+| F10 | **BW 锚定循环的评估错位一拍**：`processBWAnchored` 的阶段标签指的是「下一拍要设的速率」，所以标签 Drain 下被评估的 MI 实际以上探速率（≈1.10×BW）跑，标签 ProbeUp 下被评估的是巡航 MI。`bgLossEWMA` 采样的是**最容易拥塞的那一拍**，量到的是自己造成的丢包；BW 上升检测永远看不到上探结果 | 确定性测试 `bw_phase_alignment_test.go`：无背景丢包的瓶颈上，legacy 4 个循环后 bgLoss = 6.1 %，对齐后 = 0 |
+
+**F10 改变了本设计的安全前提**：今天丢包只见一半，恰好把「上探丢包 → bgLoss ↑ → `bw/(1−bgLoss)` ↑ → 巡航超发」这条正反馈压在一个低平衡点（硬瓶颈上约 8 %）。**只修归属不修错位，正反馈会放大**。因此两处修正必须同臂上线（§5 第 7 条），并保留两个仅实验室使用的拆分臂来分别归因。车队数据里「bgLoss ≈ 总丢包」也不能再当作「没有自致丢包」的证据。
 
 **尚未确认**（本设计要回答的）：修正后实际吞吐与体验是变好还是变差（回顾里记为 A2，信心 4/10）。
 
@@ -91,7 +95,9 @@ MI 停止发送后进入「待决」队列，直到其所有包都有结果（�
 3. `OnCongestionEvent`：`lostBytes == 0`（ECN 事件）直接返回，两种模式都一样（今天是加 0，行为不变）。
 4. `K2CCConfig` 增加 `LossAttribution`（`legacy` | `resolved`）与既有 `Alpha`；`NewCCSenderGFWMode` 行为不变（legacy, α=4）。新增 `NewCCSenderVariant(name)`。
 5. `resolved` 模式下 ackRate 统计不再调用 `countFreshLossesLocked`。
-6. 服务端 `wire/quic.go:1322`：读环境变量 `K2CC_VARIANTS`（如 `control:50,fix-a3:25,fix-a15:25`），每条连接按权重随机选臂；未设置 = 100 % control，**部署即空操作**。客户端（`:602`）与 k2p（`quic_p2p.go`）不动。
+7. **阶段对齐**（F10）：MI 创建时记下设定其速率的阶段 `ranPhase`；`processBWAnchored` 拆成「评估」（对齐模式按 `mi.ranPhase`，legacy 按标签）与「调度」（两种模式相同：6 巡航 + 1 上探 + 1 排空）。未带阶段的 MI（刚进入锚定模式的第一拍）不做评估。
+8. **诊断字段**（cc-summary 追加，契约只增不改）：`variant`、`declLoss`（事件时刻的真实丢包，与臂无关）、`staleLoss`（被过滤丢弃的占比）、`resolved`（MI 被评判时已有结果的字节占比）、`lossCruise` / `lossProbe` / `lossDrain`（按 MI 实际所跑阶段统计的自有包丢包率——上线后直接读出每个增益的代价）。
+6. 服务端 `wire/quic.go:1322`：读环境变量 `K2_CC_VARIANTS`（如 `control:50,fix-a3:25,fix-a15:25`），每条连接按权重随机选臂；未设置 = 100 % control，**部署即空操作**。客户端（`:602`）与 k2p（`quic_p2p.go`）不动。
 
 ## 6. 验证计划（先实验室，后车队）
 
@@ -107,12 +113,12 @@ MI 停止发送后进入「待决」队列，直到其所有包都有结果（�
 
 ### 6.3 车队 A/B
 - cc-summary **追加** key（不改既有 key，符合观测规格 §11 的契约）：`variant=`、`declLoss=`（与臂无关的真实丢包：窗口内全部 `lostBytes>0` 事件 ÷（该值 + 窗口内确认字节），不经过滤）。`lossAgg` 保留各臂控制器看到的值——在 fix 臂里它应 ≈ `declLoss`，这本身就是上线后的第一条正确性检查。
-- 灰度：1 个节点（`K2CC_VARIANTS` 设到 50/25/25）跑 24 h → 读回 cc-summary 确认两个新 key 与分臂比例 → 全车队。回滚：删环境变量重启 k2s。
+- 灰度：1 个节点（`K2_CC_VARIANTS` 设到 50/25/25）跑 24 h → 读回 cc-summary 确认两个新 key 与分臂比例 → 全车队。回滚：删环境变量重启 k2s。
 - 事先写定的决策规则（按批量窗口 `appLimited<50% && mis≥5`，按地区分层，≥ 1 周）：
   - **主指标**：批量窗口 `tputP50`；≥10 MB 会话的字节 / 时长。
   - **护栏**：`declLoss` 不得比 control 高 1 个百分点以上；`rttP50/minRtt` 不得上升 > 10 %；下限驻留不得上升。
   - 采纳条件：主指标不差于 control、护栏全部满足，且在样本量足够的地区（每臂 ≥ 2000 个批量窗口）中至少 5/7 一致。统计用分层自助法 95 % 置信区间，不看点估计。
-  - 任一臂触发护栏 → 立即从 `K2CC_VARIANTS` 摘除该臂。
+  - 任一臂触发护栏 → 立即从 `K2_CC_VARIANTS` 摘除该臂。
 
 ## 7. 测试计划
 
