@@ -2,6 +2,7 @@ package center
 
 import (
 	"fmt"
+	"github.com/golang-jwt/jwt/v5"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -317,6 +318,7 @@ func TestPx_RefererFallback_BehindRewrite(t *testing.T) {
 }
 
 func TestPxOptOut_BehindRewrite(t *testing.T) {
+	pxMarker(t)
 	r := pxRouter()
 	w := NewTestRequest("GET", "http://api.internal.test/api/px/optout").
 		WithHeader("X-K2-Brand", "overleap").WithHeader("Referer", "https://www.overleap.io:443/en-GB/privacy").Execute(r)
@@ -368,4 +370,60 @@ func TestFunnelPxGlobalCeiling(t *testing.T) {
 		require.True(t, funnelPxAllow(fmt.Sprintf("ip%d", i)))
 	}
 	assert.False(t, funnelPxAllow("another"))
+}
+
+func pxExpectAnonymous(t *testing.T, m string, w *httptest.ResponseRecorder) {
+	t.Helper()
+	assertGIF(t, w)
+	rows := pxRows(t, m)
+	require.Len(t, rows, 1)
+	assert.Equal(t, uint64(0), rows[0].UserID)
+}
+
+func TestPx_BlockedUser_Anonymous(t *testing.T) {
+	skipIfNoConfig(t)
+	m := pxMarker(t)
+	user := CreateTestUser(t)
+	require.NoError(t, db.Get().Model(&User{}).Where("id = ?", user.ID).Update("is_blocked", true).Error)
+	sid := newFunnelSid()
+	t.Cleanup(func() { db.Get().Where("anon_id = ?", sid).Delete(&FunnelIdentity{}) })
+	w := pxReq(m, "pricing_view").WithCookie("sid", sid).
+		WithCookie(CookieAccessToken, GenerateTestToken(user.ID, "", time.Hour)).Execute(pxRouter())
+	pxExpectAnonymous(t, m, w)
+	var n int64
+	require.NoError(t, db.Get().Model(&FunnelIdentity{}).Where("anon_id = ?", sid).Count(&n).Error)
+	assert.Equal(t, int64(0), n)
+}
+
+func TestPx_StaleDeviceToken_Anonymous(t *testing.T) {
+	skipIfNoConfig(t)
+	m := pxMarker(t)
+	user := CreateTestUser(t)
+	udid := fmt.Sprintf("px-dev-%d", time.Now().UnixNano())
+	dev := CreateTestDevice(t, user.ID, udid)
+	tok := GenerateTestToken(user.ID, udid, time.Hour)
+	// 有效时应归因；吊销（TokenIssueAt 变化）后匿名。
+	require.NoError(t, db.Get().Model(&Device{}).Where("id = ?", dev.ID).Update("token_issue_at", testTokenIssueAt+1).Error)
+	w := pxReq(m, "pricing_view").WithCookie(CookieAccessToken, tok).Execute(pxRouter())
+	pxExpectAnonymous(t, m, w)
+}
+
+func TestPx_NonAccessToken_Anonymous(t *testing.T) {
+	skipIfNoConfig(t)
+	m := pxMarker(t)
+	user := CreateTestUser(t)
+	claims := TokenClaims{UserID: user.ID, Exp: time.Now().Add(time.Hour).Unix(), Type: TokenTypeRefresh, TokenIssueAt: testTokenIssueAt}
+	tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(configJwt(nil).Secret))
+	require.NoError(t, err)
+	w := pxReq(m, "pricing_view").WithCookie(CookieAccessToken, tok).Execute(pxRouter())
+	pxExpectAnonymous(t, m, w)
+}
+
+func TestPx_AccessKeyPresent_Anonymous(t *testing.T) {
+	skipIfNoConfig(t)
+	m := pxMarker(t)
+	user := CreateTestUser(t)
+	w := pxReq(m, "pricing_view").WithHeader("X-Access-Key", "k").
+		WithBearerToken(GenerateTestToken(user.ID, "", time.Hour)).Execute(pxRouter())
+	pxExpectAnonymous(t, m, w)
 }

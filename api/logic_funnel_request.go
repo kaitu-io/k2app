@@ -88,6 +88,9 @@ func ensureFunnelSid(c *gin.Context) string {
 // 无效凭据不打 Info/Warn。不走 ReqUser —— 那条路径会滑动续期 cookie、刷新设备信息、刷日志。
 // 用户品牌与请求品牌不符按匿名处理。
 func funnelSilentUserID(c *gin.Context) uint64 {
+	if c.GetHeader("X-Access-Key") != "" {
+		return 0 // 真实解析器优先 access key；像素不归因
+	}
 	token, _ := c.Cookie(CookieAccessToken)
 	if token == "" {
 		if h := c.GetHeader("Authorization"); strings.HasPrefix(h, "Bearer ") {
@@ -117,7 +120,7 @@ func funnelSilentUserID(c *gin.Context) uint64 {
 		}
 		user = *device.User
 	}
-	if user.Brand != string(ReqBrand(c)) {
+	if isUserBlocked(&user) || user.Brand != string(ReqBrand(c)) {
 		return 0
 	}
 	return user.ID
