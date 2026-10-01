@@ -20,8 +20,8 @@ const (
 var funnelQueryMaxEvents int64 = 2_000_000
 
 const (
-	retentionNotePaid        = "「退款」列目前只统计订单退款；银行卡自动续费订阅渠道的退款暂未计入，退款保障上线后会一并统计。"
-	retentionNoteActiveBrand = "按品牌筛选时，品牌列上线之前记录的打开数据没有品牌信息，不计入统计。"
+	retentionNotePaid        = "留存 = 到检查点时仍在付费覆盖期内，按付款记录推算（赠送、试用的时长不计）；已退款的订单不提供覆盖；银行卡自动续费订阅渠道的退款暂未反映。"
+	retentionNoteActiveBrand = "按品牌筛选时：品牌列上线之前就有记录的设备按老设备识别（不算新设备）；那之前的打开记录不归属任何品牌，不计入。"
 )
 
 // registerAdminFunnelRoutes 挂到 /app opsAdmin 组（StaffAuthRequired 之后）。
@@ -149,6 +149,7 @@ func api_admin_get_funnel(c *gin.Context) {
 		Error(c, ErrorSystemError, "failed to compute funnel")
 		return
 	}
+	// recs 覆盖的是装载区间 [from, to+Window)，比进入区间多一个时间窗；进入区间由 computeFunnel 的 from/to 限定。
 	recs = append(recs, factRecs...)
 
 	res := computeFunnel(path, recs, identities, from, to, c.Query("groupBy"))
@@ -172,14 +173,14 @@ func api_admin_get_retention(c *gin.Context) {
 			months = v
 		}
 		from, to := paidCohortRange(now, months)
-		payFirst, expiredAt, refunded, err := loadPaidCohortInputs(c, brand, hasBrand, from, to)
+		payments, refunded, err := loadPaidCohortInputs(c, brand, hasBrand, from, to, now)
 		if err != nil {
 			log.Errorf(c, "failed to load paid cohorts: %v", err)
 			Error(c, ErrorSystemError, "failed to compute retention")
 			return
 		}
 		Success(c, &AdminRetentionResponse{
-			Rows: computePaidCohorts(payFirst, expiredAt, refunded, now),
+			Rows: computePaidCohorts(payments, refunded, now),
 			Note: retentionNotePaid,
 		})
 	case "active":

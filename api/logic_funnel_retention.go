@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"time"
 
@@ -42,19 +43,73 @@ type ActiveCohortRow struct {
 	D30    *float64 `json:"d30"`
 }
 
-// computePaidCohorts：群组 = 首付月份（UTC），按 cohort 升序。
-// 检查点 = 该用户首付时间 + N 个月；留存 = 检查点 <= now 且 expiredAt >= 检查点 且未退款。
-// 分母恒为群组人数（含退款用户）。群组里只要还有人的检查点没到，该检查点就是 nil——
-// 不拿半组人算一个偏低的比例。
-func computePaidCohorts(payFirst map[uint64]time.Time, expiredAt map[uint64]int64, refundedUsers map[uint64]bool, now time.Time) []PaidCohortRow {
+// paidCoverage 是一笔付款带来的付费覆盖：Months > 0 用日历月（订单的套餐快照），否则用 Seconds
+// （订阅入账行的 credited_seconds）。两者都为 0（时长未知）或订单已退款 → 不提供覆盖。
+type paidCoverage struct {
+	At       time.Time
+	Months   int
+	Seconds  int64
+	Refunded bool
+}
+
+// addMonthsClamped 加 n 个日历月，日子钳到目标月的最后一天（1 月 31 日 + 1 个月 = 2 月 28/29 日，
+// 不会像 time.AddDate 那样溢出到 3 月）。按 UTC 计算，时分秒保留。
+func addMonthsClamped(t time.Time, n int) time.Time {
+	t = t.UTC()
+	y, m, d := t.Date()
+	first := time.Date(y, m+time.Month(n), 1, 0, 0, 0, 0, time.UTC)
+	if last := first.AddDate(0, 1, -1).Day(); d > last {
+		d = last
+	}
+	h, mi, sec := t.Clock()
+	return time.Date(first.Year(), first.Month(), d, h, mi, sec, t.Nanosecond(), time.UTC)
+}
+
+// paidCoveredUntil 按时间顺序走完 At <= checkpoint 的付款，返回覆盖到期时刻（零值 = 从未被覆盖）。
+// 每笔付款从 max(上一段到期, 付款时刻) 起算：提前续费是往后叠，断档后回来是从回来那刻重新起算。
+// pays 必须已按 At 升序。
+func paidCoveredUntil(pays []paidCoverage, checkpoint time.Time) time.Time {
+	var until time.Time
+	for _, p := range pays {
+		if p.At.After(checkpoint) {
+			break
+		}
+		if p.Refunded || (p.Months <= 0 && p.Seconds <= 0) {
+			continue
+		}
+		start := p.At
+		if until.After(start) {
+			start = until
+		}
+		if p.Months > 0 {
+			until = addMonthsClamped(start, p.Months)
+		} else {
+			until = start.Add(time.Duration(p.Seconds) * time.Second)
+		}
+	}
+	return until
+}
+
+// computePaidCohorts：群组 = 首笔付款的月份（UTC），按 cohort 升序。
+// 留存按**付款记录**推算，不看 users.expired_at（那个字段还会被赠送 / 试用 / 邀请奖励 / 人工发放推动，
+// 而且只反映当下）：检查点 = 该用户首付时间 + N 个月（钳到月末）；
+// 留存 ⇔ 走完检查点之前的付款后，覆盖到期时刻**严格晚于**检查点。
+// 分母恒为群组人数。群组里只要还有人的检查点没到，该检查点就是 nil——不拿半组人算一个偏低的比例。
+// refundedUsers 只用于 Refunded 计数（信息性）；退款订单不留存是因为它不提供覆盖。
+func computePaidCohorts(payments map[uint64][]paidCoverage, refundedUsers map[uint64]bool, now time.Time) []PaidCohortRow {
 	type acc struct {
 		size, refunded int
 		retained       []int
 		pending        []bool
 	}
 	cohorts := make(map[string]*acc)
-	for uid, first := range payFirst {
-		first = first.UTC()
+	for uid, input := range payments {
+		if len(input) == 0 {
+			continue
+		}
+		pays := slices.Clone(input)
+		sort.SliceStable(pays, func(i, j int) bool { return pays[i].At.Before(pays[j].At) })
+		first := pays[0].At.UTC()
 		key := first.Format(paidCohortMonthForm)
 		a := cohorts[key]
 		if a == nil {
@@ -62,18 +117,16 @@ func computePaidCohorts(payFirst map[uint64]time.Time, expiredAt map[uint64]int6
 			cohorts[key] = a
 		}
 		a.size++
-		refunded := refundedUsers[uid]
-		if refunded {
+		if refundedUsers[uid] {
 			a.refunded++
 		}
-		exp, hasExp := expiredAt[uid]
 		for i, cp := range paidCohortCheckpoints {
-			at := first.AddDate(0, cp.Months, 0)
+			at := addMonthsClamped(first, cp.Months)
 			if at.After(now) {
 				a.pending[i] = true
 				continue
 			}
-			if !refunded && hasExp && exp >= at.Unix() {
+			if paidCoveredUntil(pays, at).After(at) {
 				a.retained[i]++
 			}
 		}
@@ -157,12 +210,22 @@ func paidCohortRange(now time.Time, months int) (from, to time.Time) {
 	return thisMonth.AddDate(0, -(months - 1), 0), thisMonth.AddDate(0, 1, 0)
 }
 
-// loadPaidCohortInputs 装载 computePaidCohorts 的三个输入：只收**全时段首付**落在 [from, to) 内、
-// 且符合品牌过滤的用户。退款目前只来自订单（is_refunded）。
-func loadPaidCohortInputs(ctx context.Context, brand Brand, hasBrand bool, from, to time.Time) (payFirst map[uint64]time.Time, expiredAt map[uint64]int64, refundedUsers map[uint64]bool, err error) {
+// funnelOrderMonths 取订单套餐快照里的月数；快照缺失 / 解析失败 → 0（时长未知，不提供覆盖）。
+func funnelOrderMonths(o *Order) int {
+	plan, err := o.GetPlan()
+	if err != nil || plan == nil {
+		return 0
+	}
+	return plan.Month
+}
+
+// loadPaidCohortInputs 装载 computePaidCohorts 的输入：群组成员 = **全时段首付**落在 [from, to) 内、
+// 且符合品牌过滤的用户；每个成员带上截至 now 的**完整**付款历史（不只是群组月份里的那几笔）。
+// 付款口径与漏斗事实一致（funnelPaidOrderScope ∪ funnelPaymentCreditScope）。
+func loadPaidCohortInputs(ctx context.Context, brand Brand, hasBrand bool, from, to, now time.Time) (payments map[uint64][]paidCoverage, refundedUsers map[uint64]bool, err error) {
 	pays, err := loadPayments(ctx, brand, hasBrand, from, to)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	seen := make(map[uint64]bool, len(pays))
 	var candidates []uint64
@@ -174,40 +237,63 @@ func loadPaidCohortInputs(ctx context.Context, brand Brand, hasBrand bool, from,
 	}
 	first, err := firstPaymentAt(ctx, candidates)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	payFirst = make(map[uint64]time.Time)
 	var userIDs []uint64
 	for _, uid := range candidates {
 		if at, ok := first[uid]; ok && !at.Before(from) && at.Before(to) {
-			payFirst[uid] = at
 			userIDs = append(userIDs, uid)
 		}
 	}
 
-	expiredAt = make(map[uint64]int64, len(userIDs))
+	payments = make(map[uint64][]paidCoverage, len(userIDs))
 	refundedUsers = make(map[uint64]bool)
 	for start := 0; start < len(userIDs); start += funnelLoadBatch {
 		batch := userIDs[start:min(start+funnelLoadBatch, len(userIDs))]
-		var users []User
-		if err := db.Get().WithContext(ctx).Unscoped().Model(&User{}).
-			Select("id", "expired_at").Where("id IN ?", batch).Find(&users).Error; err != nil {
-			return nil, nil, nil, err
+
+		var orders []Order
+		if err := db.Get().WithContext(ctx).Model(&Order{}).
+			Select("id", "user_id", "paid_at", "is_refunded", "meta").
+			Scopes(funnelPaidOrderScope).
+			Where("user_id IN ? AND paid_at <= ?", batch, now).
+			Order("paid_at, id").Find(&orders).Error; err != nil {
+			return nil, nil, err
 		}
-		for i := range users {
-			expiredAt[users[i].ID] = users[i].ExpiredAt
+		for i := range orders {
+			o := &orders[i]
+			if o.PaidAt == nil {
+				continue
+			}
+			payments[o.UserID] = append(payments[o.UserID], paidCoverage{
+				At: *o.PaidAt, Months: funnelOrderMonths(o), Refunded: o.IsRefunded != nil && *o.IsRefunded,
+			})
 		}
+
+		var credits []SubscriptionCredit
+		if err := db.Get().WithContext(ctx).Model(&SubscriptionCredit{}).
+			Select("id", "user_id", "created_at", "credited_seconds").
+			Scopes(funnelPaymentCreditScope).
+			Where("user_id IN ? AND created_at <= ?", batch, now).
+			Order("created_at, id").Find(&credits).Error; err != nil {
+			return nil, nil, err
+		}
+		for i := range credits {
+			c := &credits[i]
+			payments[c.UserID] = append(payments[c.UserID], paidCoverage{At: c.CreatedAt, Seconds: c.CreditedSeconds})
+		}
+
+		// 任何一张退款订单都算（含不计入付款口径的渠道）：这一列只是信息性的。
 		var refunded []uint64
 		if err := db.Get().WithContext(ctx).Model(&Order{}).
 			Where("is_refunded = ? AND user_id IN ?", true, batch).
 			Distinct().Pluck("user_id", &refunded).Error; err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 		for _, uid := range refunded {
 			refundedUsers[uid] = true
 		}
 	}
-	return payFirst, expiredAt, refundedUsers, nil
+	return payments, refundedUsers, nil
 }
 
 type activeOpenRow struct {
@@ -216,7 +302,8 @@ type activeOpenRow struct {
 }
 
 // loadActiveOpens 返回首次出现时间 >= since 的设备 → 它的全部打开时间（reported_at，服务端权威）。
-// 带品牌过滤时只看该品牌的行：brand 列上线前的历史行品牌为空，不计入。
+// 带品牌过滤时打开记录只看该品牌的行（brand 列上线前的历史行品牌为空，不归属任何品牌）；
+// 但"是否老设备"的判断把无品牌的历史行也算上。
 // 表本身由保留期任务限制在 120 天内，所以"首次出现"取的是保留期内最早的一行。
 func loadActiveOpens(ctx context.Context, brand Brand, hasBrand bool, since time.Time) (map[string][]time.Time, error) {
 	scope := func() *gorm.DB {
@@ -226,9 +313,14 @@ func loadActiveOpens(ctx context.Context, brand Brand, hasBrand bool, since time
 		}
 		return q
 	}
-	// 区间之前就出现过的设备不属于这些群组。
+	// 区间之前就出现过的设备不属于这些群组。带品牌过滤时，无品牌的历史行（brand 列上线前）也算
+	// "出现过"——否则上线那天整个存量装机都会被当成新设备。
+	seenBefore := db.Get().WithContext(ctx).Model(&StatAppOpen{}).Where("reported_at < ?", since)
+	if hasBrand {
+		seenBefore = seenBefore.Where("brand IN ?", []string{string(brand), ""})
+	}
 	var old []string
-	if err := scope().Where("reported_at < ?", since).Distinct().Pluck("device_hash", &old).Error; err != nil {
+	if err := seenBefore.Distinct().Pluck("device_hash", &old).Error; err != nil {
 		return nil, err
 	}
 	exclude := make(map[string]bool, len(old))

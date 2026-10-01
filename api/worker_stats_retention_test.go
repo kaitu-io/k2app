@@ -91,9 +91,8 @@ func TestStatsRetentionCleanup_SweepsStatTablesByReportedAt(t *testing.T) {
 func TestStatsRetentionCleanup_SweepsFunnelEventsByReceivedAt(t *testing.T) {
 	skipIfNoConfig(t)
 	marker := generateId("ret-sweep")
-	db.Get().Where("plan = ?", marker).Delete(&FunnelEvent{})
 	t.Cleanup(func() {
-		db.Get().Where("plan = ?", marker).Delete(&FunnelEvent{})
+		factsCleanup(t, db.Get().Where("plan = ?", marker).Delete(&FunnelEvent{}).Error)
 	})
 
 	oldTime := time.Now().AddDate(0, 0, -(statsRetentionDays + 1))

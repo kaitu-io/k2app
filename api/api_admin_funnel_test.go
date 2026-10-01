@@ -1,6 +1,7 @@
 package center
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
@@ -39,8 +40,8 @@ func afMarketingKey(t *testing.T) string {
 	return createAccessKeyUserForTest(t, BrandKaitu, RoleUser|RoleMarketing)
 }
 
-// afDay 给每个测试一个独占的历史 UTC 日（2011–2018；funnel_events 与订单在这段时间没有真实数据），
-// 这样 HTTP 聚合结果里只有本测试自建的行。
+// afDay 给每个测试一个历史 UTC 日（2011–2018；funnel_events 与订单在这段时间没有真实数据）。
+// 随机日只是降低干扰；断言本身按唯一标记分组（afMarkerSteps），不依赖"这一天只有我"。
 func afDay(t *testing.T) time.Time {
 	t.Helper()
 	off := int(time.Now().UnixNano() % 2900)
@@ -49,9 +50,9 @@ func afDay(t *testing.T) time.Time {
 
 // afSeedWebPurchase：一个匿名访客（sid）在 day 当天走完 web_purchase 全程：
 // pricing_view → plan_select → checkout_start，登录关联到用户，用户有一张已付订单。
-func afSeedWebPurchase(t *testing.T, day time.Time) {
+func afSeedWebPurchase(t *testing.T, day time.Time) (marker string) {
 	t.Helper()
-	marker := generateId("af")
+	marker = generateId("af")
 	sid := "sid-" + marker
 	user := factsUser(t, BrandKaitu, day.Add(-time.Hour))
 	t.Cleanup(func() {
@@ -61,13 +62,14 @@ func afSeedWebPurchase(t *testing.T, day time.Time) {
 	for i, ev := range []string{"pricing_view", "plan_select", "checkout_start"} {
 		require.NoError(t, db.Get().Create(&FunnelEvent{
 			OccurredAt: day.Add(time.Duration(i+1) * time.Hour), Brand: string(BrandKaitu),
-			Surface: FunnelSurfaceWeb, Event: ev, AnonID: sid, Plan: marker,
+			Surface: FunnelSurfaceWeb, Event: ev, AnonID: sid, Plan: marker, UtmCampaign: marker,
 		}).Error)
 	}
 	require.NoError(t, db.Get().Create(&FunnelIdentity{
 		Kind: funnelAnonKindSid, AnonID: sid, UserID: user.ID, Brand: string(BrandKaitu),
 	}).Error)
 	factsOrder(t, user.ID, OrderChannelNextpay, factsPaid(day.Add(5*time.Hour)))
+	return marker
 }
 
 func afCounts(t *testing.T, resp *TestResponse) []int {
@@ -80,6 +82,22 @@ func afCounts(t *testing.T, resp *TestResponse) []int {
 		counts[i] = s.Count
 	}
 	return counts
+}
+
+// afMarkerSteps 用 groupBy=utm_campaign 取出唯一标记那一组的各步人数（进入事件的 utm_campaign = 标记）；
+// 该组不存在（没有人进入）返回 nil。共享库里别的行落在别的组，不影响断言。
+func afMarkerSteps(t *testing.T, r *gin.Engine, key string, day time.Time, marker, extra string) []int {
+	t.Helper()
+	resp := afGet(t, r, key, afPath("web_purchase", day, "&groupBy=utm_campaign"+extra))
+	require.Equal(t, int(ErrorNone), resp.Code, resp.Message)
+	var res FunnelResult
+	require.NoError(t, json.Unmarshal(resp.Data, &res))
+	for _, g := range res.Groups {
+		if g.Key == marker {
+			return g.Steps
+		}
+	}
+	return nil
 }
 
 func afPath(key string, day time.Time, extra string) string {
@@ -130,26 +148,28 @@ func TestAdminFunnels_List(t *testing.T) {
 func TestAdminFunnel_EndToEnd(t *testing.T) {
 	skipIfNoConfig(t)
 	day := afDay(t)
-	afSeedWebPurchase(t, day)
+	marker := afSeedWebPurchase(t, day)
 	r, key := adminFunnelRouter(), afMarketingKey(t)
+	all := []int{1, 1, 1, 1, 1}
 
+	assert.Equal(t, all, afMarkerSteps(t, r, key, day, marker, ""))
+
+	// 不分组的总数：这一天只有本测试的行时恰好是五个 1。
 	resp := afGet(t, r, key, afPath("web_purchase", day, ""))
-	assert.Equal(t, []int{1, 1, 1, 1, 1}, afCounts(t, resp))
-
+	assert.Equal(t, all, afCounts(t, resp))
 	var res FunnelResult
 	require.NoError(t, json.Unmarshal(resp.Data, &res))
 	require.Len(t, res.Daily, 1, "`to` is inclusive: from == to is exactly one day")
 	assert.Equal(t, FunnelDay{Date: day.Format("2006-01-02"), Entered: 1, Completed: 1}, res.Daily[0])
 	assert.Empty(t, res.Groups)
 
-	// 进入区间是 [from, to+1 天)：前一天不含这批事件。
-	prev := day.AddDate(0, 0, -1)
-	assert.Equal(t, []int{0, 0, 0, 0, 0}, afCounts(t, afGet(t, r, key, afPath("web_purchase", prev, ""))))
+	// 进入区间是 [from, to+1 天)：前一天、后一天都不含这批进入事件。
+	assert.Nil(t, afMarkerSteps(t, r, key, day.AddDate(0, 0, -1), marker, ""))
+	assert.Nil(t, afMarkerSteps(t, r, key, day.AddDate(0, 0, 1), marker, ""))
 
 	resp = afGet(t, r, key, afPath("web_purchase", day, "&groupBy=channel"))
 	require.NoError(t, json.Unmarshal(resp.Data, &res))
-	require.Len(t, res.Groups, 1)
-	assert.Equal(t, FunnelGroup{Key: OrderChannelNextpay, Steps: []int{1, 1, 1, 1, 1}}, res.Groups[0])
+	assert.Contains(t, res.Groups, FunnelGroup{Key: OrderChannelNextpay, Steps: all})
 }
 
 // 后续步骤的界是"进入时刻 + 时间窗"，不是 `to`：付款落在 `to` 之后几天也要算进来，
@@ -163,23 +183,24 @@ func TestAdminFunnel_LaterStepsLoadedPastTo(t *testing.T) {
 	for i, ev := range []string{"pricing_view", "plan_select", "checkout_start"} {
 		require.NoError(t, db.Get().Create(&FunnelEvent{
 			OccurredAt: day.Add(time.Hour).AddDate(0, 0, i*2), Brand: string(BrandKaitu),
-			Surface: FunnelSurfaceWeb, Event: ev, UserID: user.ID, Plan: marker,
+			Surface: FunnelSurfaceWeb, Event: ev, UserID: user.ID, Plan: marker, UtmCampaign: marker,
 		}).Error)
 	}
 	factsOrder(t, user.ID, OrderChannelNextpay, factsPaid(day.AddDate(0, 0, 10)))
 
-	resp := afGet(t, adminFunnelRouter(), afMarketingKey(t), afPath("web_purchase", day, ""))
-	assert.Equal(t, []int{1, 1, 1, 1, 1}, afCounts(t, resp))
+	assert.Equal(t, []int{1, 1, 1, 1, 1}, afMarkerSteps(t, adminFunnelRouter(), afMarketingKey(t), day, marker, ""))
 }
 
 func TestAdminFunnel_BrandFilter(t *testing.T) {
 	skipIfNoConfig(t)
 	day := afDay(t)
-	afSeedWebPurchase(t, day)
+	marker := afSeedWebPurchase(t, day)
 	r, key := adminFunnelRouter(), afMarketingKey(t)
 
-	assert.Equal(t, []int{0, 0, 0, 0, 0}, afCounts(t, afGet(t, r, key, afPath("web_purchase", day, "&brand=overleap"))))
-	assert.Equal(t, []int{1, 1, 1, 1, 1}, afCounts(t, afGet(t, r, key, afPath("web_purchase", day, "&brand=kaitu"))))
+	assert.Nil(t, afMarkerSteps(t, r, key, day, marker, "&brand=overleap"))
+	assert.Equal(t, []int{1, 1, 1, 1, 1}, afMarkerSteps(t, r, key, day, marker, "&brand=kaitu"))
+	assert.Equal(t, []int{0, 0, 0, 0, 0}, afCounts(t, afGet(t, r, key, afPath("web_purchase", day, "&brand=overleap"))),
+		"nothing of the other brand exists on this historical day")
 }
 
 func TestAdminFunnel_BadInput(t *testing.T) {
@@ -225,17 +246,25 @@ func TestAdminFunnel_DefaultRangeIsLast30Days(t *testing.T) {
 func TestAdminFunnel_RangeTooLarge(t *testing.T) {
 	skipIfNoConfig(t)
 	day := afDay(t)
-	afSeedWebPurchase(t, day) // 当天 3 条行为事件
+	afSeedWebPurchase(t, day)
+	// 上限按这次查询实际会数到的行数来设（装载区间 = 当天 + 时间窗），不假设区间里只有本测试的 3 行。
+	path, ok := funnelPathByKey("web_purchase")
+	require.True(t, ok)
+	behaviors, _ := path.eventNames()
+	n, err := countFunnelEvents(context.Background(), BrandKaitu, false, day, day.AddDate(0, 0, 1).Add(path.Window), behaviors)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, n, int64(3))
 	old := funnelQueryMaxEvents
-	funnelQueryMaxEvents = 2
 	t.Cleanup(func() { funnelQueryMaxEvents = old })
+	r, key := adminFunnelRouter(), afMarketingKey(t)
 
-	resp := afGet(t, adminFunnelRouter(), afMarketingKey(t), afPath("web_purchase", day, ""))
+	funnelQueryMaxEvents = n - 1
+	resp := afGet(t, r, key, afPath("web_purchase", day, ""))
 	assert.Equal(t, int(ErrorInvalidArgument), resp.Code)
 	assert.Equal(t, "range too large", resp.Message)
 
-	funnelQueryMaxEvents = 3 // 恰好等于上限不算超
-	resp = afGet(t, adminFunnelRouter(), afMarketingKey(t), afPath("web_purchase", day, ""))
+	funnelQueryMaxEvents = n // 恰好等于上限不算超
+	resp = afGet(t, r, key, afPath("web_purchase", day, ""))
 	assert.Equal(t, int(ErrorNone), resp.Code, resp.Message)
 }
 
@@ -276,31 +305,37 @@ func TestAdminFunnel_RoutesWiredIntoOpsAdmin(t *testing.T) {
 
 func TestAdminRetention_Paid(t *testing.T) {
 	skipIfNoConfig(t)
-	// 首付在当月的一个用户：一定落在"最近 1 个月"的群组里。
-	now := time.Now().UTC()
-	user := factsUser(t, BrandOverleap, now.Add(-time.Hour))
+	// 首付就在此刻的一个用户。查最近 2 个月：即使测试与 handler 之间跨了 UTC 月界，这个群组也在范围内。
+	paidAt := time.Now().UTC().Truncate(time.Second)
+	user := factsUser(t, BrandOverleap, paidAt.Add(-time.Hour))
 	c := &SubscriptionCredit{
-		CreatedAt: now.Add(-time.Minute), UserID: user.ID, Provider: SubscriptionProviderStripe, Kind: "purchase",
+		CreatedAt: paidAt, UserID: user.ID, Provider: SubscriptionProviderStripe, Kind: "purchase",
 		TransactionID: uuid.NewString(), CreditedSeconds: 3600,
 	}
 	require.NoError(t, db.Get().Create(c).Error)
 	t.Cleanup(func() { factsCleanup(t, db.Get().Unscoped().Delete(c).Error) })
 
-	resp := afGet(t, adminFunnelRouter(), afMarketingKey(t), "/app/stats/retention?metric=paid&months=1&brand=overleap")
+	resp := afGet(t, adminFunnelRouter(), afMarketingKey(t), "/app/stats/retention?metric=paid&months=2&brand=overleap")
 	require.Equal(t, int(ErrorNone), resp.Code, resp.Message)
 	var data struct {
 		Rows []PaidCohortRow `json:"rows"`
 		Note string          `json:"note"`
 	}
 	require.NoError(t, json.Unmarshal(resp.Data, &data))
-	require.Len(t, data.Rows, 1)
-	assert.Equal(t, now.Format("2006-01"), data.Rows[0].Cohort)
-	assert.GreaterOrEqual(t, data.Rows[0].Size, 1)
-	for _, k := range []string{"m1", "m3", "m6", "m12"} {
-		v, ok := data.Rows[0].Retained[k]
-		assert.True(t, ok, k)
-		assert.Nil(t, v, "%s checkpoint of the current month is in the future", k)
+	var row *PaidCohortRow
+	for i := range data.Rows {
+		if data.Rows[i].Cohort == paidAt.Format("2006-01") {
+			row = &data.Rows[i]
+		}
 	}
+	require.NotNil(t, row, "cohort %s missing in %+v", paidAt.Format("2006-01"), data.Rows)
+	assert.GreaterOrEqual(t, row.Size, 1)
+	for _, k := range []string{"m1", "m3", "m6", "m12"} {
+		v, ok := row.Retained[k]
+		assert.True(t, ok, k)
+		assert.Nil(t, v, "%s checkpoint of a payment made just now is in the future", k)
+	}
+	assert.Contains(t, data.Note, "付款记录")
 	assert.Contains(t, data.Note, "退款")
 	assert.Contains(t, data.Note, "订阅")
 }
@@ -344,6 +379,7 @@ func TestAdminRetention_Active(t *testing.T) {
 	assert.Nil(t, row.D7, "D+7 is in the future")
 	require.NotNil(t, data.Note)
 	assert.Contains(t, *data.Note, "品牌")
+	assert.Contains(t, *data.Note, "老设备")
 
 	_, data = find("/app/stats/retention?metric=active")
 	assert.Nil(t, data.Note, "no brand filter → no note key")

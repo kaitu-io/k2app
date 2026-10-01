@@ -183,7 +183,7 @@ func TestStatsIngest_FunnelDisabledStillStoresLegacy(t *testing.T) {
 	skipIfNoConfig(t)
 	m := sfMarker(t)
 	hash := "sfleg-" + m
-	t.Cleanup(func() { db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}) })
+	t.Cleanup(func() { factsCleanup(t, db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}).Error) })
 	viper.Set("funnel.enabled", false)
 	t.Cleanup(func() { viper.Set("funnel.enabled", true) })
 	body := map[string]any{
@@ -202,7 +202,7 @@ func TestStatsIngest_LegacyBodyUnchanged(t *testing.T) {
 	skipIfNoConfig(t)
 	m := sfMarker(t)
 	hash := "sfleg-" + m
-	t.Cleanup(func() { db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}) })
+	t.Cleanup(func() { factsCleanup(t, db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}).Error) })
 	body := map[string]any{"app_opens": []map[string]any{sfLegacyOpen(hash)}}
 	w := NewTestRequest("POST", "/api/stats/events").WithBody(body).Execute(statsFunnelRouter())
 	assert.EqualValues(t, ErrorNone, sfCode(t, w))
@@ -229,7 +229,7 @@ func TestStatsIngest_BadFunnelItemDoesNotDropLegacy(t *testing.T) {
 	skipIfNoConfig(t)
 	m := sfMarker(t)
 	hash := "sfleg-" + m
-	t.Cleanup(func() { db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}) })
+	t.Cleanup(func() { factsCleanup(t, db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}).Error) })
 	bad := sfItem(m, hash, "paywall_view")
 	bad["created_at"] = "garbage"
 	body := map[string]any{"app_opens": []map[string]any{sfLegacyOpen(hash)}, "funnel": []map[string]any{bad}}
@@ -256,7 +256,7 @@ func TestStatsIngest_FunnelNotAnArrayKeepsLegacy(t *testing.T) {
 	skipIfNoConfig(t)
 	m := sfMarker(t)
 	hash := "sfleg-" + m
-	t.Cleanup(func() { db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}) })
+	t.Cleanup(func() { factsCleanup(t, db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}).Error) })
 	body := map[string]any{"app_opens": []map[string]any{sfLegacyOpen(hash)}, "funnel": "not-an-array"}
 	w := NewTestRequest("POST", "/api/stats/events").WithBody(body).Execute(statsFunnelRouter())
 	assert.EqualValues(t, ErrorNone, sfCode(t, w))
@@ -297,7 +297,7 @@ func TestStatsIngest_FunnelCountsTowardLimit(t *testing.T) {
 func TestStatsIngest_AppOpenStampsBrand(t *testing.T) {
 	skipIfNoConfig(t)
 	hash := generateId("sf-open")
-	t.Cleanup(func() { db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}) })
+	t.Cleanup(func() { factsCleanup(t, db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}).Error) })
 	post := func(brandHeader string) {
 		t.Helper()
 		req := NewTestRequest("POST", "/api/stats/events").WithBody(map[string]any{"app_opens": []map[string]any{{

@@ -115,6 +115,12 @@ func funnelEventQuery(ctx context.Context, brand Brand, hasBrand bool, from, to 
 	return q.Where("brand IN ?", names)
 }
 
+// funnelRecordColumns：funnelRecord 用得到的列（少取几列，贴着事件数上限装载时省内存）。
+var funnelRecordColumns = []string{
+	"occurred_at", "event", "surface", "anon_id", "user_id", "plan", "source", "channel", "path",
+	"ref_host", "utm_source", "utm_campaign", "country", "device", "os", "app_version",
+}
+
 // loadFunnelEvents 加载 [from, to) 内给定事件名的行为事件，按时间升序。
 func loadFunnelEvents(ctx context.Context, brand Brand, hasBrand bool, from, to time.Time, events []string) ([]funnelRecord, error) {
 	if len(events) == 0 {
@@ -122,6 +128,7 @@ func loadFunnelEvents(ctx context.Context, brand Brand, hasBrand bool, from, to 
 	}
 	var rows []FunnelEvent
 	if err := funnelEventQuery(ctx, brand, hasBrand, from, to, events).
+		Select(funnelRecordColumns).
 		Order("occurred_at ASC, id ASC").Find(&rows).Error; err != nil {
 		return nil, err
 	}

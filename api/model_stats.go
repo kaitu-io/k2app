@@ -7,12 +7,12 @@ import "time"
 type StatAppOpen struct {
 	ID         uint64    `gorm:"primarykey"`
 	CreatedAt  time.Time // client time (UTC)
-	ReportedAt time.Time `gorm:"autoCreateTime"`
+	ReportedAt time.Time `gorm:"autoCreateTime;index:idx_app_open_brand_time,priority:2"`
 	DeviceHash string    `gorm:"type:varchar(64);not null;index:idx_app_open_dau"`
 	OS         string    `gorm:"type:varchar(16);not null;index"`
 	AppVersion string    `gorm:"type:varchar(32);not null"`
 	Locale     string    `gorm:"type:varchar(8)"`
-	Brand      string    `gorm:"type:varchar(16);not null;default:'';index"` // 请求品牌；该列上线前的历史行为空
+	Brand      string    `gorm:"type:varchar(16);not null;default:'';index:idx_app_open_brand_time,priority:1"` // 请求品牌；该列上线前的历史行为空
 }
 
 // StatConnection tracks VPN connect/disconnect events.
