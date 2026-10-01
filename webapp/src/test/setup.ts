@@ -142,6 +142,12 @@ try {
     writable: true,
     configurable: true,
   });
+  // i18n boot reads the ordered list, not just the first entry.
+  Object.defineProperty(navigator, 'languages', {
+    value: ['zh-CN'],
+    writable: true,
+    configurable: true,
+  });
 } catch {
   // 忽略错误
 }

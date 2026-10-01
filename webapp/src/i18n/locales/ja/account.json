@@ -23,6 +23,8 @@
     "quotaRouter": "ルータープロキシ",
     "language": "言語設定",
     "selectLanguage": "言語を選択",
+    "searchLanguage": "言語を検索",
+    "noLanguageFound": "一致する言語がありません",
     "wallet": "マイウォレット",
     "theme": "テーマ設定",
     "delegate": "代理支払者の設定",

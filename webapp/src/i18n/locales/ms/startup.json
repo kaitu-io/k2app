@@ -1,0 +1,79 @@
+{
+  "startup": {
+    "activeUsers": "Pengguna Aktif",
+    "certified": "Disahkan ISO 27001",
+    "uptime": "Masa Aktif",
+    "authSuccess": "Pengesahan berjaya, status log masuk pengguna dikemas kini",
+    "deviceCanDirectLogin": "Peranti boleh log masuk secara langsung",
+    "deviceCannotDirectLogin": "Peranti tidak boleh log masuk secara langsung",
+    "checkDeviceLoginFailed": "Gagal memeriksa status log masuk peranti",
+    "deviceLoginFailed": "Gagal log masuk peranti",
+    "deviceLoginFailedRetry": "Gagal log masuk peranti, sila cuba lagi",
+    "deviceLoginSuccess": "Peranti log masuk berjaya",
+    "pleaseEnterInviteCode": "Sila masukkan kod jemput",
+    "registrationFailed": "Pendaftaran Gagal",
+    "registrationFailedRetry": "Pendaftaran gagal, sila cuba lagi",
+    "newDevice": "Peranti Baru",
+    "freeDeviceRegistrationFailed": "Pendaftaran peranti percuma gagal",
+    "inviteCodeIncorrect": "Kod jemput tidak tepat",
+    "inviteCodeInvalidOrExpired": "Kod jemput tidak sah atau telah luput",
+    "getInviteCodeInfoFailed": "Gagal mendapatkan maklumat kod jemput",
+    "haveProAccount": "Sudah mempunyai akaun Pro?",
+    "loginProAccountDesc": "Log masuk ke akaun Pro anda dan nikmati semua ciri",
+    "deviceAlreadyRegistered": "Dikesan bahawa peranti ini mempunyai akaun berdaftar",
+    "deviceReady": "Peranti sedia untuk log masuk",
+    "deviceReadyDesc": "Peranti anda didaftarkan dan sedia digunakan",
+    "orEmailLogin": "Atau log masuk dengan e-mel",
+    "experienceProFeatures": "Alami Ciri Pro",
+    "enterInviteCodeDesc": "Masukkan kod jemput untuk mengalami ciri Pro dengan segera",
+    "inviteCode": "Kod Jemput",
+    "enterInviteCodePlaceholder": "Sila masukkan kod jemput (pilihan)",
+    "youHaveGoodFriend": "🎁 Anda mempunyai rakan yang menakjubkan😼",
+    "enjoyNow": "Nikmati sekarang",
+    "days": "hari",
+    "pro": "Pro",
+    "extraBonus": "Bonus Tambahan!",
+    "experience": "Alami {{days}} hari",
+    "purchaseBonus": "Pembelian mendapat {{purchaseDays}}+{{downloadDays}} hari",
+    "buyNowExtraBonus": "Beli sekarang, dapatkan {{days}} hari tambahan",
+    "buyNowEnjoyAllPro": "Beli sekarang untuk semua faedah Pro",
+    "experienceOnly": "Alami {{days}} hari sahaja",
+    "experienceNow": "Alami Sekarang",
+    "or": "atau",
+    "noAccountNoInviteCode": "Tiada akaun atau kod jemput?",
+    "processing": "Memproses...",
+    "registerNewAccount": "Daftar akaun baru secara langsung"
+  },
+  "serviceStatus": {
+    "disconnected": "Perkhidmatan terputus, menyambung semula..."
+  },
+  "upgradeRequired": {
+    "title": "Sila Kemaskini Aplikasi",
+    "description": "Versi semasa sudah lapuk, sila muat turun versi terbaru untuk meneruskan.",
+    "downloadButton": "Pergi ke Muat Turun"
+  },
+  "forceUpgrade": {
+    "title": "Versi Terlalu Lama, Kemas Kini Diperlukan",
+    "description": "Versi aplikasi anda yang semasa ({{currentVersion}}) tidak lagi disokong. Sila kemaskini ke versi {{minVersion}} atau lebih tinggi untuk meneruskan.",
+    "downloadButton": "Kemaskini Sekarang"
+  },
+  "app": {
+    "slogan": "Perkhidmatan proksi rangkaian yang selamat dan mudah",
+    "error": "Ralat",
+    "updateNow": "Kemaskini Sekarang",
+    "readyToInstall": "sedia untuk dipasang",
+    "hoverForDetails": "terapung untuk perincian",
+    "releaseNotes": "Nota Keluaran",
+    "newVersionAvailable": "Versi baru {{version}} tersedia!",
+    "updating": "Mengemas kini",
+    "downloadingUpdate": "Memuat turun dan memasang kemas kini... {{progress}}%",
+    "errorBoundary": {
+      "title": "Ralat Aplikasi",
+      "description": "Ralat telah dilaporkan secara automatik, kami akan memperbaikinya tidak lama lagi.",
+      "details": "Perincian Ralat",
+      "retry": "Cuba Semula"
+    },
+    "installing": "Memasang...",
+    "beingInstalled": "sedang dipasang..."
+  }
+}

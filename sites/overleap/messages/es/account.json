@@ -1,0 +1,45 @@
+{
+  "metaTitle": "Tu cuenta",
+  "title": "Tu cuenta",
+  "subtitle": "Gestiona tu suscripción y tu acceso.",
+  "loading": "Cargando",
+  "navSubscription": "Suscripción",
+  "navSecurity": "Seguridad",
+  "signOut": "Cerrar sesión",
+  "subscriptionTitle": "Tu suscripción",
+  "renewsOn": "Se renueva el {date}",
+  "endsOn": "Finaliza el {date}",
+  "manage": "Gestionar suscripción",
+  "opening": "Abriendo…",
+  "noSubscriptionTitle": "No tienes una suscripción activa",
+  "noSubscription": "Elige un plan para usar Overleap en hasta cinco dispositivos.",
+  "seePlans": "Ver planes",
+  "activating": "Activando tu suscripción…",
+  "activationDelayed": "Hemos recibido tu pago. Tu suscripción se activará en unos minutos; actualiza esta página para comprobarlo.",
+  "downloadTitle": "Todo listo: descarga las apps",
+  "downloadBody": "Instala Overleap e inicia sesión con este correo electrónico.",
+  "downloadCta": "Descargar Overleap",
+  "cancel": "Cancelar",
+  "confirm": "Guardar",
+  "password": {
+    "setPassword": "Crear una contraseña",
+    "changePassword": "Cambiar contraseña",
+    "newPassword": "Nueva contraseña",
+    "confirmPassword": "Confirmar contraseña",
+    "requirements": "Al menos {length} caracteres. Evita palabras comunes, patrones de teclado y caracteres repetidos.",
+    "mismatch": "Las contraseñas no coinciden",
+    "setSuccess": "Contraseña guardada",
+    "strength": {
+      "label": "Seguridad de la contraseña",
+      "veryWeak": "Muy débil",
+      "weak": "Débil",
+      "fair": "Aceptable",
+      "good": "Buena",
+      "strong": "Fuerte"
+    }
+  },
+  "security": {
+    "passwordSet": "Crea una contraseña para iniciar sesión con tu correo y contraseña. Aún podrás usar un código de un solo uso.",
+    "passwordChange": "Ya tienes una contraseña. Puedes cambiarla aquí."
+  }
+}

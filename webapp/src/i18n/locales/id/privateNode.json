@@ -1,0 +1,50 @@
+{
+  "privateNode": {
+    "title": "Node Khusus",
+    "manage": "Kelola Node Khusus",
+    "myRouter": "Router Saya",
+    "buyLine": "Beli Saluran Khusus",
+    "buy": "Dapatkan Node Khusus",
+    "region": "Wilayah Node",
+    "selectRegion": "Pilih Wilayah",
+    "ipTypeLabel": "Jenis IP",
+    "ipType": {
+      "residential": "IP Residensial",
+      "non_residential": "IP Pusat Data"
+    },
+    "traffic": "Lalu Lintas",
+    "trafficUsed": "{{used}} / {{total}} digunakan",
+    "quota": "Kuota Lalu Lintas",
+    "status": {
+      "title": "Status",
+      "pending": "Tertunda",
+      "provisioning": "Sedang Penyediaan",
+      "active": "Aktif",
+      "grace": "Periode Tenggang",
+      "suspended": "Ditangguhkan",
+      "deprovisioned": "Penyediaan Dibatalkan",
+      "failed": "Penyediaan Gagal"
+    },
+    "expiresAt": "Berakhir",
+    "graceHint": "Node Anda sedang dalam periode tenggang. Silakan perbarui segera untuk menghindari penangguhan.",
+    "suspendedHint": "Node ditangguhkan tetapi IP-nya dipertahankan. Node akan melanjutkan setelah pembaruan.",
+    "nodeIp": "IP Node",
+    "provisioningHint": "Node Anda sedang disediakan. Ini biasanya memakan waktu beberapa menit, silakan tunggu.",
+    "empty": "Anda belum memiliki node khusus",
+    "renew": "Perbarui",
+    "renewOnWebsite": "Untuk memperbarui, kunjungi Router Saya di situs web kami",
+    "percentUsed": "{{percent}}% digunakan",
+    "quotaExhausted": {
+      "title": "Kuota lalu lintas bulanan habis",
+      "resetHint": "Disetel ulang pada {{date}}",
+      "resetUnknown": "Disetel ulang di awal siklus berikutnya",
+      "cta": "Perbarui / Tingkatkan kuota"
+    },
+    "router": {
+      "title": "Tambah Router",
+      "intro": "Pasang k2r di router OpenWrt Anda — aplikasi akan secara otomatis mendeteksinya dan menampilkannya di bawah.",
+      "detected": "Router terdeteksi di jaringan lokal Anda:",
+      "manage": "Kelola Router"
+    }
+  }
+}

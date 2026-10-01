@@ -1,0 +1,50 @@
+{
+  "appBar": {
+    "refreshAuth": "Yetkilendirmeyi Yenile"
+  },
+  "navigation": {
+    "dashboard": "Pano",
+    "discover": "Keşfet",
+    "account": "Hesap",
+    "router": "Router",
+    "devices": "Cihazlar",
+    "faq": "Geri Bildirim",
+    "purchase": "Satın Al",
+    "activate": "Etkinleştir",
+    "invite": "Davet",
+    "retailer": "Satıcı",
+    "proHistory": "Yetkilendirme Geçmişi",
+    "help": "Yardım"
+  },
+  "appBarConnector": {
+    "disconnecting": "Bağlantı Kesiliyor",
+    "connecting": "Bağlanıyor",
+    "antiClickProtection": "İstem engelleme: Çok sık işlemler",
+    "refreshDataFailed": "İşlemden sonra veri yenilenemedi:",
+    "connectionOperationFailed": "Bağlantı işlemi başarısız:",
+    "disconnectingTooltip": "Bağlantı kesiliyor...",
+    "connectingTooltip": "Bağlanıyor...",
+    "clickToDisconnect": "Bağlantıyı kesmek için tıkla",
+    "clickToConnect": "Bağlanmak için tıkla",
+    "anonymous": "Anonim",
+    "disconnect": "Bağlantıyı Kes",
+    "connect": "Bağlan",
+    "panel": "Panel",
+    "noNodeSelected": "Bağlanmadan önce lütfen bir düğüm seç"
+  },
+  "appBarMembership": {
+    "trial": "Deneme",
+    "standard": "Standart",
+    "expired": "Süresi Doldu",
+    "proTrial": "Pro Deneme",
+    "recharge": "Yükle",
+    "firstOrderPending": "İlk Sipariş Beklemede",
+    "unlimitedTrial": "Sınırsız Deneme",
+    "completePurchase": "Satın Almayı Tamamla"
+  },
+  "layout": {
+    "deviceInstall": "Diğer Cihazlara Yükle",
+    "troubleshooting": "Sorun Giderme",
+    "accountAndSettings": "Hesap ve Ayarlar"
+  }
+}

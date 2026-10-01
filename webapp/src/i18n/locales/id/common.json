@@ -1,0 +1,184 @@
+{
+  "status": {
+    "stopped": "Berhenti",
+    "connecting": "Menghubungkan...",
+    "connected": "Terhubung",
+    "reconnecting": "Menyambung kembali...",
+    "disconnecting": "Memutuskan...",
+    "disconnected": "Terputus",
+    "error": "Koneksi Gagal",
+    "failed": "Koneksi Gagal",
+    "offline": "Offline",
+    "online": "Online",
+    "active": "Aktif",
+    "inactive": "Tidak Aktif",
+    "enabled": "Diaktifkan",
+    "disabled": "Dinonaktifkan",
+    "clickToStop": "Klik untuk Putuskan",
+    "reconnectingToServer": "Menyambung kembali ke server...",
+    "waitingForNetwork": "Menunggu jaringan..."
+  },
+  "common": {
+    "justNow": "Baru saja",
+    "back": "Kembali",
+    "cancel": "Batal",
+    "confirm": "Konfirmasi",
+    "add": "Tambah",
+    "adding": "Menambah...",
+    "ok": "OK",
+    "save": "Simpan",
+    "delete": "Hapus",
+    "clear": "Hapus",
+    "copy": "Salin",
+    "close": "Tutup",
+    "loading": "Memuat...",
+    "processing": "Memproses...",
+    "retry": "Coba Lagi",
+    "download": "Unduh",
+    "error": "Kesalahan",
+    "refresh": "Segarkan",
+    "and": "dan",
+    "success": "Berhasil",
+    "loadFailed": "Gagal Memuat",
+    "notFound": "Sumber Daya Tidak Ditemukan",
+    "serverError": "Kesalahan Server",
+    "unknownError": "Kesalahan Tidak Diketahui",
+    "later": "Nanti",
+    "login": "Masuk",
+    "viewDetails": "Lihat Detail",
+    "experimental": "Eksperimental",
+    "edit": "Edit",
+    "next": "Berikutnya",
+    "or": "ATAU",
+    "changelog": "Changelog"
+  },
+  "errors": {
+    "service": {
+      "serviceNotFound": "File layanan tidak ditemukan, silakan reinstall aplikasi",
+      "authRequired": "Privilege administrator diperlukan untuk menginstal layanan",
+      "installFailed": "Instalasi layanan gagal",
+      "connectionFailed": "Tidak dapat terhubung ke layanan"
+    },
+    "config": {
+      "badConfig": "Kesalahan konfigurasi, silakan periksa alamat server"
+    },
+    "network": {
+      "timeout": "Koneksi habis waktu, silakan periksa jaringan",
+      "unreachable": "Server tidak dapat dijangkau, silakan periksa koneksi jaringan",
+      "reset": "Koneksi jaringan terputus, silakan periksa status jaringan",
+      "dns": "Resolusi DNS gagal, silakan periksa pengaturan jaringan",
+      "tls": "Koneksi aman gagal, silakan periksa lingkungan jaringan",
+      "refused": "Tidak dapat terhubung ke server, silakan coba lagi nanti",
+      "repairFailed": "Perbaikan jaringan gagal, silakan periksa pengaturan secara manual",
+      "repairDNS": "Perbaikan DNS gagal",
+      "repairRoute": "Perbaikan rute gagal",
+      "repairPreFailed": "Persiapan perbaikan jaringan gagal",
+      "unavailable": "Tidak ada koneksi jaringan. Periksa jaringan perangkat Anda dan coba lagi."
+    },
+    "server": {
+      "unavailable": "Server tidak tersedia, silakan coba lagi nanti",
+      "overload": "Server sibuk, silakan coba lagi nanti",
+      "maintenance": "Server sedang dalam pemeliharaan, silakan coba lagi nanti",
+      "internal": "Kesalahan internal server, silakan coba lagi nanti",
+      "notImplemented": "Fitur belum tersedia"
+    },
+    "auth": {
+      "logoutFailed": "Logout gagal, silakan coba lagi",
+      "tokenRefreshFailed": "Sesi gagal disegarkan, silakan masuk lagi"
+    },
+    "client": {
+      "badRequest": "Kesalahan parameter permintaan",
+      "unauthorized": "Silakan masuk terlebih dahulu",
+      "forbidden": "Tidak ada izin untuk melakukan operasi ini",
+      "notFound": "Sumber daya yang diminta tidak ditemukan",
+      "paymentRequired": "Keanggotaan kadaluarsa, silakan perbarui",
+      "notSupported": "Fitur tidak didukung",
+      "upgradeRequired": "Silakan tingkatkan ke versi terbaru",
+      "conflict": "Konflik operasi, silakan coba lagi",
+      "invalidArgument": "Parameter tidak valid",
+      "tooEarly": "Silakan tunggu sebentar dan coba lagi",
+      "tooManyRequests": "Terlalu banyak permintaan, silakan coba nanti",
+      "invalidClock": "Jam perangkat tidak benar, silakan sesuaikan",
+      "selfInvitation": "Tidak dapat menggunakan kode undangan Anda sendiri",
+      "licenseKeyNotFound": "Kunci lisensi tidak ditemukan",
+      "licenseKeyUsed": "Kunci lisensi sudah digunakan",
+      "licenseKeyExpired": "Kunci lisensi kadaluarsa",
+      "licenseKeyNotMatch": "Tidak memenuhi syarat untuk kunci lisensi ini",
+      "licenseKeyAlreadyRedeemed": "Anda telah menukar kunci lisensi (satu per akun)",
+      "tierMismatch": "Tingkatan Anda saat ini tidak dapat membeli paket ini. Silakan hubungi dukungan untuk mengganti tingkatan.",
+      "proxyPurchaseDeprecated": "Pembelian proxy tidak lagi didukung. Silakan minta penerima untuk membeli dengan akun mereka sendiri.",
+      "proxyMembersDeprecated": "Manajemen anggota proxy telah dihapus. Tentukan penerima di {{brandDomain}}/purchase saat checkout."
+    },
+    "tunnel": {
+      "listFailed": "Gagal memuat daftar server",
+      "connectFailed": "Gagal terhubung ke server"
+    },
+    "vpn": {
+      "authFailed": "Autentikasi gagal, silakan masuk kembali",
+      "membershipExpired": "Keanggotaan kadaluarsa, silakan perbarui",
+      "forbidden": "Verifikasi sertifikat server gagal",
+      "protocolError": "Jabat tangan protokol gagal, silakan coba node lain",
+      "connectionFatal": "Koneksi gagal, silakan coba lagi atau ganti node",
+      "permissionDenied": "Izin VPN ditolak. Silakan aktifkan VPN di pengaturan sistem.",
+      "environmentSetupFailed": "Penyiapan jaringan gagal. Mulai ulang perangkat Anda dan coba lagi.",
+      "startFailed": "Gagal memulai layanan, silakan coba lagi",
+      "reconnectFailed": "Gagal menyambung kembali, silakan coba lagi",
+      "timeout": "Operasi habis waktu, silakan coba lagi",
+      "allAddrsFailed": "Semua alamat server gagal, silakan ganti node"
+    },
+    "action": {
+      "timeout": "Operasi habis waktu, silakan coba lagi",
+      "parseFailed": "Parsing permintaan gagal"
+    },
+    "api": {
+      "requestFailed": "Permintaan gagal, silakan periksa jaringan Anda",
+      "responseFailed": "Parsing respons gagal"
+    },
+    "engine": {
+      "ruleBundlesUnavailable": "Gagal mengunduh aturan rute. Periksa jaringan dan coba lagi."
+    },
+    "installCancelled": "Instalasi dibatalkan",
+    "unknown": "Kesalahan tidak diketahui",
+    "unknownError": "Kesalahan Tidak Diketahui"
+  },
+  "features": {
+    "fastConnect": "Sangat Cepat",
+    "fastConnectDesc": "Optimasi rute pintar, pengurangan latensi 80%",
+    "security": "Enkripsi Tingkat Enterprise",
+    "securityDesc": "Enkripsi AES-256 tingkat militer, melindungi keamanan data",
+    "global": "Node Global",
+    "globalDesc": "50+ negara, 200+ node premium",
+    "multiDevice": "Dukungan Multi-Perangkat",
+    "multiDeviceDesc": "Satu akun, semua platform"
+  },
+  "messages": {
+    "sendVerificationSuccess": "Email verifikasi berhasil dikirim",
+    "sendVerificationFailed": "Gagal mengirim email verifikasi",
+    "logoutSuccess": "Pengguna keluar",
+    "logoutFailed": "Logout gagal",
+    "copySuccess": "Disalin berhasil",
+    "copyFailed": "Gagal disalin",
+    "saveSuccess": "Disimpan berhasil",
+    "saveFailed": "Gagal disimpan",
+    "deleteSuccess": "Dihapus berhasil",
+    "deleteFailed": "Gagal dihapus",
+    "serviceInstalling": "Menginstal layanan secara senyap, silakan tunggu...",
+    "serviceInstallSuccess": "Layanan berhasil diinstal!",
+    "serviceInstallFailedAuth": "Privilege administrator diperlukan untuk menginstal layanan, silakan klik \"Ya\" di dialog UAC",
+    "updateSuccess": "Diperbarui berhasil",
+    "updateFailed": "Gagal diperbarui",
+    "networkError": "Kesalahan Jaringan",
+    "serverError": "Kesalahan Server",
+    "unknownError": "Kesalahan Tidak Diketahui"
+  },
+  "loadingAndEmpty": {
+    "noHistoryTitle": "Tidak Ada Riwayat",
+    "noHistoryDescription": "Anda belum memiliki riwayat pembayaran dan otorisasi apa pun, pergi rasakan manfaat keanggotaan!",
+    "noPlansTitle": "Tidak Ada Paket Tersedia",
+    "noPlansDescription": "Paket sedang dimuat atau sementara tidak tersedia, silakan coba lagi nanti",
+    "noInviteCodesTitle": "Tidak Ada Kode Undangan",
+    "noInviteCodesDescription": "Anda belum membuat kode undangan apa pun, buat kode undangan eksklusif Anda untuk dibagikan dengan teman!",
+    "noDevicesTitle": "Tidak Ada Perangkat",
+    "noDevicesDescription": "Anda belum memiliki perangkat yang masuk apa pun"
+  }
+}

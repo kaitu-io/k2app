@@ -1,0 +1,9 @@
+{
+  "theme": {
+    "switchToLight": "فاتح",
+    "switchToDark": "داكن",
+    "light": "وضع فاتح",
+    "dark": "وضع داكن",
+    "system": "اتبع النظام"
+  }
+}

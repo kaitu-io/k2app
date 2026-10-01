@@ -1,0 +1,28 @@
+{
+  "feedback": {
+    "buttonLabel": "문제 보고",
+    "buttonTooltip": "문제가 있으신가요? 클릭하여 보고해 주세요",
+    "dialogTitle": "문제 보고",
+    "dialogDescription": "제출을 클릭하면 앱 로그를 수집하여 문제를 파악하고 해결하는 데 도움을 줍니다. 로그에는 민감한 정보가 포함되지 않습니다.",
+    "submitButton": "피드백 제출",
+    "uploading": "로그 업로드 중...",
+    "uploadSuccess": "피드백 제출됨",
+    "uploadSuccessDescription": "피드백을 주셔서 감사합니다! 곧 반영하겠습니다.",
+    "uploadError": "제출 실패",
+    "uploadFailed": "로그 업로드 실패. 나중에 다시 시도해 주세요.",
+    "platformNotSupported": "현재 플랫폼에서는 이 기능이 아직 지원되지 않습니다",
+    "disconnectFeedback": {
+      "title": "연결은 어땠나요?",
+      "thankYou": "피드백을 주셔서 감사합니다",
+      "detailTitle": "무엇이 문제였나요? (선택사항)",
+      "submit": "제출",
+      "tags": {
+        "slow": "느림",
+        "cantConnect": "연결 불가",
+        "frequentDrops": "자주 끊김",
+        "contentBlocked": "사이트/영상 차단됨",
+        "other": "기타"
+      }
+    }
+  }
+}

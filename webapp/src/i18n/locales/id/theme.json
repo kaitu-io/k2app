@@ -1,0 +1,9 @@
+{
+  "theme": {
+    "switchToLight": "Terang",
+    "switchToDark": "Gelap",
+    "light": "Mode Terang",
+    "dark": "Mode Gelap",
+    "system": "Ikuti Sistem"
+  }
+}

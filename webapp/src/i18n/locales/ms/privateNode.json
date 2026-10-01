@@ -1,0 +1,50 @@
+{
+  "privateNode": {
+    "title": "Nod Khusus",
+    "manage": "Kelola Nod Khusus",
+    "myRouter": "Router Saya",
+    "buyLine": "Beli Garisan Khusus",
+    "buy": "Dapatkan Nod Khusus",
+    "region": "Rantau Nod",
+    "selectRegion": "Pilih Rantau",
+    "ipTypeLabel": "Jenis IP",
+    "ipType": {
+      "residential": "IP Kediaman",
+      "non_residential": "IP Pusat Data"
+    },
+    "traffic": "Trafik",
+    "trafficUsed": "{{used}} / {{total}} digunakan",
+    "quota": "Kuota Trafik",
+    "status": {
+      "title": "Status",
+      "pending": "Tertangguh",
+      "provisioning": "Pembekalan",
+      "active": "Aktif",
+      "grace": "Tempoh Tenggang",
+      "suspended": "Dijejak Tangga",
+      "deprovisioned": "Pembongkaran",
+      "failed": "Pembekalan Gagal"
+    },
+    "expiresAt": "Tamat",
+    "graceHint": "Nod anda berada dalam tempoh tenggang. Sila perbarui tidak lama lagi untuk mengelakkan penggantungan.",
+    "suspendedHint": "Nod dijejak tangga tetapi IP-nya dikekalkan. Ia akan disambung semula selepas pembaruan.",
+    "nodeIp": "IP Nod",
+    "provisioningHint": "Nod anda sedang disediakan. Ini biasanya mengambil beberapa minit, sila tunggu.",
+    "empty": "Anda belum mempunyai sebarang nod khusus",
+    "renew": "Perbarui",
+    "renewOnWebsite": "Untuk memperbarui, lawati Router Saya di laman web kami",
+    "percentUsed": "{{percent}}% digunakan",
+    "quotaExhausted": {
+      "title": "Kuota trafik bulanan telah digunakan",
+      "resetHint": "Tetapkan semula pada {{date}}",
+      "resetUnknown": "Tetapkan semula pada permulaan kitaran seterusnya",
+      "cta": "Perbarui / Tingkatkan kuota"
+    },
+    "router": {
+      "title": "Tambah Router",
+      "intro": "Pasang k2r pada router OpenWrt anda — apl akan menemui secara automatik dan menunjukkannya di bawah.",
+      "detected": "Router dikesan pada rangkaian tempatan anda:",
+      "manage": "Kelola Router"
+    }
+  }
+}

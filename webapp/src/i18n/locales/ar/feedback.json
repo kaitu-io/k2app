@@ -1,0 +1,28 @@
+{
+  "feedback": {
+    "buttonLabel": "الإبلاغ عن مشكلة",
+    "buttonTooltip": "تواجه مشاكل؟ انقر للإبلاغ",
+    "dialogTitle": "الإبلاغ عن مشكلة",
+    "dialogDescription": "سيؤدي النقر على الإرسال إلى جمع سجلات التطبيق لمساعدتنا في تحديد وحل المشاكل. السجلات لا تحتوي على معلومات حساسة.",
+    "submitButton": "إرسال تعليق",
+    "uploading": "جاري تحميل السجلات...",
+    "uploadSuccess": "تم إرسال التعليق",
+    "uploadSuccessDescription": "شكراً على ملاحظتك! سنقوم بمعالجتها قريباً.",
+    "uploadError": "فشل الإرسال",
+    "uploadFailed": "فشل تحميل السجلات. يرجى المحاولة لاحقاً.",
+    "platformNotSupported": "هذه الميزة غير مدعومة حالياً على المنصة الحالية",
+    "disconnectFeedback": {
+      "title": "كيف كان الاتصال الخاص بك؟",
+      "thankYou": "شكراً على ملاحظتك",
+      "detailTitle": "ماذا حدث؟ (اختياري)",
+      "submit": "إرسال",
+      "tags": {
+        "slow": "بطيء",
+        "cantConnect": "لا يمكن الاتصال",
+        "frequentDrops": "قطع متكررة",
+        "contentBlocked": "المواقع/الفيديوهات محجوبة",
+        "other": "أخرى"
+      }
+    }
+  }
+}

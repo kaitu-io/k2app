@@ -1,0 +1,45 @@
+{
+  "metaTitle": "Sua conta",
+  "title": "Sua conta",
+  "subtitle": "Gerencie sua assinatura e seu acesso.",
+  "loading": "Carregando",
+  "navSubscription": "Assinatura",
+  "navSecurity": "Segurança",
+  "signOut": "Sair",
+  "subscriptionTitle": "Sua assinatura",
+  "renewsOn": "Renova em {date}",
+  "endsOn": "Termina em {date}",
+  "manage": "Gerenciar assinatura",
+  "opening": "Abrindo…",
+  "noSubscriptionTitle": "Nenhuma assinatura ativa",
+  "noSubscription": "Escolha um plano para usar o Overleap em até cinco dispositivos.",
+  "seePlans": "Ver planos",
+  "activating": "Ativando sua assinatura…",
+  "activationDelayed": "Pagamento recebido. Sua assinatura será ativada em alguns minutos — atualize esta página para conferir.",
+  "downloadTitle": "Tudo pronto — baixe os apps",
+  "downloadBody": "Instale o Overleap e entre com este mesmo e-mail.",
+  "downloadCta": "Baixar o Overleap",
+  "cancel": "Cancelar",
+  "confirm": "Salvar",
+  "password": {
+    "setPassword": "Definir uma senha",
+    "changePassword": "Alterar senha",
+    "newPassword": "Nova senha",
+    "confirmPassword": "Confirmar senha",
+    "requirements": "Mínimo de {length} caracteres. Evite palavras comuns, sequências de teclado e caracteres repetidos.",
+    "mismatch": "As senhas não coincidem",
+    "setSuccess": "Senha salva",
+    "strength": {
+      "label": "Força da senha",
+      "veryWeak": "Muito fraca",
+      "weak": "Fraca",
+      "fair": "Razoável",
+      "good": "Boa",
+      "strong": "Forte"
+    }
+  },
+  "security": {
+    "passwordSet": "Defina uma senha para entrar com e-mail e senha. Você ainda poderá usar um código de uso único.",
+    "passwordChange": "Você já tem uma senha definida. Pode alterá-la aqui."
+  }
+}

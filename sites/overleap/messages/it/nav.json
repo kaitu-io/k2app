@@ -1,0 +1,17 @@
+{
+  "primary": "Navigazione principale",
+  "account": "Account",
+  "login": "Accedi",
+  "language": "Lingua",
+  "searchLanguage": "Cerca lingue",
+  "noLanguageFound": "Nessuna lingua trovata",
+  "footer": {
+    "tagline": "Una VPN privata. Senza log, veloce su qualsiasi rete.",
+    "company": "Azienda",
+    "privacy": "Informativa sulla privacy",
+    "terms": "Termini di servizio",
+    "deleteAccount": "Elimina il tuo account",
+    "contact": "Contattaci",
+    "copyright": "© {year} {legalName}. Tutti i diritti riservati."
+  }
+}

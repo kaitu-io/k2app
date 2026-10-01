@@ -1,0 +1,184 @@
+{
+  "status": {
+    "stopped": "Fermo",
+    "connecting": "Connessione in corso...",
+    "connected": "Connesso",
+    "reconnecting": "Riconnessione in corso...",
+    "disconnecting": "Disconnessione in corso...",
+    "disconnected": "Disconnesso",
+    "error": "Connessione Fallita",
+    "failed": "Connessione Fallita",
+    "offline": "Offline",
+    "online": "Online",
+    "active": "Attivo",
+    "inactive": "Inattivo",
+    "enabled": "Abilitato",
+    "disabled": "Disabilitato",
+    "clickToStop": "Clicca per Disconnettere",
+    "reconnectingToServer": "Riconnessione al server in corso...",
+    "waitingForNetwork": "In attesa di rete..."
+  },
+  "common": {
+    "justNow": "Proprio adesso",
+    "back": "Indietro",
+    "cancel": "Annulla",
+    "confirm": "Conferma",
+    "add": "Aggiungi",
+    "adding": "Aggiunta in corso...",
+    "ok": "OK",
+    "save": "Salva",
+    "delete": "Elimina",
+    "clear": "Cancella",
+    "copy": "Copia",
+    "close": "Chiudi",
+    "loading": "Caricamento...",
+    "processing": "Elaborazione in corso...",
+    "retry": "Riprova",
+    "download": "Scarica",
+    "error": "Errore",
+    "refresh": "Aggiorna",
+    "and": "e",
+    "success": "Successo",
+    "loadFailed": "Caricamento Fallito",
+    "notFound": "Risorsa Non Trovata",
+    "serverError": "Errore Server",
+    "unknownError": "Errore Sconosciuto",
+    "later": "Più Tardi",
+    "login": "Accedi",
+    "viewDetails": "Visualizza Dettagli",
+    "experimental": "Sperimentale",
+    "edit": "Modifica",
+    "next": "Avanti",
+    "or": "O",
+    "changelog": "Changelog"
+  },
+  "errors": {
+    "service": {
+      "serviceNotFound": "File servizio non trovato, per favore reinstalla l'app",
+      "authRequired": "Privilegi di amministratore richiesti per installare il servizio",
+      "installFailed": "Installazione servizio fallita",
+      "connectionFailed": "Impossibile connettersi al servizio"
+    },
+    "config": {
+      "badConfig": "Errore di configurazione, per favore controlla l'indirizzo server"
+    },
+    "network": {
+      "timeout": "Connessione scaduta, per favore controlla la rete",
+      "unreachable": "Server non raggiungibile, per favore controlla la connessione di rete",
+      "reset": "Connessione di rete interrotta, per favore controlla lo stato della rete",
+      "dns": "Risoluzione DNS fallita, per favore controlla le impostazioni di rete",
+      "tls": "Connessione sicura fallita, per favore controlla l'ambiente di rete",
+      "refused": "Impossibile connettersi al server, per favore riprova più tardi",
+      "repairFailed": "Riparazione rete fallita, per favore controlla le impostazioni manualmente",
+      "repairDNS": "Riparazione DNS fallita",
+      "repairRoute": "Riparazione percorso fallita",
+      "repairPreFailed": "Preparazione riparazione rete fallita",
+      "unavailable": "Nessuna connessione di rete. Controlla la rete del tuo dispositivo e riprova."
+    },
+    "server": {
+      "unavailable": "Server non disponibile, per favore riprova più tardi",
+      "overload": "Server occupato, per favore riprova più tardi",
+      "maintenance": "Server in manutenzione, per favore riprova più tardi",
+      "internal": "Errore interno server, per favore riprova più tardi",
+      "notImplemented": "Funzione non ancora disponibile"
+    },
+    "auth": {
+      "logoutFailed": "Logout fallito, per favore riprova",
+      "tokenRefreshFailed": "Aggiornamento sessione fallito, per favore accedi di nuovo"
+    },
+    "client": {
+      "badRequest": "Errore parametro richiesta",
+      "unauthorized": "Per favore accedi prima",
+      "forbidden": "Nessuna autorizzazione per eseguire questa operazione",
+      "notFound": "Risorsa richiesta non trovata",
+      "paymentRequired": "Iscrizione scaduta, per favore rinnova",
+      "notSupported": "Funzione non supportata",
+      "upgradeRequired": "Per favore esegui l'upgrade alla versione più recente",
+      "conflict": "Conflitto operazione, per favore riprova",
+      "invalidArgument": "Parametri non validi",
+      "tooEarly": "Per favore attendi un momento e riprova",
+      "tooManyRequests": "Troppe richieste, per favore riprova più tardi",
+      "invalidClock": "Orologio dispositivo errato, per favore correggi",
+      "selfInvitation": "Impossibile utilizzare il tuo codice di invito",
+      "licenseKeyNotFound": "Chiave di licenza non trovata",
+      "licenseKeyUsed": "Chiave di licenza già utilizzata",
+      "licenseKeyExpired": "Chiave di licenza scaduta",
+      "licenseKeyNotMatch": "Non idoneo per questa chiave di licenza",
+      "licenseKeyAlreadyRedeemed": "Hai già riscattato una chiave di licenza (una per account)",
+      "tierMismatch": "Il tuo livello attuale non può acquistare questo piano. Per favore contatta il supporto per cambiare livelli.",
+      "proxyPurchaseDeprecated": "L'acquisto proxy non è più supportato. Per favore chiedi al destinatario di acquistare con il suo account.",
+      "proxyMembersDeprecated": "La gestione dei membri proxy è stata rimossa. Specifica il destinatario su {{brandDomain}}/purchase durante il checkout."
+    },
+    "tunnel": {
+      "listFailed": "Impossibile caricare l'elenco server",
+      "connectFailed": "Impossibile connettersi al server"
+    },
+    "vpn": {
+      "authFailed": "Autenticazione fallita, per favore accedi di nuovo",
+      "membershipExpired": "Iscrizione scaduta, per favore rinnova",
+      "forbidden": "Verifica certificato server fallita",
+      "protocolError": "Handshake protocollo fallito, per favore prova un altro nodo",
+      "connectionFatal": "Connessione fallita, per favore riprova o cambia nodo",
+      "permissionDenied": "Autorizzazione VPN negata. Per favore abilita VPN nelle impostazioni di sistema.",
+      "environmentSetupFailed": "Configurazione rete fallita. Riavvia il tuo dispositivo e riprova.",
+      "startFailed": "Impossibile avviare il servizio, per favore riprova",
+      "reconnectFailed": "Impossibile riconnettersi, per favore riprova",
+      "timeout": "Operazione scaduta, per favore riprova",
+      "allAddrsFailed": "Tutti gli indirizzi server falliti, per favore cambia nodo"
+    },
+    "action": {
+      "timeout": "Operazione scaduta, per favore riprova",
+      "parseFailed": "Analisi richiesta fallita"
+    },
+    "api": {
+      "requestFailed": "Richiesta fallita, per favore controlla la tua rete",
+      "responseFailed": "Analisi risposta fallita"
+    },
+    "engine": {
+      "ruleBundlesUnavailable": "Impossibile scaricare le regole di routing. Controlla la rete e riprova."
+    },
+    "installCancelled": "Installazione annullata",
+    "unknown": "Errore sconosciuto",
+    "unknownError": "Errore Sconosciuto"
+  },
+  "features": {
+    "fastConnect": "Velocità Fulminea",
+    "fastConnectDesc": "Ottimizzazione routing intelligente, riduzione latenza del 80%",
+    "security": "Crittografia Enterprise",
+    "securityDesc": "Crittografia AES-256 di livello militare, protezione della sicurezza dati",
+    "global": "Nodi Globali",
+    "globalDesc": "50+ paesi, 200+ nodi premium",
+    "multiDevice": "Supporto Multi-Dispositivo",
+    "multiDeviceDesc": "Un account, tutte le piattaforme"
+  },
+  "messages": {
+    "sendVerificationSuccess": "Email di verifica inviata con successo",
+    "sendVerificationFailed": "Impossibile inviare email di verifica",
+    "logoutSuccess": "Utente disconnesso",
+    "logoutFailed": "Logout fallito",
+    "copySuccess": "Copiato con successo",
+    "copyFailed": "Copia fallita",
+    "saveSuccess": "Salvato con successo",
+    "saveFailed": "Salvataggio fallito",
+    "deleteSuccess": "Eliminato con successo",
+    "deleteFailed": "Eliminazione fallita",
+    "serviceInstalling": "Installazione servizio in corso silenziosamente, per favore attendi...",
+    "serviceInstallSuccess": "Servizio installato con successo!",
+    "serviceInstallFailedAuth": "Privilegi di amministratore richiesti per installare il servizio, per favore clicca \"Sì\" nella finestra UAC",
+    "updateSuccess": "Aggiornato con successo",
+    "updateFailed": "Aggiornamento fallito",
+    "networkError": "Errore di Rete",
+    "serverError": "Errore Server",
+    "unknownError": "Errore Sconosciuto"
+  },
+  "loadingAndEmpty": {
+    "noHistoryTitle": "Nessuna Cronologia",
+    "noHistoryDescription": "Non hai ancora una cronologia di pagamenti e autorizzazioni, vai ad esperire i vantaggi dell'iscrizione!",
+    "noPlansTitle": "Nessun Piano Disponibile",
+    "noPlansDescription": "I piani si stanno caricando o sono temporaneamente non disponibili, per favore riprova più tardi",
+    "noInviteCodesTitle": "Nessun Codice di Invito",
+    "noInviteCodesDescription": "Non hai ancora creato codici di invito, crea il tuo codice di invito esclusivo da condividere con gli amici!",
+    "noDevicesTitle": "Nessun Dispositivo",
+    "noDevicesDescription": "Non hai ancora alcun dispositivo connesso"
+  }
+}

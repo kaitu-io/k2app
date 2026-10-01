@@ -1,21 +1,64 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
-import LanguageDetector from 'i18next-browser-languagedetector';
 import { namespaces, defaultNamespace, type Namespace } from './locales/namespaces';
 import { brandConfig } from '../brands';
 import { brandI18nVariables } from '../brands/i18n-vars';
+import { matchLocale } from './match-locale';
 
+/**
+ * Every language the webapp carries copy for. Which of these a build actually
+ * OFFERS is the brand's call — `brandConfig.locales` (see availableLanguages).
+ * `englishName` exists so the picker's search matches "korean" as well as
+ * "한국어". No flags: a language is not a country.
+ */
 export const languages = {
-  'en-US': { nativeName: 'English (US)', countryCode: 'US' },
-  'en-GB': { nativeName: 'English (UK)', countryCode: 'GB' },
-  'en-AU': { nativeName: 'English (AU)', countryCode: 'AU' },
-  'zh-CN': { nativeName: '简体中文', countryCode: 'CN' },
-  'zh-TW': { nativeName: '繁體中文', countryCode: 'TW' },
-  'zh-HK': { nativeName: '繁體中文 (香港)', countryCode: 'HK' },
-  'ja': { nativeName: '日本語', countryCode: 'JP' }
-} as const;
+  'en-US': { nativeName: 'English (US)', englishName: 'English (US)', dir: 'ltr' },
+  'en-GB': { nativeName: 'English (UK)', englishName: 'English (UK)', dir: 'ltr' },
+  'en-AU': { nativeName: 'English (AU)', englishName: 'English (Australia)', dir: 'ltr' },
+  'zh-CN': { nativeName: '简体中文', englishName: 'Chinese (Simplified)', dir: 'ltr' },
+  'zh-TW': { nativeName: '繁體中文', englishName: 'Chinese (Traditional)', dir: 'ltr' },
+  'zh-HK': { nativeName: '繁體中文 (香港)', englishName: 'Chinese (Hong Kong)', dir: 'ltr' },
+  'ja': { nativeName: '日本語', englishName: 'Japanese', dir: 'ltr' },
+  'ko': { nativeName: '한국어', englishName: 'Korean', dir: 'ltr' },
+  'es': { nativeName: 'Español', englishName: 'Spanish', dir: 'ltr' },
+  'pt-BR': { nativeName: 'Português (Brasil)', englishName: 'Portuguese (Brazil)', dir: 'ltr' },
+  'fr': { nativeName: 'Français', englishName: 'French', dir: 'ltr' },
+  'de': { nativeName: 'Deutsch', englishName: 'German', dir: 'ltr' },
+  'it': { nativeName: 'Italiano', englishName: 'Italian', dir: 'ltr' },
+  'ru': { nativeName: 'Русский', englishName: 'Russian', dir: 'ltr' },
+  'tr': { nativeName: 'Türkçe', englishName: 'Turkish', dir: 'ltr' },
+  'ar': { nativeName: 'العربية', englishName: 'Arabic', dir: 'rtl' },
+  'fa': { nativeName: 'فارسی', englishName: 'Persian', dir: 'rtl' },
+  'id': { nativeName: 'Bahasa Indonesia', englishName: 'Indonesian', dir: 'ltr' },
+  'ms': { nativeName: 'Bahasa Melayu', englishName: 'Malay', dir: 'ltr' },
+  'vi': { nativeName: 'Tiếng Việt', englishName: 'Vietnamese', dir: 'ltr' },
+  'th': { nativeName: 'ไทย', englishName: 'Thai', dir: 'ltr' },
+  'my': { nativeName: 'မြန်မာ', englishName: 'Burmese', dir: 'ltr' },
+  'km': { nativeName: 'ខ្មែរ', englishName: 'Khmer', dir: 'ltr' },
+} as const satisfies Record<string, { nativeName: string; englishName: string; dir: 'ltr' | 'rtl' }>;
 
 export type LanguageCode = keyof typeof languages;
+
+/** The languages THIS brand offers, in the brand's display order. */
+export const availableLanguages: readonly LanguageCode[] = brandConfig.locales;
+
+export function languageDirection(lang: string): 'ltr' | 'rtl' {
+  return languages[lang as LanguageCode]?.dir ?? 'ltr';
+}
+
+/** Case-insensitive substring filter over native name, English name and code. */
+export function filterLanguages(query: string, codes: readonly LanguageCode[] = availableLanguages): LanguageCode[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [...codes];
+  return codes.filter((code) => {
+    const { nativeName, englishName } = languages[code];
+    return (
+      nativeName.toLowerCase().includes(q) ||
+      englishName.toLowerCase().includes(q) ||
+      code.toLowerCase().includes(q)
+    );
+  });
+}
 
 /** Shallow-recursive merge: overlay wins; objects merge, scalars/arrays replace. */
 function deepMerge<T extends Record<string, any>>(base: T, overlay: Record<string, any>): T {
@@ -69,55 +112,49 @@ const preloadResources = async (lang: string) => {
 };
 
 /**
- * 标准化语言代码，将不支持的语言代码映射到支持的语言
- * 用于确保外部链接使用有效的语言代码
+ * 标准化语言代码：把任意 BCP 47 标签映射到本品牌提供的语言，映射不到落品牌默认语言。
+ * 用于确保外部链接、已保存的偏好使用有效的语言代码。
  */
 export function normalizeLanguageCode(lang: string): LanguageCode {
-  if (lang in languages) {
-    return lang as LanguageCode;
+  return matchLocale([lang], availableLanguages, brandConfig.defaultLocale);
+}
+
+const STORAGE_KEY = 'kaitu-language';
+
+/**
+ * Boot language: an explicit earlier choice wins if this brand still offers it;
+ * otherwise walk the system's ordered language list (not just its first entry,
+ * so "fr, en" on a build without French still lands on English by preference
+ * rather than by default).
+ */
+export function detectInitialLanguage(
+  stored: string | null,
+  systemLanguages: readonly string[],
+): LanguageCode {
+  if (stored && (availableLanguages as readonly string[]).includes(stored)) {
+    return stored as LanguageCode;
   }
+  return matchLocale(systemLanguages, availableLanguages, brandConfig.defaultLocale);
+}
 
-  const primaryCode = lang.split('-')[0].toLowerCase();
-
-  const mappings: Record<string, LanguageCode> = {
-    'zh': 'zh-CN',
-    'zh-sg': 'zh-CN',
-    'zh-my': 'zh-CN',
-    'zh-hans': 'zh-CN',
-    'zh-hant': 'zh-TW',
-    'zh-mo': 'zh-HK',
-    'en': 'en-US',
-    'en-ca': 'en-US',
-    'en-nz': 'en-AU',
-    'en-za': 'en-GB',
-    'en-ie': 'en-GB',
-    'ja-jp': 'ja',
-  };
-
-  const lowerLang = lang.toLowerCase();
-  if (lowerLang in mappings) {
-    return mappings[lowerLang];
-  }
-
-  if (primaryCode in mappings) {
-    return mappings[primaryCode];
-  }
-
-  return brandConfig.defaultLocale;
+function applyDocumentLanguage(lang: string) {
+  document.documentElement.lang = lang;
+  document.documentElement.dir = languageDirection(lang);
 }
 
 // 初始化 i18n
 const initI18n = async () => {
   // 获取当前语言（从 localStorage 或浏览器设置）
-  const storedLang = localStorage.getItem('kaitu-language');
-  const browserLang = navigator.language;
-  const initialLang = normalizeLanguageCode(storedLang || browserLang);
+  const systemLanguages = navigator.languages?.length ? navigator.languages : [navigator.language];
+  const initialLang = detectInitialLanguage(localStorage.getItem(STORAGE_KEY), systemLanguages);
 
   // 预加载初始语言的所有 namespace
   const initialResources = await preloadResources(initialLang);
 
+  // No i18next language detector: it would persist the auto-detected language
+  // as if the user had chosen it, pinning the app to whatever the system
+  // language was on first launch. Only changeLanguage() writes the preference.
   await i18n
-    .use(LanguageDetector)
     .use(initReactI18next)
     .init({
       resources: {
@@ -134,12 +171,6 @@ const initI18n = async () => {
         defaultVariables: brandI18nVariables(initialLang),
       },
 
-      detection: {
-        order: ['localStorage', 'navigator'],
-        caches: ['localStorage'],
-        lookupLocalStorage: 'kaitu-language',
-      },
-
       // 懒加载后端配置
       partialBundledLanguages: true,
     });
@@ -150,7 +181,9 @@ const initI18n = async () => {
     if (i18n.options.interpolation) {
       i18n.options.interpolation.defaultVariables = brandI18nVariables(lng);
     }
+    applyDocumentLanguage(lng);
   });
+  applyDocumentLanguage(initialLang);
 
   return i18n;
 };
@@ -173,7 +206,7 @@ export const changeLanguage = async (lang: LanguageCode) => {
   }
 
   await i18n.changeLanguage(normalizedLang);
-  localStorage.setItem('kaitu-language', normalizedLang);
+  localStorage.setItem(STORAGE_KEY, normalizedLang);
 };
 
 // 导出初始化 promise

@@ -1,0 +1,79 @@
+{
+  "startup": {
+    "activeUsers": "ผู้ใช้ที่ใช้งานอยู่",
+    "certified": "ผ่านการรับรอง ISO 27001",
+    "uptime": "เวลาทำงานต่อเนื่อง",
+    "authSuccess": "ยืนยันตัวตนสำเร็จ อัปเดตสถานะการเข้าสู่ระบบแล้ว",
+    "deviceCanDirectLogin": "อุปกรณ์นี้เข้าสู่ระบบได้โดยตรง",
+    "deviceCannotDirectLogin": "อุปกรณ์นี้เข้าสู่ระบบโดยตรงไม่ได้",
+    "checkDeviceLoginFailed": "ตรวจสอบสถานะการเข้าสู่ระบบของอุปกรณ์ไม่สำเร็จ",
+    "deviceLoginFailed": "เข้าสู่ระบบด้วยอุปกรณ์ไม่สำเร็จ",
+    "deviceLoginFailedRetry": "เข้าสู่ระบบด้วยอุปกรณ์ไม่สำเร็จ โปรดลองอีกครั้ง",
+    "deviceLoginSuccess": "เข้าสู่ระบบด้วยอุปกรณ์สำเร็จ",
+    "pleaseEnterInviteCode": "กรุณากรอกรหัสเชิญ",
+    "registrationFailed": "สมัครใช้งานไม่สำเร็จ",
+    "registrationFailedRetry": "สมัครใช้งานไม่สำเร็จ โปรดลองอีกครั้ง",
+    "newDevice": "อุปกรณ์ใหม่",
+    "freeDeviceRegistrationFailed": "ลงทะเบียนอุปกรณ์แบบฟรีไม่สำเร็จ",
+    "inviteCodeIncorrect": "รหัสเชิญไม่ถูกต้อง",
+    "inviteCodeInvalidOrExpired": "รหัสเชิญไม่ถูกต้องหรือหมดอายุแล้ว",
+    "getInviteCodeInfoFailed": "ดึงข้อมูลรหัสเชิญไม่สำเร็จ",
+    "haveProAccount": "มีบัญชี Pro อยู่แล้ว?",
+    "loginProAccountDesc": "เข้าสู่ระบบบัญชี Pro ของคุณเพื่อใช้งานได้เต็มรูปแบบ",
+    "deviceAlreadyRegistered": "ตรวจพบว่าอุปกรณ์นี้มีบัญชีที่ลงทะเบียนไว้แล้ว",
+    "deviceReady": "อุปกรณ์พร้อมเข้าสู่ระบบ",
+    "deviceReadyDesc": "อุปกรณ์ของคุณลงทะเบียนแล้วและพร้อมใช้งาน",
+    "orEmailLogin": "หรือเข้าสู่ระบบด้วยอีเมล",
+    "experienceProFeatures": "ลองใช้ฟีเจอร์ Pro",
+    "enterInviteCodeDesc": "กรอกรหัสเชิญเพื่อลองใช้ฟีเจอร์ Pro ได้ทันที",
+    "inviteCode": "รหัสเชิญ",
+    "enterInviteCodePlaceholder": "กรอกรหัสเชิญ (ไม่บังคับ)",
+    "youHaveGoodFriend": "🎁 คุณมีเพื่อนที่แสนวิเศษ😼",
+    "enjoyNow": "ใช้งานเลย",
+    "days": "วัน",
+    "pro": "Pro",
+    "extraBonus": "โบนัสพิเศษ!",
+    "experience": "ทดลองใช้ {{days}} วัน",
+    "purchaseBonus": "ซื้อแล้วรับ {{purchaseDays}}+{{downloadDays}} วัน",
+    "buyNowExtraBonus": "ซื้อตอนนี้ รับเพิ่ม {{days}} วัน",
+    "buyNowEnjoyAllPro": "ซื้อตอนนี้เพื่อรับสิทธิประโยชน์ Pro ทั้งหมด",
+    "experienceOnly": "ทดลองใช้เพียง {{days}} วัน",
+    "experienceNow": "ลองใช้เลย",
+    "or": "หรือ",
+    "noAccountNoInviteCode": "ไม่มีบัญชีหรือรหัสเชิญ?",
+    "processing": "กำลังดำเนินการ...",
+    "registerNewAccount": "สมัครบัญชีใหม่ได้เลย"
+  },
+  "serviceStatus": {
+    "disconnected": "บริการขาดการเชื่อมต่อ กำลังเชื่อมต่อใหม่..."
+  },
+  "upgradeRequired": {
+    "title": "โปรดอัปเดตแอป",
+    "description": "เวอร์ชันปัจจุบันล้าสมัยแล้ว โปรดดาวน์โหลดเวอร์ชันล่าสุดเพื่อใช้งานต่อ",
+    "downloadButton": "ไปที่หน้าดาวน์โหลด"
+  },
+  "forceUpgrade": {
+    "title": "เวอร์ชันเก่าเกินไป ต้องอัปเดต",
+    "description": "แอปเวอร์ชันปัจจุบันของคุณ ({{currentVersion}}) ไม่ได้รับการสนับสนุนอีกต่อไป โปรดอัปเดตเป็นเวอร์ชัน {{minVersion}} ขึ้นไปเพื่อใช้งานต่อ",
+    "downloadButton": "อัปเดตเลย"
+  },
+  "app": {
+    "slogan": "บริการพร็อกซีเครือข่ายที่ปลอดภัยและใช้งานง่าย",
+    "error": "ข้อผิดพลาด",
+    "updateNow": "อัปเดตเลย",
+    "readyToInstall": "พร้อมติดตั้ง",
+    "hoverForDetails": "วางเมาส์เพื่อดูรายละเอียด",
+    "releaseNotes": "บันทึกประจำรุ่น",
+    "newVersionAvailable": "มีเวอร์ชันใหม่ {{version}} แล้ว!",
+    "updating": "กำลังอัปเดต",
+    "downloadingUpdate": "กำลังดาวน์โหลดและติดตั้งการอัปเดต... {{progress}}%",
+    "errorBoundary": {
+      "title": "แอปเกิดข้อผิดพลาด",
+      "description": "ระบบรายงานข้อผิดพลาดโดยอัตโนมัติแล้ว เราจะรีบแก้ไข",
+      "details": "รายละเอียดข้อผิดพลาด",
+      "retry": "ลองอีกครั้ง"
+    },
+    "installing": "กำลังติดตั้ง...",
+    "beingInstalled": "กำลังติดตั้ง..."
+  }
+}

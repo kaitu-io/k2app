@@ -1,0 +1,28 @@
+{
+  "feedback": {
+    "buttonLabel": "Laporkan Masalah",
+    "buttonTooltip": "Mengalami masalah? Klik untuk melaporkan",
+    "dialogTitle": "Laporkan Masalah",
+    "dialogDescription": "Mengklik kirim akan mengumpulkan log aplikasi untuk membantu kami mengidentifikasi dan menyelesaikan masalah. Log tidak mengandung informasi sensitif.",
+    "submitButton": "Kirim Umpan Balik",
+    "uploading": "Mengunggah log...",
+    "uploadSuccess": "Umpan Balik Dikirim",
+    "uploadSuccessDescription": "Terima kasih atas umpan balik Anda! Kami akan mengatasinya segera.",
+    "uploadError": "Pengiriman Gagal",
+    "uploadFailed": "Gagal mengunggah log. Silakan coba lagi nanti.",
+    "platformNotSupported": "Fitur ini belum didukung di platform saat ini",
+    "disconnectFeedback": {
+      "title": "Bagaimana koneksi Anda?",
+      "thankYou": "Terima kasih atas umpan balik Anda",
+      "detailTitle": "Apa yang salah? (opsional)",
+      "submit": "Kirim",
+      "tags": {
+        "slow": "Lambat",
+        "cantConnect": "Tidak dapat terhubung",
+        "frequentDrops": "Putus sering",
+        "contentBlocked": "Situs/video diblokir",
+        "other": "Lainnya"
+      }
+    }
+  }
+}

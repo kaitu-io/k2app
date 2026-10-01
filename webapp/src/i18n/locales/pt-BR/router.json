@@ -1,0 +1,61 @@
+{
+  "router": {
+    "title": "Roteador",
+    "connected": "Conectado",
+    "disconnected": "Desconectado",
+    "connect": "Conectar",
+    "disconnect": "Desconectar",
+    "offline": "Não é possível alcançar o roteador {{name}}. Verifique se está online.",
+    "retry": "Tentar Novamente"
+  },
+  "setup": {
+    "title": "Configurar {{name}}",
+    "intro": "Toque no botão abaixo para concluir a configuração inicial do roteador em uma única etapa.",
+    "submit": "Iniciar configuração",
+    "error": {
+      "mint_failed": "Falha ao obter credencial de conexão. Verifique sua rede e tente novamente.",
+      "key_failed": "Falha ao obter chave de controle. Verifique sua rede e tente novamente.",
+      "push_failed": "Falha ao enviar configuração para o roteador. Verifique se está online."
+    }
+  },
+  "settings": {
+    "title": "Configurações do Roteador",
+    "version": "Versão do firmware: {{version}}",
+    "unbind": "Desassociar",
+    "unbindConfirmTitle": "Desassociar este roteador?",
+    "unbindConfirmBody": "Após desassociação, este app não poderá mais controlar o roteador. Você precisará configurá-lo novamente para usá-lo.",
+    "unbindCancel": "Cancelar",
+    "unbindConfirm": "Desassociar"
+  },
+  "exclusion": {
+    "title": "Conectar ambos os túneis?",
+    "bodyRouter": "A VPN do seu dispositivo já está conectada. Continuar roteirará o tráfego por ambos os túneis ao mesmo tempo — recomendamos desconectar a VPN local primeiro.",
+    "bodyDashboard": "O roteador nesta rede já está protegendo seu tráfego. Continuar roteirará o tráfego por ambos os túneis ao mesmo tempo — recomendamos desconectar o roteador primeiro.",
+    "keep": "Manter ambos",
+    "proceedRouter": "Desconectar VPN local e continuar",
+    "proceedDashboard": "Desconectar roteador e continuar"
+  },
+  "takeover": {
+    "banner": "O roteador nesta rede está protegendo seu tráfego"
+  },
+  "legacy": {
+    "upgradeHint": "O firmware do roteador detectado está desatualizado. Atualize k2r no roteador antes de gerenciá-lo a partir do app."
+  },
+  "slots": {
+    "title": "Linhas",
+    "customName": "Nome personalizado",
+    "unbound": "Desassociado",
+    "failClosed": "Linha inativa — tráfego bloqueado",
+    "downFor": "Inativa por {{duration}}",
+    "rename": "Renomear Wi-Fi",
+    "renameHint": "1-32 caracteres",
+    "password": "Alterar senha Wi-Fi",
+    "passwordHint": "8-63 caracteres",
+    "confirm": "Aplicar",
+    "cancel": "Cancelar",
+    "applyFailed": "Falha ao aplicar, tente novamente",
+    "managedByAccount": "Este roteador é gerenciado por sua conta associada",
+    "unbindEnterpriseBody": "Desassociar colocará TODAS as linhas offline. Recuperação requer assistência do operador. Continuar?",
+    "managementGroup": "Rede de gerenciamento"
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "appBar": {
+    "refreshAuth": "승인 새로고침"
+  },
+  "navigation": {
+    "dashboard": "대시보드",
+    "discover": "발견",
+    "account": "계정",
+    "router": "라우터",
+    "devices": "기기",
+    "faq": "피드백",
+    "purchase": "구매",
+    "activate": "활성화",
+    "invite": "초대",
+    "retailer": "재판매인",
+    "proHistory": "승인 기록",
+    "help": "도움말"
+  },
+  "appBarConnector": {
+    "disconnecting": "연결 해제 중",
+    "connecting": "연결 중",
+    "antiClickProtection": "스팸 방지: 너무 빈번한 작업",
+    "refreshDataFailed": "작업 후 데이터 새로고침 실패:",
+    "connectionOperationFailed": "연결 작업 실패:",
+    "disconnectingTooltip": "연결 해제 중...",
+    "connectingTooltip": "연결 중...",
+    "clickToDisconnect": "클릭하여 연결 해제",
+    "clickToConnect": "클릭하여 연결",
+    "anonymous": "익명",
+    "disconnect": "연결 해제",
+    "connect": "연결",
+    "panel": "패널",
+    "noNodeSelected": "연결하기 전에 노드를 선택해 주세요"
+  },
+  "appBarMembership": {
+    "trial": "체험판",
+    "standard": "표준",
+    "expired": "만료됨",
+    "proTrial": "Pro 체험판",
+    "recharge": "충전",
+    "firstOrderPending": "첫 주문 대기 중",
+    "unlimitedTrial": "무제한 체험판",
+    "completePurchase": "구매 완료"
+  },
+  "layout": {
+    "deviceInstall": "다른 기기에 설치",
+    "troubleshooting": "문제 해결",
+    "accountAndSettings": "계정 및 설정"
+  }
+}

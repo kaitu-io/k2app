@@ -3,6 +3,8 @@
   "account": "アカウント",
   "login": "ログイン",
   "language": "言語",
+  "searchLanguage": "言語を検索",
+  "noLanguageFound": "一致する言語がありません",
   "footer": {
     "tagline": "ログを残さない、どんな回線でも速いプライベート VPN。",
     "company": "会社情報",

@@ -1,0 +1,17 @@
+{
+  "primary": "เมนูหลัก",
+  "account": "บัญชี",
+  "login": "เข้าสู่ระบบ",
+  "language": "ภาษา",
+  "searchLanguage": "ค้นหาภาษา",
+  "noLanguageFound": "ไม่พบภาษาที่ตรงกัน",
+  "footer": {
+    "tagline": "VPN ส่วนตัว ไม่เก็บล็อก เร็วในทุกเครือข่าย",
+    "company": "บริษัท",
+    "privacy": "นโยบายความเป็นส่วนตัว",
+    "terms": "ข้อกำหนดการให้บริการ",
+    "deleteAccount": "ลบบัญชีของคุณ",
+    "contact": "ติดต่อเรา",
+    "copyright": "© {year} {legalName} สงวนลิขสิทธิ์"
+  }
+}

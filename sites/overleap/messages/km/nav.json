@@ -1,0 +1,17 @@
+{
+  "primary": "ការរុករកមេ",
+  "account": "គណនី",
+  "login": "ចូលគណនី",
+  "language": "ភាសា",
+  "searchLanguage": "ស្វែងរកភាសា",
+  "noLanguageFound": "រកមិនឃើញភាសាដែលត្រូវគ្នា",
+  "footer": {
+    "tagline": "VPN ឯកជន។ គ្មានកំណត់ហេតុសកម្មភាព លឿនលើគ្រប់បណ្តាញ។",
+    "company": "ក្រុមហ៊ុន",
+    "privacy": "គោលការណ៍ឯកជនភាព",
+    "terms": "លក្ខខណ្ឌសេវាកម្ម",
+    "deleteAccount": "លុបគណនីរបស់អ្នក",
+    "contact": "ទាក់ទងយើង",
+    "copyright": "© {year} {legalName}។ រក្សាសិទ្ធិគ្រប់យ៉ាង។"
+  }
+}

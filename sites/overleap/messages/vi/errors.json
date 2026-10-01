@@ -1,0 +1,13 @@
+{
+  "network": "Không thể kết nối đến Overleap. Hãy kiểm tra kết nối mạng và thử lại.",
+  "generic": "Đã xảy ra lỗi. Vui lòng thử lại.",
+  "unauthorized": "Vui lòng đăng nhập trước.",
+  "invalidArgument": "Một số thông tin không hợp lệ.",
+  "invalidVerificationCode": "Mã không đúng. Hãy kiểm tra và thử lại.",
+  "verificationCodeExpired": "Mã đã hết hạn. Hãy yêu cầu mã mới.",
+  "invalidCredentials": "Email hoặc mật khẩu không đúng.",
+  "tooManyRequests": "Bạn đã thử quá nhiều lần. Vui lòng chờ một phút rồi thử lại.",
+  "serviceUnavailable": "Hiện chưa dùng được tính năng này. Vui lòng thử lại sau ít phút.",
+  "passwordTooShort": "Mật khẩu quá ngắn.",
+  "passwordTooWeak": "Mật khẩu quá yếu. Hãy dùng chuỗi dài hơn hoặc ngẫu nhiên hơn."
+}

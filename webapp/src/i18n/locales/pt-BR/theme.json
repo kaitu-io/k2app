@@ -1,0 +1,9 @@
+{
+  "theme": {
+    "switchToLight": "Claro",
+    "switchToDark": "Escuro",
+    "light": "Modo Claro",
+    "dark": "Modo Escuro",
+    "system": "Seguir Sistema"
+  }
+}

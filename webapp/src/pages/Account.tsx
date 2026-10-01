@@ -12,9 +12,6 @@ import {
   Divider,
   Alert,
   CircularProgress,
-  Select,
-  FormControl,
-  MenuItem,
   Card,
   CardContent,
   Stack,
@@ -43,13 +40,14 @@ import {
   AccountBalanceWallet as WalletIcon,
   Lock as LockIcon,
   Dns as DnsIcon,
+  ExpandMore as ExpandMoreIcon,
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../stores";
 import { useUser } from "../hooks/useUser";
-import { getFlagIcon } from "../utils/country";
-import { languages, changeLanguage, type LanguageCode } from "../i18n/i18n";
+import { languages, changeLanguage, normalizeLanguageCode, type LanguageCode } from "../i18n/i18n";
+import LanguageDialog from "../components/LanguageDialog";
 import { formatDate } from "../utils/time";
 import { cloudApi } from "../services/cloud-api";
 import { useLoginDialogStore } from "../stores/login-dialog.store";
@@ -99,7 +97,8 @@ export default function Account() {
   const { t, i18n } = useTranslation();
   const { links } = useAppLinks();
   const [appVersion, setAppVersion] = useState<string>("");
-  const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(i18n.language as LanguageCode || 'zh-CN');
+  const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(normalizeLanguageCode(i18n.language || ''));
+  const [languageDialogOpen, setLanguageDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -148,8 +147,9 @@ export default function Account() {
     }
   };
 
-  const handleLanguageChange = async (event: any) => {
-    const langCode = event.target.value as LanguageCode;
+  const handleLanguageChange = async (langCode: LanguageCode) => {
+    setLanguageDialogOpen(false);
+    if (langCode === selectedLanguage) return;
     setSelectedLanguage(langCode);
 
     // Use changeLanguage from i18n.ts which handles lazy loading of language resources
@@ -277,6 +277,7 @@ export default function Account() {
               mt: 0.5,
               display: 'block'
             }}
+            dir="auto"
           >
             {getBrandSlogan(i18n.language)}
           </Typography>
@@ -828,39 +829,16 @@ export default function Account() {
                 }
               />
               <ListItemSecondaryAction>
-                <FormControl size="small" sx={{ minWidth: 140 }}>
-                  <Select
-                    value={selectedLanguage}
-                    onChange={handleLanguageChange}
-                    variant="outlined"
-                    sx={{
-                      borderRadius: 1.5,
-                      '& .MuiSelect-select': {
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                        py: 1
-                      }
-                    }}
-                    renderValue={(value) => (
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        {getFlagIcon(languages[value]?.countryCode || 'CN')}
-                        <Typography variant="body2" component="span" sx={{ fontSize: '0.8rem' }}>
-                          {languages[value]?.nativeName || languages['zh-CN'].nativeName}
-                        </Typography>
-                      </Box>
-                    )}
-                  >
-                    {(Object.keys(languages) as LanguageCode[]).map((langCode) => (
-                      <MenuItem key={langCode} value={langCode}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                          {getFlagIcon(languages[langCode].countryCode)}
-                          <Typography sx={{ fontSize: '0.8rem' }}>{languages[langCode].nativeName}</Typography>
-                        </Box>
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() => setLanguageDialogOpen(true)}
+                  endIcon={<ExpandMoreIcon />}
+                  aria-label={t('account:account.selectLanguage')}
+                  sx={{ borderRadius: 1.5, textTransform: 'none', fontSize: '0.8rem', minWidth: 140, justifyContent: 'space-between' }}
+                >
+                  {languages[selectedLanguage].nativeName}
+                </Button>
               </ListItemSecondaryAction>
             </ListItem>
 
@@ -949,6 +927,13 @@ export default function Account() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <LanguageDialog
+        open={languageDialogOpen}
+        value={selectedLanguage}
+        onClose={() => setLanguageDialogOpen(false)}
+        onSelect={handleLanguageChange}
+      />
 
       <PasswordDialog
         open={showPasswordDialog}

@@ -1,0 +1,17 @@
+{
+  "privacy": {
+    "title": "개인정보처리방침",
+    "metaTitle": "개인정보처리방침 | Overleap",
+    "subtitle": "수집하는 정보와 그 이유, 그리고 절대 기록하지 않는 정보를 안내합니다."
+  },
+  "terms": {
+    "title": "이용약관",
+    "metaTitle": "이용약관 | Overleap",
+    "subtitle": "회원님과 Overleap LLC 간의 약관입니다."
+  },
+  "deleteAccount": {
+    "title": "계정 삭제",
+    "metaTitle": "계정 삭제 | Overleap",
+    "subtitle": "Overleap 계정을 삭제하는 방법과 삭제 후 데이터가 어떻게 처리되는지 안내합니다."
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "primary": "Navigasi utama",
+  "account": "Akun",
+  "login": "Masuk",
+  "language": "Bahasa",
+  "searchLanguage": "Cari bahasa",
+  "noLanguageFound": "Tidak ada bahasa yang cocok",
+  "footer": {
+    "tagline": "VPN privat. Tanpa log, cepat di jaringan apa pun.",
+    "company": "Perusahaan",
+    "privacy": "Kebijakan Privasi",
+    "terms": "Ketentuan Layanan",
+    "deleteAccount": "Hapus akun Anda",
+    "contact": "Hubungi kami",
+    "copyright": "© {year} {legalName}. Hak cipta dilindungi undang-undang."
+  }
+}

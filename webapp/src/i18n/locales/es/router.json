@@ -1,0 +1,61 @@
+{
+  "router": {
+    "title": "Router",
+    "connected": "Conectado",
+    "disconnected": "Desconectado",
+    "connect": "Conectar",
+    "disconnect": "Desconectar",
+    "offline": "No se puede alcanzar el router {{name}}. Verifica que esté en línea.",
+    "retry": "Reintentar"
+  },
+  "setup": {
+    "title": "Configurar {{name}}",
+    "intro": "Toca el botón a continuación para completar la configuración inicial del router en un solo paso.",
+    "submit": "Iniciar configuración",
+    "error": {
+      "mint_failed": "No se pudo obtener una credencial de conexión. Verifica tu red e intenta de nuevo.",
+      "key_failed": "No se pudo obtener una clave de control. Verifica tu red e intenta de nuevo.",
+      "push_failed": "No se pudo enviar la configuración al router. Verifica que esté en línea."
+    }
+  },
+  "settings": {
+    "title": "Configuración del router",
+    "version": "Versión de firmware: {{version}}",
+    "unbind": "Desvinculación",
+    "unbindConfirmTitle": "¿Desvincular este router?",
+    "unbindConfirmBody": "Después de desvincular, esta app ya no podrá controlar el router. Tendrás que configurarlo de nuevo para usarlo.",
+    "unbindCancel": "Cancelar",
+    "unbindConfirm": "Desvinculación"
+  },
+  "exclusion": {
+    "title": "¿Conectar ambos túneles?",
+    "bodyRouter": "El VPN de tu dispositivo ya está conectado. Continuar enrutará el tráfico a través de ambos túneles a la vez — recomendamos desconectar primero la VPN local.",
+    "bodyDashboard": "El router en esta red ya está protegiendo tu tráfico. Continuar enrutará el tráfico a través de ambos túneles a la vez — recomendamos desconectar primero el router.",
+    "keep": "Mantener ambos",
+    "proceedRouter": "Desconectar VPN local y continuar",
+    "proceedDashboard": "Desconectar router y continuar"
+  },
+  "takeover": {
+    "banner": "El router en esta red está protegiendo tu tráfico"
+  },
+  "legacy": {
+    "upgradeHint": "Se detectó que el firmware del router está desactualizado. Por favor, actualiza k2r en el router antes de administrarlo desde la app."
+  },
+  "slots": {
+    "title": "Líneas",
+    "customName": "Nombre personalizado",
+    "unbound": "Desvinculado",
+    "failClosed": "Línea caída — tráfico bloqueado",
+    "downFor": "Caída durante {{duration}}",
+    "rename": "Renombrar Wi-Fi",
+    "renameHint": "1-32 caracteres",
+    "password": "Cambiar contraseña Wi-Fi",
+    "passwordHint": "8-63 caracteres",
+    "confirm": "Aplicar",
+    "cancel": "Cancelar",
+    "applyFailed": "No se pudo aplicar, por favor intenta de nuevo",
+    "managedByAccount": "Este router es administrado por su cuenta vinculada",
+    "unbindEnterpriseBody": "La desvinculación desconectará TODAS las líneas. La recuperación requiere asistencia del operador. ¿Continuar?",
+    "managementGroup": "Red de administración"
+  }
+}

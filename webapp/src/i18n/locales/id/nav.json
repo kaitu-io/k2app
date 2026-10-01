@@ -1,0 +1,50 @@
+{
+  "appBar": {
+    "refreshAuth": "Segarkan Otorisasi"
+  },
+  "navigation": {
+    "dashboard": "Dasbor",
+    "discover": "Temukan",
+    "account": "Akun",
+    "router": "Router",
+    "devices": "Perangkat",
+    "faq": "Umpan Balik",
+    "purchase": "Beli",
+    "activate": "Aktifkan",
+    "invite": "Undang",
+    "retailer": "Penjual Kembali",
+    "proHistory": "Riwayat Otorisasi",
+    "help": "Bantuan"
+  },
+  "appBarConnector": {
+    "disconnecting": "Memutuskan",
+    "connecting": "Menghubungkan",
+    "antiClickProtection": "Perlindungan anti-spam: Operasi terlalu sering",
+    "refreshDataFailed": "Gagal menyegarkan data setelah operasi:",
+    "connectionOperationFailed": "Operasi koneksi gagal:",
+    "disconnectingTooltip": "Memutuskan...",
+    "connectingTooltip": "Menghubungkan...",
+    "clickToDisconnect": "Klik untuk putuskan",
+    "clickToConnect": "Klik untuk hubungkan",
+    "anonymous": "Anonim",
+    "disconnect": "Putuskan",
+    "connect": "Hubungkan",
+    "panel": "Panel",
+    "noNodeSelected": "Silakan pilih node sebelum menghubungkan"
+  },
+  "appBarMembership": {
+    "trial": "Trial",
+    "standard": "Standar",
+    "expired": "Kadaluarsa",
+    "proTrial": "Pro Trial",
+    "recharge": "Isi Ulang",
+    "firstOrderPending": "Pesanan Pertama Tertunda",
+    "unlimitedTrial": "Trial Tidak Terbatas",
+    "completePurchase": "Selesaikan Pembelian"
+  },
+  "layout": {
+    "deviceInstall": "Instal di Perangkat Lain",
+    "troubleshooting": "Pemecahan Masalah",
+    "accountAndSettings": "Akun & Pengaturan"
+  }
+}

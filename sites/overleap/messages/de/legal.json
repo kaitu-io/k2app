@@ -1,0 +1,17 @@
+{
+  "privacy": {
+    "title": "Datenschutzerklärung",
+    "metaTitle": "Datenschutzerklärung | Overleap",
+    "subtitle": "Was wir erfassen, warum wir es tun und was wir nie aufzeichnen."
+  },
+  "terms": {
+    "title": "Nutzungsbedingungen",
+    "metaTitle": "Nutzungsbedingungen | Overleap",
+    "subtitle": "Die Vereinbarung zwischen dir und Overleap LLC."
+  },
+  "deleteAccount": {
+    "title": "Konto löschen",
+    "metaTitle": "Konto löschen | Overleap",
+    "subtitle": "So löschst du dein Overleap-Konto und was mit deinen Daten geschieht."
+  }
+}

@@ -58,7 +58,7 @@ Spec: `docs/superpowers/specs/2026-08-14-web-ota-design.md` §4。
 ```
 DO NOT:
   - Direct fetch/axios calls from pages/components (use cloudApi; cache via cacheStore)
-  - Hardcoded UI text in components (i18n — new text goes to zh-CN first, then all 6 other locales)
+  - Hardcoded UI text in components (i18n — new text goes to zh-CN first, then every other locale dir)
   - Access window._k2 for API calls (cloudApi) or for platform capabilities (window._platform)
   - Use npm (use yarn)
   - Display response.message to users (use code + i18n)
@@ -95,7 +95,7 @@ DO:
 
 Never hand-write a code→key mapping outside that file. In catch blocks, log the raw error and show an i18n fallback string to the user.
 
-`ENGINE_ERROR_CODES` in the same file mirrors `k2/engine/error.go`; `services/__tests__/k2-engine-codes.test.ts` parses the Go source and fails on drift. It is **fail-closed**: a missing `k2/engine/error.go` throws at load (never skips) — CI inits the submodule; locally `git submodule update --init k2`. `utils/__tests__/errorCatalog.test.ts` fails if any declared code lacks copy in all 7 locales. `i18n/__tests__/static-keys.test.ts` does the same for every statically-written `t('key')` in `src/` (dynamic template keys are a known blind spot).
+`ENGINE_ERROR_CODES` in the same file mirrors `k2/engine/error.go`; `services/__tests__/k2-engine-codes.test.ts` parses the Go source and fails on drift. It is **fail-closed**: a missing `k2/engine/error.go` throws at load (never skips) — CI inits the submodule; locally `git submodule update --init k2`. `utils/__tests__/errorCatalog.test.ts` fails if any declared code lacks copy in every locale. `i18n/__tests__/static-keys.test.ts` does the same for every statically-written `t('key')` in `src/` (dynamic template keys are a known blind spot).
 
 ### API Error Code Constitution
 
@@ -105,7 +105,7 @@ Checklist for new backend error codes:
 1. Add constant to `api/response.go`
 2. Add to `ERROR_CODES` in `utils/errorCatalog.ts`
 3. Add a row to `API_ERROR_CATALOG` (or list the code in `LOG_ONLY_CODES` if it is deliberately never shown) — `getErrorMessage()` derives from the table, there is no `switch` to edit
-4. Add i18n translation in all 7 locales
+4. Add i18n translation in every locale
 5. Never duplicate error code constants outside `errorCatalog.ts`
 6. **Regenerate the cross-layer contract** — the error-code registry is part of
    `contracts/api-contract.json`, so a new constant fails `TestExportContract`
@@ -198,6 +198,7 @@ BUILD TIME — env `K2_BRAND=kaitu|overleap` (default `kaitu`) → Vite/Vitest d
   copy lives in `src/brands/<brand>/locales/<lang>/<ns>.json` overlays (deep-merged at load;
   only the active brand's overlays are bundled). Guard test:
   `src/i18n/__tests__/brand-literals.test.ts`. Kaitu default locale zh-CN; overleap en-US.
+- **Languages**: `languages` in `i18n/i18n.ts` is the registry (native name, English name, direction); a brand OFFERS only its `brandConfig.locales` (kaitu 7, overleap all 23) — the picker (`components/LanguageDialog.tsx`), boot detection and `normalizeLanguageCode` all stay inside that whitelist. Boot language = stored choice if still offered, else `matchLocale(navigator.languages)` (`i18n/match-locale.ts`), else brand default; auto-detection is never persisted. `ar` / `fa` are RTL: `<html dir>` + MUI `direction` + the stylis RTL plugin (`contexts/ThemeContext.tsx`) mirror emotion styles automatically — inline `style={{ marginLeft }}` is NOT mirrored. Adding a language: registry entry + `locales/<lang>/` with every namespace (`i18n/__tests__/locale-coverage.test.ts`, structure via `scripts/i18n-check-translation.mjs`) + the brand's `locales`. The brand name is never translated — copy uses `{{brand}}`.
 - **Tests must be brand-adaptive**: `vitest` bakes the brand the same way builds do, so
   `K2_BRAND=overleap npx vitest run` must also exit 0. Never hardcode brand identity in
   assertions — assert against `brandConfig.*` / `getBrandName()`, or against the

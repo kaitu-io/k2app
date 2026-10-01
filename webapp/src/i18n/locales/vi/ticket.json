@@ -1,0 +1,108 @@
+{
+  "feedback": {
+    "newTicket": "Vé mới",
+    "viewTickets": "Xem các vé",
+    "myTickets": "Các vé của tôi",
+    "noTickets": "Chưa có vé nào",
+    "noTicketsHint": "Gặp vấn đề? Gửi một vé và chúng tôi sẽ liên lạc với bạn",
+    "loadError": "Không thể tải, vui lòng thử lại",
+    "status": {
+      "open": "Mở",
+      "resolved": "Đã giải quyết",
+      "closed": "Đóng"
+    },
+    "adminReplied": "Hỗ trợ đã trả lời",
+    "replyPlaceholder": "Nhập phản hồi của bạn...",
+    "closedNotice": "Vé này đã được đóng",
+    "replyFailed": "Không thể gửi phản hồi",
+    "loginToView": "Đăng nhập bằng {{email}} để xem tiến độ và phản hồi",
+    "time": {
+      "justNow": "Vừa xong",
+      "minutesAgo": "{{count}}m trước",
+      "hoursAgo": "{{count}}h trước",
+      "daysAgo": "{{count}}d trước"
+    },
+    "send": "Gửi"
+  },
+  "faq": {
+    "title": "Câu hỏi thường gặp",
+    "subtitle": "Kiểm tra trước — hầu hết các vấn đề được giải quyết nhanh chóng",
+    "stillNeedHelp": "Không tìm thấy câu trả lời?",
+    "submitCta": "Gửi vé",
+    "entryTitle": "Câu hỏi thường gặp",
+    "entryHint": "Kiểm tra Câu hỏi thường gặp trước khi gửi — nó có thể giải quyết vấn đề của bạn nhanh hơn",
+    "items": {
+      "connection": {
+        "question": "Tôi nên làm gì về kết nối không ổn định hoặc tốc độ chậm?",
+        "answer": "Vấn đề tốc độ thường liên quan đến mạng cục bộ của bạn. Vui lòng khắc phục sự cố theo thứ tự sau:\n\n1. Trước tiên hãy thử các dòng đường hầm khác nhau. Nếu tất cả các dòng đều chậm, gần như chắc chắn là vấn đề mạng cục bộ.\n2. Khởi động lại router của bạn. Điều này giải quyết hầu hết vấn đề bộ nhớ cache định tuyến và liên kết tạm thời.\n3. Gọi ISP của bạn và hỏi xem họ đã áp dụng việc điều chỉnh mục tiêu cho lưu lượng nước ngoài hay không.\n4. Nếu ISP đề nghị gửi một kỹ thuật viên tại chỗ, hãy từ chối — ISP thường có KPI \"xử lý broadband\" và sẽ đẩy bạn hạ cấp gói bằng cách trích dẫn \"lỗi đường dây\" giả.\n5. Chỉ sau khi loại trừ những điều trên, nó mới có thể là vấn đề nút. Gửi phản hồi kèm nhật ký và chúng tôi sẽ điều tra."
+      },
+      "appNotWorking": {
+        "question": "Một ứng dụng hoặc trò chơi cụ thể dừng hoạt động sau khi tôi cài đặt {{brand}} — bây giờ sao?",
+        "answer": "Một số ứng dụng (đáng chú ý là Adobe Creative Cloud, một số trò chơi, các ứng dụng nhắn tin của bên thứ ba và các ứng dụng ngân hàng/chính phủ/video của Trung Quốc) lưu trữ địa chỉ máy chủ của riêng họ hoặc yêu cầu IP ở trong nước để hoạt động. Khi {{brand}} bật, những yêu cầu đó được định tuyến qua proxy và có thể bị từ chối hoặc hết thời gian. Thử theo thứ tự này:\n\n1. Khởi động lại ứng dụng — hầu hết lúc, thoát và mở lại cho phép nó làm mới bộ nhớ cache máy chủ của nó.\n2. Chuyển sang Bỏ qua thông minh — mở rộng Cài đặt nâng cao ở cuối Bảng điều khiển, thay đổi Chế độ định tuyến từ Proxy toàn cầu thành Bỏ qua thông minh và chọn một quốc gia (hoặc bật tự động phát hiện). Lưu lượng ở trong nước sau đó sẽ trực tiếp trong mạng cục bộ của bạn và chỉ lưu lượng nước ngoài mới sử dụng proxy, điều này khôi phục hầu hết các ứng dụng Trung Quốc / ngân hàng / trang web video ngay lập tức. Lưu ý: chế độ định tuyến chỉ có thể được thay đổi khi {{brand}} bị ngắt kết nối. Bỏ qua thông minh cũng tự động phát hiện các ứng dụng Trung Quốc phổ biến (WeChat, Taobao, Douyin, 12306, v.v.) và giữ chúng ở chế độ trực tiếp.\n3. Thêm ứng dụng vào \"Ứng dụng bỏ qua VPN\" — đối với các ứng dụng cứng đầu mà Bỏ qua thông minh không bao gồm (các trò chơi chỉ dành cho trong nước cũ, công cụ công ty nội bộ), hãy đi tới Cài đặt nâng cao → Ứng dụng bỏ qua VPN và thêm nó. Lưu lượng của ứng dụng đó sẽ hoàn toàn bỏ qua proxy. Trên máy tính để bàn, danh sách chỉ hiển thị các ứng dụng hiện đang chạy — khởi chạy ứng dụng mục tiêu trước, sau đó quay lại và thêm nó.\n4. Tạm thời ngắt kết nối {{brand}} — trong những trường hợp hiếm gặp (ví dụ: Adobe Creative Cloud lưu trữ IP legacy không còn tồn tại), ngắt kết nối {{brand}} khi sử dụng ứng dụng đó và kết nối lại sau đó.\n5. Nếu không có cách nào ở trên giúp được, hãy gửi một vé kèm nhật ký và các kỹ sư của chúng tôi sẽ điều tra."
+      },
+      "nodeChoice": {
+        "question": "Có rất nhiều nút — tôi nên chọn cái nào?",
+        "answer": "Tùy chọn dễ nhất: sử dụng Tự động chọn. Nhấp \"Tự động chọn\" ở đầu danh sách nút và {{brand}} sẽ chọn nút tốt nhất dựa trên độ trễ thực tế và tải. Bật \"Chuyển tự động\" và nó sẽ di chuyển bạn đến một nút tốt hơn khi điều kiện thay đổi. Đây là lựa chọn tốt nhất cho hầu hết người dùng.\n\nNếu bạn thực sự muốn chọn thủ công:\n\n• Không phải lúc nào cũng nhấp nút đầu tiên — nút đầu tiên (đặc biệt là AU / Australia) bị làm quá vì hầu hết người dùng nhấp nút đầu tiên theo bản năng.\n• Thử JP / SG / KR / US trước — thường ổn định và nhanh hơn.\n• Nếu nó sẽ không kết nối hoặc cảm thấy chậm, hãy chuyển sang cái khác — nút tốt nhất thay đổi theo khu vực và thời gian trong ngày.\n• Phát trực tuyến và duyệt web không nhạy cảm với lựa chọn nút; chơi game và gọi video là độc lập với độ trễ, vì vậy hãy thử một vài lần và gắn bó với cái ổn định nhất."
+      },
+      "wifiSwitch": {
+        "question": "VPN ngắt kết nối sau khi chuyển WiFi hoặc mạng?",
+        "answer": "{{brand}} hỗ trợ kết nối lại tự động sau khi thay đổi mạng, nhưng kích hoạt có độ trễ từ vài giây đến một chục giây. Nếu bạn không muốn chờ, hãy thủ công nhấp Ngắt kết nối rồi Kết nối để khôi phục ngay lập tức."
+      },
+      "deviceRemoved": {
+        "question": "Tại sao thiết bị của tôi bị xóa / bị loại ra?",
+        "answer": "Mỗi tài khoản hỗ trợ tối đa 5 thiết bị đăng nhập cùng lúc. Khi bạn đăng nhập trên thiết bị thứ 6, hệ thống tự động xóa thiết bị đã đăng nhập sớm nhất.\n\nNếu bạn chắc chắn rằng bạn chưa vượt quá 5 thiết bị nhưng vẫn bị loại, vui lòng gửi phản hồi và chúng tôi sẽ giúp bạn kiểm tra các ràng buộc thiết bị của tài khoản."
+      },
+      "updateIssue": {
+        "question": "Ứng dụng không hoạt động sau khi cập nhật?",
+        "answer": "Cơ chế cập nhật khác nhau trên các nền tảng, và các plugin đôi khi không tải lại ngay lập tức:\n\n• Windows / macOS: Khởi động lại máy tính của bạn để phiên bản mới có hiệu lực đầy đủ.\n• iOS: Nếu bạn thấy vấn đề sau khi cập nhật, hãy xóa ứng dụng và cài đặt lại từ App Store — điều này giải quyết các vấn đề tải lại plugin Network Extension.\n• Android: Khởi động lại điện thoại của bạn, hoặc buộc dừng ứng dụng trong Cài đặt và mở lại."
+      },
+      "loginFailed": {
+        "question": "Đăng nhập không thành công / mã xác minh không được nhận?",
+        "answer": "Nguyên nhân phổ biến nhất là lỗi đánh máy trong email — khoảng 30% người dùng trong cơ sở dữ liệu của chúng tôi đánh máy sai email lần đầu tiên. Vui lòng kiểm tra từng ký tự:\n\n• Khoảng trắng hoặc ký tự thừa xung quanh ký hiệu @\n• Chính tả miền (ví dụ: gmial → gmail, hotmial → hotmail)\n• Nhầm lẫn giữa 0 (không) và O (chữ cái)\n\nSau khi xác nhận, kiểm tra thư mục spam. Nếu không có gì xuất hiện, hãy thử địa chỉ email khác."
+      }
+    }
+  },
+  "ticket": {
+    "title": "Gửi vé",
+    "description": "Mô tả vấn đề của bạn và chúng tôi sẽ trả lời qua email sớm nhất có thể.",
+    "feedbackTitle": "Phản hồi",
+    "contentLabel": "Mô tả sự cố",
+    "contentPlaceholder": "Vui lòng mô tả vấn đề chi tiết, bao gồm các bước hoạt động, thông báo lỗi, v.v., điều này sẽ giúp chúng tôi giải quyết vấn đề nhanh hơn.",
+    "submitButton": "Gửi vé",
+    "loginToSubmit": "Đăng nhập để gửi",
+    "submitting": "Đang gửi...",
+    "submitSuccess": "Vé được gửi thành công",
+    "submitSuccessTitle": "Vé được gửi thành công!",
+    "submitFailed": "Không thể gửi vé, vui lòng thử lại sau",
+    "nextStepHint": "Vui lòng kiểm tra email của bạn",
+    "emailReplyHint": "Nhóm hỗ trợ của chúng tôi sẽ liên lạc với bạn qua email, vui lòng chú ý các phản hồi trong hộp thư đến của bạn.",
+    "howItWorks": "Cách hoạt động",
+    "dataCollectionHint": "Phiên bản ứng dụng, thông tin hệ thống và nhật ký được tự động thu thập khi gửi để giúp chúng tôi chẩn đoán vấn đề nhanh hơn.",
+    "stepper": {
+      "step1": "Mô tả sự cố",
+      "step2": "Tải lên nhật ký",
+      "step3": "Trả lời email"
+    },
+    "entryTitle": "Liên hệ hỗ trợ",
+    "entryDescription": "Gặp vấn đề? Gửi một vé, chúng tôi sẽ trả lời sớm",
+    "betaWarning": "Bạn đang sử dụng phiên bản Beta. Nếu bạn gặp vấn đề, bạn có thể chuyển trở lại phiên bản ổn định trong cài đặt Tài khoản.",
+    "switchToStable": "Chuyển sang ổn định",
+    "emailLabel": "Email liên hệ",
+    "emailPlaceholder": "Nhập địa chỉ email của bạn để chúng tôi có thể trả lời",
+    "anonymousHint": "Bạn chưa đăng nhập. Chúng tôi sẽ trả lời bạn qua email sau khi gửi.",
+    "validation": {
+      "contentRequired": "Vui lòng nhập mô tả sự cố",
+      "contentTooLong": "Mô tả sự cố không thể vượt quá 5000 ký tự",
+      "emailRequired": "Vui lòng nhập địa chỉ email của bạn",
+      "emailInvalid": "Vui lòng nhập địa chỉ email hợp lệ"
+    },
+    "quickIssue": {
+      "label": "Chọn nhanh",
+      "cannotConnect": "Không thể kết nối",
+      "unstable": "Kết nối không ổn định",
+      "slow": "Tốc độ chậm",
+      "crash": "Sự cố ứng dụng",
+      "subscription": "Vấn đề đăng ký"
+    }
+  }
+}

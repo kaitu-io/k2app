@@ -1,0 +1,28 @@
+{
+  "feedback": {
+    "buttonLabel": "Sorun Bildir",
+    "buttonTooltip": "Sorun mu yaşıyorsunuz? Bildirmek için tıkla",
+    "dialogTitle": "Sorun Bildir",
+    "dialogDescription": "Gönder'i tıklamak, sorunları tanımlamak ve çözmek için bize yardımcı olacak uygulama günlüklerini toplar. Günlükler hassas bilgiler içermez.",
+    "submitButton": "Geri Bildirim Gönder",
+    "uploading": "Günlükler yükleniyor...",
+    "uploadSuccess": "Geri Bildirim Gönderildi",
+    "uploadSuccessDescription": "Geri bildiriminiz için teşekkür ederiz! Bunu yakında ele alacağız.",
+    "uploadError": "Gönderim Başarısız",
+    "uploadFailed": "Günlükler yüklenemedi. Lütfen daha sonra tekrar deneyin.",
+    "platformNotSupported": "Bu özellik şu anda mevcut platformda henüz desteklenmiyor",
+    "disconnectFeedback": {
+      "title": "Bağlantınız nasıldı?",
+      "thankYou": "Geri bildiriminiz için teşekkür ederiz",
+      "detailTitle": "Neyin yanlış olduğu (isteğe bağlı)?",
+      "submit": "Gönder",
+      "tags": {
+        "slow": "Yavaş",
+        "cantConnect": "Bağlanılamıyor",
+        "frequentDrops": "Sık kopma",
+        "contentBlocked": "Siteler/videolar engellendi",
+        "other": "Diğer"
+      }
+    }
+  }
+}

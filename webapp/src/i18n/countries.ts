@@ -3,6 +3,8 @@ import zhLocale from "i18n-iso-countries/langs/zh.json";
 import enLocale from "i18n-iso-countries/langs/en.json";
 import jaLocale from "i18n-iso-countries/langs/ja.json";
 import i18n, { languages } from "./i18n";
+import { brandConfig } from "../brands";
+import { intlRegionName } from "../utils/countries";
 
 // 获取对应的locale文件
 function getLocaleForLanguage(langCode: string) {
@@ -27,25 +29,29 @@ Object.keys(languages).forEach(langCode => {
   }
 });
 
+const REGISTERED = new Set(['en', 'zh', 'ja']);
+
 // 获取当前i18n语言对应的countries库语言代码
 function getCurrentLanguage(): string {
   const currentLang = i18n.language;
-  return currentLang.split('-')[0] || 'zh';
+  return currentLang.split('-')[0] || brandConfig.defaultLocale.split('-')[0];
 }
 
 // 获取国家名称（自动使用当前语言）
 export function getCountryName(alpha2: string, lang?: string): string {
+  const targetLang = lang || getCurrentLanguage();
   if (!alpha2) {
-    // 根据当前语言返回相应的"未知地区"文本
-    const currentLang = lang || getCurrentLanguage();
-    switch (currentLang) {
-      case 'en': return "Unknown Region";
+    switch (targetLang) {
+      case 'zh': return "未知地区";
       case 'ja': return "未知の地域";
-      default: return "未知地区";
+      default: return "Unknown Region";
     }
   }
-  
-  const targetLang = lang || getCurrentLanguage();
+
+  // Languages without a bundled table ask the platform, then fall back to English.
+  if (!REGISTERED.has(targetLang)) {
+    return intlRegionName(alpha2, lang || i18n.language) || countries.getName(alpha2, 'en') || alpha2;
+  }
   return countries.getName(alpha2, targetLang) || alpha2;
 }
 

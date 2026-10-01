@@ -1,0 +1,45 @@
+{
+  "metaTitle": "Tài khoản của bạn",
+  "title": "Tài khoản của bạn",
+  "subtitle": "Quản lý gói đăng ký và thông tin đăng nhập.",
+  "loading": "Đang tải",
+  "navSubscription": "Gói đăng ký",
+  "navSecurity": "Bảo mật",
+  "signOut": "Đăng xuất",
+  "subscriptionTitle": "Gói đăng ký của bạn",
+  "renewsOn": "Gia hạn vào {date}",
+  "endsOn": "Hết hạn vào {date}",
+  "manage": "Quản lý gói đăng ký",
+  "opening": "Đang mở…",
+  "noSubscriptionTitle": "Chưa có gói đăng ký nào đang hoạt động",
+  "noSubscription": "Hãy chọn một gói để dùng Overleap trên tối đa năm thiết bị.",
+  "seePlans": "Xem các gói",
+  "activating": "Đang kích hoạt gói đăng ký của bạn…",
+  "activationDelayed": "Chúng tôi đã nhận được thanh toán. Gói đăng ký sẽ được kích hoạt trong vài phút — hãy tải lại trang này để kiểm tra.",
+  "downloadTitle": "Mọi thứ đã sẵn sàng — tải ứng dụng",
+  "downloadBody": "Cài đặt Overleap và đăng nhập bằng địa chỉ email này.",
+  "downloadCta": "Tải Overleap",
+  "cancel": "Hủy",
+  "confirm": "Lưu",
+  "password": {
+    "setPassword": "Đặt mật khẩu",
+    "changePassword": "Đổi mật khẩu",
+    "newPassword": "Mật khẩu mới",
+    "confirmPassword": "Xác nhận mật khẩu",
+    "requirements": "Tối thiểu {length} ký tự. Tránh dùng từ thông dụng, chuỗi phím liền kề và ký tự lặp lại.",
+    "mismatch": "Mật khẩu không khớp",
+    "setSuccess": "Đã lưu mật khẩu",
+    "strength": {
+      "label": "Độ mạnh của mật khẩu",
+      "veryWeak": "Rất yếu",
+      "weak": "Yếu",
+      "fair": "Trung bình",
+      "good": "Khá tốt",
+      "strong": "Mạnh"
+    }
+  },
+  "security": {
+    "passwordSet": "Đặt mật khẩu để đăng nhập bằng email và mật khẩu. Bạn vẫn có thể dùng mã dùng một lần.",
+    "passwordChange": "Bạn đã đặt mật khẩu. Bạn có thể đổi mật khẩu tại đây."
+  }
+}

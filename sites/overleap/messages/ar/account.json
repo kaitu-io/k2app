@@ -1,0 +1,45 @@
+{
+  "metaTitle": "حسابك",
+  "title": "حسابك",
+  "subtitle": "أدِر اشتراكك وتسجيل الدخول.",
+  "loading": "جارٍ التحميل",
+  "navSubscription": "الاشتراك",
+  "navSecurity": "الأمان",
+  "signOut": "تسجيل الخروج",
+  "subscriptionTitle": "اشتراكك",
+  "renewsOn": "يتجدد في {date}",
+  "endsOn": "ينتهي في {date}",
+  "manage": "إدارة الاشتراك",
+  "opening": "جارٍ الفتح…",
+  "noSubscriptionTitle": "لا يوجد اشتراك فعّال",
+  "noSubscription": "اختر باقة لتبدأ استخدام Overleap على ما يصل إلى خمسة أجهزة.",
+  "seePlans": "عرض الباقات",
+  "activating": "جارٍ تفعيل اشتراكك…",
+  "activationDelayed": "تم استلام الدفعة. سيتم تفعيل اشتراكك خلال دقائق، حدّث هذه الصفحة للتحقق.",
+  "downloadTitle": "أنت جاهز تمامًا، حمّل التطبيقات",
+  "downloadBody": "ثبّت Overleap وسجّل الدخول بعنوان البريد الإلكتروني هذا.",
+  "downloadCta": "تحميل Overleap",
+  "cancel": "إلغاء",
+  "confirm": "حفظ",
+  "password": {
+    "setPassword": "تعيين كلمة مرور",
+    "changePassword": "تغيير كلمة المرور",
+    "newPassword": "كلمة المرور الجديدة",
+    "confirmPassword": "تأكيد كلمة المرور",
+    "requirements": "{length} أحرف على الأقل. تجنب الكلمات الشائعة وأنماط لوحة المفاتيح والأحرف المكررة.",
+    "mismatch": "كلمتا المرور غير متطابقتين",
+    "setSuccess": "تم حفظ كلمة المرور",
+    "strength": {
+      "label": "قوة كلمة المرور",
+      "veryWeak": "ضعيفة جدًا",
+      "weak": "ضعيفة",
+      "fair": "متوسطة",
+      "good": "جيدة",
+      "strong": "قوية"
+    }
+  },
+  "security": {
+    "passwordSet": "عيّن كلمة مرور لتسجيل الدخول بالبريد الإلكتروني وكلمة المرور. يمكنك أيضًا الاستمرار في استخدام الرمز لمرة واحدة.",
+    "passwordChange": "لديك كلمة مرور معيّنة. يمكنك تغييرها من هنا."
+  }
+}

@@ -9,12 +9,53 @@ import type nav from '../../messages/en-GB/nav.json';
  * tests/cross-layer-contract.test.ts rather than shared as code.
  */
 
-export const LOCALES = ['en-GB', 'en-US', 'en-AU', 'ja'] as const;
+/** Served locales, in language-picker order. en-GB is the master. */
+export const LOCALES = [
+  'en-GB', 'en-US', 'en-AU',
+  'es', 'pt-BR', 'fr', 'de', 'it', 'ru', 'tr',
+  'ar', 'fa',
+  'ja', 'ko',
+  'id', 'ms', 'vi', 'th', 'my', 'km',
+] as const;
 export type Locale = (typeof LOCALES)[number];
 export const DEFAULT_LOCALE: Locale = 'en-GB';
 
+/** `englishName` lets the picker's search match "korean" as well as "한국어". */
+export const LOCALE_META: Record<Locale, { nativeName: string; englishName: string; dir: 'ltr' | 'rtl' }> = {
+  'en-GB': { nativeName: 'English (UK)', englishName: 'English (UK)', dir: 'ltr' },
+  'en-US': { nativeName: 'English (US)', englishName: 'English (US)', dir: 'ltr' },
+  'en-AU': { nativeName: 'English (Australia)', englishName: 'English (Australia)', dir: 'ltr' },
+  es: { nativeName: 'Español', englishName: 'Spanish', dir: 'ltr' },
+  'pt-BR': { nativeName: 'Português (Brasil)', englishName: 'Portuguese (Brazil)', dir: 'ltr' },
+  fr: { nativeName: 'Français', englishName: 'French', dir: 'ltr' },
+  de: { nativeName: 'Deutsch', englishName: 'German', dir: 'ltr' },
+  it: { nativeName: 'Italiano', englishName: 'Italian', dir: 'ltr' },
+  ru: { nativeName: 'Русский', englishName: 'Russian', dir: 'ltr' },
+  tr: { nativeName: 'Türkçe', englishName: 'Turkish', dir: 'ltr' },
+  ar: { nativeName: 'العربية', englishName: 'Arabic', dir: 'rtl' },
+  fa: { nativeName: 'فارسی', englishName: 'Persian', dir: 'rtl' },
+  ja: { nativeName: '日本語', englishName: 'Japanese', dir: 'ltr' },
+  ko: { nativeName: '한국어', englishName: 'Korean', dir: 'ltr' },
+  id: { nativeName: 'Bahasa Indonesia', englishName: 'Indonesian', dir: 'ltr' },
+  ms: { nativeName: 'Bahasa Melayu', englishName: 'Malay', dir: 'ltr' },
+  vi: { nativeName: 'Tiếng Việt', englishName: 'Vietnamese', dir: 'ltr' },
+  th: { nativeName: 'ไทย', englishName: 'Thai', dir: 'ltr' },
+  my: { nativeName: 'မြန်မာ', englishName: 'Burmese', dir: 'ltr' },
+  km: { nativeName: 'ខ្មែរ', englishName: 'Khmer', dir: 'ltr' },
+};
+
 export function isLocale(value: string | undefined | null): value is Locale {
   return !!value && (LOCALES as readonly string[]).includes(value);
+}
+
+/** Case-insensitive substring filter over native name, English name and code. */
+export function filterLocales(query: string, locales: readonly Locale[] = LOCALES): Locale[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [...locales];
+  return locales.filter((l) => {
+    const { nativeName, englishName } = LOCALE_META[l];
+    return nativeName.toLowerCase().includes(q) || englishName.toLowerCase().includes(q) || l.toLowerCase().includes(q);
+  });
 }
 
 export const SITE = {

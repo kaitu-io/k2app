@@ -1,0 +1,79 @@
+{
+  "startup": {
+    "activeUsers": "Pengguna Aktif",
+    "certified": "Tersertifikasi ISO 27001",
+    "uptime": "Waktu Aktif",
+    "authSuccess": "Autentikasi berhasil, status masuk pengguna diperbarui",
+    "deviceCanDirectLogin": "Perangkat dapat masuk langsung",
+    "deviceCannotDirectLogin": "Perangkat tidak dapat masuk langsung",
+    "checkDeviceLoginFailed": "Gagal memeriksa status masuk perangkat",
+    "deviceLoginFailed": "Gagal masuk perangkat",
+    "deviceLoginFailedRetry": "Gagal masuk perangkat, silakan coba lagi",
+    "deviceLoginSuccess": "Masuk perangkat berhasil",
+    "pleaseEnterInviteCode": "Silakan masukkan kode undangan",
+    "registrationFailed": "Pendaftaran Gagal",
+    "registrationFailedRetry": "Pendaftaran gagal, silakan coba lagi",
+    "newDevice": "Perangkat Baru",
+    "freeDeviceRegistrationFailed": "Pendaftaran perangkat gratis gagal",
+    "inviteCodeIncorrect": "Kode undangan tidak benar",
+    "inviteCodeInvalidOrExpired": "Kode undangan tidak valid atau kadaluarsa",
+    "getInviteCodeInfoFailed": "Gagal mendapatkan info kode undangan",
+    "haveProAccount": "Sudah memiliki akun Pro?",
+    "loginProAccountDesc": "Masuk ke akun Pro Anda dan nikmati semua fitur",
+    "deviceAlreadyRegistered": "Terdeteksi bahwa perangkat ini memiliki akun terdaftar",
+    "deviceReady": "Perangkat siap masuk",
+    "deviceReadyDesc": "Perangkat Anda terdaftar dan siap digunakan",
+    "orEmailLogin": "Atau masuk dengan email",
+    "experienceProFeatures": "Alami Fitur Pro",
+    "enterInviteCodeDesc": "Masukkan kode undangan untuk merasakan fitur Pro secara instan",
+    "inviteCode": "Kode Undangan",
+    "enterInviteCodePlaceholder": "Silakan masukkan kode undangan (opsional)",
+    "youHaveGoodFriend": "🎁 Anda memiliki teman yang luar biasa😼",
+    "enjoyNow": "Nikmati sekarang",
+    "days": "hari",
+    "pro": "Pro",
+    "extraBonus": "Bonus Ekstra!",
+    "experience": "Alami {{days}} hari",
+    "purchaseBonus": "Pembelian mendapat {{purchaseDays}}+{{downloadDays}} hari",
+    "buyNowExtraBonus": "Beli sekarang, dapatkan {{days}} hari ekstra",
+    "buyNowEnjoyAllPro": "Beli sekarang untuk semua manfaat Pro",
+    "experienceOnly": "Alami {{days}} hari saja",
+    "experienceNow": "Alami Sekarang",
+    "or": "atau",
+    "noAccountNoInviteCode": "Tidak memiliki akun atau kode undangan?",
+    "processing": "Memproses...",
+    "registerNewAccount": "Daftarkan akun baru langsung"
+  },
+  "serviceStatus": {
+    "disconnected": "Layanan terputus, menyambung kembali..."
+  },
+  "upgradeRequired": {
+    "title": "Silakan Perbarui Aplikasi",
+    "description": "Versi saat ini sudah ketinggalan, silakan unduh versi terbaru untuk melanjutkan.",
+    "downloadButton": "Pergi ke Unduhan"
+  },
+  "forceUpgrade": {
+    "title": "Versi Terlalu Lama, Pembaruan Diperlukan",
+    "description": "Versi aplikasi Anda saat ini ({{currentVersion}}) tidak lagi didukung. Silakan perbarui ke versi {{minVersion}} atau lebih tinggi untuk melanjutkan.",
+    "downloadButton": "Perbarui Sekarang"
+  },
+  "app": {
+    "slogan": "Layanan proxy jaringan yang aman dan nyaman",
+    "error": "Kesalahan",
+    "updateNow": "Perbarui Sekarang",
+    "readyToInstall": "siap diinstal",
+    "hoverForDetails": "arahkan untuk detail",
+    "releaseNotes": "Catatan Rilis",
+    "newVersionAvailable": "Versi baru {{version}} tersedia!",
+    "updating": "Memperbarui",
+    "downloadingUpdate": "Mengunduh dan menginstal pembaruan... {{progress}}%",
+    "errorBoundary": {
+      "title": "Kesalahan Aplikasi",
+      "description": "Kesalahan telah dilaporkan secara otomatis, kami akan memperbaikinya segera.",
+      "details": "Detail Kesalahan",
+      "retry": "Coba Lagi"
+    },
+    "installing": "Menginstal...",
+    "beingInstalled": "sedang diinstal..."
+  }
+}

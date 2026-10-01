@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { NextRequest } from 'next/server';
 import middleware, { negotiateLocale } from '@/middleware';
+import { DEFAULT_LOCALE, LOCALES, LOCALE_META, filterLocales } from '@/lib/site';
 
 const req = (path: string, headers: Record<string, string> = {}) =>
   new NextRequest(new URL(path, 'https://overleap.io'), { headers });
@@ -14,8 +15,22 @@ describe('negotiateLocale', () => {
     ['en-au', 'en-AU'],
     ['ja-JP,ja;q=0.9', 'ja'],
     ['ja-JP', 'ja'],
-    ['fr-FR,de;q=0.8', 'en-GB'],
-    ['fr;q=1,ja;q=0.5', 'ja'],
+    ['fr-FR,de;q=0.8', 'fr'],
+    ['nl;q=1,ja;q=0.5', 'ja'],
+    ['nl-NL,sw;q=0.8', 'en-GB'],
+    ['zh-CN,zh;q=0.9', 'en-GB'],
+    ['zh-CN,zh;q=0.9,ko;q=0.8', 'ko'],
+    ['pt-PT,pt;q=0.9', 'pt-BR'],
+    ['pt-br', 'pt-BR'],
+    ['es-MX,es;q=0.9,en;q=0.8', 'es'],
+    ['ar-EG', 'ar'],
+    ['fa-IR,en;q=0.5', 'fa'],
+    ['my-MM', 'my'],
+    ['in-ID', 'id'],
+    ['en-NZ,fr;q=0.9', 'en-GB'],
+    ['de;q=0.5,it;q=0.9', 'it'],
+    ['fr;q=0,de', 'de'],
+    ['*', 'en-GB'],
   ])('%s → %s', (header, expected) => {
     expect(negotiateLocale(header)).toBe(expected);
   });
@@ -47,5 +62,28 @@ describe('middleware', () => {
 
   it('/app/* (admin API) is not served', () => {
     expect(middleware(req('/app/users')).status).toBe(404);
+  });
+});
+
+describe('language registry', () => {
+  it('every served locale has picker metadata, and nothing else does', () => {
+    expect(Object.keys(LOCALE_META).sort()).toEqual([...LOCALES].sort());
+  });
+
+  it('the default locale is served and listed first', () => {
+    expect(LOCALES[0]).toBe(DEFAULT_LOCALE);
+  });
+
+  it.each([
+    ['korean', ['ko']],
+    ['한국', ['ko']],
+    ['KO', ['ko']],
+    ['english', ['en-GB', 'en-US', 'en-AU']],
+    ['portug', ['pt-BR']],
+    ['فارسی', ['fa']],
+    ['  ', [...LOCALES]],
+    ['klingon', []],
+  ])('filterLocales(%j)', (query, expected) => {
+    expect(filterLocales(query)).toEqual(expected);
   });
 });

@@ -1,0 +1,45 @@
+{
+  "metaTitle": "Votre compte",
+  "title": "Votre compte",
+  "subtitle": "Gérez votre abonnement et votre connexion.",
+  "loading": "Chargement",
+  "navSubscription": "Abonnement",
+  "navSecurity": "Sécurité",
+  "signOut": "Se déconnecter",
+  "subscriptionTitle": "Votre abonnement",
+  "renewsOn": "Renouvellement le {date}",
+  "endsOn": "Se termine le {date}",
+  "manage": "Gérer l'abonnement",
+  "opening": "Ouverture…",
+  "noSubscriptionTitle": "Aucun abonnement actif",
+  "noSubscription": "Choisissez une offre pour utiliser Overleap sur jusqu'à cinq appareils.",
+  "seePlans": "Voir les offres",
+  "activating": "Activation de votre abonnement…",
+  "activationDelayed": "Paiement reçu. Votre abonnement sera actif dans quelques minutes — actualisez cette page pour vérifier.",
+  "downloadTitle": "Tout est prêt — téléchargez les applications",
+  "downloadBody": "Installez Overleap et connectez-vous avec cette adresse e-mail.",
+  "downloadCta": "Télécharger Overleap",
+  "cancel": "Annuler",
+  "confirm": "Enregistrer",
+  "password": {
+    "setPassword": "Définir un mot de passe",
+    "changePassword": "Modifier le mot de passe",
+    "newPassword": "Nouveau mot de passe",
+    "confirmPassword": "Confirmer le mot de passe",
+    "requirements": "{length} caractères minimum. Évitez les mots courants, les suites de touches du clavier et les caractères répétés.",
+    "mismatch": "Les mots de passe ne correspondent pas",
+    "setSuccess": "Mot de passe enregistré",
+    "strength": {
+      "label": "Robustesse du mot de passe",
+      "veryWeak": "Très faible",
+      "weak": "Faible",
+      "fair": "Moyenne",
+      "good": "Bonne",
+      "strong": "Excellente"
+    }
+  },
+  "security": {
+    "passwordSet": "Définissez un mot de passe pour vous connecter avec votre e-mail et votre mot de passe. Vous pourrez toujours utiliser un code à usage unique.",
+    "passwordChange": "Vous avez déjà défini un mot de passe. Vous pouvez le modifier ici."
+  }
+}
