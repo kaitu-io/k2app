@@ -8,6 +8,8 @@
 
 import { cloudApi } from './cloud-api';
 import { getDeviceUdid } from './device-udid';
+import { randomUUID } from '../utils/uuid';
+import type { AppFunnelEvent, FunnelProps } from './funnel-events';
 
 // ========================= Types =========================
 
@@ -33,9 +35,24 @@ interface ConnectionEvent {
   created_at: string;
 }
 
+/** Behavior-only funnel event. `eid` is the server-side idempotency key and is
+ * generated at enqueue time so a retried flush resends the same eid. */
+interface FunnelQueued {
+  eid: string;
+  device_hash: string;
+  os: string;
+  app_version: string;
+  event: AppFunnelEvent;
+  plan?: string;
+  source?: string;
+  channel?: string;
+  created_at: string;
+}
+
 interface StatsQueue {
   app_opens: AppOpenEvent[];
   connections: ConnectionEvent[];
+  funnel: FunnelQueued[];
 }
 
 const STORAGE_KEY = 'stats_queue';
@@ -45,11 +62,18 @@ const STORAGE_KEY = 'stats_queue';
 async function getQueue(): Promise<StatsQueue> {
   try {
     const stored = await window._platform?.storage?.get<StatsQueue>(STORAGE_KEY);
-    if (stored) return stored;
+    if (stored) {
+      // Older persisted queues predate `funnel` (and could lack other arrays).
+      return {
+        app_opens: stored.app_opens ?? [],
+        connections: stored.connections ?? [],
+        funnel: stored.funnel ?? [],
+      };
+    }
   } catch {
     // Corrupted data, start fresh
   }
-  return { app_opens: [], connections: [] };
+  return { app_opens: [], connections: [], funnel: [] };
 }
 
 async function saveQueue(queue: StatsQueue): Promise<void> {
@@ -91,17 +115,34 @@ async function flush(): Promise<void> {
   _flushing = true;
 
   try {
+    // Snapshot what we send. Events appended while the request is in flight
+    // are not in the snapshot and must survive a successful flush.
     const queue = await getQueue();
-    const total = queue.app_opens.length + queue.connections.length;
+    const nOpens = queue.app_opens.length;
+    const nConns = queue.connections.length;
+    const nFunnel = queue.funnel.length;
+    const total = nOpens + nConns + nFunnel;
     if (total === 0) return;
 
     const resp = await cloudApi.request('POST', '/api/stats/events', {
-      app_opens: queue.app_opens,
-      connections: queue.connections,
+      app_opens: queue.app_opens.slice(0, nOpens),
+      connections: queue.connections.slice(0, nConns),
+      funnel: queue.funnel.slice(0, nFunnel),
     });
 
     if (resp.code === 0) {
-      await clearQueue();
+      // Re-read: drop only the sent prefix of each array.
+      const latest = await getQueue();
+      const rest: StatsQueue = {
+        app_opens: latest.app_opens.slice(nOpens),
+        connections: latest.connections.slice(nConns),
+        funnel: latest.funnel.slice(nFunnel),
+      };
+      if (rest.app_opens.length + rest.connections.length + rest.funnel.length > 0) {
+        await saveQueue(rest);
+      } else {
+        await clearQueue();
+      }
       console.debug(`[Stats] Flushed ${total} events`);
     } else {
       console.warn('[Stats] Flush failed, will retry:', resp.code);
@@ -211,4 +252,46 @@ export const statsService = {
       console.warn('[Stats] trackDisconnect failed:', err);
     }
   },
+
+  /** Record a behavior funnel event and flush queue. Never throws. */
+  async trackFunnel(event: AppFunnelEvent, props?: FunnelProps): Promise<void> {
+    try {
+      await enqueueFunnel(event, props);
+    } catch (err) {
+      console.warn('[Stats] trackFunnel failed:', err);
+    }
+  },
+
+  /** Like trackFunnel, but at most once per install (flag set after enqueue succeeds). */
+  async trackFunnelOnce(event: AppFunnelEvent, props?: FunnelProps): Promise<void> {
+    try {
+      const key = `funnel_once:${event}`;
+      if (await window._platform?.storage?.get(key)) return;
+      await enqueueFunnel(event, props);
+      await window._platform?.storage?.set(key, true);
+    } catch (err) {
+      console.warn('[Stats] trackFunnelOnce failed:', err);
+    }
+  },
 };
+
+async function enqueueFunnel(event: AppFunnelEvent, props?: FunnelProps): Promise<void> {
+  const deviceHash = await getDeviceHash();
+  const { os, app_version } = getPlatformInfo();
+  const item: FunnelQueued = {
+    eid: randomUUID(),
+    device_hash: deviceHash,
+    os,
+    app_version,
+    event,
+    created_at: new Date().toISOString(),
+  };
+  if (props?.plan) item.plan = props.plan;
+  if (props?.source) item.source = props.source;
+  if (props?.channel) item.channel = props.channel;
+
+  const queue = await getQueue();
+  queue.funnel.push(item);
+  await saveQueue(queue);
+  flush(); // fire-and-forget
+}

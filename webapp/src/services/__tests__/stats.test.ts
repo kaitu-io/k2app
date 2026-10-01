@@ -8,6 +8,12 @@ vi.mock('../cloud-api', () => ({
   },
 }));
 
+// Deterministic 36-char UUIDs (the crypto mock below returns a short fallback)
+let uuidCounter = 0;
+vi.mock('../../utils/uuid', () => ({
+  randomUUID: vi.fn(() => `00000000-0000-4000-8000-${String(++uuidCounter).padStart(12, '0')}`),
+}));
+
 // Mock device-udid module
 vi.mock('../device-udid', () => ({
   getDeviceUdid: vi.fn().mockResolvedValue('test-udid-123'),
@@ -120,5 +126,101 @@ describe('statsService', () => {
     const queue = mockStorage.get('stats_queue');
     expect(queue).toBeDefined();
     expect(queue.app_opens.length).toBeGreaterThan(0);
+  });
+
+  describe('funnel events', () => {
+    const flushWait = () => new Promise(r => setTimeout(r, 50));
+    const sentFunnel = () =>
+      mockRequest.mock.calls.flatMap(c => (c[2] as any).funnel ?? []);
+
+    it('trackFunnel queues and flushes with eid', async () => {
+      await statsService.trackFunnel('paywall_view', { source: 'account' });
+      await flushWait();
+
+      const body = mockRequest.mock.calls[0][2] as any;
+      expect(body.funnel).toHaveLength(1);
+      const ev = body.funnel[0];
+      expect(ev.event).toBe('paywall_view');
+      expect(ev.eid).toHaveLength(36);
+      expect(ev.device_hash).toBe('test-udid-123');
+      expect(ev.os).toBe('macos');
+      expect(ev.app_version).toBe('0.4.0');
+      expect(new Date(ev.created_at).toISOString()).toBe(ev.created_at);
+      expect(ev.source).toBe('account');
+      expect('plan' in ev).toBe(false);
+      expect('channel' in ev).toBe(false);
+    });
+
+    it('failed flush keeps funnel events and reuses eid', async () => {
+      mockRequest.mockResolvedValueOnce({ code: 500, message: 'error' });
+      await statsService.trackFunnel('login_view');
+      await flushWait();
+      expect(mockStorage.get('stats_queue').funnel).toHaveLength(1);
+
+      await statsService.trackFunnel('plan_select', { plan: 'pro' });
+      await flushWait();
+
+      const first = mockRequest.mock.calls[0][2] as any;
+      const second = mockRequest.mock.calls[1][2] as any;
+      const loginFirst = first.funnel.find((e: any) => e.event === 'login_view');
+      const loginSecond = second.funnel.find((e: any) => e.event === 'login_view');
+      expect(loginSecond.eid).toBe(loginFirst.eid);
+      expect(second.funnel).toHaveLength(2);
+    });
+
+    it('events queued during an in-flight flush survive', async () => {
+      let resolveFirst!: (v: any) => void;
+      mockRequest.mockImplementationOnce(
+        () => new Promise(res => { resolveFirst = res; })
+      );
+
+      await statsService.trackFunnel('login_view');
+      await vi.waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
+
+      await statsService.trackFunnel('paywall_view');
+      expect(mockStorage.get('stats_queue').funnel).toHaveLength(2);
+
+      resolveFirst({ code: 0 });
+      await flushWait();
+
+      const remaining = mockStorage.get('stats_queue');
+      expect(remaining.funnel).toHaveLength(1);
+      expect(remaining.funnel[0].event).toBe('paywall_view');
+
+      await statsService.trackFunnel('plan_select');
+      await flushWait();
+      // Next flush sends the survivor (+ the new one), never the already-sent first event
+      const events = (mockRequest.mock.calls[1][2] as any).funnel.map((e: any) => e.event);
+      expect(events).toEqual(['paywall_view', 'plan_select']);
+    });
+
+    it('legacy persisted queue without funnel field works', async () => {
+      mockStorage.set('stats_queue', { app_opens: [], connections: [] });
+      await expect(statsService.trackFunnel('login_view')).resolves.toBeUndefined();
+      await flushWait();
+      expect(sentFunnel()).toHaveLength(1);
+    });
+
+    it('trackFunnelOnce sends once across calls', async () => {
+      await statsService.trackFunnelOnce('app_first_open');
+      await statsService.trackFunnelOnce('app_first_open');
+      await statsService.trackFunnelOnce('app_first_open');
+      await flushWait();
+
+      expect(sentFunnel().filter((e: any) => e.event === 'app_first_open')).toHaveLength(1);
+      expect(mockStorage.get('funnel_once:app_first_open')).toBeTruthy();
+    });
+
+    it('trackFunnel never throws when storage is missing', async () => {
+      const platform = window._platform as any;
+      const saved = platform.storage;
+      platform.storage = undefined;
+      try {
+        await expect(statsService.trackFunnel('login_view')).resolves.toBeUndefined();
+        await expect(statsService.trackFunnelOnce('login_view')).resolves.toBeUndefined();
+      } finally {
+        platform.storage = saved;
+      }
+    });
   });
 });
