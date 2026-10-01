@@ -63,10 +63,12 @@ describe('list/stat tools accept ?brand=', () => {
     'list_admin_plans', 'list_campaigns', 'list_announcements', 'list_license_key_batches',
     'list_license_keys', 'list_edm_templates', 'lookup_user', 'list_orders',
     'query_feedback_tickets', 'device_statistics', 'user_statistics', 'order_statistics',
+    'funnel', 'retention',
   ]
   for (const name of lists) {
     it(`${name} forwards brand`, async () => {
-      const { tool, request, run } = invoke(name, { brand: 'overleap' })
+      const extra: Record<string, unknown> = name === 'funnel' ? { key: 'web_purchase' } : name === 'retention' ? { metric: 'paid' } : {}
+      const { tool, request, run } = invoke(name, { brand: 'overleap', ...extra })
       expect(tool.schema.brand?.safeParse(undefined).success).toBe(true)
       await run()
       expect(request.mock.calls[0][0]).toContain('brand=overleap')
@@ -91,5 +93,35 @@ describe('list_orders email filter', () => {
     const path = request.mock.calls[0][0] as string
     expect(path).toContain('loginProvider=email')
     expect(path).toContain('loginIdentity=a%40x.com')
+  })
+})
+
+describe('funnel / retention tools', () => {
+  it('funnel_paths hits the list endpoint', async () => {
+    const { request, run } = invoke('funnel_paths', {})
+    await run()
+    expect(request.mock.calls[0][0]).toBe('/app/stats/funnels')
+  })
+  it('funnel puts key in the path and maps group_by to groupBy', async () => {
+    const { request, run } = invoke('funnel', { key: 'web_purchase', brand: 'overleap', group_by: 'source', from: '2026-09-01', to: '2026-09-30' })
+    await run()
+    const path = request.mock.calls[0][0] as string
+    expect(path.startsWith('/app/stats/funnels/web_purchase?')).toBe(true)
+    expect(path).toContain('brand=overleap')
+    expect(path).toContain('groupBy=source')
+    expect(path).toContain('from=2026-09-01')
+    expect(path).toContain('to=2026-09-30')
+    expect(path).not.toContain('key=')
+    expect(path).not.toContain('group_by')
+  })
+  it('retention sends metric and months', async () => {
+    const { tool, request, run } = invoke('retention', { metric: 'paid', months: 6 })
+    await run()
+    const path = request.mock.calls[0][0] as string
+    expect(path).toContain('/app/stats/retention')
+    expect(path).toContain('metric=paid')
+    expect(path).toContain('months=6')
+    expect(tool.schema.metric.safeParse('nonsense').success).toBe(false)
+    expect(tool.schema.months.safeParse(25).success).toBe(false)
   })
 })

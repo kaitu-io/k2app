@@ -56,6 +56,48 @@ export const statsTools: ToolRegistration[] = [
   }),
 
   defineApiTool({
+    name: 'funnel_paths',
+    description: 'List the registered conversion funnel keys (path keys, brand-agnostic) that can be passed to funnel.',
+    group: 'stats',
+    path: '/app/stats/funnels',
+  }),
+
+  defineApiTool({
+    name: 'funnel',
+    description: 'Get conversion funnel step counts for a funnel key, optionally narrowed by brand and date range and grouped by a dimension.',
+    group: 'stats',
+    params: {
+      key: z.string().describe('Funnel key from funnel_paths'),
+      brand: brandFilter,
+      from: z.string().optional().describe('Start date YYYY-MM-DD'),
+      to: z.string().optional().describe('End date YYYY-MM-DD'),
+      group_by: z.string().optional().describe('Dimension to group by (e.g. source)'),
+    },
+    path: (p) => `/app/stats/funnels/${p.key}`,
+    mapQuery: (p) => {
+      // mapQuery replaces the auto-built query, so brand must be forwarded here.
+      const q: Record<string, string> = {}
+      if (p.brand !== undefined) q.brand = String(p.brand)
+      if (p.from !== undefined) q.from = String(p.from)
+      if (p.to !== undefined) q.to = String(p.to)
+      if (p.group_by !== undefined) q.groupBy = String(p.group_by)
+      return q
+    },
+  }),
+
+  defineApiTool({
+    name: 'retention',
+    description: 'Get monthly cohort retention for paid users or active users.',
+    group: 'stats',
+    params: {
+      brand: brandFilter,
+      metric: z.enum(['paid', 'active']).describe('Retention metric'),
+      months: z.number().int().min(1).max(24).optional().describe('Number of monthly cohorts (1-24)'),
+    },
+    path: '/app/stats/retention',
+  }),
+
+  defineApiTool({
     name: 'survey_stats',
     description: 'Get survey response statistics and aggregates.',
     group: 'surveys',
