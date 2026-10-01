@@ -55,7 +55,7 @@ func TestRealKernelDNSClientWatch(t *testing.T) {
 			t.Fatalf("query %d: event pid = %d, want our own pid %d", i, pid, self)
 		}
 		waits = append(waits, time.Since(start))
-		lags = append(lags, time.Duration(dnsClientLagNs.Load()))
+		lags = append(lags, time.Duration(tb.lagNs.Load()))
 		time.Sleep(50 * time.Millisecond)
 	}
 	sort.Slice(waits, func(i, j int) bool { return waits[i] < waits[j] })

@@ -147,7 +147,7 @@ func TestDNSClientTable_AwaitWaitsForTheQuerysOwnEvent(t *testing.T) {
 	tb := newDNSClientTable()
 	// An older lookup of the same name by another process.
 	tb.record("api.example.com", 11)
-	time.Sleep(2 * dnsClientSkew)
+	time.Sleep(dnsClientFresh + 20*time.Millisecond)
 
 	arrived := time.Now()
 	go func() {
@@ -168,7 +168,7 @@ func TestDNSClientTable_AwaitWaitsForTheQuerysOwnEvent(t *testing.T) {
 func TestDNSClientTable_AwaitFallsBackToLiveRecord(t *testing.T) {
 	tb := newDNSClientTable()
 	tb.record("api.example.com", 11)
-	time.Sleep(2 * dnsClientSkew)
+	time.Sleep(dnsClientFresh + 20*time.Millisecond)
 
 	start := time.Now()
 	pid, ok := tb.await("api.example.com", start, 30*time.Millisecond)
@@ -190,5 +190,52 @@ func TestDNSClientTable_AwaitMiss(t *testing.T) {
 	go tb.record("other.example.com", 5)
 	if _, ok := tb.await("nobody.example.com", time.Now(), 20*time.Millisecond); ok {
 		t.Fatal("await satisfied by a different name")
+	}
+}
+
+// Two queries for one name down the same resolver socket are served one
+// after the other; the second sees an event that is already a round trip
+// old. It must be answered from it at once, not wait out the timeout.
+func TestDNSClientTable_AwaitRecentRecordIsImmediate(t *testing.T) {
+	tb := newDNSClientTable()
+	tb.record("api.example.com", 22)
+	time.Sleep(100 * time.Millisecond) // the first query's upstream round trip
+
+	start := time.Now()
+	pid, ok := tb.await("api.example.com", start, time.Second)
+	if !ok || pid != 22 {
+		t.Fatalf("await = %d,%v, want 22", pid, ok)
+	}
+	if d := time.Since(start); d > 200*time.Millisecond {
+		t.Fatalf("await waited %v for an event that had already arrived", d)
+	}
+}
+
+// Delivery slower than the wait budget (a Windows that batches per second):
+// stop waiting, so system DNS is not taxed for attribution it cannot get.
+func TestDNSClientTable_SlowDeliveryStopsWaiting(t *testing.T) {
+	tb := newDNSClientTable()
+	tb.noteLag(900 * time.Millisecond)
+
+	start := time.Now()
+	if _, ok := tb.await("nobody.example.com", start, time.Second); ok {
+		t.Fatal("matched a name nobody asked for")
+	}
+	if d := time.Since(start); d > 200*time.Millisecond {
+		t.Fatalf("await waited %v although delivery is known to be too slow", d)
+	}
+	// A live record is still used — just not waited for.
+	tb.record("known.example.com", 9)
+	if pid, ok := tb.await("known.example.com", time.Now(), time.Second); !ok || pid != 9 {
+		t.Fatalf("await = %d,%v, want the live record 9", pid, ok)
+	}
+	// Fast delivery again → waiting resumes.
+	tb.noteLag(27 * time.Millisecond)
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		tb.record("late.example.com", 7)
+	}()
+	if pid, ok := tb.await("late.example.com", time.Now(), time.Second); !ok || pid != 7 {
+		t.Fatalf("await = %d,%v after recovery, want 7", pid, ok)
 	}
 }

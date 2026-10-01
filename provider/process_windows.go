@@ -165,9 +165,10 @@ type WindowsProcessSearcher struct {
 	selfPID     uint32
 
 	// System-resolver attribution (dnsclient_etw_windows.go). nil while off.
-	dnsMu    sync.Mutex
-	dnsWatch *dnsClientWatch
-	dnsHolds int
+	dnsLifeMu sync.Mutex // start/stop; guards dnsHolds
+	dnsHolds  int
+	dnsMu     sync.Mutex // guards dnsWatch
+	dnsWatch  *dnsClientWatch
 }
 
 func NewWindowsProcessSearcher() *WindowsProcessSearcher {

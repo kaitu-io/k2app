@@ -68,12 +68,12 @@ var (
 	activeDNSClientTable  atomic.Pointer[dnsClientTable]
 	dnsClientCallback     uintptr
 	dnsClientCallbackOnce sync.Once
-	// dnsClientLagNs is the last event's emit→callback delay, for the
-	// real-kernel test and the start log line.
-	dnsClientLagNs atomic.Int64
 )
 
 func dnsClientEventCallback(rec *etwEventRecord) uintptr {
+	// This runs on the trace thread, called from C: a panic here would take
+	// the whole daemon down, for the sake of an optional refinement.
+	defer func() { _ = recover() }()
 	if rec == nil || rec.EventID != dnsClientQueryEventID || rec.UserData == nil {
 		return 0
 	}
@@ -83,10 +83,15 @@ func dnsClientEventCallback(rec *etwEventRecord) uintptr {
 	}
 	data := unsafe.Slice((*byte)(rec.UserData), int(rec.UserDataLength))
 	if qname := parseDNSClientQueryName(data); qname != "" {
-		t.record(qname, rec.ProcessID)
 		// FILETIME epoch (1601) → Unix epoch, 100 ns units.
 		emitted := time.Unix(0, (rec.TimeStamp-116444736000000000)*100)
-		dnsClientLagNs.Store(int64(time.Since(emitted)))
+		wasSlow := t.slow()
+		t.noteLag(time.Since(emitted))
+		if t.slow() != wasSlow {
+			slog.Warn("DIAG: dns-client-watch", "state", map[bool]string{true: "slow", false: "recovered"}[!wasSlow],
+				"lagMs", time.Since(emitted).Milliseconds())
+		}
+		t.record(qname, rec.ProcessID)
 	}
 	return 0
 }
@@ -212,31 +217,43 @@ func (s *WindowsProcessSearcher) StartDNSClientWatch() (func(), error) {
 	return func() { once.Do(s.releaseDNSClientWatch) }, nil
 }
 
+// dnsLifeMu serializes starting and stopping the session — a stop must have
+// fully finished before the next start, because both address the session by
+// the same fixed name and the kernel recycles session handles: a late stop of
+// the old session could otherwise land on the new one. dnsMu only guards the
+// pointer, so a slow stop never stalls FindDNSClient.
 func (s *WindowsProcessSearcher) holdDNSClientWatch() error {
-	s.dnsMu.Lock()
-	defer s.dnsMu.Unlock()
-	if s.dnsWatch == nil {
+	s.dnsLifeMu.Lock()
+	defer s.dnsLifeMu.Unlock()
+	if s.dnsHolds == 0 {
 		w, err := startDNSClientWatch(newDNSClientTable())
 		if err != nil {
 			return err
 		}
-		s.dnsWatch = w
+		s.setDNSWatch(w)
 	}
 	s.dnsHolds++
 	return nil
 }
 
 func (s *WindowsProcessSearcher) releaseDNSClientWatch() {
-	s.dnsMu.Lock()
+	s.dnsLifeMu.Lock()
+	defer s.dnsLifeMu.Unlock()
 	s.dnsHolds--
-	var w *dnsClientWatch
-	if s.dnsHolds == 0 {
-		w, s.dnsWatch = s.dnsWatch, nil
+	if s.dnsHolds > 0 {
+		return
 	}
-	s.dnsMu.Unlock()
+	w := s.setDNSWatch(nil)
 	if w != nil {
 		w.stop()
 	}
+}
+
+func (s *WindowsProcessSearcher) setDNSWatch(w *dnsClientWatch) (old *dnsClientWatch) {
+	s.dnsMu.Lock()
+	old, s.dnsWatch = s.dnsWatch, w
+	s.dnsMu.Unlock()
+	return old
 }
 
 // FindDNSClient implements DNSClientSearcher.

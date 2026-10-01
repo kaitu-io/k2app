@@ -68,7 +68,7 @@ func TestFindDNSClient_SelfAndGoneProcess(t *testing.T) {
 	s := newDNSClientTestSearcher(tb)
 	tb.record("self.example.com", 999)
 	tb.record("gone.example.com", 4242)
-	time.Sleep(2 * dnsClientSkew)
+	time.Sleep(dnsClientFresh + 20*time.Millisecond)
 	for _, q := range []string{"self.example.com", "gone.example.com"} {
 		if name, _, ok := s.FindDNSClient("svchost.exe", q); ok {
 			t.Errorf("%s attributed to %q", q, name)

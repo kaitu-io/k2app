@@ -3,6 +3,7 @@ package provider
 import (
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf16"
 	"unsafe"
@@ -46,9 +47,15 @@ const (
 	// same. So the event for a query ALWAYS lands after the query itself has
 	// reached the tunnel, and attribution has to wait for it.
 	dnsClientWait = 60 * time.Millisecond
-	// dnsClientSkew absorbs clock granularity between "query arrived" and
-	// "event recorded" when deciding whether an event belongs to this query.
-	dnsClientSkew = 5 * time.Millisecond
+	// dnsClientFresh is how far before "now" a record may have been made and
+	// still count as this query's own event, with no waiting. It is not a
+	// clock-skew allowance: the DNS handler serves one flow's queries one at
+	// a time, so when the resolver sends A and AAAA for a name down the same
+	// socket, the second is looked at only after the first's upstream round
+	// trip — by which time the event they share is that much old. Without
+	// this the second query would sit out the full dnsClientWait for an event
+	// that already came.
+	dnsClientFresh = 500 * time.Millisecond
 )
 
 type dnsClientEntry struct {
@@ -67,9 +74,11 @@ type dnsClientTable struct {
 	m  map[string]dnsClientEntry
 	// changed is closed and replaced on every record, waking await.
 	changed chan struct{}
-	ttl     time.Duration
-	cap     int
-	now     func() time.Time
+	// lagNs is the latest event's logged→delivered delay. See slow.
+	lagNs atomic.Int64
+	ttl   time.Duration
+	cap   int
+	now   func() time.Time
 }
 
 func newDNSClientTable() *dnsClientTable {
@@ -106,16 +115,29 @@ func (t *dnsClientTable) record(qname string, pid uint32) {
 	t.mu.Unlock()
 }
 
+// noteLag records how late the latest event was delivered.
+func (t *dnsClientTable) noteLag(d time.Duration) { t.lagNs.Store(int64(d)) }
+
+// slow reports that events are arriving later than a query is willing to
+// wait — a Windows build that ignores the millisecond flush timer delivers
+// once a SECOND. Waiting then buys nothing and would tax every system DNS
+// lookup by the full dnsClientWait, so await stops waiting until delivery is
+// fast again (each event re-measures).
+func (t *dnsClientTable) slow() bool { return t.lagNs.Load() > int64(dnsClientWait) }
+
 // await returns the process whose lookup produced the wire query that
-// arrived at `since`. It prefers a record made at or after `since` — the
-// event trails the query (see dnsClientWait), so that one is this query's
-// own — and waits up to timeout for it. Only when none shows up does it
+// arrived at `since`. It prefers a record made around or after `since` (see
+// dnsClientFresh) — the event trails the query (see dnsClientWait), so that
+// one is this query's own — and waits up to timeout for it. Only when none shows up does it
 // settle for an older live record: a retransmission of a query whose event
 // was delivered the first time round.
 func (t *dnsClientTable) await(qname string, since time.Time, timeout time.Duration) (uint32, bool) {
 	key := normalizeDNSClientName(qname)
 	if key == "" {
 		return 0, false
+	}
+	if t.slow() {
+		timeout = 0
 	}
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
@@ -124,7 +146,7 @@ func (t *dnsClientTable) await(qname string, since time.Time, timeout time.Durat
 		e, ok := t.m[key]
 		changed := t.changed
 		t.mu.Unlock()
-		if ok && !e.at.Before(since.Add(-dnsClientSkew)) {
+		if ok && !e.at.Before(since.Add(-dnsClientFresh)) {
 			return e.pid, true
 		}
 		select {
