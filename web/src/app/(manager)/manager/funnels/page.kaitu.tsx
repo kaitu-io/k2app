@@ -37,6 +37,18 @@ const DIM_LABELS: Record<string, string> = {
   channel: "渠道",
 };
 
+// 服务端把第 50 名之后的分组合并成这一行；它不是一个真实的分组值，排序时始终垫底。
+const OTHER_GROUP = "(other)";
+// 分组值里的保留键换成中文；其余分组值（来源域名、国家代码、套餐 pid…）原样显示。
+const GROUP_KEY_LABELS: Record<string, string> = {
+  direct: "直接访问",
+  unknown: "未知",
+  [OTHER_GROUP]: "其他（第 50 名之后合并）",
+};
+
+type RetentionState<T> = { data: T | null; loading: boolean; error: string | null };
+const RETENTION_IDLE = { data: null, loading: false, error: null };
+
 export default function FunnelsPage() {
   const { brandParam } = useManagerBrand();
   const [paths, setPaths] = useState<FunnelPathInfo[]>([]);
@@ -49,11 +61,10 @@ export default function FunnelsPage() {
   const [funnel, setFunnel] = useState<FunnelResult | null>(null);
   const [funnelLoading, setFunnelLoading] = useState(false);
   const [funnelError, setFunnelError] = useState<string | null>(null);
-  const [retentionError, setRetentionError] = useState<string | null>(null);
 
-  const [paid, setPaid] = useState<PaidRetentionResult | null>(null);
-  const [active, setActive] = useState<ActiveRetentionResult | null>(null);
-  const [retentionLoading, setRetentionLoading] = useState(false);
+  // 两个留存指标各取各的：一个失败或还没回来，不影响另一张表。
+  const [paid, setPaid] = useState<RetentionState<PaidRetentionResult>>(RETENTION_IDLE);
+  const [active, setActive] = useState<RetentionState<ActiveRetentionResult>>(RETENTION_IDLE);
 
   const [pathsLoading, setPathsLoading] = useState(true);
 
@@ -98,21 +109,24 @@ export default function FunnelsPage() {
   useEffect(() => {
     if (tab !== "retention") return;
     let cancelled = false;
-    setPaid(null);
-    setActive(null);
-    setRetentionLoading(true);
-    setRetentionError(null);
-    Promise.all([
-      api.getRetention({ brand: brandParam, metric: "paid" }),
-      api.getRetention({ brand: brandParam, metric: "active" }),
-    ])
-      .then(([p, a]) => {
-        if (cancelled) return;
-        setPaid(p);
-        setActive(a);
-      })
-      .catch((e) => !cancelled && setRetentionError(errorText(e)))
-      .finally(() => !cancelled && setRetentionLoading(false));
+    setPaid({ data: null, loading: true, error: null });
+    api
+      .getRetention({ brand: brandParam, metric: "paid" })
+      .then((data) => !cancelled && setPaid({ data, loading: false, error: null }))
+      .catch((e) => !cancelled && setPaid({ data: null, loading: false, error: errorText(e) }));
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, brandParam]);
+
+  useEffect(() => {
+    if (tab !== "retention") return;
+    let cancelled = false;
+    setActive({ data: null, loading: true, error: null });
+    api
+      .getRetention({ brand: brandParam, metric: "active" })
+      .then((data) => !cancelled && setActive({ data, loading: false, error: null }))
+      .catch((e) => !cancelled && setActive({ data: null, loading: false, error: errorText(e) }));
     return () => {
       cancelled = true;
     };
@@ -122,6 +136,8 @@ export default function FunnelsPage() {
 
   return (
     <div className="p-6 space-y-6">
+      {/* 路径 / 时段 / 分组只作用于漏斗；留存页签下它们什么都不改变，所以不显示。 */}
+      {tab === "funnel" && (
       <div className="flex flex-wrap items-start gap-4">
         <div className="space-y-1">
           <Select name="path" value={pathKey} onValueChange={setPathKey}>
@@ -152,10 +168,11 @@ export default function FunnelsPage() {
           </SelectContent>
         </Select>
       </div>
+      )}
 
-      {(tab === "funnel" ? funnelError : retentionError) && (
+      {tab === "funnel" && funnelError && (
         <div role="alert" className="rounded-md border border-destructive/50 bg-destructive/10 text-destructive px-4 py-3 text-sm">
-          {tab === "funnel" ? funnelError : retentionError}
+          {funnelError}
         </div>
       )}
 
@@ -178,14 +195,8 @@ export default function FunnelsPage() {
         </TabsContent>
 
         <TabsContent value="retention" className="space-y-6">
-          {retentionLoading ? (
-            <div className="text-muted-foreground text-sm py-8 text-center">加载中…</div>
-          ) : (
-            <>
-              <PaidTable data={paid} />
-              <ActiveTable data={active} />
-            </>
-          )}
+          <PaidTable state={paid} />
+          <ActiveTable state={active} />
         </TabsContent>
       </Tabs>
     </div>
@@ -208,7 +219,7 @@ function FunnelView({ funnel, windowHours, dimLabel }: { funnel: FunnelResult; w
         <CardHeader>
           <CardTitle>转化漏斗</CardTitle>
           <CardDescription>
-            {`总转化率 ${pct(last / first)}${windowHours ? ` · 归因窗口 ${windowHours} 小时` : ""}`}
+            {`总转化率 ${pct(last / first)}${windowHours ? ` · 归因窗口 ${formatWindow(windowHours)}` : ""}`}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -225,7 +236,13 @@ function FunnelView({ funnel, windowHours, dimLabel }: { funnel: FunnelResult; w
               return (
                 <div key={i} className="contents">
                   <span className="truncate" title={s.label}>{s.label}</span>
-                  <div className="bg-muted rounded-full h-3 overflow-hidden" title={`占第 1 步 ${pct(s.count / first)}`}>
+                  <div
+                    data-testid="funnel-bar"
+                    role="img"
+                    aria-label={`${s.label}：${s.count} 人，占第 1 步 ${pct(s.count / first)}`}
+                    className="bg-muted rounded-full h-3 overflow-hidden"
+                    title={`占第 1 步 ${pct(s.count / first)}`}
+                  >
                     <div className="h-full bg-primary" style={{ width: `${width}%` }} />
                   </div>
                   <span className="text-right tabular-nums">{s.count}</span>
@@ -235,6 +252,10 @@ function FunnelView({ funnel, windowHours, dimLabel }: { funnel: FunnelResult; w
                 </div>
               );
             })}
+          </div>
+          <div className="mt-4 space-y-1 text-xs text-muted-foreground">
+            <p>每人按其在所选时间段内走得最远的一次进入计算</p>
+            <p>最近进入的访客可能还没走完（归因窗口未结束），近几天的转化率会偏低</p>
           </div>
         </CardContent>
       </Card>
@@ -254,32 +275,63 @@ function FunnelView({ funnel, windowHours, dimLabel }: { funnel: FunnelResult; w
   );
 }
 
+// 标注每根柱子人数的上限天数；更长的时段柱子太窄，数字会互相压住，改看悬停提示。
+const DAILY_COUNT_LABEL_MAX_DAYS = 14;
+// 横轴大约保留的日期标签个数。
+const DAILY_AXIS_LABELS = 8;
+
 function DailyBars({ daily }: { daily: FunnelResult["daily"] }) {
   if (daily.length === 0) {
     return <div className="text-muted-foreground text-sm py-8 text-center">暂无数据</div>;
   }
-  const max = Math.max(...daily.map((d) => d.entered), 1);
+  const peak = Math.max(...daily.map((d) => d.entered));
+  const max = Math.max(peak, 1);
+  const total = daily.reduce((sum, d) => sum + d.entered, 0);
+  const completed = daily.reduce((sum, d) => sum + d.completed, 0);
+  const step = Math.ceil(daily.length / DAILY_AXIS_LABELS);
+  const showCounts = daily.length <= DAILY_COUNT_LABEL_MAX_DAYS;
+  const day = (d: { date: string }) => d.date.slice(5, 10);
+  const summary =
+    `按天趋势：${day(daily[0])} 至 ${day(daily[daily.length - 1])} 共 ${daily.length} 天，` +
+    `进入 ${total} 人，完成 ${completed} 人，单日最高 ${peak} 人`;
   return (
-    <div className="flex items-end gap-1 h-40 overflow-x-auto">
-      {daily.map((d) => {
-        const height = (d.entered / max) * 100;
-        const rate = d.entered > 0 ? pct(d.completed / d.entered) : "—";
-        return (
-          <div
-            key={d.date}
-            className="flex-shrink-0 flex flex-col items-center gap-1 h-full justify-end"
-            style={{ width: daily.length > 30 ? "12px" : "24px" }}
-            title={`${d.date.slice(0, 10)}：进入 ${d.entered} · 完成 ${d.completed} · 转化 ${rate}`}
-          >
-            <div className="text-xs text-muted-foreground">{d.entered > 0 ? d.entered : ""}</div>
+    <div data-testid="daily-chart" role="img" aria-label={summary}>
+      <p className="text-xs text-muted-foreground mb-2">{`单日最高 ${peak} 人`}</p>
+      {/* 柱区：高度百分比只相对这一行；顶部留白给 14 天以内的人数标注。日期在下面单独一行，不参与柱高。 */}
+      <div className={`flex items-end gap-px h-40 ${showCounts ? "pt-5" : ""}`}>
+        {daily.map((d) => {
+          const rate = d.entered > 0 ? pct(d.completed / d.entered) : "—";
+          return (
             <div
-              className="w-full bg-primary rounded-t transition-all hover:bg-primary/80"
-              style={{ height: `${height}%`, minHeight: d.entered > 0 ? "4px" : "0" }}
-            />
-            <div className="text-xs text-muted-foreground rotate-45 origin-left whitespace-nowrap">{d.date.slice(5, 10)}</div>
+              key={d.date}
+              className="flex-1 min-w-0 h-full flex items-end"
+              title={`${d.date.slice(0, 10)}：进入 ${d.entered} · 完成 ${d.completed} · 转化 ${rate}`}
+            >
+              <div
+                data-testid="daily-bar"
+                className="relative w-full bg-primary rounded-t transition-all hover:bg-primary/80"
+                style={{ height: `${(d.entered / max) * 100}%`, minHeight: d.entered > 0 ? "4px" : "0" }}
+              >
+                {showCounts && d.entered > 0 && (
+                  <span
+                    data-testid="daily-count"
+                    className="absolute -top-4 inset-x-0 text-center text-xs leading-none text-muted-foreground"
+                  >
+                    {d.entered}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex gap-px mt-1 h-4">
+        {daily.map((d, i) => (
+          <div key={d.date} data-testid="daily-label" className="flex-1 min-w-0 text-[10px] leading-4 text-muted-foreground whitespace-nowrap">
+            {i % step === 0 ? day(d) : ""}
           </div>
-        );
-      })}
+        ))}
+      </div>
     </div>
   );
 }
@@ -297,6 +349,8 @@ function GroupTable({ funnel, dimLabel }: { funnel: FunnelResult; dimLabel: stri
       return g.steps[sortKey] ?? 0;
     };
     return [...funnel.groups].sort((a, b) => {
+      // 合并行不参与比较：无论按哪一列、升序还是降序，都排在最后。
+      if ((a.key === OTHER_GROUP) !== (b.key === OTHER_GROUP)) return a.key === OTHER_GROUP ? 1 : -1;
       const x = val(a);
       const y = val(b);
       const c = typeof x === "string" ? x.localeCompare(y as string) : (x as number) - (y as number);
@@ -312,6 +366,12 @@ function GroupTable({ funnel, dimLabel }: { funnel: FunnelResult; dimLabel: stri
     }
   };
   const mark = (k: SortKey) => (k === sortKey ? (desc ? " ↓" : " ↑") : "");
+  const ariaSort = (k: SortKey) => (k === sortKey ? (desc ? "descending" : "ascending") : "none");
+  const sortButton = (k: SortKey, label: string) => (
+    <button type="button" className="cursor-pointer hover:text-foreground" onClick={() => click(k)}>
+      {`${label}${mark(k)}`}
+    </button>
+  );
 
   return (
     <Card>
@@ -323,17 +383,17 @@ function GroupTable({ funnel, dimLabel }: { funnel: FunnelResult; dimLabel: stri
         <table className="w-full text-sm">
           <thead>
             <tr className="text-xs text-muted-foreground">
-              <th className="text-left font-normal py-2 cursor-pointer" onClick={() => click("key")}>{`${dimLabel}${mark("key")}`}</th>
+              <th scope="col" aria-sort={ariaSort("key")} className="text-left font-normal py-2">{sortButton("key", dimLabel)}</th>
               {funnel.steps.map((s, i) => (
-                <th key={i} className="text-right font-normal py-2 cursor-pointer" onClick={() => click(i)}>{`${s.label}${mark(i)}`}</th>
+                <th key={i} scope="col" aria-sort={ariaSort(i)} className="text-right font-normal py-2">{sortButton(i, s.label)}</th>
               ))}
-              <th className="text-right font-normal py-2 cursor-pointer" onClick={() => click("rate")}>{`总转化率${mark("rate")}`}</th>
+              <th scope="col" aria-sort={ariaSort("rate")} className="text-right font-normal py-2">{sortButton("rate", "总转化率")}</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((g) => (
               <tr key={g.key} className="border-t">
-                <td className="py-2">{g.key}</td>
+                <td className="py-2">{GROUP_KEY_LABELS[g.key] ?? g.key}</td>
                 {funnel.steps.map((_, i) => (
                   <td key={i} className="text-right tabular-nums">{g.steps[i] ?? 0}</td>
                 ))}
@@ -347,16 +407,23 @@ function GroupTable({ funnel, dimLabel }: { funnel: FunnelResult; dimLabel: stri
   );
 }
 
-function PaidTable({ data }: { data: PaidRetentionResult | null }) {
+function PaidTable({ state }: { state: RetentionState<PaidRetentionResult> }) {
+  const { data } = state;
   const rows = data?.rows ?? [];
   return (
-    <Card>
+    <Card data-testid="retention-paid">
       <CardHeader>
         <CardTitle>付费留存</CardTitle>
         <CardDescription>按首次付费月分群</CardDescription>
       </CardHeader>
       <CardContent className="overflow-x-auto">
-        {rows.length === 0 ? (
+        {state.loading ? (
+          <div className="text-muted-foreground text-sm py-8 text-center">加载中…</div>
+        ) : state.error ? (
+          <div role="alert" className="rounded-md border border-destructive/50 bg-destructive/10 text-destructive px-4 py-3 text-sm">
+            {state.error}
+          </div>
+        ) : rows.length === 0 ? (
           <div className="text-muted-foreground text-sm py-8 text-center">暂无数据</div>
         ) : (
           <table className="w-full text-sm">
@@ -388,16 +455,23 @@ function PaidTable({ data }: { data: PaidRetentionResult | null }) {
   );
 }
 
-function ActiveTable({ data }: { data: ActiveRetentionResult | null }) {
+function ActiveTable({ state }: { state: RetentionState<ActiveRetentionResult> }) {
+  const { data } = state;
   const rows = data?.rows ?? [];
   return (
-    <Card>
+    <Card data-testid="retention-active">
       <CardHeader>
         <CardTitle>活跃留存</CardTitle>
         <CardDescription>按首次活跃日分群</CardDescription>
       </CardHeader>
       <CardContent className="overflow-x-auto">
-        {rows.length === 0 ? (
+        {state.loading ? (
+          <div className="text-muted-foreground text-sm py-8 text-center">加载中…</div>
+        ) : state.error ? (
+          <div role="alert" className="rounded-md border border-destructive/50 bg-destructive/10 text-destructive px-4 py-3 text-sm">
+            {state.error}
+          </div>
+        ) : rows.length === 0 ? (
           <div className="text-muted-foreground text-sm py-8 text-center">暂无数据</div>
         ) : (
           <table className="w-full text-sm">
@@ -442,6 +516,12 @@ function pctOrDash(v: number | null | undefined): string {
 function rateOf(steps: number[]): number {
   const first = steps[0] ?? 0;
   return first > 0 ? (steps[steps.length - 1] ?? 0) / first : 0;
+}
+
+// 归因窗口：满 24 小时按天显示（336 小时 → 14 天），不足一天才用小时。
+function formatWindow(hours: number): string {
+  if (hours < 24) return `${hours} 小时`;
+  return `${(hours / 24).toFixed(1).replace(/\.0$/, "")} 天`;
 }
 
 function formatDuration(sec: number | null): string {

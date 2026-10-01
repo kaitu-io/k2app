@@ -244,4 +244,238 @@ describe('manager funnels page', () => {
     expect(screen.getByText('1 天')).toBeTruthy();
     expect(screen.getByText('1.5 天')).toBeTruthy();
   });
+
+  // ---- daily chart ------------------------------------------------------
+
+  function days(n: number, entered: (i: number) => number = (i) => i + 1) {
+    const start = Date.UTC(2026, 6, 1);
+    return Array.from({ length: n }, (_, i) => ({
+      date: new Date(start + i * 86400000).toISOString(),
+      entered: entered(i),
+      completed: Math.floor(entered(i) / 2),
+    }));
+  }
+
+  it('daily chart over 90 days: about 8 unrotated MM-DD labels, no per-bar counts, max as a caption, one summarising image', async () => {
+    mockFunnel.mockResolvedValue(funnel([100, 40, 10], { daily: days(90) }));
+    renderPage();
+    const chart = await screen.findByTestId('daily-chart');
+    expect(chart.getAttribute('role')).toBe('img');
+    const label = chart.getAttribute('aria-label') || '';
+    expect(label).toContain('07-01');
+    expect(label).toContain('09-28');
+    expect(label).toContain('90 天');
+    expect(label).toContain(`${(90 * 91) / 2}`); // total entered
+    expect(label).toContain('最高 90');
+
+    const bars = within(chart).getAllByTestId('daily-bar');
+    expect(bars).toHaveLength(90);
+    const labels = within(chart).getAllByTestId('daily-label').map((n) => n.textContent).filter(Boolean);
+    expect(labels.length).toBeGreaterThanOrEqual(6);
+    expect(labels.length).toBeLessThanOrEqual(8);
+    for (const l of labels) expect(l).toMatch(/^\d{2}-\d{2}$/);
+    expect(labels[0]).toBe('07-01');
+    expect(chart.innerHTML).not.toContain('rotate');
+    expect(within(chart).queryAllByTestId('daily-count')).toHaveLength(0);
+    expect(within(chart).getByText('单日最高 90 人')).toBeTruthy();
+    // the detail stays reachable on hover
+    expect(bars[89].closest('[title]')?.getAttribute('title')).toContain('进入 90');
+    // bars share the width instead of scrolling
+    expect(bars[0].parentElement?.className).toContain('flex-1');
+    expect(bars[0].parentElement?.className).toContain('min-w-0');
+    expect(chart.innerHTML).not.toContain('overflow-x-auto');
+  });
+
+  it('daily chart up to 14 days keeps the count above each bar; the tallest bar fills the bar area', async () => {
+    mockFunnel.mockResolvedValue(funnel([100, 40, 10], { daily: days(14, (i) => (i === 3 ? 0 : (i + 1) * 5)) }));
+    renderPage();
+    const chart = await screen.findByTestId('daily-chart');
+    const counts = within(chart).getAllByTestId('daily-count').map((n) => n.textContent);
+    expect(counts).toHaveLength(13); // the zero day carries no label
+    expect(counts).toContain('70');
+    const bars = within(chart).getAllByTestId('daily-bar');
+    expect(bars[13].style.height).toBe('100%');
+    expect(bars[3].style.height).toBe('0%');
+    const labels = within(chart).getAllByTestId('daily-label').map((n) => n.textContent).filter(Boolean);
+    expect(labels).toHaveLength(7); // step 2 over 14 days
+  });
+
+  it('daily chart at 15 days drops the per-bar counts', async () => {
+    mockFunnel.mockResolvedValue(funnel([100, 40, 10], { daily: days(15) }));
+    renderPage();
+    const chart = await screen.findByTestId('daily-chart');
+    expect(within(chart).queryAllByTestId('daily-count')).toHaveLength(0);
+  });
+
+  // ---- funnel card ------------------------------------------------------
+
+  it('funnel bars are images labelled with step, count and rate', async () => {
+    renderPage();
+    await screen.findByText('40.0%');
+    const bars = screen.getAllByTestId('funnel-bar');
+    expect(bars).toHaveLength(3);
+    for (const b of bars) expect(b.getAttribute('role')).toBe('img');
+    expect(bars[1].getAttribute('aria-label')).toBe('步骤2：40 人，占第 1 步 40.0%');
+    expect(bars[2].getAttribute('aria-label')).toBe('步骤3：10 人，占第 1 步 10.0%');
+  });
+
+  it('shows the attribution window in days from 24 h up, in hours below, with the reading captions', async () => {
+    mockPaths.mockResolvedValue({
+      ...PATHS,
+      paths: [
+        ...PATHS.paths,
+        { key: 'short', title: '短', question: 'q', steps: ['a', 'b'], windowHours: 12 },
+        { key: 'long', title: '长', question: 'q', steps: ['a', 'b'], windowHours: 336 },
+        { key: 'odd', title: '奇', question: 'q', steps: ['a', 'b'], windowHours: 36 },
+      ],
+    });
+    renderPage();
+    expect(await screen.findByText(/归因窗口 7 天/)).toBeTruthy();
+    expect(screen.queryByText(/168 小时/)).toBeNull();
+    expect(screen.getByText('最近进入的访客可能还没走完（归因窗口未结束），近几天的转化率会偏低')).toBeTruthy();
+    expect(screen.getByText('每人按其在所选时间段内走得最远的一次进入计算')).toBeTruthy();
+
+    for (const [key, text] of [['install_to_connect', /归因窗口 1 天/], ['short', /归因窗口 12 小时/], ['long', /归因窗口 14 天/], ['odd', /归因窗口 1\.5 天/]] as const) {
+      fireEvent.change(screen.getByLabelText('path'), { target: { value: key } });
+      expect(await screen.findByText(text)).toBeTruthy();
+    }
+  });
+
+  it('renders whatever number of steps the path returns (nothing is tied to a step count)', async () => {
+    for (const counts of [[100, 50], [100, 80, 40, 20], [100, 90, 80, 70, 60]]) {
+      mockFunnel.mockResolvedValue(funnel(counts, { groups: [{ key: 'organic', steps: counts.map((c) => c / 10) }] }));
+      const view = renderPage();
+      await waitFor(() => expect(screen.getAllByTestId('funnel-bar')).toHaveLength(counts.length));
+      fireEvent.change(screen.getByLabelText('group'), { target: { value: 'source' } });
+      const row = (await screen.findByText('organic')).closest('tr') as HTMLElement;
+      expect(row.querySelectorAll('td')).toHaveLength(counts.length + 2);
+      expect(screen.getAllByRole('columnheader')).toHaveLength(counts.length + 2);
+      expect(screen.getByText(new RegExp(`总转化率 ${((counts[counts.length - 1] / counts[0]) * 100).toFixed(1)}%`))).toBeTruthy();
+      view.unmount();
+    }
+  });
+
+  // ---- group table ------------------------------------------------------
+
+  const GROUPS = [
+    { key: '(other)', steps: [500, 50, 5] },
+    { key: 'direct', steps: [60, 30, 6] },
+    { key: 'unknown', steps: [40, 10, 4] },
+    { key: 'twitter', steps: [20, 10, 1] },
+  ];
+  async function renderGrouped() {
+    mockFunnel.mockResolvedValue(funnel([620, 100, 16], { groups: GROUPS }));
+    renderPage();
+    fireEvent.change(await screen.findByLabelText('group'), { target: { value: 'source' } });
+    await screen.findByText('twitter');
+  }
+  const firstColumn = () =>
+    Array.from(document.querySelectorAll('tbody tr')).map((tr) => tr.querySelector('td')?.textContent);
+
+  it('group keys read in Chinese: direct / unknown / (other)', async () => {
+    await renderGrouped();
+    expect(screen.getByText('直接访问')).toBeTruthy();
+    expect(screen.getByText('未知')).toBeTruthy();
+    expect(screen.getByText('其他（第 50 名之后合并）')).toBeTruthy();
+    expect(screen.queryByText('direct')).toBeNull();
+    expect(screen.queryByText('(other)')).toBeNull();
+  });
+
+  it('(other) stays last whatever the sort column or direction', async () => {
+    await renderGrouped();
+    const OTHER = '其他（第 50 名之后合并）';
+    // default: first step, descending — (other) has the largest count and still goes last
+    expect(firstColumn()).toEqual(['直接访问', '未知', 'twitter', OTHER]);
+    fireEvent.click(screen.getByRole('button', { name: /^步骤1/ }));
+    expect(firstColumn()).toEqual(['twitter', '未知', '直接访问', OTHER]);
+    fireEvent.click(screen.getByRole('button', { name: /^总转化率/ }));
+    expect(firstColumn()[3]).toBe(OTHER);
+    fireEvent.click(screen.getByRole('button', { name: /^总转化率/ }));
+    expect(firstColumn()[3]).toBe(OTHER);
+    fireEvent.click(screen.getByRole('button', { name: /^来源/ }));
+    expect(firstColumn()[3]).toBe(OTHER);
+    fireEvent.click(screen.getByRole('button', { name: /^来源/ }));
+    expect(firstColumn()[3]).toBe(OTHER);
+  });
+
+  it('sortable headers are buttons inside the th, which carries aria-sort', async () => {
+    await renderGrouped();
+    const headers = screen.getAllByRole('columnheader');
+    expect(headers).toHaveLength(5);
+    for (const th of headers) expect(th.querySelector('button')).not.toBeNull();
+    expect(headers.map((h) => h.getAttribute('aria-sort'))).toEqual(['none', 'descending', 'none', 'none', 'none']);
+    fireEvent.click(within(headers[1]).getByRole('button'));
+    expect(headers[1].getAttribute('aria-sort')).toBe('ascending');
+    fireEvent.click(within(headers[4]).getByRole('button'));
+    expect(headers.map((h) => h.getAttribute('aria-sort'))).toEqual(['none', 'none', 'none', 'none', 'descending']);
+    fireEvent.click(within(headers[0]).getByRole('button'));
+    expect(headers[0].getAttribute('aria-sort')).toBe('ascending');
+  });
+
+  // ---- retention tab ----------------------------------------------------
+
+  it('the path / range / group selectors are gone on the retention tab and back on the funnel tab', async () => {
+    renderPage();
+    await screen.findByText('40.0%');
+    expect(screen.getByLabelText('path')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '留存' }));
+    await screen.findByText('2026-09');
+    expect(screen.queryByLabelText('path')).toBeNull();
+    expect(screen.queryByLabelText('range')).toBeNull();
+    expect(screen.queryByLabelText('group')).toBeNull();
+    expect(screen.queryByText('来的人最后付费了吗')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '漏斗' }));
+    expect(screen.getByLabelText('path')).toBeTruthy();
+    expect(screen.getByLabelText('range')).toBeTruthy();
+    expect(screen.getByLabelText('group')).toBeTruthy();
+  });
+
+  it.each([
+    ['paid', '2026-09-30', '2026-09'],
+    ['active', '2026-09', '2026-09-30'],
+  ])('a failing %s metric does not blank the other table', async (failing, shown, hidden) => {
+    mockRetention.mockReset().mockImplementation(async (p: { metric: string }) => {
+      if (p.metric === failing) throw new ApiError(ErrorCode.SystemError, 'raw retention boom');
+      return p.metric === 'paid'
+        ? { rows: [{ cohort: '2026-09', size: 20, retained: { m1: 0.5, m3: null, m6: null, m12: null }, refunded: 2 }] }
+        : { rows: [{ cohort: '2026-09-30', size: 7, d1: 0.25, d7: null, d30: null }] };
+    });
+    renderPage();
+    await waitFor(() => expect(mockFunnel).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: '留存' }));
+    expect(await screen.findByText(shown)).toBeTruthy();
+    expect(screen.queryByText(hidden)).toBeNull();
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).not.toContain('raw retention boom');
+    expect(/[一-龥]/.test(alert.textContent || '')).toBe(true);
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    // the error sits in the card of the metric that failed
+    const card = alert.closest('[data-testid]') as HTMLElement;
+    expect(card.getAttribute('data-testid')).toBe(`retention-${failing}`);
+  });
+
+  it('one metric still loading does not hold the other back', async () => {
+    const slowPaid = deferred<unknown>();
+    mockRetention.mockReset().mockImplementation((p: { metric: string }) =>
+      p.metric === 'paid' ? slowPaid.promise : Promise.resolve({ rows: [{ cohort: '2026-09-30', size: 7, d1: 0.25, d7: null, d30: null }] }),
+    );
+    renderPage();
+    await waitFor(() => expect(mockFunnel).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: '留存' }));
+    expect(await screen.findByText('2026-09-30')).toBeTruthy();
+    expect(within(screen.getByTestId('retention-paid')).getByText('加载中…')).toBeTruthy();
+    slowPaid.resolve({ rows: [{ cohort: '2026-09', size: 20, retained: { m1: 0.5, m3: null, m6: null, m12: null }, refunded: 2 }] });
+    expect(await screen.findByText('2026-09')).toBeTruthy();
+  });
+
+  it('shows the note of each retention table, also when a table has no rows', async () => {
+    mockRetention.mockReset().mockImplementation(async (p: { metric: string }) =>
+      p.metric === 'paid' ? { rows: [], note: '付费留存口径说明' } : { rows: [{ cohort: '2026-09-30', size: 7, d1: 0.25, d7: null, d30: null }], note: '活跃留存口径说明' },
+    );
+    renderPage();
+    await waitFor(() => expect(mockFunnel).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: '留存' }));
+    expect(await within(await screen.findByTestId('retention-paid')).findByText('付费留存口径说明')).toBeTruthy();
+    expect(await within(screen.getByTestId('retention-active')).findByText('活跃留存口径说明')).toBeTruthy();
+  });
 });
