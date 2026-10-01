@@ -2,6 +2,8 @@ package center
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sort"
 	"time"
 
@@ -101,9 +103,15 @@ func funnelEventQuery(ctx context.Context, brand Brand, hasBrand bool, from, to 
 		Where("occurred_at >= ? AND occurred_at < ?", from, to).
 		Where("event IN ?", events)
 	if hasBrand {
-		q = q.Scopes(ScopeBrand(brand))
+		return q.Scopes(ScopeBrand(brand))
 	}
-	return q
+	// 不过滤品牌时也给出 brand 条件：idx_brand_event_time 以 brand 为前导列，缺了它索引用不上。
+	all := AllBrands()
+	names := make([]string, 0, len(all))
+	for _, b := range all {
+		names = append(names, string(b))
+	}
+	return q.Where("brand IN ?", names)
 }
 
 // loadFunnelEvents 加载 [from, to) 内给定事件名的行为事件，按时间升序。
@@ -271,12 +279,14 @@ func loadFunnelIdentities(ctx context.Context, recs []funnelRecord) (map[string]
 }
 
 // loadPayments 返回 [from, to) 内的全部付款（订单 ∪ 入账行），按时间升序。
+// 同一时刻的并列顺序是确定的：订单在前（按 id），入账行在后（按 id）——首购判定依赖这个顺序。
 func loadPayments(ctx context.Context, brand Brand, hasBrand bool, from, to time.Time) ([]funnelPayment, error) {
 	var orders []Order
 	if err := db.Get().WithContext(ctx).Model(&Order{}).
 		Select("id", "user_id", "paid_at", "channel", "meta").
 		Scopes(funnelPaidOrderScope, funnelUserBrandScope(ctx, brand, hasBrand, "user_id")).
 		Where("paid_at >= ? AND paid_at < ?", from, to).
+		Order("paid_at, id").
 		Find(&orders).Error; err != nil {
 		return nil, err
 	}
@@ -284,6 +294,7 @@ func loadPayments(ctx context.Context, brand Brand, hasBrand bool, from, to time
 	if err := db.Get().WithContext(ctx).Model(&SubscriptionCredit{}).
 		Scopes(funnelPaymentCreditScope, funnelUserBrandScope(ctx, brand, hasBrand, "user_id")).
 		Where("created_at >= ? AND created_at < ?", from, to).
+		Order("created_at, id").
 		Find(&credits).Error; err != nil {
 		return nil, err
 	}
@@ -323,7 +334,7 @@ type funnelPlanKey struct {
 // funnelCreditPlans 返回 入账行 ID → 套餐 PID。入账行本身没有套餐，经该用户同 provider 的
 // Subscription.ProductID 反查：优先精确匹配这条入账行所属的订阅
 // （original_transaction_id == provider_subscription_id），否则退到该用户该 provider 最新的订阅。
-// 查不到（没有订阅行 / 套餐已下架 / 映射有歧义）留空——套餐只是分组标签，不能因此让整次查询失败。
+// 查不到（没有订阅行 / 套餐不存在）留空；其它错误上抛。
 func funnelCreditPlans(ctx context.Context, credits []SubscriptionCredit) (map[uint64]string, error) {
 	out := make(map[uint64]string, len(credits))
 	if len(credits) == 0 {
@@ -379,22 +390,37 @@ func funnelCreditPlans(ctx context.Context, credits []SubscriptionCredit) (map[u
 		}
 		pid, cached := cache[key]
 		if !cached {
-			var plan *Plan
-			var err error
-			switch c.Provider {
-			case SubscriptionProviderStripe:
-				plan, err = planByStripePriceID(ctx, db.Get().WithContext(ctx), productID)
-			case SubscriptionProviderApple:
-				plan, err = planByAppleProductID(ctx, db.Get().WithContext(ctx), productID, Brand(key.Brand))
-			}
-			if err == nil && plan != nil {
-				pid = plan.PID
+			plan, err := funnelPlanLookup(ctx, c.Provider, productID, Brand(key.Brand))
+			switch {
+			case err == nil:
+				if plan != nil {
+					pid = plan.PID
+				}
+			case errors.Is(err, gorm.ErrRecordNotFound):
+				// 套餐不存在 / 已下架：留空。
+			default:
+				// 其余（DB 故障、context 取消、Apple 商品映射歧义）一律上抛：
+				// 当成"查不到"会把空套餐缓存给同 key 的所有入账行，分组静默出错。
+				return nil, fmt.Errorf("funnel: plan lookup for %s product %s: %w", c.Provider, productID, err)
 			}
 			cache[key] = pid
 		}
 		out[c.ID] = pid
 	}
 	return out, nil
+}
+
+// funnelPlanLookup 按 provider 的商品标识反查套餐。包级变量仅为测试注入失败用。
+var funnelPlanLookup = func(ctx context.Context, provider, productID string, brand Brand) (*Plan, error) {
+	tx := db.Get().WithContext(ctx)
+	switch provider {
+	case SubscriptionProviderStripe:
+		// planByStripePriceID 只在走 Stripe 售卖的那个品牌的套餐里查：别的品牌的入账行套餐留空是设计如此。
+		return planByStripePriceID(ctx, tx, productID)
+	case SubscriptionProviderApple:
+		return planByAppleProductID(ctx, tx, productID, brand)
+	}
+	return nil, gorm.ErrRecordNotFound
 }
 
 type funnelFirstAtRow struct {

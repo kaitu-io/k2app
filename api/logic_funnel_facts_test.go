@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	db "github.com/wordgate/qtoolkit/db"
+	"gorm.io/gorm"
 )
 
 // factsWindow 给每个测试一个独占的历史时间窗 [from, to)（共享 dev 库里没有别的行落在这里的保证，
@@ -25,8 +27,15 @@ func factsUser(t *testing.T, brand Brand, createdAt time.Time) *User {
 	t.Helper()
 	u := &User{UUID: generateId("funnel-facts-user"), Brand: string(brand), CreatedAt: createdAt, RegistrationCountry: "jp"}
 	require.NoError(t, db.Get().Create(u).Error)
-	t.Cleanup(func() { db.Get().Unscoped().Delete(u) })
+	t.Cleanup(func() { factsCleanup(t, db.Get().Unscoped().Delete(u).Error) })
 	return u
+}
+
+func factsCleanup(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Errorf("funnel facts test cleanup failed: %v", err)
+	}
 }
 
 type factsOrderOpt func(*Order)
@@ -41,7 +50,7 @@ func factsOrder(t *testing.T, userID uint64, channel string, opts ...factsOrderO
 		f(o)
 	}
 	require.NoError(t, db.Get().Create(o).Error)
-	t.Cleanup(func() { db.Get().Unscoped().Delete(o) })
+	t.Cleanup(func() { factsCleanup(t, db.Get().Unscoped().Delete(o).Error) })
 	return o
 }
 
@@ -60,7 +69,7 @@ func factsCredit(t *testing.T, userID uint64, provider, kind, origTxn string, at
 		TransactionID: generateId("ff-txn"), OriginalTransactionID: origTxn, CreditedSeconds: 3600,
 	}
 	require.NoError(t, db.Get().Create(c).Error)
-	t.Cleanup(func() { db.Get().Unscoped().Delete(c) })
+	t.Cleanup(func() { factsCleanup(t, db.Get().Unscoped().Delete(c).Error) })
 	return c
 }
 
@@ -178,11 +187,11 @@ func TestFacts_CreditPlanFromSubscription(t *testing.T) {
 		Product: "app", IsActive: BoolPtr(true), Brand: string(BrandOverleap), StripePriceID: "price_ff_" + tag,
 	}
 	require.NoError(t, db.Get().Create(plan).Error)
-	t.Cleanup(func() { db.Get().Unscoped().Delete(plan) })
+	t.Cleanup(func() { factsCleanup(t, db.Get().Unscoped().Delete(plan).Error) })
 	subID := "sub_ff_" + tag
 	sub := &Subscription{UserID: u.ID, Provider: SubscriptionProviderStripe, ProviderSubscriptionID: subID, ProductID: plan.StripePriceID}
 	require.NoError(t, db.Get().Create(sub).Error)
-	t.Cleanup(func() { db.Get().Unscoped().Delete(sub) })
+	t.Cleanup(func() { factsCleanup(t, db.Get().Unscoped().Delete(sub).Error) })
 	factsCredit(t, u.ID, SubscriptionProviderStripe, "purchase", subID, from.Add(time.Hour))
 
 	recs, err := loadFunnelFacts(context.Background(), BrandOverleap, true, from, to, factsPay)
@@ -381,7 +390,7 @@ func TestLoadFunnelEvents_FilterAndAnonKind(t *testing.T) {
 	// GPC 访客：AnonID 为空，靠 path 标记清理
 	gpc := FunnelEvent{OccurredAt: from.Add(5 * time.Hour), Brand: "kaitu", Surface: FunnelSurfaceWeb, Event: "pricing_view", Path: "/" + m}
 	require.NoError(t, db.Get().Create(&gpc).Error)
-	t.Cleanup(func() { db.Get().Delete(&gpc) })
+	t.Cleanup(func() { factsCleanup(t, db.Get().Delete(&gpc).Error) })
 
 	mine := func(recs []funnelRecord) []funnelRecord {
 		var out []funnelRecord
@@ -468,7 +477,9 @@ func TestLoadFunnelIdentities_Batches(t *testing.T) {
 		{Kind: "sid", AnonID: last, UserID: 900012, Brand: "kaitu"},
 	}
 	require.NoError(t, db.Get().Create(&rows).Error)
-	t.Cleanup(func() { db.Get().Where("anon_id IN ?", []string{first, last}).Delete(&FunnelIdentity{}) })
+	t.Cleanup(func() {
+		factsCleanup(t, db.Get().Where("anon_id IN ?", []string{first, last}).Delete(&FunnelIdentity{}).Error)
+	})
 
 	recs := make([]funnelRecord, 0, 2101)
 	for i := 0; i <= 2100; i++ {
@@ -477,4 +488,133 @@ func TestLoadFunnelIdentities_Batches(t *testing.T) {
 	ids, err := loadFunnelIdentities(context.Background(), recs)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]uint64{"sid:" + first: 900011, "sid:" + last: 900012}, ids)
+}
+
+// 历史行的 channel 可能是 NULL（AutoMigrate 加的可空列）：必须与空串同样算 WordGate 付款。
+func TestFacts_LegacyNullChannelIsWordgate(t *testing.T) {
+	skipIfNoConfig(t)
+	from, to := factsWindow(t)
+	u := factsUser(t, BrandKaitu, from.Add(-time.Hour))
+	at := from.Add(time.Hour)
+	o := factsOrder(t, u.ID, "", factsPaid(at))
+	require.NoError(t, db.Get().Model(o).Update("channel", gorm.Expr("NULL")).Error)
+	var nulls int64
+	require.NoError(t, db.Get().Model(&Order{}).Where("id = ? AND channel IS NULL", o.ID).Count(&nulls).Error)
+	require.Equal(t, int64(1), nulls, "fixture must really hold NULL")
+
+	recs, err := loadFunnelFacts(context.Background(), BrandKaitu, false, from, to, factsPay)
+	require.NoError(t, err)
+	got := factsOf(recs, u.ID)
+	require.Len(t, got, 1)
+	assert.Equal(t, "purchase", got[0].Event)
+	assert.Equal(t, OrderChannelWordgate, got[0].Channel)
+
+	first, err := firstPaymentAt(context.Background(), []uint64{u.ID})
+	require.NoError(t, err)
+	require.Contains(t, first, u.ID)
+	assert.True(t, first[u.ID].Equal(at))
+}
+
+func factsPlanMeta(pid string) factsOrderOpt {
+	return func(o *Order) { o.Meta = `{"plan":{"pid":"` + pid + `"}}` }
+}
+
+// 两笔付款共享最早时刻：恰一笔 purchase，且是 id 较小的那张订单。
+func TestLoadPayments_TieBreakLowerIDIsPurchase(t *testing.T) {
+	skipIfNoConfig(t)
+	from, to := factsWindow(t)
+	u := factsUser(t, BrandKaitu, from.Add(-time.Hour))
+	at := from.Add(time.Hour)
+	o1 := factsOrder(t, u.ID, OrderChannelNextpay, factsPaid(at), factsPlanMeta("tie-low"))
+	o2 := factsOrder(t, u.ID, OrderChannelNextpay, factsPaid(at), factsPlanMeta("tie-high"))
+	require.Less(t, o1.ID, o2.ID)
+
+	recs, err := loadFunnelFacts(context.Background(), BrandKaitu, false, from, to, factsPay)
+	require.NoError(t, err)
+	got := factsOf(recs, u.ID)
+	require.Len(t, got, 2)
+	assert.Equal(t, "purchase", got[0].Event)
+	assert.Equal(t, "tie-low", got[0].Plan)
+	assert.Equal(t, "renewal", got[1].Event)
+	assert.Equal(t, "tie-high", got[1].Plan)
+}
+
+// 订单与入账行共享最早时刻：订单在前，所以 purchase 是订单那笔。
+func TestLoadPayments_TieBreakOrderBeforeCredit(t *testing.T) {
+	skipIfNoConfig(t)
+	from, to := factsWindow(t)
+	u := factsUser(t, BrandOverleap, from.Add(-time.Hour))
+	at := from.Add(time.Hour)
+	factsCredit(t, u.ID, SubscriptionProviderStripe, "purchase", generateId("ff-sub"), at)
+	factsOrder(t, u.ID, OrderChannelNextpay, factsPaid(at))
+
+	pays, err := loadPayments(context.Background(), BrandOverleap, true, from, to)
+	require.NoError(t, err)
+	var mine []funnelPayment
+	for _, p := range pays {
+		if p.UserID == u.ID {
+			mine = append(mine, p)
+		}
+	}
+	require.Len(t, mine, 2)
+	assert.Equal(t, OrderChannelNextpay, mine[0].Channel)
+	assert.Equal(t, "stripe", mine[1].Channel)
+
+	recs, err := loadFunnelFacts(context.Background(), BrandOverleap, true, from, to, factsPay)
+	require.NoError(t, err)
+	got := factsOf(recs, u.ID)
+	require.Len(t, got, 2)
+	assert.Equal(t, "purchase", got[0].Event)
+	assert.Equal(t, OrderChannelNextpay, got[0].Channel)
+	assert.Equal(t, "renewal", got[1].Event)
+}
+
+func factsStripeSub(t *testing.T, userID uint64, priceID string) string {
+	t.Helper()
+	subID := generateId("ff-sub")
+	sub := &Subscription{UserID: userID, Provider: SubscriptionProviderStripe, ProviderSubscriptionID: subID, ProductID: priceID}
+	require.NoError(t, db.Get().Create(sub).Error)
+	t.Cleanup(func() { factsCleanup(t, db.Get().Unscoped().Delete(sub).Error) })
+	return subID
+}
+
+// 订阅指向一个不存在的商品 → Plan 留空、不报错。
+func TestLoadPayments_UnknownProductLeavesPlanEmpty(t *testing.T) {
+	skipIfNoConfig(t)
+	from, to := factsWindow(t)
+	u := factsUser(t, BrandOverleap, from.Add(-time.Hour))
+	subID := factsStripeSub(t, u.ID, generateId("price_ff_missing"))
+	factsCredit(t, u.ID, SubscriptionProviderStripe, "purchase", subID, from.Add(time.Hour))
+
+	recs, err := loadFunnelFacts(context.Background(), BrandOverleap, true, from, to, factsPay)
+	require.NoError(t, err)
+	got := factsOf(recs, u.ID)
+	require.Len(t, got, 1)
+	assert.Equal(t, "purchase", got[0].Event)
+	assert.Empty(t, got[0].Plan)
+}
+
+// 套餐反查的非"查不到"错误必须上抛，不能当成空套餐吞掉。
+func TestLoadPayments_PlanLookupErrorPropagates(t *testing.T) {
+	skipIfNoConfig(t)
+	from, to := factsWindow(t)
+	u := factsUser(t, BrandOverleap, from.Add(-time.Hour))
+	priceID := generateId("price_ff_boom")
+	subID := factsStripeSub(t, u.ID, priceID)
+	factsCredit(t, u.ID, SubscriptionProviderStripe, "purchase", subID, from.Add(time.Hour))
+
+	boom := errors.New("funnel facts test: db down")
+	orig := funnelPlanLookup
+	t.Cleanup(func() { funnelPlanLookup = orig })
+	funnelPlanLookup = func(ctx context.Context, provider, productID string, brand Brand) (*Plan, error) {
+		if productID == priceID {
+			return nil, boom
+		}
+		return orig(ctx, provider, productID, brand)
+	}
+
+	_, err := loadPayments(context.Background(), BrandOverleap, true, from, to)
+	require.ErrorIs(t, err, boom)
+	_, err = loadFunnelFacts(context.Background(), BrandOverleap, true, from, to, factsPay)
+	require.ErrorIs(t, err, boom)
 }
