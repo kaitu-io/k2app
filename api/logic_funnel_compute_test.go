@@ -92,25 +92,24 @@ const fnMinPerDay = 24 * 60
 func TestCompute_AnonThenLoggedInIsOnePerson(t *testing.T) {
 	recs := []funnelRecord{
 		fnRec("sid:A", "pricing_view", 0),
-		fnRec("sid:A", "plan_select", 1),
-		fnRec("u:7", "checkout_start", 2),
+		fnRec("sid:A", "checkout_start", 1),
 		fnRec("u:7", "purchase", 3),
 	}
 	res := fnCompute30d(t, "web_purchase", recs, map[string]uint64{"sid:A": 7}, "")
-	assert.Equal(t, []int{1, 1, 1, 1, 1}, fnStepCounts(res))
+	assert.Equal(t, []int{1, 1, 1, 1}, fnStepCounts(res))
 
-	// 对照：没有身份关联时是两个人，匿名的止步于选套餐，登录的那个从没进入。
+	// 对照：没有身份关联时是两个人，匿名的止步于发起支付，登录的那个从没进入。
 	res = fnCompute30d(t, "web_purchase", recs, nil, "")
-	assert.Equal(t, []int{1, 1, 1, 0, 0}, fnStepCounts(res))
+	assert.Equal(t, []int{1, 1, 1, 0}, fnStepCounts(res))
 }
 
 func TestCompute_UserIDWinsOverIdentityMap(t *testing.T) {
 	// 记录自带 UserID 时不看 identities（即使匿名身份映射到别人）。
 	r := fnRec("sid:A", "pricing_view", 0)
 	r.UserID = 9
-	recs := []funnelRecord{r, fnRec("u:9", "plan_select", 1, fnWithSurface("web")), fnRec("u:7", "plan_select", 1, fnWithSurface("web"))}
+	recs := []funnelRecord{r, fnRec("u:9", "checkout_start", 1, fnWithSurface("web")), fnRec("u:7", "checkout_start", 1, fnWithSurface("web"))}
 	res := fnCompute30d(t, "web_purchase", recs, map[string]uint64{"sid:A": 7}, "")
-	assert.Equal(t, []int{1, 1, 1, 0, 0}, fnStepCounts(res))
+	assert.Equal(t, []int{1, 1, 1, 0}, fnStepCounts(res))
 }
 
 func TestCompute_SidAndDidWithSameIDAreDifferentPeople(t *testing.T) {
@@ -124,7 +123,7 @@ func TestCompute_SidAndDidWithSameIDAreDifferentPeople(t *testing.T) {
 
 func TestCompute_LandingOnPricingCountsBothSteps(t *testing.T) {
 	res := fnCompute30d(t, "web_purchase", []funnelRecord{fnRec("sid:A", "pricing_view", 0)}, nil, "")
-	assert.Equal(t, []int{1, 1, 0, 0, 0}, fnStepCounts(res))
+	assert.Equal(t, []int{1, 1, 0, 0}, fnStepCounts(res))
 	require.NotNil(t, res.Steps[1].MedianSecFromPrev)
 	assert.Equal(t, int64(0), *res.Steps[1].MedianSecFromPrev)
 }
@@ -132,18 +131,17 @@ func TestCompute_LandingOnPricingCountsBothSteps(t *testing.T) {
 func TestCompute_OutOfOrderNotCounted(t *testing.T) {
 	recs := []funnelRecord{
 		fnRec("sid:A", "page_view", 0),
-		fnRec("sid:A", "plan_select", 1),
+		fnRec("sid:A", "checkout_start", 1),
 		fnRec("sid:A", "pricing_view", 2),
 	}
 	res := fnCompute30d(t, "web_purchase", recs, nil, "")
-	assert.Equal(t, []int{1, 1, 0, 0, 0}, fnStepCounts(res))
+	assert.Equal(t, []int{1, 1, 0, 0}, fnStepCounts(res))
 }
 
 func TestCompute_OutsideWindowNotCounted(t *testing.T) {
 	build := func(purchaseAt time.Time) []funnelRecord {
 		return []funnelRecord{
 			fnRec("u:7", "pricing_view", 0),
-			fnRec("u:7", "plan_select", 1),
 			fnRec("u:7", "checkout_start", 2),
 			fnRec("u:7", "purchase", 0, fnWithAt(purchaseAt)),
 		}
@@ -161,7 +159,7 @@ func TestCompute_OutsideWindowNotCounted(t *testing.T) {
 	}
 	for _, c := range cases {
 		res := fnCompute30d(t, "web_purchase", build(c.at), nil, "")
-		assert.Equal(t, []int{1, 1, 1, 1, c.want}, fnStepCounts(res), c.name)
+		assert.Equal(t, []int{1, 1, 1, c.want}, fnStepCounts(res), c.name)
 	}
 }
 
@@ -182,7 +180,7 @@ func TestCompute_EntryMustBeInRange(t *testing.T) {
 		fnRec("sid:A", "pricing_view", 5, fnWithSurface("app")), // 区间内，但不满足第 1 步的面过滤
 	}
 	res := fnCompute30d(t, "web_purchase", recs, nil, "")
-	assert.Equal(t, []int{0, 0, 0, 0, 0}, fnStepCounts(res))
+	assert.Equal(t, []int{0, 0, 0, 0}, fnStepCounts(res))
 
 	// to 是开区间：恰在 to 的记录不算进入；恰在 from 的算。
 	to := funnelT0.Add(30 * 24 * time.Hour)
@@ -194,7 +192,7 @@ func TestCompute_EntryMustBeInRange(t *testing.T) {
 	// 区间外有更早的第 1 步记录不妨碍区间内的那条成为进入。
 	recs = []funnelRecord{fnRec("sid:A", "page_view", -10), fnRec("sid:A", "page_view", 10), fnRec("sid:A", "pricing_view", 20)}
 	res = fnCompute30d(t, "web_purchase", recs, nil, "")
-	assert.Equal(t, []int{1, 1, 0, 0, 0}, fnStepCounts(res))
+	assert.Equal(t, []int{1, 1, 0, 0}, fnStepCounts(res))
 	assert.Equal(t, int64(600), *res.Steps[1].MedianSecFromPrev)
 }
 
@@ -205,12 +203,11 @@ func TestCompute_ReturningVisitorConvertsFromLaterEntry(t *testing.T) {
 		fnRec("u:7", "page_view", 0, fnWithUtmSource("early")),
 		fnRec("u:7", "page_view", d20, fnWithUtmSource("late")),
 		fnRec("u:7", "pricing_view", d20+1),
-		fnRec("u:7", "plan_select", d20+3),
 		fnRec("u:7", "checkout_start", d20+6),
 		fnRec("u:7", "purchase", d20+10),
 	}
 	res := fnCompute30d(t, "web_purchase", recs, nil, "source")
-	require.Equal(t, []int{1, 1, 1, 1, 1}, fnStepCounts(res))
+	require.Equal(t, []int{1, 1, 1, 1}, fnStepCounts(res))
 	for _, d := range res.Daily {
 		if d.Date == "2026-09-21" {
 			assert.Equal(t, FunnelDay{Date: "2026-09-21", Entered: 1, Completed: 1}, d)
@@ -218,12 +215,12 @@ func TestCompute_ReturningVisitorConvertsFromLaterEntry(t *testing.T) {
 			assert.Equal(t, FunnelDay{Date: d.Date}, d)
 		}
 	}
-	// 耗时从第 20 天那次走起：60s / 120s / 180s / 240s，不是 20 天。
-	for i, want := range []int64{60, 120, 180, 240} {
+	// 耗时从第 20 天那次走起：60s / 300s / 240s，不是 20 天。
+	for i, want := range []int64{60, 300, 240} {
 		require.NotNil(t, res.Steps[i+1].MedianSecFromPrev)
 		assert.Equal(t, want, *res.Steps[i+1].MedianSecFromPrev, "step %d", i+1)
 	}
-	assert.Equal(t, []FunnelGroup{{Key: "late", Steps: []int{1, 1, 1, 1, 1}}}, res.Groups)
+	assert.Equal(t, []FunnelGroup{{Key: "late", Steps: []int{1, 1, 1, 1}}}, res.Groups)
 }
 
 // 多个候选进入：走得最深的那次胜出；一样深取最早的。
@@ -242,11 +239,11 @@ func TestCompute_DeepestEntryWinsTiesGoToEarliest(t *testing.T) {
 	res := fnCompute30d(t, "web_purchase", []funnelRecord{
 		fnRec("sid:A", "page_view", 0, fnWithUtmSource("early")),
 		fnRec("sid:A", "pricing_view", 1),
-		fnRec("sid:A", "plan_select", 2),
+		fnRec("sid:A", "checkout_start", 2),
 		fnRec("sid:A", "page_view", d20, fnWithUtmSource("late")),
 		fnRec("sid:A", "pricing_view", d20+5),
 	}, nil, "source")
-	assert.Equal(t, []FunnelGroup{{Key: "early", Steps: []int{1, 1, 1, 0, 0}}}, res.Groups)
+	assert.Equal(t, []FunnelGroup{{Key: "early", Steps: []int{1, 1, 1, 0}}}, res.Groups)
 	assert.Equal(t, []string{"2026-09-01"}, daysWithEntry(res))
 	assert.Equal(t, int64(60), *res.Steps[1].MedianSecFromPrev)
 
@@ -257,7 +254,7 @@ func TestCompute_DeepestEntryWinsTiesGoToEarliest(t *testing.T) {
 		fnRec("sid:A", "page_view", d20, fnWithUtmSource("late")),
 		fnRec("sid:A", "pricing_view", d20+5),
 	}, nil, "source")
-	assert.Equal(t, []FunnelGroup{{Key: "early", Steps: []int{1, 1, 0, 0, 0}}}, res.Groups)
+	assert.Equal(t, []FunnelGroup{{Key: "early", Steps: []int{1, 1, 0, 0}}}, res.Groups)
 	assert.Equal(t, []string{"2026-09-01"}, daysWithEntry(res))
 	assert.Equal(t, int64(60), *res.Steps[1].MedianSecFromPrev)
 
@@ -267,9 +264,9 @@ func TestCompute_DeepestEntryWinsTiesGoToEarliest(t *testing.T) {
 		fnRec("sid:A", "pricing_view", 1),
 		fnRec("sid:A", "page_view", d20, fnWithUtmSource("late")),
 		fnRec("sid:A", "pricing_view", d20+5),
-		fnRec("sid:A", "plan_select", d20+6),
+		fnRec("sid:A", "checkout_start", d20+6),
 	}, nil, "source")
-	assert.Equal(t, []FunnelGroup{{Key: "late", Steps: []int{1, 1, 1, 0, 0}}}, res.Groups)
+	assert.Equal(t, []FunnelGroup{{Key: "late", Steps: []int{1, 1, 1, 0}}}, res.Groups)
 	assert.Equal(t, []string{"2026-09-21"}, daysWithEntry(res))
 	assert.Equal(t, int64(300), *res.Steps[1].MedianSecFromPrev)
 
@@ -277,10 +274,10 @@ func TestCompute_DeepestEntryWinsTiesGoToEarliest(t *testing.T) {
 	res = fnCompute30d(t, "web_purchase", []funnelRecord{
 		fnRec("sid:A", "page_view", -5),
 		fnRec("sid:A", "pricing_view", -4),
-		fnRec("sid:A", "plan_select", -3),
+		fnRec("sid:A", "checkout_start", -3),
 		fnRec("sid:A", "page_view", 10),
 	}, nil, "")
-	assert.Equal(t, []int{1, 0, 0, 0, 0}, fnStepCounts(res))
+	assert.Equal(t, []int{1, 0, 0, 0}, fnStepCounts(res))
 }
 
 // 进入前发生的后续步骤事件不算（At >= 上一步）。
@@ -299,7 +296,7 @@ func TestCompute_RepeatEventsCountOnce(t *testing.T) {
 		recs = append(recs, fnRec("sid:A", "page_view", i))
 	}
 	res := fnCompute30d(t, "web_purchase", recs, nil, "")
-	assert.Equal(t, []int{1, 0, 0, 0, 0}, fnStepCounts(res))
+	assert.Equal(t, []int{1, 0, 0, 0}, fnStepCounts(res))
 	entered := 0
 	for _, d := range res.Daily {
 		entered += d.Entered
@@ -337,13 +334,13 @@ func TestCompute_WebCheckoutAuthNeedsWebCheckout(t *testing.T) {
 // 购买路径的 checkout_start 不限面：一个面上看、另一个面上付是真实转化。
 func TestCompute_PurchasePathsAcceptCheckoutOnEitherSurface(t *testing.T) {
 	res := fnCompute30d(t, "web_purchase", []funnelRecord{
-		fnRec("u:7", "pricing_view", 0), fnRec("u:7", "plan_select", 1), fnRec("u:7", "checkout_start", 2, fnWithSurface("app")),
-	}, nil, "")
-	assert.Equal(t, []int{1, 1, 1, 1, 0}, fnStepCounts(res))
-	res = fnCompute30d(t, "app_purchase", []funnelRecord{
-		fnRec("u:7", "paywall_view", 0), fnRec("u:7", "plan_select", 1, fnWithSurface("app")), fnRec("u:7", "checkout_start", 2, fnWithSurface("web")),
+		fnRec("u:7", "pricing_view", 0), fnRec("u:7", "checkout_start", 2, fnWithSurface("app")),
 	}, nil, "")
 	assert.Equal(t, []int{1, 1, 1, 0}, fnStepCounts(res))
+	res = fnCompute30d(t, "app_purchase", []funnelRecord{
+		fnRec("u:7", "paywall_view", 0), fnRec("u:7", "checkout_start", 2, fnWithSurface("web")),
+	}, nil, "")
+	assert.Equal(t, []int{1, 1, 0}, fnStepCounts(res))
 }
 
 // fnGroupStepSums 把各组逐步相加。
@@ -395,7 +392,7 @@ func TestCompute_NoIdentityNoAnonSkipped(t *testing.T) {
 	}
 	// 即使 identities 里有个空键也不能把这些记录归给谁。
 	res := fnCompute30d(t, "web_purchase", recs, map[string]uint64{":": 7, "sid:": 8}, "source")
-	assert.Equal(t, []int{0, 0, 0, 0, 0}, fnStepCounts(res))
+	assert.Equal(t, []int{0, 0, 0, 0}, fnStepCounts(res))
 	assert.Empty(t, res.Groups)
 }
 
@@ -404,10 +401,10 @@ func TestCompute_RatesAndMedian(t *testing.T) {
 		fnRec("sid:A", "page_view", 0), fnRec("sid:A", "pricing_view", 1), // 60s
 		fnRec("sid:B", "page_view", 0), fnRec("sid:B", "pricing_view", 3), // 180s
 		fnRec("sid:C", "page_view", 0),
-		fnRec("sid:A", "plan_select", 5),
+		fnRec("sid:A", "checkout_start", 5),
 	}
 	res := fnCompute30d(t, "web_purchase", recs, nil, "")
-	require.Equal(t, []int{3, 2, 1, 0, 0}, fnStepCounts(res))
+	require.Equal(t, []int{3, 2, 1, 0}, fnStepCounts(res))
 
 	assert.Equal(t, 1.0, res.Steps[0].RateFromPrev)
 	assert.Equal(t, 1.0, res.Steps[0].RateFromFirst)
@@ -422,8 +419,8 @@ func TestCompute_RatesAndMedian(t *testing.T) {
 	assert.InDelta(t, 0.3333, res.Steps[2].RateFromFirst, 1e-4)
 	assert.Equal(t, int64(240), *res.Steps[2].MedianSecFromPrev)
 
-	// 上一步人数为 0 → 0，不是 NaN；Count==0 → 中位数 nil。
-	for _, i := range []int{3, 4} {
+	// 没人到达 → 0，不是 NaN；Count==0 → 中位数 nil。（上一步人数为 0 的情形见 TestCompute_EmptyInput。）
+	for _, i := range []int{3} {
 		assert.Equal(t, 0.0, res.Steps[i].RateFromPrev)
 		assert.Equal(t, 0.0, res.Steps[i].RateFromFirst)
 		assert.Nil(t, res.Steps[i].MedianSecFromPrev)
@@ -457,9 +454,9 @@ func TestCompute_GroupBySource(t *testing.T) {
 	}
 	res := fnCompute30d(t, "web_purchase", recs, nil, "source")
 	assert.Equal(t, []FunnelGroup{
-		{Key: "tw", Steps: []int{2, 1, 0, 0, 0}},
-		{Key: "direct", Steps: []int{1, 0, 0, 0, 0}}, // 并列按 key 升序
-		{Key: "google.com", Steps: []int{1, 0, 0, 0, 0}},
+		{Key: "tw", Steps: []int{2, 1, 0, 0}},
+		{Key: "direct", Steps: []int{1, 0, 0, 0}}, // 并列按 key 升序
+		{Key: "google.com", Steps: []int{1, 0, 0, 0}},
 	}, res.Groups)
 	assert.Equal(t, fnStepCounts(res), fnGroupStepSums(res))
 }
@@ -467,14 +464,14 @@ func TestCompute_GroupBySource(t *testing.T) {
 func TestCompute_GroupByPlanUsesLastStep(t *testing.T) {
 	recs := []funnelRecord{
 		fnRec("sid:A", "pricing_view", 0),
-		fnRec("sid:A", "plan_select", 1, fnWithPlan("p1"), fnWithChannel("stripe")),
+		fnRec("sid:A", "checkout_start", 1, fnWithPlan("p1"), fnWithChannel("stripe")),
 		// B 止步于第 2 步，最后一步记录（pricing_view）没有 plan。
 		fnRec("sid:B", "pricing_view", 0),
 	}
 	res := fnCompute30d(t, "web_purchase", recs, nil, "plan")
 	assert.Equal(t, []FunnelGroup{
-		{Key: "p1", Steps: []int{1, 1, 1, 0, 0}},
-		{Key: "unknown", Steps: []int{1, 1, 0, 0, 0}},
+		{Key: "p1", Steps: []int{1, 1, 1, 0}},
+		{Key: "unknown", Steps: []int{1, 1, 0, 0}},
 	}, res.Groups)
 
 	res = fnCompute30d(t, "web_purchase", recs, nil, "channel")
@@ -484,7 +481,7 @@ func TestCompute_GroupByPlanUsesLastStep(t *testing.T) {
 func TestCompute_GroupByEntryDims(t *testing.T) {
 	entry := fnRec("did:D", "paywall_view", 0, fnWithSource("quota_wall"), fnWithUtmCampaign("c1"), fnWithCountry("JP"))
 	entry.OS, entry.Device, entry.AppVersion = "ios", "mobile", "0.4.10"
-	later := fnRec("did:D", "plan_select", 1, fnWithSource("other"), fnWithCountry("US"))
+	later := fnRec("did:D", "checkout_start", 1, fnWithSource("other"), fnWithCountry("US"))
 	later.OS = "android"
 	bare := fnRec("did:E", "paywall_view", 0)
 	recs := []funnelRecord{entry, later, bare}
@@ -499,8 +496,8 @@ func TestCompute_GroupByEntryDims(t *testing.T) {
 	for dim, keys := range want {
 		res := fnCompute30d(t, "app_purchase", recs, nil, dim)
 		assert.Equal(t, []FunnelGroup{
-			{Key: keys[0], Steps: []int{1, 1, 0, 0}},
-			{Key: keys[1], Steps: []int{1, 0, 0, 0}},
+			{Key: keys[0], Steps: []int{1, 1, 0}},
+			{Key: keys[1], Steps: []int{1, 0, 0}},
 		}, res.Groups, dim)
 	}
 	// 每个声明的维度都被实现（未实现的会退化成"不分组"）。
@@ -532,15 +529,15 @@ func TestCompute_GroupsBeyond50FoldIntoOther(t *testing.T) {
 			recs = append(recs, fnRec(fmt.Sprintf("sid:S%dB", i), "page_view", 0, src))
 		}
 		if i == 51 {
-			recs = append(recs, fnRec(a, "plan_select", 2))
+			recs = append(recs, fnRec(a, "checkout_start", 2))
 		}
 	}
 	res := fnCompute30d(t, "web_purchase", recs, nil, "source")
-	require.Equal(t, []int{103, 53, 1, 0, 0}, fnStepCounts(res))
+	require.Equal(t, []int{103, 53, 1, 0}, fnStepCounts(res))
 	require.Len(t, res.Groups, 51)
-	assert.Equal(t, FunnelGroup{Key: "s00", Steps: []int{2, 1, 0, 0, 0}}, res.Groups[0])
-	assert.Equal(t, FunnelGroup{Key: "s49", Steps: []int{2, 1, 0, 0, 0}}, res.Groups[49])
-	assert.Equal(t, FunnelGroup{Key: "(other)", Steps: []int{3, 3, 1, 0, 0}}, res.Groups[50])
+	assert.Equal(t, FunnelGroup{Key: "s00", Steps: []int{2, 1, 0, 0}}, res.Groups[0])
+	assert.Equal(t, FunnelGroup{Key: "s49", Steps: []int{2, 1, 0, 0}}, res.Groups[49])
+	assert.Equal(t, FunnelGroup{Key: "(other)", Steps: []int{3, 3, 1, 0}}, res.Groups[50])
 	assert.Equal(t, fnStepCounts(res), fnGroupStepSums(res))
 
 	// 正好 50 组：不产生 "(other)"。
@@ -582,20 +579,20 @@ func TestCompute_RealOtherValueMergesIntoFoldBucket(t *testing.T) {
 	assert.Equal(t, 1, countOther(res))
 	assert.Equal(t, "s00", res.Groups[0].Key)
 	assert.Equal(t, "s49", res.Groups[49].Key)
-	assert.Equal(t, FunnelGroup{Key: "(other)", Steps: []int{5, 1, 0, 0, 0}}, res.Groups[50])
+	assert.Equal(t, FunnelGroup{Key: "(other)", Steps: []int{5, 1, 0, 0}}, res.Groups[50])
 	assert.Equal(t, fnStepCounts(res), fnGroupStepSums(res))
 
 	// 51 个取值（含真实 "(other)"）：50 个普通组 + "(other)" 只含真实的那 3 人。
 	res = fnCompute30d(t, "web_purchase", build(51), nil, "source")
 	require.Len(t, res.Groups, 51)
 	assert.Equal(t, 1, countOther(res))
-	assert.Equal(t, FunnelGroup{Key: "(other)", Steps: []int{3, 1, 0, 0, 0}}, res.Groups[50])
+	assert.Equal(t, FunnelGroup{Key: "(other)", Steps: []int{3, 1, 0, 0}}, res.Groups[50])
 	assert.Equal(t, fnStepCounts(res), fnGroupStepSums(res))
 
 	// 50 个取值：没有折叠桶，真实 "(other)" 是普通组，按人数排第一。
 	res = fnCompute30d(t, "web_purchase", build(50), nil, "source")
 	require.Len(t, res.Groups, 50)
-	assert.Equal(t, FunnelGroup{Key: "(other)", Steps: []int{3, 1, 0, 0, 0}}, res.Groups[0])
+	assert.Equal(t, FunnelGroup{Key: "(other)", Steps: []int{3, 1, 0, 0}}, res.Groups[0])
 	assert.Equal(t, fnStepCounts(res), fnGroupStepSums(res))
 }
 
@@ -612,12 +609,12 @@ func TestCompute_GroupsCappedAt50(t *testing.T) {
 	assert.Equal(t, 120, res.Steps[0].Count)
 	assert.Equal(t, fnStepCounts(res), fnGroupStepSums(res))
 	// "(other)" 排最后，不参与排序（它的人数比前面的组多）。
-	assert.Equal(t, FunnelGroup{Key: "(other)", Steps: []int{10, 0, 0, 0, 0}}, res.Groups[50])
+	assert.Equal(t, FunnelGroup{Key: "(other)", Steps: []int{10, 0, 0, 0}}, res.Groups[50])
 	for i := 1; i < 50; i++ {
 		a, b := res.Groups[i-1], res.Groups[i]
 		assert.True(t, a.Steps[0] > b.Steps[0] || (a.Steps[0] == b.Steps[0] && a.Key < b.Key), "order at %d", i)
 	}
-	assert.Equal(t, FunnelGroup{Key: "s02", Steps: []int{3, 0, 0, 0, 0}}, res.Groups[0])
+	assert.Equal(t, FunnelGroup{Key: "s02", Steps: []int{3, 0, 0, 0}}, res.Groups[0])
 	// 20 组 3 人 + 20 组 2 人 + 10 组 1 人（key 最小的 10 个）。
 	assert.Equal(t, 1, res.Groups[49].Steps[0])
 	assert.Equal(t, "s27", res.Groups[49].Key)
@@ -749,12 +746,12 @@ func TestCompute_DoesNotMutateInput(t *testing.T) {
 	assert.Equal(t, map[string]uint64{"sid:A": 7}, ids)
 }
 
-// 同一时刻的记录：按输入顺序稳定。两条同刻的 plan_select，第一条决定 plan 分组键。
+// 同一时刻的记录：按输入顺序稳定。两条同刻的 checkout_start，第一条决定 plan 分组键。
 func TestCompute_EqualTimestampsUseInputOrder(t *testing.T) {
 	recs := []funnelRecord{
 		fnRec("sid:A", "pricing_view", 0),
-		fnRec("sid:A", "plan_select", 1, fnWithPlan("first")),
-		fnRec("sid:A", "plan_select", 1, fnWithPlan("second")),
+		fnRec("sid:A", "checkout_start", 1, fnWithPlan("first")),
+		fnRec("sid:A", "checkout_start", 1, fnWithPlan("second")),
 	}
 	res := fnCompute30d(t, "web_purchase", recs, nil, "plan")
 	assert.Equal(t, "first", res.Groups[0].Key)
@@ -762,18 +759,18 @@ func TestCompute_EqualTimestampsUseInputOrder(t *testing.T) {
 	// 记录多到排序算法不再天然稳定时也一样（乱序输入 + 大量同刻记录）。
 	recs = []funnelRecord{fnRec("sid:A", "pricing_view", 0)}
 	for i := 0; i < 200; i++ {
-		recs = append(recs, fnRec("sid:A", "plan_select", 2-i%2, fnWithPlan(fmt.Sprintf("p%03d", i))))
+		recs = append(recs, fnRec("sid:A", "checkout_start", 2-i%2, fnWithPlan(fmt.Sprintf("p%03d", i))))
 	}
 	res = fnCompute30d(t, "web_purchase", recs, nil, "plan")
 	assert.Equal(t, "p001", res.Groups[0].Key) // 第 1 分钟的记录里输入最靠前的那条
 
 	// 同刻但在输入里排在上一步记录之前的记录也满足 At >= 上一步。
 	recs = []funnelRecord{
-		fnRec("sid:A", "plan_select", 0),
+		fnRec("sid:A", "checkout_start", 0),
 		fnRec("sid:A", "pricing_view", 0),
 	}
 	res = fnCompute30d(t, "web_purchase", recs, nil, "")
-	assert.Equal(t, []int{1, 1, 1, 0, 0}, fnStepCounts(res))
+	assert.Equal(t, []int{1, 1, 1, 0}, fnStepCounts(res))
 }
 
 // ---------- 性质测试（固定种子的随机数据，全部路径 × 全部分组维度） ----------
@@ -1218,4 +1215,27 @@ func TestComputeOracle_RandomFixtures(t *testing.T) {
 		}
 	}
 	assert.Greater(t, multiEntry, 20, "fixtures rarely exercise the best-entry rule")
+}
+
+// 口径裁定：付款后激活的第 2 步认任何一次连上（connect_ok），不只是首次连上；
+// 购买路径末步认续费；记录里有没有 plan_select 都不影响各步人数。
+func TestCompute_RulingsOnStepEvents(t *testing.T) {
+	res := fnCompute30d(t, "post_purchase_activation", []funnelRecord{
+		fnRec("u:7", "purchase", 0), fnRec("u:7", "connect_ok", 5),
+		fnRec("u:8", "purchase", 0), fnRec("u:8", "first_connect_ok", 5),
+		fnRec("u:9", "purchase", 0),
+		fnRec("u:10", "renewal", 0), fnRec("u:10", "connect_ok", 5), // 第 1 步只认首购
+	}, nil, "")
+	assert.Equal(t, []int{3, 2}, fnStepCounts(res))
+
+	for _, withPlanSelect := range []bool{false, true} {
+		web := []funnelRecord{fnRec("u:7", "pricing_view", 0), fnRec("u:7", "checkout_start", 2), fnRec("u:7", "renewal", 3)}
+		app := []funnelRecord{fnRec("did:D", "paywall_view", 0), fnRec("did:D", "checkout_start", 2), fnRec("u:7", "renewal", 3)}
+		if withPlanSelect {
+			web = append(web, fnRec("u:7", "plan_select", 1))
+			app = append(app, fnRec("did:D", "plan_select", 1))
+		}
+		assert.Equal(t, []int{1, 1, 1, 1}, fnStepCounts(fnCompute30d(t, "web_purchase", web, nil, "")), "plan_select=%v", withPlanSelect)
+		assert.Equal(t, []int{1, 1, 1}, fnStepCounts(fnCompute30d(t, "app_purchase", app, map[string]uint64{"did:D": 7}, "")), "plan_select=%v", withPlanSelect)
+	}
 }
