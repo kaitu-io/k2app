@@ -8,6 +8,7 @@ import (
 	"time"
 
 	db "github.com/wordgate/qtoolkit/db"
+	"github.com/wordgate/qtoolkit/log"
 	"gorm.io/gorm"
 )
 
@@ -398,8 +399,11 @@ func funnelCreditPlans(ctx context.Context, credits []SubscriptionCredit) (map[u
 				}
 			case errors.Is(err, gorm.ErrRecordNotFound):
 				// 套餐不存在 / 已下架：留空。
+			case errors.Is(err, errApplePlanAmbiguous):
+				// 配置问题（一个商品 ID 对应多个套餐）：留空并告警，不能让整次漏斗查询失败。
+				log.Warnf(ctx, "[Funnel] ambiguous apple product %s: plan left empty", productID)
 			default:
-				// 其余（DB 故障、context 取消、Apple 商品映射歧义）一律上抛：
+				// 其余（DB 故障、context 取消）一律上抛：
 				// 当成"查不到"会把空套餐缓存给同 key 的所有入账行，分组静默出错。
 				return nil, fmt.Errorf("funnel: plan lookup for %s product %s: %w", c.Provider, productID, err)
 			}

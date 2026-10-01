@@ -618,3 +618,38 @@ func TestLoadPayments_PlanLookupErrorPropagates(t *testing.T) {
 	_, err = loadFunnelFacts(context.Background(), BrandOverleap, true, from, to, factsPay)
 	require.ErrorIs(t, err, boom)
 }
+
+// 一个 Apple 商品 ID 对应两个套餐是配置问题：Plan 留空、不报错，漏斗查询照常返回。
+func TestLoadPayments_AmbiguousAppleProductLeavesPlanEmpty(t *testing.T) {
+	skipIfNoConfig(t)
+	from, to := factsWindow(t)
+	u := factsUser(t, BrandKaitu, from.Add(-time.Hour))
+	tag := fmt.Sprintf("%d", time.Now().UnixNano())
+	productID := "io.test.funnel.ambiguous." + tag
+	for _, suffix := range []string{"a", "b"} {
+		plan := &Plan{
+			PID: "ffa-" + tag + suffix, Label: "funnel-facts", Price: 100, OriginPrice: 100, Month: 1,
+			Product: "app", IsActive: BoolPtr(true), Brand: string(BrandKaitu), AppleProductID: productID,
+		}
+		require.NoError(t, db.Get().Create(plan).Error)
+		t.Cleanup(func() { factsCleanup(t, db.Get().Unscoped().Delete(plan).Error) })
+	}
+	_, err := planByAppleProductID(context.Background(), db.Get(), productID, BrandKaitu)
+	require.ErrorIs(t, err, errApplePlanAmbiguous, "fixture must really be ambiguous")
+	assert.Contains(t, err.Error(), "maps to multiple plans")
+	assert.Contains(t, err.Error(), "定价配置有歧义，拒绝猜测")
+
+	subID := generateId("ff-sub")
+	sub := &Subscription{UserID: u.ID, Provider: SubscriptionProviderApple, ProviderSubscriptionID: subID, ProductID: productID}
+	require.NoError(t, db.Get().Create(sub).Error)
+	t.Cleanup(func() { factsCleanup(t, db.Get().Unscoped().Delete(sub).Error) })
+	factsCredit(t, u.ID, SubscriptionProviderApple, "purchase", subID, from.Add(time.Hour))
+
+	recs, err := loadFunnelFacts(context.Background(), BrandKaitu, true, from, to, factsPay)
+	require.NoError(t, err)
+	got := factsOf(recs, u.ID)
+	require.Len(t, got, 1)
+	assert.Equal(t, "purchase", got[0].Event)
+	assert.Equal(t, "apple", got[0].Channel)
+	assert.Empty(t, got[0].Plan)
+}
