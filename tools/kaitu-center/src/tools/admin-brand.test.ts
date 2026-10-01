@@ -114,6 +114,16 @@ describe('funnel / retention tools', () => {
     expect(path).not.toContain('key=')
     expect(path).not.toContain('group_by')
   })
+  it('funnel schema rejects path-steering keys and malformed dates', () => {
+    const { tool, request } = invoke('funnel', { key: 'web_purchase' })
+    for (const k of ['../orders', 'x?y=1', 'a/b', 'A', 'x#y', '']) {
+      expect(tool.schema.key.safeParse(k).success, k).toBe(false)
+    }
+    expect(tool.schema.key.safeParse('web_purchase').success).toBe(true)
+    expect(tool.schema.from.safeParse('2026-9-1').success).toBe(false)
+    expect(tool.schema.to.safeParse('2026-09-30').success).toBe(true)
+    expect(request).not.toHaveBeenCalled()
+  })
   it('retention sends metric and months', async () => {
     const { tool, request, run } = invoke('retention', { metric: 'paid', months: 6 })
     await run()

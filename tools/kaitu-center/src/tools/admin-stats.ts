@@ -67,13 +67,13 @@ export const statsTools: ToolRegistration[] = [
     description: 'Get conversion funnel step counts for a funnel key, optionally narrowed by brand and date range and grouped by a dimension.',
     group: 'stats',
     params: {
-      key: z.string().describe('Funnel key from funnel_paths'),
+      key: z.string().regex(/^[a-z_]+$/).describe('Funnel key from funnel_paths (lowercase letters and underscores)'),
       brand: brandFilter,
-      from: z.string().optional().describe('Start date YYYY-MM-DD'),
-      to: z.string().optional().describe('End date YYYY-MM-DD'),
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Start date YYYY-MM-DD'),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('End date YYYY-MM-DD'),
       group_by: z.string().optional().describe('Dimension to group by (e.g. source)'),
     },
-    path: (p) => `/app/stats/funnels/${p.key}`,
+    path: (p) => `/app/stats/funnels/${encodeURIComponent(String(p.key))}`,
     mapQuery: (p) => {
       // mapQuery replaces the auto-built query, so brand must be forwarded here.
       const q: Record<string, string> = {}
