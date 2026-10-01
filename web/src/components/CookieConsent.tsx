@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Cookie, X } from "lucide-react";
 import { safeStorage } from "@/lib/safeStorage";
+import { useBrand } from "@/hooks/useBrand";
 
 export const COOKIE_CONSENT_KEY = "kaitu_cookie_consent";
 // Increment when the cookie policy or the banner copy changes, so visitors who
@@ -29,6 +30,9 @@ function optOutOfStatistics() {
 
 export default function CookieConsent() {
   const t = useTranslations();
+  // The layout loads a third-party analytics script only for a brand whose
+  // registry entry has a measurement id; the banner discloses it for that brand.
+  const hasThirdPartyAnalytics = Boolean(useBrand().gaMeasurementId);
   const [show, setShow] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
@@ -112,6 +116,11 @@ export default function CookieConsent() {
           <p className="text-[10px] text-muted-foreground mt-2 leading-relaxed">
             {t('discovery.cookieConsent.details')}
           </p>
+          {hasThirdPartyAnalytics && (
+            <p className="text-[10px] text-muted-foreground mt-2 leading-relaxed">
+              {t('discovery.cookieConsent.detailsThirdParty')}
+            </p>
+          )}
         </div>
 
         {/* Actions */}

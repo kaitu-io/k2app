@@ -97,6 +97,7 @@
     "title": "About Cookies",
     "description": "We use cookies to improve your browsing experience, including saving your invite code and other essential features. By continuing to use this website, you agree to our use of cookies.",
     "details": "We use essential functional cookies (sign-in, invite code) and one first-party cookie for aggregate visit and purchase-conversion statistics; none are used for advertising. Choose Decline, or the “Do not count my visits” link in the footer, to opt out of the statistics. You can also manage cookies in your browser settings at any time.",
+    "detailsThirdParty": "This site also uses a third-party web-analytics service (Google Analytics), which sets its own cookies; you can refuse them in your browser settings.",
     "accept": "Accept",
     "decline": "Decline"
   }

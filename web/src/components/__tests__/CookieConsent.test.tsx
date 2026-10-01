@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import CookieConsent, { COOKIE_CONSENT_KEY, COOKIE_CONSENT_VERSION } from '../CookieConsent';
 
+const brandState = vi.hoisted(() => ({ gaMeasurementId: '' }));
+vi.mock('@/hooks/useBrand', () => ({ useBrand: () => brandState }));
+
 const OPTOUT = '/api/px/optout';
 
 describe('CookieConsent', () => {
@@ -10,6 +13,7 @@ describe('CookieConsent', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     window.localStorage.clear();
+    brandState.gaMeasurementId = '';
     window.history.pushState({}, '', '/zh-CN');
     fetchMock = vi.fn(() => Promise.resolve(new Response(null)));
     vi.stubGlobal('fetch', fetchMock);
@@ -68,5 +72,20 @@ describe('CookieConsent', () => {
     window.history.pushState({}, '', '/zh-CN/releases?embed=true');
     show();
     expect(screen.queryByText('discovery.cookieConsent.details')).toBeNull();
+  });
+
+  // The layout loads a third-party analytics script only for a brand whose
+  // registry entry has a measurement id; the banner says so for exactly that brand.
+  it('a brand with a measurement id also discloses the third-party analytics cookies', () => {
+    brandState.gaMeasurementId = 'G-TEST';
+    show();
+    expect(screen.getByText('discovery.cookieConsent.details')).toBeTruthy();
+    expect(screen.getByText('discovery.cookieConsent.detailsThirdParty')).toBeTruthy();
+  });
+
+  it('a brand without a measurement id does not', () => {
+    show();
+    expect(screen.getByText('discovery.cookieConsent.details')).toBeTruthy();
+    expect(screen.queryByText('discovery.cookieConsent.detailsThirdParty')).toBeNull();
   });
 });
