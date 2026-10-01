@@ -16,7 +16,10 @@ func TestClampOccurredAt(t *testing.T) {
 	}{
 		{"past 1h kept", now.Add(-time.Hour), now.Add(-time.Hour)},
 		{"future 1h clamped", now.Add(time.Hour), now},
-		{"future 1min kept", now.Add(time.Minute), now.Add(time.Minute)},
+		{"future 1min clamped", now.Add(time.Minute), now},
+		{"future 1ns clamped", now.Add(time.Nanosecond), now},
+		{"exactly now kept", now, now},
+		{"exactly 7d kept", now.Add(-7 * 24 * time.Hour), now.Add(-7 * 24 * time.Hour)},
 		{"past 8d clamped", now.Add(-8 * 24 * time.Hour), now},
 		{"past 6d kept", now.Add(-6 * 24 * time.Hour), now.Add(-6 * 24 * time.Hour)},
 	}
