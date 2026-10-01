@@ -146,3 +146,59 @@ describe('renderLegalDoc edge cases', () => {
     expect(renderLegalDoc('{{brand}}', 'en-GB', KAITU)).toBe(KAITU.displayName);
   });
 });
+
+describe('privacy-policy: the statistics section matches what the site actually does', () => {
+  // The policy is one file served to both deployments, while the shared layout
+  // loads a third-party analytics script only for a brand whose registry entry
+  // has a measurement id. A sentence written once on disk is therefore false
+  // for one of them; it is derived from the registry, and this locks the two.
+  const raw = read('privacy-policy');
+  const THIRD_PARTY = { zh: /第三方网站分析服务（Google Analytics）/, en: /third-party web-analytics service \(Google Analytics\)/ };
+  const NONE = { zh: /不使用任何第三方分析工具/, en: /use no third-party analytics tools/ };
+
+  const MATRIX = [KAITU, OVERLEAP].flatMap((brand) =>
+    ['zh-CN', 'en-GB'].map((locale) => ({ brand, locale, lang: locale.startsWith('zh') ? 'zh' as const : 'en' as const })),
+  );
+
+  it('covers both registry states, so neither branch goes untested', () => {
+    const states = new Set([KAITU, OVERLEAP].map((b) => Boolean(b.gaMeasurementId)));
+    expect(states.size).toBe(2);
+  });
+
+  it.each(MATRIX)('$brand.id / $locale: third-party sentence ⇔ gaMeasurementId is set', ({ brand, locale, lang }) => {
+    const out = renderLegalDoc(raw, locale, brand);
+    const hasGa = Boolean(brand.gaMeasurementId);
+    expect(THIRD_PARTY[lang].test(out)).toBe(hasGa);
+    expect(NONE[lang].test(out)).toBe(!hasGa);
+    expect(out).not.toMatch(/\{\{/);
+  });
+
+  it.each(MATRIX)('$brand.id / $locale: cookie lifetime and record retention are stated separately', ({ brand, locale, lang }) => {
+    const out = renderLegalDoc(raw, locale, brand);
+    if (lang === 'zh') {
+      expect(out).toMatch(/Cookie 最长保留 13 个月/);
+      expect(out).toMatch(/统计记录在 120 天后删除/);
+      expect(out).not.toMatch(/Cookie 保留 120 天/);
+    } else {
+      expect(out).toMatch(/cookie is kept for up to 13 months/);
+      expect(out).toMatch(/statistics records are deleted after 120 days/);
+      expect(out).not.toMatch(/cookie is kept for 120 days/);
+    }
+  });
+
+  it.each(MATRIX)('$brand.id / $locale: says what is recorded, what is not, and the account link', ({ brand, locale, lang }) => {
+    const out = renderLegalDoc(raw, locale, brand);
+    const must = lang === 'zh'
+      ? [/页面（路径）/, /来源网站的域名/, /推广活动标记/, /国家\/地区/, /设备类型/, /不保存 IP 地址/, /完整的浏览器标识/,
+         /登录或付款后，这些记录会与您的账户关联/, /第一方/, /聚合/, /Global Privacy Control/,
+         /打开 App/, /登录/, /首次连接成功/, /每日首次连接成功/, /查看购买页/, /选择套餐/, /发起支付/, /打开订阅管理/,
+         /仅适用于网站/, /不包含任何连接、流量或访问目的地信息/]
+      : [/pages of this site you visit \(the path\)/, /referring site's domain/, /campaign tags/, /country\/region/, /device type/,
+         /IP address and the full browser identification are not stored/,
+         /After you sign in or pay, these records are linked to your account/, /first-party/, /aggregate/, /Global Privacy Control/,
+         /opening the app/, /signing in/, /first successful connection/, /first successful connection of each day/,
+         /viewing the purchase page/, /selecting a plan/, /starting a payment/, /opening subscription management/,
+         /applies to the website only/, /no connection, traffic or destination information/];
+    for (const re of must) expect(out, String(re)).toMatch(re);
+  });
+});

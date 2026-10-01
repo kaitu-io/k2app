@@ -6,7 +6,7 @@
 
 ## 中文版本
 
-**最后更新：2026-09**
+**最后更新：2026-10**
 
 ### 一、我们收集的信息
 
@@ -62,13 +62,13 @@
 
 5.1 **必要 Cookie**：我们使用必要的 Cookie 来维护您的登录会话和记住您的偏好设置。
 
-5.2 **访问与购买转化统计**：官网使用一个第一方 Cookie（`sid`）来做聚合的访问量与购买转化统计。我们不使用任何第三方分析工具；统计内容不包含您浏览的内容。该 Cookie 保留 120 天。当您的浏览器发出 Global Privacy Control（GPC）信号时，我们不会设置该 Cookie。您也可以随时通过网站页脚的访问统计退出链接退出。
+5.2 **访问与购买转化统计**：官网使用一个第一方 Cookie（`sid`）来做聚合的访问量与购买转化统计。记录的内容包括：您在本网站访问的页面（路径）、来源网站的域名、推广活动标记、国家/地区和设备类型。我们不保存 IP 地址，也不保存完整的浏览器标识。在您登录或付款后，这些记录会与您的账户关联。{{thirdPartyAnalytics}}该 Cookie 最长保留 13 个月；统计记录在 120 天后删除。当您的浏览器发出 Global Privacy Control（GPC）信号时，我们不会设置该 Cookie。您也可以随时通过网站页脚的访问统计退出链接退出。
 
 5.3 **无广告追踪**：我们不使用任何第三方广告追踪器或营销 Cookie。
 
 5.4 **Cookie 管理**：您可以通过浏览器设置管理或禁用 Cookie，但这可能影响某些功能的正常使用。
 
-5.5 **App 内的产品流程事件**：App 会记录少量产品流程事件（打开、登录、连接成功、进入购买页、发起支付），登录后这些事件与您的账户关联，用于改进注册与购买流程。这些事件**不包含任何连接、流量或访问目的地信息**，保留 120 天。
+5.5 **App 内的产品流程事件**：App 会记录少量产品流程事件：打开 App、登录、首次连接成功与每日首次连接成功、查看购买页、选择套餐、发起支付、打开订阅管理。登录后这些事件与您的账户关联，用于改进注册与购买流程的聚合统计。这些事件**不包含任何连接、流量或访问目的地信息**，保留 120 天。网站页脚的访问统计退出链接仅适用于网站，不适用于 App 内的这些事件。
 
 ### 六、第三方服务
 
@@ -110,7 +110,7 @@
 
 ## English Version
 
-**Last updated: 2026-09**
+**Last updated: 2026-10**
 
 ### 1. Information We Collect
 
@@ -166,13 +166,13 @@
 
 5.1 **Essential Cookies**: We use essential cookies to maintain your login session and remember your preferences.
 
-5.2 **Visit and Purchase-Conversion Statistics**: The website uses a single first-party cookie (`sid`) for aggregate visit and purchase-conversion statistics. We use no third-party analytics tools, and the statistics do not include the content you browse. The cookie is kept for 120 days. It is not set when your browser sends a Global Privacy Control (GPC) signal, and you can opt out at any time using the visit-statistics opt-out link in the website footer.
+5.2 **Visit and Purchase-Conversion Statistics**: The website uses a single first-party cookie (`sid`) for aggregate visit and purchase-conversion statistics. What is recorded: the pages of this site you visit (the path), the referring site's domain, campaign tags, your country/region and your device type. The IP address and the full browser identification are not stored. After you sign in or pay, these records are linked to your account. {{thirdPartyAnalytics}}The cookie is kept for up to 13 months; the statistics records are deleted after 120 days. The cookie is not set when your browser sends a Global Privacy Control (GPC) signal, and you can opt out at any time using the visit-statistics opt-out link in the website footer.
 
 5.3 **No Ad Tracking**: We do not use any third-party ad trackers or marketing cookies.
 
 5.4 **Cookie Management**: You can manage or disable cookies through your browser settings, though this may affect certain features.
 
-5.5 **In-App Product-Flow Events**: The app records a small number of product-flow events (open, sign-in, successful connection, reaching the purchase page, starting a payment). After you sign in, these events are associated with your account to help us improve sign-up and purchase flows. They contain **no connection, traffic or destination information** and are kept for 120 days.
+5.5 **In-App Product-Flow Events**: The app records a small number of product-flow events: opening the app, signing in, your first successful connection and the first successful connection of each day, viewing the purchase page, selecting a plan, starting a payment, and opening subscription management. After you sign in, these events are associated with your account and used for aggregate statistics that help us improve sign-up and purchase flows. They contain **no connection, traffic or destination information** and are kept for 120 days. The visit-statistics opt-out link in the website footer applies to the website only, not to these in-app events.
 
 ### 6. Third-Party Services
 

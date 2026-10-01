@@ -38,8 +38,27 @@ export function isChineseLocale(locale: string): boolean {
  * user-facing copy); `displayName` is the latin form. They are equal for brands
  * that have only one.
  */
+/**
+ * Whether the deployment loads a third-party analytics script is a registry
+ * fact (`gaMeasurementId`, read by the shared layout), and the policy is one
+ * file served to every brand — so the sentence is derived here, never written
+ * on disk. Each variant ends with its own separator so the placeholder sits
+ * flush inside the paragraph. tests/legal-docs.test.ts locks sentence ⇔ id.
+ */
+function thirdPartyAnalytics(brand: Brand, zh: boolean): string {
+  if (brand.gaMeasurementId) {
+    return zh
+      ? '此外，本网站还使用第三方网站分析服务（Google Analytics），该服务会设置它自己的 Cookie；您可以在浏览器中屏蔽 Cookie，或安装 Google Analytics 停用浏览器插件来拒绝这些 Cookie。'
+      : 'In addition, this site uses a third-party web-analytics service (Google Analytics), which sets its own cookies; you can refuse them by blocking cookies in your browser or by installing the Google Analytics opt-out browser add-on. ';
+  }
+  return zh
+    ? '除此之外，我们不使用任何第三方分析工具。'
+    : 'Beyond this, we use no third-party analytics tools. ';
+}
+
 function tokens(brand: Brand, zh: boolean): Record<string, string> {
   return {
+    thirdPartyAnalytics: thirdPartyAnalytics(brand, zh),
     brand: zh ? brand.wordmark : brand.displayName,
     legalName: brand.legalName,
     siteHost: brand.baseUrl.replace(/^https?:\/\//, ''),
