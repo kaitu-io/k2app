@@ -191,3 +191,67 @@ describe('OverleapPurchaseClient — funnel', () => {
     }
   });
 });
+
+describe('OverleapPurchaseClient — funnel pricing_view / plan identity', () => {
+  function stubImage(srcs: string[]) {
+    vi.stubGlobal('Image', function (this: object) {
+      Object.defineProperty(this, 'src', { set: (v: string) => srcs.push(v) });
+    } as unknown as typeof Image);
+  }
+  const parse = (srcs: string[], e: string) =>
+    srcs.map((s) => new URL(s, 'http://x').searchParams).filter((p) => p.get('e') === e);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetPlans.mockResolvedValue(PLANS);
+    mockGetUserProfile.mockResolvedValue({ subscriptions: [] });
+    mockCreateStripeCheckout.mockResolvedValue({ url: 'https://checkout.stripe.com/c/x' });
+    mockAuth = { isAuthenticated: true, isAuthLoading: false };
+    mockSearch = '';
+    Object.defineProperty(window, 'location', {
+      value: { assign: vi.fn(), href: 'http://localhost/en-US/purchase', pathname: '/en-US/purchase', search: '' },
+      writable: true,
+    });
+  });
+
+  it('sends pricing_view exactly once on mount', async () => {
+    const srcs: string[] = [];
+    stubImage(srcs);
+    try {
+      const { rerender } = render(<OverleapPurchaseClient />);
+      await waitFor(() => screen.getByTestId('subscribe-btn'));
+      rerender(<OverleapPurchaseClient />);
+      expect(parse(srcs, 'pricing_view')).toHaveLength(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('plan_select on the static price table and checkout_start carry the same plan id (yearly)', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
+    const srcs: string[] = [];
+    stubImage(srcs);
+    try {
+      const { default: OverleapPricing } = await import('@/components/home-overleap/OverleapPricing');
+      const { unmount } = render(
+        <OverleapPricing
+          title="t" subtitle="s" includes={[]} cta="go"
+          plans={[{ key: 'yearly', featured: true, name: 'Y', price: '$79', period: '/y', note: 'n' }]}
+        />,
+      );
+      fireEvent.click(screen.getByText('go'));
+      unmount();
+      render(<OverleapPurchaseClient />);
+      await waitFor(() => screen.getByTestId('subscribe-btn'));
+      fireEvent.click(screen.getByTestId('subscribe-btn'));
+      await waitFor(() => expect(mockCreateStripeCheckout).toHaveBeenCalled());
+      const sel = parse(srcs, 'plan_select')[0].get('p');
+      const start = parse(srcs, 'checkout_start')[0].get('p');
+      expect(sel).toBe('overleap-basic-1y');
+      expect(start).toBe(sel);
+    } finally {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    }
+  });
+});

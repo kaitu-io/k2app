@@ -32,7 +32,7 @@ export function pxUrl(event: WebFunnelEvent, opts: PixelOpts = {}): string {
   return `/api/px?${params.toString()}`;
 }
 
-export function track(event: WebFunnelEvent, opts?: { plan?: string; source?: string }): void {
+export function track(event: WebFunnelEvent, opts?: { plan?: string; source?: string; ref?: string }): void {
   if (typeof window === 'undefined') return;
   try {
     new Image().src = pxUrl(event, opts);

@@ -39,6 +39,7 @@ export const OVERLEAP_SITE: SiteConfig = {
   pricing: {
     yearly: { usd: 7900, gbp: 7900, eur: 8900 },
     monthly: { usd: 1199, gbp: 999, eur: 1199 },
+    pids: { yearly: 'overleap-basic-1y', monthly: 'overleap-basic-1m' },
   },
   contentCategories: {
     blog: {

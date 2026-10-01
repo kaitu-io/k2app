@@ -8,7 +8,7 @@
  * 选套餐 → POST /api/user/stripe/checkout → 同窗口跳 Stripe Checkout。
  * 权益经 webhook 异步入账，success 回跳落在 /account（见 OverleapAccountClient）。
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import { Link } from '@/i18n/routing';
@@ -27,6 +27,15 @@ function planAmount(p: Plan, currency: ReturnType<typeof displayCurrency>): { am
 }
 
 export default function OverleapPurchaseClient() {
+  // This page is itself a plan-choice page: a visitor arriving from a plan card elsewhere
+  // never sees /pricing, so the funnel's pricing step is reported here (once per mount).
+  const pricingViewSent = useRef(false);
+  useEffect(() => {
+    if (pricingViewSent.current) return;
+    pricingViewSent.current = true;
+    track('pricing_view');
+  }, []);
+
   const t = useTranslations('purchase');
   const locale = useLocale();
   const currency = displayCurrency(locale);

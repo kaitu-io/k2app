@@ -64,6 +64,8 @@ export interface SiteConfig {
   pricing?: {
     yearly: Record<string, number>;
     monthly: Record<string, number>;
+    /** 价表档位 → Center 套餐 pid。漏斗事件按套餐分组，静态价表与购买页必须报同一个标识。 */
+    pids?: { yearly: string; monthly: string };
   };
   /**
    * 定价页 App 版套餐的静态快照（美分），供 /pricing 服务端渲染出价格（SEO 与首屏），

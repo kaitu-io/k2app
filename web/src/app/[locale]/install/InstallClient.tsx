@@ -183,7 +183,6 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
 
   // Device detection -> auto-select tab + auto-download for desktop/android
   useEffect(() => {
-    track('install_view');
     const params = new URLSearchParams(window.location.search);
     const platformParam = params.get('platform');
     const noAutoDownload = params.get('nodownload') !== null;
@@ -193,6 +192,9 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
       router.replace('/routers');
       return;
     }
+
+    // Only a visit that actually renders the install page counts as a view.
+    track('install_view');
 
     let selectedId: PlatformId | null = null;
     let detectedType: DeviceType;

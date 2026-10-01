@@ -62,7 +62,7 @@
 
 5.1 **必要 Cookie**：我们使用必要的 Cookie 来维护您的登录会话和记住您的偏好设置。
 
-5.2 **访问与购买转化统计**：官网使用一个第一方 Cookie（`sid`）来做聚合的访问量与购买转化统计。我们不使用任何第三方分析工具；统计内容不包含您浏览的内容。该 Cookie 保留 120 天。当您的浏览器发出 Global Privacy Control（GPC）信号时，我们不会设置该 Cookie。您也可以随时通过网站页脚的「不参与访问统计」链接退出。
+5.2 **访问与购买转化统计**：官网使用一个第一方 Cookie（`sid`）来做聚合的访问量与购买转化统计。我们不使用任何第三方分析工具；统计内容不包含您浏览的内容。该 Cookie 保留 120 天。当您的浏览器发出 Global Privacy Control（GPC）信号时，我们不会设置该 Cookie。您也可以随时通过网站页脚的访问统计退出链接退出。
 
 5.3 **无广告追踪**：我们不使用任何第三方广告追踪器或营销 Cookie。
 
@@ -166,7 +166,7 @@
 
 5.1 **Essential Cookies**: We use essential cookies to maintain your login session and remember your preferences.
 
-5.2 **Visit and Purchase-Conversion Statistics**: The website uses a single first-party cookie (`sid`) for aggregate visit and purchase-conversion statistics. We use no third-party analytics tools, and the statistics do not include the content you browse. The cookie is kept for 120 days. It is not set when your browser sends a Global Privacy Control (GPC) signal, and you can opt out at any time using the "Do not count my visits" link in the website footer.
+5.2 **Visit and Purchase-Conversion Statistics**: The website uses a single first-party cookie (`sid`) for aggregate visit and purchase-conversion statistics. We use no third-party analytics tools, and the statistics do not include the content you browse. The cookie is kept for 120 days. It is not set when your browser sends a Global Privacy Control (GPC) signal, and you can opt out at any time using the visit-statistics opt-out link in the website footer.
 
 5.3 **No Ad Tracking**: We do not use any third-party ad trackers or marketing cookies.
 
