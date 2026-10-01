@@ -7,6 +7,7 @@ export const APP_FUNNEL_EVENTS = [
   'app_first_open',
   'first_connect_attempt',
   'first_connect_ok',
+  'connect_ok',
   'manage_click',
   'login_view',
   'paywall_view',

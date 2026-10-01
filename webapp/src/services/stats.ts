@@ -305,9 +305,32 @@ export const statsService = {
       _onceInProgress.delete(event);
     }
   },
+
+  /**
+   * Like trackFunnel, but at most once per UTC day per install. Storage key
+   * `funnel_day:<event>` holds the UTC date of the last enqueue and is written
+   * only after the queue write succeeded.
+   */
+  async trackFunnelDaily(event: AppFunnelEvent, props?: FunnelProps): Promise<void> {
+    if (_dailyInProgress.has(event)) return;
+    _dailyInProgress.add(event);
+    try {
+      const key = `funnel_day:${event}`;
+      const today = new Date().toISOString().slice(0, 10);
+      if ((await window._platform?.storage?.get<string>(key)) === today) return;
+      if (await enqueueFunnel(event, props)) {
+        await window._platform?.storage?.set(key, today);
+      }
+    } catch (err) {
+      console.warn('[Stats] trackFunnelDaily failed:', err);
+    } finally {
+      _dailyInProgress.delete(event);
+    }
+  },
 };
 
 const _onceInProgress = new Set<string>();
+const _dailyInProgress = new Set<string>();
 
 // ========================= Existing-install seeding =========================
 

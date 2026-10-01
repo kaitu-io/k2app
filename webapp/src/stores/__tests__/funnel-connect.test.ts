@@ -10,11 +10,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const trackFunnel = vi.fn();
 const trackFunnelOnce = vi.fn();
+const trackFunnelDaily = vi.fn();
 
 vi.mock('../../services/stats', () => ({
   statsService: {
     trackFunnel: (...a: unknown[]) => trackFunnel(...a),
     trackFunnelOnce: (...a: unknown[]) => trackFunnelOnce(...a),
+    trackFunnelDaily: (...a: unknown[]) => trackFunnelDaily(...a),
     trackAppOpen: vi.fn(),
     trackConnect: vi.fn(),
     trackDisconnect: vi.fn(),
@@ -30,6 +32,7 @@ describe('funnel: first_connect_ok', () => {
     vi.resetModules();
     trackFunnel.mockReset();
     trackFunnelOnce.mockReset();
+    trackFunnelDaily.mockReset();
     const store = new Map<string, unknown>();
     (window as any)._platform = {
       os: 'macos', isDesktop: true, isMobile: false, version: '0.4.0',
@@ -82,5 +85,21 @@ describe('funnel: first_connect_ok', () => {
     dispatch('USER_CONNECT'); // idle → connecting
     expect(useVPNMachineStore.getState().state).toBe('connecting');
     expect(trackFunnelOnce).not.toHaveBeenCalledWith('first_connect_ok');
+    expect(trackFunnelDaily).not.toHaveBeenCalled();
+  });
+
+  // connect_ok is the repeatable action event; per-UTC-day dedup lives in
+  // statsService.trackFunnelDaily, so every → connected edge must go through it.
+  it('→ connected reports connect_ok via trackFunnelDaily on every edge', async () => {
+    const { dispatch, useVPNMachineStore } = await boot();
+    dispatch('BACKEND_CONNECTED');
+    expect(trackFunnelDaily).toHaveBeenCalledTimes(1);
+    expect(trackFunnelDaily).toHaveBeenCalledWith('connect_ok');
+    expect(trackFunnel).not.toHaveBeenCalledWith('connect_ok');
+    expect(trackFunnelOnce).not.toHaveBeenCalledWith('connect_ok');
+
+    useVPNMachineStore.setState({ state: 'reconnecting' });
+    dispatch('BACKEND_CONNECTED');
+    expect(trackFunnelDaily).toHaveBeenCalledTimes(2);
   });
 });

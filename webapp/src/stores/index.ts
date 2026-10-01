@@ -135,6 +135,8 @@ export function initializeAllStores(): () => void {
       (state, prevState) => {
         if (state === 'connected' && prevState !== 'connected') {
           void statsService.trackFunnelOnce('first_connect_ok');
+          // Action event (not a once-per-install fact): at most one per UTC day.
+          void statsService.trackFunnelDaily('connect_ok');
           // Prefer engine's startAt (survives webapp reload mid-session) over local Date.now().
           // dispatchStatus updates startAt before dispatching the state event, so it's already
           // populated by the time this subscriber fires.

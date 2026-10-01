@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { cloudApi } from '../cloud-api';
 
 // Mock cloudApi before importing stats
@@ -368,6 +368,86 @@ describe('statsService', () => {
       });
       await expect(seedFunnelOnceFlagsForExistingInstall()).resolves.toBeUndefined();
       expect([...mockStorage.keys()]).toEqual([]);
+    });
+  });
+
+  describe('trackFunnelDaily', () => {
+    const flushWait = () => new Promise(r => setTimeout(r, 50));
+    const sent = (event: string) =>
+      mockRequest.mock.calls.flatMap(c => (c[2] as any).funnel ?? []).filter((e: any) => e.event === event);
+
+    afterEach(() => { vi.useRealTimers(); });
+    const setNow = (iso: string) => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(iso));
+    };
+
+    it('reconnects on the same UTC day send connect_ok once', async () => {
+      setNow('2026-10-01T08:00:00Z');
+      await statsService.trackFunnelDaily('connect_ok');
+      setNow('2026-10-01T23:59:59Z');
+      await statsService.trackFunnelDaily('connect_ok');
+      await statsService.trackFunnelDaily('connect_ok');
+      await flushWait();
+      expect(sent('connect_ok')).toHaveLength(1);
+      expect(mockStorage.get('funnel_day:connect_ok')).toBe('2026-10-01');
+    });
+
+    it('day rollover (UTC) sends again', async () => {
+      setNow('2026-10-01T23:59:59Z');
+      await statsService.trackFunnelDaily('connect_ok');
+      setNow('2026-10-02T00:00:01Z');
+      await statsService.trackFunnelDaily('connect_ok');
+      await statsService.trackFunnelDaily('connect_ok');
+      await flushWait();
+      expect(sent('connect_ok')).toHaveLength(2);
+      expect(mockStorage.get('funnel_day:connect_ok')).toBe('2026-10-02');
+    });
+
+    it('existing installs still emit connect_ok (seeding only suppresses the once-events)', async () => {
+      mockStorage.set('device-udid', 'raw-uuid-from-an-older-version');
+      await seedFunnelOnceFlagsForExistingInstall();
+      await statsService.trackFunnelOnce('first_connect_ok');
+      await statsService.trackFunnelDaily('connect_ok');
+      await flushWait();
+      expect(sent('first_connect_ok')).toHaveLength(0);
+      expect(sent('connect_ok')).toHaveLength(1);
+    });
+
+    it('concurrent calls enqueue once', async () => {
+      await Promise.all([
+        statsService.trackFunnelDaily('connect_ok'),
+        statsService.trackFunnelDaily('connect_ok'),
+      ]);
+      await flushWait();
+      expect(sent('connect_ok')).toHaveLength(1);
+    });
+
+    it('the day flag is not written when the queue write failed', async () => {
+      (window._platform!.storage.set as any).mockImplementation(async (key: string, value: any) => {
+        if (key === 'stats_queue') throw new Error('disk full');
+        mockStorage.set(key, value);
+      });
+      await statsService.trackFunnelDaily('connect_ok');
+      expect(mockStorage.get('funnel_day:connect_ok')).toBeUndefined();
+
+      (window._platform!.storage.set as any).mockImplementation(
+        async (key: string, value: any) => { mockStorage.set(key, value); }
+      );
+      await statsService.trackFunnelDaily('connect_ok');
+      await flushWait();
+      expect(sent('connect_ok')).toHaveLength(1);
+    });
+
+    it('never throws when storage is missing', async () => {
+      const platform = window._platform as any;
+      const saved = platform.storage;
+      platform.storage = undefined;
+      try {
+        await expect(statsService.trackFunnelDaily('connect_ok')).resolves.toBeUndefined();
+      } finally {
+        platform.storage = saved;
+      }
     });
   });
 });
