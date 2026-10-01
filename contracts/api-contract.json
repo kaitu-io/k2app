@@ -300,6 +300,13 @@
       "kind": "action"
     },
     {
+      "name": "connect_ok",
+      "surfaces": [
+        "app"
+      ],
+      "kind": "action"
+    },
+    {
       "name": "manage_click",
       "surfaces": [
         "app"

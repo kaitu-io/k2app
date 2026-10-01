@@ -41,6 +41,7 @@ var funnelEventRegistry = []funnelEventDef{
 	{"app_first_open", funnelApp, FunnelKindAction},
 	{"first_connect_attempt", funnelApp, FunnelKindAction},
 	{"first_connect_ok", funnelApp, FunnelKindAction},
+	{"connect_ok", funnelApp, FunnelKindAction},
 	{"manage_click", funnelApp, FunnelKindAction},
 	{"login_view", funnelApp, FunnelKindView},
 	{"paywall_view", funnelApp, FunnelKindView},

@@ -11,6 +11,8 @@ func TestFunnelEventAllowed(t *testing.T) {
 		{"page_view", "app", false},
 		{"checkout_start", "app", true},
 		{"checkout_start", "web", true},
+		{"connect_ok", "app", true},
+		{"connect_ok", "web", false},
 		{"purchase", "web", false},
 		{"purchase", "app", false},
 		{"nope", "web", false},
@@ -24,6 +26,7 @@ func TestFunnelEventAllowed(t *testing.T) {
 
 func TestFunnelEventKind(t *testing.T) {
 	if funnelEventKind("page_view") != FunnelKindView || funnelEventKind("plan_select") != FunnelKindAction ||
+		funnelEventKind("connect_ok") != FunnelKindAction ||
 		funnelEventKind("purchase") != FunnelKindFact || funnelEventKind("nope") != "" {
 		t.Fatal("funnelEventKind mismatch")
 	}
