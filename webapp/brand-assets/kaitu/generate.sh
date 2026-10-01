@@ -13,7 +13,8 @@
 #   round   circle (legacy Android round icon), mark shrunk to stay inside it
 #   adaptive  Android foreground = ink only, background = the tile colour
 #   small   logo-small.svg (heavier strokes) for 16/32 px
-# Not generated: web/public/images/og-default.png (carries no logo).
+# Not generated here: web/public/images/og-default.png — after a logo change also run
+#   (cd web && node scripts/generate-og-image.mjs)   # reads public/kaitu-icon.png
 # Set OUT_ROOT to render into another tree.
 set -euo pipefail
 
