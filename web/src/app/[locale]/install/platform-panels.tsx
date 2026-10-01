@@ -16,9 +16,14 @@ import {
 import { openDownloadInNewTab } from '@/lib/device-detection';
 import { track } from '@/lib/funnel';
 
-// Funnel: a click on a download button (the auto-download countdown is not a click and is not tracked).
-function downloadClick(platform: 'windows' | 'macos' | 'android', link: string) {
-  track('install_click', { plan: platform });
+type DownloadPlatform = 'windows' | 'macos' | 'android';
+
+// Funnel: every way a visitor starts an install reports install_click with the
+// platform as the plan and how it started as the source — `button` (the main
+// download button / store link), `backup` (the backup link), `auto` (the
+// countdown download, InstallClient) and `cli` (copying the install command).
+function downloadClick(platform: DownloadPlatform, link: string) {
+  track('install_click', { plan: platform, source: 'button' });
   openDownloadInNewTab(link);
 }
 
@@ -63,13 +68,14 @@ function VersionLabel({ t, version, isBeta }: { t: PlatformPanelProps['t']; vers
   );
 }
 
-function BackupLink({ href, t }: { href: string; t: (key: string) => string }) {
+function BackupLink({ href, t, platform }: { href: string; t: (key: string) => string; platform: DownloadPlatform }) {
   return (
     <div className="mt-2">
       <a
         href={href}
         target="_blank"
         rel="noopener noreferrer"
+        onClick={() => track('install_click', { plan: platform, source: 'backup' })}
         className="text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
         {t('install.install.backupDownload')}
@@ -105,7 +111,7 @@ export function WindowsPanel({
         <Download className="w-5 h-5 mr-2" />
         {t('install.install.downloadButton')} v{version}
       </Button>
-      <BackupLink href={backupLink} t={t} />
+      <BackupLink href={backupLink} t={t} platform="windows" />
 
       {/* Install guides */}
       <div className="mt-8 max-w-xl mx-auto space-y-4 text-left">
@@ -152,7 +158,7 @@ export function MacOSPanel({
         <Download className="w-5 h-5 mr-2" />
         {t('install.install.downloadButton')} v{version}
       </Button>
-      <BackupLink href={backupLink} t={t} />
+      <BackupLink href={backupLink} t={t} platform="macos" />
 
       {/* CLI block — pipes the /i/k2 install script, which is a kaitu-only
           surface (middleware 404s it on other brands), so gate it alongside
@@ -234,7 +240,7 @@ export function IOSPanel({
         // lets the system present the App Store natively (product-page card),
         // instead of leaving a stray blank Safari tab behind.
         <Button size="lg" asChild>
-          <a href={link} onClick={() => track('install_click', { plan: 'ios' })}>
+          <a href={link} onClick={() => track('install_click', { plan: 'ios', source: 'button' })}>
             <ExternalLink className="w-5 h-5 mr-2" />
             App Store
           </a>
@@ -267,7 +273,7 @@ export function AndroidPanel({
         <Download className="w-5 h-5 mr-2" />
         {t('install.install.downloadButton')} v{version}
       </Button>
-      <BackupLink href={backupLink} t={t} />
+      <BackupLink href={backupLink} t={t} platform="android" />
 
       {/* Install guide — the USB/APK sideload walkthrough is a kaitu-only
           surface (it depends on the desktop client's 其他设备安装 flow). */}

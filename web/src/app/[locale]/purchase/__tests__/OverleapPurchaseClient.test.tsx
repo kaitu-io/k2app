@@ -1,5 +1,5 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import OverleapPurchaseClient from '../OverleapPurchaseClient';
 
 const mockGetPlans = vi.fn();
@@ -253,5 +253,65 @@ describe('OverleapPurchaseClient — funnel pricing_view / plan identity', () =>
       vi.unstubAllEnvs();
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('OverleapPurchaseClient — funnel events', () => {
+  let srcs: string[];
+  const named = (e: string) => srcs.map((s) => new URL(s, 'http://x').searchParams).filter((p) => p.get('e') === e);
+
+  beforeEach(() => {
+    srcs = [];
+    vi.stubGlobal('Image', function (this: object) {
+      Object.defineProperty(this, 'src', { set: (v: string) => srcs.push(v) });
+    } as unknown as typeof Image);
+    mockLocale = 'en-US';
+    mockSearch = '';
+    mockAuth = { isAuthenticated: true, isAuthLoading: false };
+    mockGetPlans.mockReset().mockResolvedValue(PLANS);
+    mockGetUserProfile.mockReset().mockResolvedValue({ subscriptions: [] });
+    mockCreateStripeCheckout.mockReset().mockResolvedValue({ url: 'https://checkout.stripe.com/c/x' });
+    Object.defineProperty(window, 'location', {
+      value: { assign: vi.fn(), href: 'http://localhost/en-US/purchase', pathname: '/en-US/purchase', search: '' },
+      writable: true,
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('the preselected card is not a plan_select — only a card the visitor changes to is', async () => {
+    render(<OverleapPurchaseClient />);
+    await waitFor(() => screen.getByTestId('plan-card-overleap-basic-1m'));
+    expect(named('pricing_view')).toHaveLength(1);
+    expect(named('plan_select')).toHaveLength(0);
+
+    // clicking the card that is already selected changes nothing
+    fireEvent.click(screen.getByTestId('plan-card-overleap-basic-1y'));
+    expect(named('plan_select')).toHaveLength(0);
+
+    fireEvent.click(screen.getByTestId('plan-card-overleap-basic-1m'));
+    expect(named('plan_select')).toHaveLength(1);
+    expect(named('plan_select')[0].get('p')).toBe('overleap-basic-1m');
+
+    fireEvent.click(screen.getByTestId('plan-card-overleap-basic-1m'));
+    expect(named('plan_select')).toHaveLength(1);
+  });
+
+  it('checkout_start carries the pid of the card selected at that moment', async () => {
+    render(<OverleapPurchaseClient />);
+    await waitFor(() => screen.getByTestId('plan-card-overleap-basic-1m'));
+    fireEvent.click(screen.getByTestId('plan-card-overleap-basic-1m'));
+    fireEvent.click(screen.getByTestId('subscribe-btn'));
+    await waitFor(() => expect(named('checkout_start')).toHaveLength(1));
+    expect(named('checkout_start')[0].get('p')).toBe('overleap-basic-1m');
+    expect(named('checkout_start')[0].get('s')).toBe('self');
+  });
+
+  it('a visitor sent to login has not started a checkout', async () => {
+    mockAuth = { isAuthenticated: false, isAuthLoading: false };
+    render(<OverleapPurchaseClient />);
+    await waitFor(() => screen.getByTestId('subscribe-btn'));
+    fireEvent.click(screen.getByTestId('subscribe-btn'));
+    expect(mockRedirectToLogin).toHaveBeenCalled();
+    expect(named('checkout_start')).toHaveLength(0);
   });
 });

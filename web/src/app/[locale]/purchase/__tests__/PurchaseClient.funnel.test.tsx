@@ -11,6 +11,8 @@ const mockGetUserProfile = vi.fn();
 const mockGetPlans = vi.fn();
 const mockGetDelegate = vi.fn();
 const mockCreateOrder = vi.fn();
+const mockNotifyDelegate = vi.fn();
+const mockSetDelegate = vi.fn();
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
@@ -47,7 +49,21 @@ vi.mock('@/components/PurchaseStep2', () => ({
   ),
 }));
 vi.mock('@/components/PurchaseStep3', () => ({
-  default: ({ onPurchase }: { onPurchase: () => void }) => <button data-testid="buy" onClick={onPurchase} />,
+  default: ({
+    onPurchase,
+    onDelegatePay,
+    onEmptyStateDelegatePay,
+  }: {
+    onPurchase: () => void;
+    onDelegatePay: () => void;
+    onEmptyStateDelegatePay: (email: string) => void;
+  }) => (
+    <>
+      <button data-testid="buy" onClick={onPurchase} />
+      <button data-testid="delegate-pay" onClick={onDelegatePay} />
+      <button data-testid="delegate-new" onClick={() => onEmptyStateDelegatePay('payer@example.com')} />
+    </>
+  ),
 }));
 vi.mock('@/lib/pay-link', () => ({ payLink: () => '/pay', openPayLink: vi.fn() }));
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -59,6 +75,8 @@ vi.mock('@/lib/api', async (importOriginal) => {
       getPlans: (...a: unknown[]) => mockGetPlans(...a),
       getDelegate: (...a: unknown[]) => mockGetDelegate(...a),
       createOrder: (...a: unknown[]) => mockCreateOrder(...a),
+      notifyDelegate: (...a: unknown[]) => mockNotifyDelegate(...a),
+      setDelegate: (...a: unknown[]) => mockSetDelegate(...a),
     },
   };
 });
@@ -84,6 +102,8 @@ describe('PurchaseClient funnel events', () => {
     mockGetDelegate.mockResolvedValue(null);
     mockGetUserProfile.mockResolvedValue({ expiredAt: 0, isFirstOrderDone: false });
     mockCreateOrder.mockResolvedValue({ order: { uuid: 'o1', payAmount: 100 } });
+    mockNotifyDelegate.mockResolvedValue({});
+    mockSetDelegate.mockResolvedValue({ email: 'payer@example.com' });
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -117,5 +137,42 @@ describe('PurchaseClient funnel events', () => {
     await waitFor(() => expect(named('checkout_start')).toHaveLength(1));
     expect(named('checkout_start')[0].get('s')).toBe('self');
     expect(named('checkout_start')[0].get('p')).toBe('p1');
+  });
+
+  // The server derives the plan breakdown of the purchase paths from this event,
+  // so every checkout_start must name the plan — whichever way the order starts.
+  it('delegate pay sends checkout_start with the plan pid and s=delegate', async () => {
+    mockGetDelegate.mockResolvedValue({ email: 'payer@example.com' });
+    render(<PurchaseClient />);
+    await waitFor(() => expect(named('pricing_view')).toHaveLength(1));
+    await waitFor(() => expect(mockGetDelegate).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('pick-p2'));
+    await waitFor(() => {
+      fireEvent.click(screen.getByTestId('delegate-pay'));
+      expect(named('checkout_start').length).toBeGreaterThan(0);
+    });
+    const start = named('checkout_start')[0];
+    expect(start.get('s')).toBe('delegate');
+    expect(start.get('p')).toBe('p2');
+  });
+
+  it('first-time delegate pay sends checkout_start with the plan pid and s=delegate', async () => {
+    render(<PurchaseClient />);
+    await waitFor(() => expect(named('pricing_view')).toHaveLength(1));
+    fireEvent.click(screen.getByTestId('delegate-new'));
+    await waitFor(() => expect(named('checkout_start')).toHaveLength(1));
+    expect(named('checkout_start')[0].get('s')).toBe('delegate');
+    expect(named('checkout_start')[0].get('p')).toBe('p1');
+  });
+
+  it('never sends a checkout_start without a plan pid', async () => {
+    mockGetPlans.mockResolvedValue({ items: [] });
+    render(<PurchaseClient />);
+    await waitFor(() => expect(mockGetPlans).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId('buy')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('buy'));
+    fireEvent.click(screen.getByTestId('delegate-new'));
+    await waitFor(() => expect(mockSetDelegate).toHaveBeenCalled());
+    expect(named('checkout_start')).toHaveLength(0);
   });
 });

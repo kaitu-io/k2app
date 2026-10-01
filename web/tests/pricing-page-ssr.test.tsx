@@ -147,6 +147,27 @@ describe('kaitu /pricing (NEXT_PUBLIC_BRAND=kaitu)', () => {
   });
 });
 
+// The purchase paths start at 看定价; a brand whose /pricing page stays silent
+// loses every visitor who reads prices there and buys later.
+describe.each([
+  ['kaitu', '../src/app/[locale]/pricing/page.kaitu', 'zh-CN'],
+  ['overleap', '../src/app/[locale]/pricing/page.overleap', 'en-GB'],
+] as const)('%s /pricing reports pricing_view', (brand, mod, locale) => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('exactly once on mount', async () => {
+    const srcs: string[] = [];
+    vi.stubGlobal('Image', function (this: object) {
+      Object.defineProperty(this, 'src', { set: (v: string) => srcs.push(v) });
+    } as unknown as typeof Image);
+    vi.stubEnv('NEXT_PUBLIC_BRAND', brand);
+    vi.setSystemTime(PRESALE_NOW);
+    await renderPage(mod, locale);
+    const views = srcs.map((u) => new URL(u, 'http://x').searchParams.get('e')).filter((e) => e === 'pricing_view');
+    expect(views).toHaveLength(1);
+  });
+});
+
 describe('overleap /pricing (NEXT_PUBLIC_BRAND=overleap)', () => {
   const PRICE_ANCHORS = { 'en-GB': ['£79', '£9.99', '£6.58'], 'en-US': ['$79', '$11.99', '$6.58'], ja: ['$79', '$11.99'] } as const;
   for (const locale of ['en-GB', 'en-US', 'ja'] as const) {

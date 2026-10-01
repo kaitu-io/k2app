@@ -125,6 +125,13 @@ export default function OverleapPurchaseClient() {
     }
   }, [selectedPid, isAuthenticated, t]);
 
+  // Funnel: a plan_select is the visitor changing the card. The preselected
+  // card (and a click on the card already selected) is not a selection.
+  const handleSelect = (pid: string) => {
+    if (pid !== selectedPid) track('plan_select', { plan: pid });
+    setSelectedPid(pid);
+  };
+
   if (activeSub) {
     return (
       <div className="container mx-auto max-w-2xl px-4 py-12" data-testid="overleap-purchase">
@@ -174,7 +181,7 @@ export default function OverleapPurchaseClient() {
                 <button
                   key={p.pid}
                   type="button"
-                  onClick={() => setSelectedPid(p.pid)}
+                  onClick={() => handleSelect(p.pid)}
                   data-testid={`plan-card-${p.pid}`}
                   data-selected={selected}
                   className={`rounded-xl border p-5 text-left transition-colors ${

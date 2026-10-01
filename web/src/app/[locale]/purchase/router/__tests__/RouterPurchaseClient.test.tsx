@@ -529,3 +529,85 @@ describe('RouterPurchaseClient', () => {
     });
   });
 });
+
+describe('RouterPurchaseClient — funnel events', () => {
+  let srcs: string[];
+  const named = (e: string) => srcs.map((s) => new URL(s, 'http://x').searchParams).filter((p) => p.get('e') === e);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-12T12:00:00+08:00'));
+    srcs = [];
+    vi.stubGlobal('Image', function (this: object) {
+      Object.defineProperty(this, 'src', { set: (v: string) => srcs.push(v) });
+    } as unknown as typeof Image);
+    authState.current = { isAuthenticated: true, isAuthLoading: false };
+    searchParamsState.current = new URLSearchParams();
+    mockGetProductPlans.mockResolvedValue({ items: [HW, SVC] });
+    mockCreateOrder.mockResolvedValue({ order: fakeOrder(39900), payUrl: 'https://pay.test/x' });
+    mockGetUserRouter.mockResolvedValue({ hasRouter: false });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  const fillShipping = () => {
+    for (const [label, value] of [['shippingName', 'a'], ['shippingPhone', '1'], ['shippingAddress', 'b']]) {
+      fireEvent.change(screen.getByLabelText(`routers.edition.purchase.${label}`), { target: { value } });
+    }
+  };
+
+  it('pricing_view fires once when the offer renders; the preview request is not a checkout_start', async () => {
+    render(<RouterPurchaseClient />);
+    expect(named('pricing_view')).toHaveLength(0);
+    await screen.findByText('routers.edition.purchase.hardwareName');
+    await waitFor(() => expect(named('pricing_view')).toHaveLength(1));
+
+    await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled());
+    expect(mockCreateOrder.mock.calls.every((c) => c[0].preview === true)).toBe(true);
+    // typing re-renders the page many times; still one view, still no checkout
+    fillShipping();
+    expect(named('pricing_view')).toHaveLength(1);
+    expect(named('checkout_start')).toHaveLength(0);
+  });
+
+  it('no offer, no pricing_view', async () => {
+    mockGetProductPlans.mockResolvedValue({ items: [] });
+    render(<RouterPurchaseClient />);
+    await screen.findByText('routers.edition.purchase.noPlans');
+    expect(named('pricing_view')).toHaveLength(0);
+  });
+
+  it('paying sends checkout_start with the plan pid before the real order request', async () => {
+    let startsAtOrderTime = -1;
+    mockCreateOrder.mockImplementation(async (req: { preview: boolean }) => {
+      if (!req.preview) startsAtOrderTime = named('checkout_start').length;
+      return { order: fakeOrder(39900), payUrl: 'https://pay.test/x' };
+    });
+    render(<RouterPurchaseClient />);
+    await screen.findByText('routers.edition.purchase.hardwareName');
+    fillShipping();
+    const payButton = screen.getByRole('button', { name: 'routers.edition.purchase.payButton' });
+    await waitFor(() => expect(payButton).not.toBeDisabled());
+    fireEvent.click(payButton);
+    await waitFor(() => expect(startsAtOrderTime).toBe(1));
+    expect(named('checkout_start')).toHaveLength(1);
+    expect(named('checkout_start')[0].get('p')).toBe('router-std-1y');
+    expect(named('checkout_start')[0].get('s')).toBe('self');
+  });
+
+  it('a renewal reports the service plan pid', async () => {
+    searchParamsState.current = new URLSearchParams('plan=svc');
+    mockGetUserRouter.mockResolvedValue({ hasRouter: true, line: { status: 'active' } });
+    render(<RouterPurchaseClient />);
+    await screen.findByText('routers.edition.purchase.renewName');
+    const payButton = screen.getByRole('button', { name: 'routers.edition.purchase.payButton' });
+    await waitFor(() => expect(payButton).not.toBeDisabled());
+    fireEvent.click(payButton);
+    await waitFor(() => expect(named('checkout_start')).toHaveLength(1));
+    expect(named('checkout_start')[0].get('p')).toBe('router-svc-1y');
+    expect(named('pricing_view')).toHaveLength(1);
+  });
+});

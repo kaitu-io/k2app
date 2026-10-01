@@ -36,6 +36,17 @@ import {
 
 
 
+/**
+ * Funnel: the server derives the plan breakdown of the purchase paths from
+ * checkout_start, so the event always names the plan. With no plan selected
+ * there is no order to start (the request below is rejected), and an event
+ * without a pid would only land in an "unknown plan" bucket — so none is sent.
+ */
+function trackCheckoutStart(plan: string, source: 'self' | 'delegate') {
+  if (!plan) return;
+  track('checkout_start', { plan, source });
+}
+
 function PayResultDialog({ 
   open, 
   order, 
@@ -314,7 +325,7 @@ export default function PurchaseClient() {
     const payWindow = window.open('', '_blank');
 
     try {
-      track('checkout_start', { plan: selectedPlan, source: 'self' });
+      trackCheckoutStart(selectedPlan, 'self');
       console.info('[Purchase] Creating order request:', { selectedPlan, campaignCode });
 
       const request: CreateOrderRequest = {
@@ -461,7 +472,7 @@ export default function PurchaseClient() {
     if (!delegate) return;
     setIsLoading(true);
     try {
-      track('checkout_start', { plan: selectedPlan, source: 'delegate' });
+      trackCheckoutStart(selectedPlan, 'delegate');
       const request: CreateOrderRequest = {
         preview: false,
         plan: selectedPlan,
@@ -490,7 +501,7 @@ export default function PurchaseClient() {
       if (!trimmed) return;
       setIsLoading(true);
       try {
-        track('checkout_start', { plan: selectedPlan, source: 'delegate' });
+        trackCheckoutStart(selectedPlan, 'delegate');
         const newDelegate = await api.setDelegate(trimmed, { autoRedirectToAuth: false });
         setDelegate(newDelegate);
         const request: CreateOrderRequest = {

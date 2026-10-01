@@ -6,6 +6,7 @@ import Footer from '@/components/Footer';
 import FAQSection from '@/components/home/FAQSection';
 import AppPlansGrid from '@/components/pricing/AppPlansGrid';
 import RouterPlanCard from '@/components/pricing/RouterPlanCard';
+import FunnelEvent from '@/components/FunnelEvent';
 import { getBrand } from '@/lib/brand-server';
 import { siteConfig } from '@/lib/site';
 import { formatUsd, routerOffer } from '@/lib/router-edition';
@@ -100,6 +101,8 @@ export default async function PricingPage({
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqPageJsonLd).replace(/</g, '\\u003c') }}
       />
       <Header />
+      {/* 漏斗「看定价」一步：服务端页面经这个小客户端组件上报，两个品牌的定价页口径一致。 */}
+      <FunnelEvent event="pricing_view" />
 
       <section className="pt-16 pb-8 px-4 sm:px-6 lg:px-8">
         <div className="max-w-5xl mx-auto text-center">

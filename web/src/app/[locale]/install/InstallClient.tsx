@@ -160,6 +160,8 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
   const [countdown, setCountdown] = useState<number | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoDownloadLinkRef = useRef<string | null>(null);
+  // Platform of the pending automatic download — reported with the event.
+  const autoDownloadPlatformRef = useRef<PlatformId | null>(null);
 
   const displayVersion = betaVersion || serverStable!;
   const isBeta = !!(betaVersion && betaVersion !== serverStable);
@@ -173,6 +175,7 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
     }
     setCountdown(null);
     autoDownloadLinkRef.current = null;
+    autoDownloadPlatformRef.current = null;
   }, []);
 
   // Cancel auto-download when user switches platform tab
@@ -222,15 +225,22 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
 
       if (link) {
         autoDownloadLinkRef.current = link;
+        autoDownloadPlatformRef.current = detectedType as PlatformId;
         setCountdown(AUTO_DOWNLOAD_SECONDS);
         countdownRef.current = setInterval(() => {
           setCountdown((prev) => {
             if (prev === null || prev <= 1) {
               clearInterval(countdownRef.current!);
               countdownRef.current = null;
+              // The link ref is cleared as it is consumed, so a state updater
+              // React invokes twice still downloads — and counts — only once.
               if (autoDownloadLinkRef.current) {
                 triggerAutoDownload(autoDownloadLinkRef.current);
+                // The automatic download is the main desktop conversion: count
+                // it as an install click, marked `auto`, only when it really fires.
+                track('install_click', { plan: autoDownloadPlatformRef.current ?? undefined, source: 'auto' });
                 autoDownloadLinkRef.current = null;
+                autoDownloadPlatformRef.current = null;
               }
               return null;
             }
@@ -248,7 +258,10 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const copyCliCommand = useCallback(async () => {
+  // The CLI block appears on the Linux tab (its only install path) and on the
+  // macOS tab; the copy counts as an install click for the tab it came from.
+  const copyCliCommand = useCallback(async (platform: 'linux' | 'macos') => {
+    track('install_click', { plan: platform, source: 'cli' });
     try {
       await navigator.clipboard.writeText(`curl -fsSL ${siteBrand().baseUrl}/i/k2 | sudo bash`);
       setCopied(true);
@@ -298,7 +311,7 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
             isBeta={isBeta}
             primaryLink={downloadLinks.macos.primary}
             backupLink={downloadLinks.macos.backup}
-            onCopy={copyCliCommand}
+            onCopy={() => copyCliCommand('macos')}
             copied={copied}
           />
         </TabsContent>
@@ -308,7 +321,7 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
               t={t}
               version={displayVersion}
               isBeta={isBeta}
-              onCopy={copyCliCommand}
+              onCopy={() => copyCliCommand('linux')}
               copied={copied}
             />
           </TabsContent>
