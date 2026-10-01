@@ -80,6 +80,11 @@ func ParseVariants(spec string) (*VariantPicker, error) {
 		if _, known := variantConfig(name); !known {
 			return nil, fmt.Errorf("k2cc variants: unknown arm %q", name)
 		}
+		// lab-* arms isolate one half of the fix and are known to misbehave
+		// (resolved-only doubles bwEst on a policed link); never deployable.
+		if strings.HasPrefix(name, "lab-") {
+			return nil, fmt.Errorf("k2cc variants: %q is a lab-only arm", name)
+		}
 		n, err := strconv.Atoi(strings.TrimSpace(w))
 		if err != nil || n <= 0 {
 			return nil, fmt.Errorf("k2cc variants: weight of %q must be a positive integer", name)

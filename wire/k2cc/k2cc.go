@@ -1436,8 +1436,14 @@ func (p *K2CCSender) OnCongestionEvent(
 	// concurrency:allow — pure arithmetic on struct fields, no I/O or external calls
 	defer p.mu.Unlock()
 
+	// Record loss in current MI — but skip stale losses from previous MI.
+	// QUIC reports loss for packets sent in old MI after new MI has started.
+	// Without filtering: BytesLost >> BytesSent → LossRate 300-900% → false CRITICAL.
+	mi := p.state.ensureCurrentMI(p.state.CurrentRate, p.rtt)
+
 	// ECN congestion signals arrive here with lostBytes == 0 (kuic
-	// sent_packet_handler); they are not a lost packet.
+	// sent_packet_handler); they are not a lost packet. Checked after
+	// ensureCurrentMI so the MI lifecycle stays identical to the pre-variant code.
 	if lostBytes == 0 {
 		return
 	}
@@ -1445,11 +1451,6 @@ func (p *K2CCSender) OnCongestionEvent(
 	// MI attribution. declLoss in cc-summary is built from these.
 	p.stats.DeclaredLostBytes += uint64(lostBytes)
 	p.stats.DeclaredLostPkts++
-
-	// Record loss in current MI — but skip stale losses from previous MI.
-	// QUIC reports loss for packets sent in old MI after new MI has started.
-	// Without filtering: BytesLost >> BytesSent → LossRate 300-900% → false CRITICAL.
-	mi := p.state.ensureCurrentMI(p.state.CurrentRate, p.rtt)
 
 	// Stale loss filter: skip losses from previous MI.
 	// PacketsSent == 0: no packets sent in this MI yet, ALL losses are stale.
