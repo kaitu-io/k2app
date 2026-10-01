@@ -785,6 +785,42 @@ describe('Config Store', () => {
       expect(cfg.routes![2]).toEqual({ match: { region: 'cn' }, via: 'direct' });
     });
 
+    // Directories and names of one mode travel in ONE route: the engine ORs
+    // them, so a helper anywhere inside the bundle matches without being
+    // listed by name.
+    test('override directories join their mode\'s route as match.app_paths', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false });
+      const { useConfigStore } = await import('../config.store');
+      await useConfigStore.getState().loadConfig();
+
+      const cfg = useConfigStore.getState().buildConnectConfig({
+        serverUrl: 'k2v5://example',
+        forceDirect: ['Doubao'],
+        forceDirectPaths: ['/Applications/Doubao.app'],
+        forceProxyPaths: ['/Applications/Steam.app'],
+      });
+      expect(cfg.routes![0]).toEqual({
+        match: { apps: ['Doubao'], app_paths: ['/Applications/Doubao.app'] },
+        via: 'direct',
+      });
+      // Paths alone are enough for a route — and no empty `apps` key is sent.
+      expect(cfg.routes![1]).toEqual({ match: { app_paths: ['/Applications/Steam.app'] }, via: 'k2v5://example' });
+      expect(cfg.routes![2]).toEqual({ match: { region: 'cn' }, via: 'direct' });
+    });
+
+    test('empty override lists emit no Tier-1 route', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false });
+      const { useConfigStore } = await import('../config.store');
+      await useConfigStore.getState().loadConfig();
+
+      const cfg = useConfigStore.getState().buildConnectConfig({
+        serverUrl: 'k2v5://example',
+        forceDirect: [], forceProxy: [], forceDirectPaths: [], forceProxyPaths: [],
+      });
+      expect(cfg.routes![0]).toEqual({ match: { region: 'cn' }, via: 'direct' });
+      expect(cfg.routes!.some((r) => r.match.apps || r.match.app_paths)).toBe(false);
+    });
+
     test('string-form param has no overrides (Tier-1 empty)', async () => {
       mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: null, autoDetect: true });
       const { useConfigStore } = await import('../config.store');

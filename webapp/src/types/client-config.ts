@@ -65,6 +65,10 @@ export interface MatchConfig {
   // Apps are platform-dispatched glob patterns for force-overrides.
   // Plan C wires the UI; Plan B reserves the wire shape.
   apps?: string[];
+  // Directories (macOS .app bundle, Windows install dir): a process whose
+  // executable lives under one of them matches. OR'd with `apps` on the same
+  // route. Engines that predate it ignore the field and match by `apps` alone.
+  app_paths?: string[];
 
   network?: 'tcp' | 'udp';
 
