@@ -20,7 +20,7 @@ function installStorageMock(): Map<string, unknown> {
 
 function resetStore(loaded: boolean) {
   useAppRoutesStore.setState(
-    { overrides: {}, forceProxy: [], forceDirect: [], classifications: new Map(), loaded },
+    { overrides: {}, forceProxy: [], forceDirect: [], forceProxyPaths: [], forceDirectPaths: [], classifications: new Map(), loaded },
     false,
   );
 }
@@ -179,6 +179,81 @@ describe('app-routes classify cache + toggles', () => {
     expect(store.get(STORAGE_KEY)).toBe(persistedBefore); // no change → no re-persist
   });
 
+  // macOS: the app is its bundle directory. The override stores it and the
+  // derived lists feed match.app_paths; the main executable name rides along
+  // as the fallback identity.
+  test('setOverride stores the app directory and derives path lists per mode', async () => {
+    const doubao = { id: '/Applications/Doubao.app', processNames: ['Doubao'], paths: ['/Applications/Doubao.app'] };
+    const capcut = { id: '/Applications/VideoFusion-macOS.app', processNames: ['VideoFusion-macOS'], paths: ['/Applications/VideoFusion-macOS.app'] };
+    await useAppRoutesStore.getState().setOverride(doubao, 'direct');
+    await useAppRoutesStore.getState().setOverride(capcut, 'proxy');
+    const s = useAppRoutesStore.getState();
+    expect(s.overrides[doubao.id]).toEqual({ mode: 'direct', names: ['Doubao'], paths: ['/Applications/Doubao.app'] });
+    expect(s.forceDirectPaths).toEqual(['/Applications/Doubao.app']);
+    expect(s.forceProxyPaths).toEqual(['/Applications/VideoFusion-macOS.app']);
+    expect(s.forceDirect).toEqual(['Doubao']);
+    expect(store.get(STORAGE_KEY)).toMatchObject({
+      v: 2,
+      apps: { [doubao.id]: { paths: ['/Applications/Doubao.app'] } },
+    });
+
+    // Flipping the mode moves the directory with it; clearing removes it.
+    await useAppRoutesStore.getState().setOverride(doubao, 'proxy');
+    expect(useAppRoutesStore.getState().forceDirectPaths).toEqual([]);
+    expect(useAppRoutesStore.getState().forceProxyPaths).toEqual(
+      expect.arrayContaining(['/Applications/Doubao.app', '/Applications/VideoFusion-macOS.app']),
+    );
+    await useAppRoutesStore.getState().setOverride(doubao, 'default');
+    expect(useAppRoutesStore.getState().forceProxyPaths).toEqual(['/Applications/VideoFusion-macOS.app']);
+  });
+
+  // An app with a directory but no declared executable is still routable.
+  test('setOverride keeps a paths-only app', async () => {
+    const odd = { id: '/Applications/Odd.app', processNames: [], paths: ['/Applications/Odd.app'] };
+    await useAppRoutesStore.getState().setOverride(odd, 'direct');
+    const s = useAppRoutesStore.getState();
+    expect(s.overrides[odd.id]).toEqual({ mode: 'direct', names: [], paths: ['/Applications/Odd.app'] });
+    expect(s.forceDirectPaths).toEqual(['/Applications/Odd.app']);
+  });
+
+  // Name-only apps (Windows, Linux, standalone binaries) keep the old shape:
+  // no `paths` key appears in storage.
+  test('setOverride without paths stores names only', async () => {
+    const app = { id: 'C:\\Apps\\A', processNames: ['a.exe'] };
+    await useAppRoutesStore.getState().setOverride(app, 'direct');
+    expect(useAppRoutesStore.getState().overrides[app.id]).toEqual({ mode: 'direct', names: ['a.exe'] });
+    expect(useAppRoutesStore.getState().forceDirectPaths).toEqual([]);
+  });
+
+  // An override saved by a version that only knew names must pick up the
+  // app's directory on the next list refresh — without losing the names it
+  // already locked in (they still cover the app if it runs from elsewhere).
+  test('refreshOverrideNames adds the directory to an override saved before paths existed', async () => {
+    const id = '/Applications/Doubao.app';
+    store.set(STORAGE_KEY, { v: 2, apps: { [id]: { mode: 'direct', names: ['Doubao', 'Doubao Browser Helper'] } } });
+    await useAppRoutesStore.getState().load();
+    expect(useAppRoutesStore.getState().forceDirectPaths).toEqual([]);
+
+    await useAppRoutesStore.getState().refreshOverrideNames([{ id, processNames: ['Doubao'], paths: [id] }]);
+    const s = useAppRoutesStore.getState();
+    expect(s.overrides[id]).toEqual({ mode: 'direct', names: ['Doubao', 'Doubao Browser Helper'], paths: [id] });
+    expect(s.forceDirectPaths).toEqual([id]);
+    expect(store.get(STORAGE_KEY)).toMatchObject({ v: 2, apps: { [id]: { paths: [id] } } });
+
+    // Idempotent: a second refresh with the same list does not re-persist.
+    const persisted = store.get(STORAGE_KEY);
+    await useAppRoutesStore.getState().refreshOverrideNames([{ id, processNames: ['Doubao'], paths: [id] }]);
+    expect(store.get(STORAGE_KEY)).toBe(persisted);
+  });
+
+  test('load restores stored paths into the derived lists', async () => {
+    const id = '/Applications/Doubao.app';
+    store.set(STORAGE_KEY, { v: 2, apps: { [id]: { mode: 'proxy', names: ['Doubao'], paths: [id] } } });
+    await useAppRoutesStore.getState().load();
+    expect(useAppRoutesStore.getState().forceProxyPaths).toEqual([id]);
+    expect(useAppRoutesStore.getState().forceDirectPaths).toEqual([]);
+  });
+
   test('resetOverrides clears everything', async () => {
     await useAppRoutesStore.getState().setOverride({ id: 'x', processNames: ['x'] }, 'direct');
     await useAppRoutesStore.getState().resetOverrides();
@@ -186,5 +261,107 @@ describe('app-routes classify cache + toggles', () => {
     expect(s.overrides).toEqual({});
     expect(s.forceDirect).toEqual([]);
     expect(s.forceProxy).toEqual([]);
+    expect(s.forceDirectPaths).toEqual([]);
+    expect(s.forceProxyPaths).toEqual([]);
+  });
+});
+
+// Overrides saved by a version that knew only process names must gain their
+// app's directory at BOOT — the user should not have to open the App Bypass
+// page for an upgrade to take effect.
+describe('app-routes.store boot-time path reconcile', () => {
+  let store: Map<string, unknown>;
+  const id = '/Applications/Doubao.app';
+  const legacy = () => ({ v: 2, apps: { [id]: { mode: 'direct', names: ['Doubao', 'Doubao Browser Helper'] } } });
+  const withAppList = (appList: unknown) => { (window as any)._platform.appList = appList; };
+  // load() fires the reconcile without awaiting it; let it settle.
+  const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
+
+  beforeEach(() => {
+    store = installStorageMock();
+    resetStore(false);
+  });
+
+  test('load() adds directories to a names-only override and marks it reconciled', async () => {
+    store.set(STORAGE_KEY, legacy());
+    const listInstalled = vi.fn(async () => [{ id, label: 'Doubao', processNames: ['Doubao'], paths: [id] }]);
+    withAppList({ listInstalled });
+
+    await useAppRoutesStore.getState().load();
+    await settle();
+
+    const s = useAppRoutesStore.getState();
+    expect(s.overrides[id]).toEqual({ mode: 'direct', names: ['Doubao', 'Doubao Browser Helper'], paths: [id] });
+    expect(s.forceDirectPaths).toEqual([id]);
+    expect(store.get(STORAGE_KEY)).toEqual({
+      v: 2,
+      apps: { [id]: { mode: 'direct', names: ['Doubao', 'Doubao Browser Helper'], paths: [id] } },
+      pathsSynced: true,
+    });
+
+    // Reconciled once: the next launch does not enumerate apps again.
+    resetStore(false);
+    await useAppRoutesStore.getState().load();
+    await settle();
+    expect(listInstalled).toHaveBeenCalledTimes(1);
+  });
+
+  test('an override made from the running list is reconciled by its running id', async () => {
+    const rid = 'com.bytedance.doubao';
+    store.set(STORAGE_KEY, { v: 2, apps: { [rid]: { mode: 'proxy', names: ['Doubao'] } } });
+    withAppList({
+      listInstalled: async () => [{ id: '/Applications/Other.app', label: 'Other', processNames: ['Other'], paths: ['/Applications/Other.app'] }],
+      listRunning: async () => [{ id: rid, label: 'Doubao', processNames: ['Doubao'], paths: [id] }],
+    });
+
+    await useAppRoutesStore.getState().load();
+    await settle();
+
+    expect(useAppRoutesStore.getState().overrides[rid]?.paths).toEqual([id]);
+    expect(useAppRoutesStore.getState().forceProxyPaths).toEqual([id]);
+  });
+
+  // The webapp can arrive (OTA) before the shell that reports directories.
+  // Reconciling against such a shell must NOT be recorded as done, or the
+  // override would never be upgraded once the shell is.
+  test('a shell that reports no directories leaves the reconcile owed', async () => {
+    store.set(STORAGE_KEY, legacy());
+    const oldShell = vi.fn(async () => [{ id, label: 'Doubao', processNames: ['Doubao', 'Doubao Browser Helper'] }]);
+    withAppList({ listInstalled: oldShell });
+
+    await useAppRoutesStore.getState().load();
+    await settle();
+    expect(useAppRoutesStore.getState().overrides[id]?.paths).toBeUndefined();
+    expect((store.get(STORAGE_KEY) as any).pathsSynced).toBeUndefined();
+
+    // Shell upgraded: next launch reconciles.
+    withAppList({ listInstalled: async () => [{ id, label: 'Doubao', processNames: ['Doubao'], paths: [id] }] });
+    resetStore(false);
+    await useAppRoutesStore.getState().load();
+    await settle();
+    expect(useAppRoutesStore.getState().overrides[id]?.paths).toEqual([id]);
+    expect((store.get(STORAGE_KEY) as any).pathsSynced).toBe(true);
+  });
+
+  test('a failing enumeration is retried next launch and never breaks load()', async () => {
+    store.set(STORAGE_KEY, legacy());
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    withAppList({ listInstalled: async () => { throw new Error('ipc down'); } });
+
+    await useAppRoutesStore.getState().load();
+    await settle();
+    const s = useAppRoutesStore.getState();
+    expect(s.loaded).toBe(true);
+    expect(s.forceDirect).toEqual(['Doubao', 'Doubao Browser Helper']); // names still route
+    expect((store.get(STORAGE_KEY) as any).pathsSynced).toBeUndefined();
+    warn.mockRestore();
+  });
+
+  test('no overrides → no enumeration at boot', async () => {
+    const listInstalled = vi.fn(async () => []);
+    withAppList({ listInstalled });
+    await useAppRoutesStore.getState().load();
+    await settle();
+    expect(listInstalled).not.toHaveBeenCalled();
   });
 });

@@ -581,8 +581,8 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
 
     // Build config with explicit params
     const { buildConnectConfig, resolvePreset, country: configCountry, alwaysOn } = useConfigStore.getState();
-    const { forceDirect, forceProxy } = useAppRoutesStore.getState();
-    const config = buildConnectConfig({ serverUrl, forceDirect, forceProxy });
+    const { forceDirect, forceProxy, forceDirectPaths, forceProxyPaths } = useAppRoutesStore.getState();
+    const config = buildConnectConfig({ serverUrl, forceDirect, forceProxy, forceDirectPaths, forceProxyPaths });
     const currentPreset = resolvePreset();
     console.debug('[Connection] connect: config built, preset=' + currentPreset
       + ', country=' + (configCountry ?? 'null')
@@ -636,7 +636,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
         if (resp.code === ERROR_CODES.RULE_BUNDLES_UNAVAILABLE && configCountry && configCountry !== 'cn') {
           console.warn('[Connection] connect: rule bundles unavailable for country='
             + configCountry + ' — retrying once with global routes');
-          const fallbackConfig = buildConnectConfig({ serverUrl, forceDirect, forceProxy, forceGlobalRoutes: true });
+          const fallbackConfig = buildConnectConfig({ serverUrl, forceDirect, forceProxy, forceDirectPaths, forceProxyPaths, forceGlobalRoutes: true });
           const retry = await window._k2.run('up', { config: fallbackConfig, alwaysOn });
           if (get().connectEpoch !== myEpoch) {
             console.warn('[Connection] connect: global-fallback up() returned after epoch change, discarding result code=' + retry.code);
