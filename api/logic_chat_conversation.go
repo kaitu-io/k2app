@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	db "github.com/wordgate/qtoolkit/db"
+	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/qtoolkit/redis"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -52,14 +53,29 @@ var (
 )
 
 // chatAsync 供钩子内部异步用，默认 go f()；测试（chat_testmain_test.go）换成同步执行。
-var chatAsync = func(f func()) { go f() }
+var chatAsync = chatAsyncDefault
+
+// chatAsyncDefault 在新 goroutine 里执行 f；f 的 panic 只记日志，不拖垮进程。
+func chatAsyncDefault(f func()) {
+	go callChatHook("async", f)
+}
 
 // chatNotifyStateChange 通知所有状态钩子。setHandler/closeConversation 内部调用；
 // 留邮箱等外部场景由调用方调用。
 func chatNotifyStateChange(conv *Conversation) {
 	for _, h := range chatAfterStateChange {
-		h(conv)
+		callChatHook("state change", func() { h(conv) })
 	}
+}
+
+// callChatHook 隔离单个钩子：panic 只记日志，不影响调用方，也不阻止后面的钩子。
+func callChatHook(name string, f func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorf(context.Background(), "chat %s hook panic: %v", name, r)
+		}
+	}()
+	f()
 }
 
 const (
@@ -141,6 +157,9 @@ func ensureConversation(ctx context.Context, s chatSubject, entryPath string) (*
 	return conv, true, nil
 }
 
+// errChatSlackTSOtherConversation：slack_ts 已被另一个会话的消息占用。
+var errChatSlackTSOtherConversation = errors.New("slack_ts belongs to another conversation")
+
 type appendMessageInput struct {
 	SenderType, SenderName, Kind, Content, Meta string
 	SenderID                                    uint64
@@ -157,31 +176,42 @@ func appendMessage(ctx context.Context, conv *Conversation, in appendMessageInpu
 		Kind: in.Kind, Content: in.Content, Meta: in.Meta, ClientID: in.ClientID, SlackTS: in.SlackTS, CreatedAt: now,
 	}
 	d := db.Get().WithContext(ctx)
-	// 冲突是预期路径：静默 logger 避免把幂等重试刷成错误日志
-	if err := d.Session(&gorm.Session{Logger: logger.Discard}).Create(msg).Error; err != nil {
-		if !isDuplicateKeyErr(err) {
-			return nil, false, fmt.Errorf("append message: %w", err)
-		}
-		existing, err := findDuplicateMessage(d, conv.ID, in)
-		if err != nil {
-			return nil, false, err
-		}
-		return existing, true, nil
-	}
-
-	upd := map[string]any{"last_message_at": now}
 	by := conv.LastMessageBy
+	upd := map[string]any{"last_message_at": now}
 	if in.Kind != MsgNote && (in.SenderType == SenderVisitor || in.SenderType == SenderAI || in.SenderType == SenderStaff) {
 		by = in.SenderType
 		upd["last_message_by"] = by
 	}
-	if err := d.Model(&Conversation{}).Where("id = ?", conv.ID).Updates(upd).Error; err != nil {
-		return nil, false, fmt.Errorf("update conversation last message: %w", err)
+	// 插入与更新会话在同一事务：更新失败则消息一并回滚，重试不会被当成 dup 吞掉而漏掉钩子
+	var dupKey bool
+	err := d.Transaction(func(tx *gorm.DB) error {
+		// 冲突是预期路径：静默 logger 避免把幂等重试刷成错误日志
+		if err := tx.Session(&gorm.Session{Logger: logger.Discard}).Create(msg).Error; err != nil {
+			if isDuplicateKeyErr(err) {
+				dupKey = true
+			}
+			return err
+		}
+		return tx.Model(&Conversation{}).Where("id = ?", conv.ID).Updates(upd).Error
+	})
+	if dupKey {
+		existing, err := findDuplicateMessage(d, conv.ID, in)
+		if err != nil {
+			return nil, false, err
+		}
+		// slack_ts 全局唯一：冲突的可能是别的会话的消息，不能当作本会话的 dup
+		if existing.ConversationID != conv.ID {
+			return nil, false, errChatSlackTSOtherConversation
+		}
+		return existing, true, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("append message: %w", err)
 	}
 	conv.LastMessageAt, conv.LastMessageBy = now, by
 
 	for _, h := range chatAfterAppend {
-		h(conv, msg)
+		callChatHook("append", func() { h(conv, msg) })
 	}
 	return msg, false, nil
 }
@@ -220,14 +250,17 @@ func setHandler(ctx context.Context, conv *Conversation, handler string) error {
 	if handler != HandlerAI && handler != HandlerHuman {
 		return fmt.Errorf("invalid handler %q", handler)
 	}
-	if conv.Handler == handler {
-		return nil
-	}
-	if err := db.Get().WithContext(ctx).Model(&Conversation{}).Where("id = ?", conv.ID).
-		Update("handler", handler).Error; err != nil {
-		return fmt.Errorf("set handler: %w", err)
+	// 以 DB 为准：条件更新带 handler<>目标，未匹配（RowsAffected=0）即无变化。
+	// 不信任内存里的 conv.Handler（可能已陈旧）。
+	res := db.Get().WithContext(ctx).Model(&Conversation{}).
+		Where("id = ? AND handler <> ?", conv.ID, handler).Update("handler", handler)
+	if res.Error != nil {
+		return fmt.Errorf("set handler: %w", res.Error)
 	}
 	conv.Handler = handler
+	if res.RowsAffected == 0 {
+		return nil
+	}
 	chatNotifyStateChange(conv)
 	return nil
 }
@@ -262,11 +295,20 @@ func closeConversation(ctx context.Context, conv *Conversation) error {
 
 // closeIdleConversations 关闭空闲会话并返回它们：handler=ai 用 aiIdle，handler=human 用 humanIdle（按 last_message_at）。
 func closeIdleConversations(ctx context.Context, aiIdle, humanIdle time.Duration) ([]Conversation, error) {
+	return closeIdleConversationsIn(ctx, aiIdle, humanIdle, "")
+}
+
+// closeIdleConversationsIn 同 closeIdleConversations；brand 非空时只处理该品牌（测试隔离用，生产传空）。
+func closeIdleConversationsIn(ctx context.Context, aiIdle, humanIdle time.Duration, brand string) ([]Conversation, error) {
 	d := db.Get().WithContext(ctx)
 	now := time.Now()
 	var candidates []Conversation
-	if err := d.Where("status = ? AND ((handler = ? AND last_message_at < ?) OR (handler = ? AND last_message_at < ?))",
-		ConvOpen, HandlerAI, now.Add(-aiIdle), HandlerHuman, now.Add(-humanIdle)).
+	q := d.Where("status = ?", ConvOpen)
+	if brand != "" {
+		q = q.Where("brand = ?", brand)
+	}
+	if err := q.Where("(handler = ? AND last_message_at < ?) OR (handler = ? AND last_message_at < ?)",
+		HandlerAI, now.Add(-aiIdle), HandlerHuman, now.Add(-humanIdle)).
 		Order("id").Find(&candidates).Error; err != nil {
 		return nil, fmt.Errorf("list idle conversations: %w", err)
 	}

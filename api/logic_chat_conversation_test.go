@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -17,9 +18,14 @@ var chatSubjectSeq atomic.Uint64
 // newChatSubject 返回一个全新的 guest 主体（ID 唯一），测试结束时清掉它名下的会话与消息。
 func newChatSubject(t *testing.T) chatSubject {
 	t.Helper()
+	return newChatSubjectBrand(t, BrandKaitu)
+}
+
+func newChatSubjectBrand(t *testing.T, brand Brand) chatSubject {
+	t.Helper()
 	require.NoError(t, Migrate())
 	id := uint64(time.Now().UnixNano())%1_000_000_000_000 + chatSubjectSeq.Add(1)
-	s := chatSubject{Brand: BrandKaitu, Kind: SubjectGuest, ID: id}
+	s := chatSubject{Brand: brand, Kind: SubjectGuest, ID: id}
 	t.Cleanup(func() {
 		d := db.Get()
 		var ids []uint64
@@ -373,8 +379,9 @@ func TestCloseIdleConversations(t *testing.T) {
 		{HandlerHuman, 73 * time.Hour, true},
 	}
 	convs := make([]*Conversation, len(specs))
+	brand := Brand(fmt.Sprintf("tb%d", time.Now().UnixNano()%1_000_000_000_000))
 	for i, sp := range specs {
-		c, _, err := ensureConversation(ctx, newChatSubject(t), "")
+		c, _, err := ensureConversation(ctx, newChatSubjectBrand(t, brand), "")
 		require.NoError(t, err)
 		require.NoError(t, db.Get().Model(&Conversation{}).Where("id = ?", c.ID).
 			Updates(map[string]any{"handler": sp.handler, "last_message_at": time.Now().Add(-sp.ago)}).Error)
@@ -382,7 +389,8 @@ func TestCloseIdleConversations(t *testing.T) {
 	}
 	seen := withStateHook(t)
 
-	closed, err := closeIdleConversations(ctx, 24*time.Hour, 72*time.Hour)
+	// 限定在本测试专属 brand，不碰库里其它会话
+	closed, err := closeIdleConversationsIn(ctx, 24*time.Hour, 72*time.Hour, string(brand))
 	require.NoError(t, err)
 	got := map[uint64]Conversation{}
 	for _, c := range closed {
@@ -404,4 +412,94 @@ func TestCloseIdleConversations(t *testing.T) {
 			assert.Equal(t, ConvClosed, got[convs[i].ID].Status)
 		}
 	}
+}
+
+func TestChatAsyncDefault_RecoversPanic(t *testing.T) {
+	done := make(chan struct{})
+	chatAsyncDefault(func() { panic("boom") })
+	chatAsyncDefault(func() { close(done) })
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("following async func did not run")
+	}
+}
+
+func TestChatHooks_PanicIsolated(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	conv, _, err := ensureConversation(ctx, newChatSubject(t), "")
+	require.NoError(t, err)
+
+	origA, origS := chatAfterAppend, chatAfterStateChange
+	t.Cleanup(func() { chatAfterAppend, chatAfterStateChange = origA, origS })
+	var appendRan, stateRan atomic.Int32
+	chatAfterAppend = []func(*Conversation, *ConversationMessage){
+		func(*Conversation, *ConversationMessage) { panic("append hook") },
+		func(*Conversation, *ConversationMessage) { appendRan.Add(1) },
+	}
+	chatAfterStateChange = []func(*Conversation){
+		func(*Conversation) { panic("state hook") },
+		func(*Conversation) { stateRan.Add(1) },
+	}
+
+	msg, dup, err := appendMessage(ctx, conv, appendMessageInput{SenderType: SenderVisitor, Kind: MsgText, Content: "x"})
+	require.NoError(t, err)
+	assert.False(t, dup)
+	assert.NotZero(t, msg.ID)
+	assert.EqualValues(t, 1, appendRan.Load())
+
+	require.NoError(t, setHandler(ctx, conv, HandlerHuman))
+	assert.EqualValues(t, 1, stateRan.Load())
+	require.NoError(t, closeConversation(ctx, conv))
+	assert.EqualValues(t, 2, stateRan.Load())
+}
+
+func TestAppendMessage_SlackTSOtherConversation(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	c1, _, err := ensureConversation(ctx, newChatSubject(t), "")
+	require.NoError(t, err)
+	c2, _, err := ensureConversation(ctx, newChatSubject(t), "")
+	require.NoError(t, err)
+	hook := withAppendHook(t)
+
+	ts := strp(generateId("ts"))
+	_, _, err = appendMessage(ctx, c1, appendMessageInput{SenderType: SenderStaff, Kind: MsgText, Content: "a", SlackTS: ts})
+	require.NoError(t, err)
+	before := hook.Load()
+	msg, dup, err := appendMessage(ctx, c2, appendMessageInput{SenderType: SenderStaff, Kind: MsgText, Content: "b", SlackTS: ts})
+	assert.ErrorIs(t, err, errChatSlackTSOtherConversation)
+	assert.Nil(t, msg)
+	assert.False(t, dup)
+	assert.Equal(t, before, hook.Load())
+}
+
+func TestSetHandler_StaleStructStillPersists(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	conv, _, err := ensureConversation(ctx, newChatSubject(t), "")
+	require.NoError(t, err)
+	// 另一路已把 DB 改成 human；本结构体仍是陈旧的 ai
+	require.NoError(t, db.Get().Model(&Conversation{}).Where("id = ?", conv.ID).Update("handler", HandlerHuman).Error)
+	seen := withStateHook(t)
+
+	// 结构体说 ai、DB 是 human，要求切回 ai：必须落库并通知
+	require.NoError(t, setHandler(ctx, conv, HandlerAI))
+	var fresh Conversation
+	require.NoError(t, db.Get().First(&fresh, conv.ID).Error)
+	assert.Equal(t, HandlerAI, fresh.Handler)
+	assert.Len(t, *seen, 1)
+
+	// 结构体与目标相同但 DB 不同：同样要落库
+	require.NoError(t, db.Get().Model(&Conversation{}).Where("id = ?", conv.ID).Update("handler", HandlerHuman).Error)
+	conv.Handler = HandlerAI
+	require.NoError(t, setHandler(ctx, conv, HandlerAI))
+	require.NoError(t, db.Get().First(&fresh, conv.ID).Error)
+	assert.Equal(t, HandlerAI, fresh.Handler)
+	assert.Len(t, *seen, 2)
+
+	// DB 已是目标值：不通知
+	require.NoError(t, setHandler(ctx, conv, HandlerAI))
+	assert.Len(t, *seen, 2)
 }
