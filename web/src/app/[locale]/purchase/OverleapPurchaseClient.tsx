@@ -8,7 +8,7 @@
  * 选套餐 → POST /api/user/stripe/checkout → 同窗口跳 Stripe Checkout。
  * 权益经 webhook 异步入账，success 回跳落在 /account（见 OverleapAccountClient）。
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import { Link } from '@/i18n/routing';
@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import MembershipBenefits from '@/components/MembershipBenefits';
 import { displayCurrency, formatMinor, pickAmount } from '@/lib/pricing';
+import { track } from '@/lib/funnel';
 
 /** 套餐在当前 locale 的展示价：优先 API 下发的 currencyPrices（Stripe 真相），缺席回落 price（USD 分）。 */
 function planAmount(p: Plan, currency: ReturnType<typeof displayCurrency>): { amount: number; currency: string } {
@@ -26,6 +27,15 @@ function planAmount(p: Plan, currency: ReturnType<typeof displayCurrency>): { am
 }
 
 export default function OverleapPurchaseClient() {
+  // This page is itself a plan-choice page: a visitor arriving from a plan card elsewhere
+  // never sees /pricing, so the funnel's pricing step is reported here (once per mount).
+  const pricingViewSent = useRef(false);
+  useEffect(() => {
+    if (pricingViewSent.current) return;
+    pricingViewSent.current = true;
+    track('pricing_view');
+  }, []);
+
   const t = useTranslations('purchase');
   const locale = useLocale();
   const currency = displayCurrency(locale);
@@ -102,6 +112,7 @@ export default function OverleapPurchaseClient() {
     setSubmitting(true);
     setError(null);
     try {
+      track('checkout_start', { plan: selectedPid, source: 'self' });
       const { url } = await api.createStripeCheckout(selectedPid, { autoRedirectToAuth: false });
       window.location.assign(url);
     } catch (err) {
@@ -113,6 +124,13 @@ export default function OverleapPurchaseClient() {
       setSubmitting(false);
     }
   }, [selectedPid, isAuthenticated, t]);
+
+  // Funnel: a plan_select is the visitor changing the card. The preselected
+  // card (and a click on the card already selected) is not a selection.
+  const handleSelect = (pid: string) => {
+    if (pid !== selectedPid) track('plan_select', { plan: pid });
+    setSelectedPid(pid);
+  };
 
   if (activeSub) {
     return (
@@ -163,7 +181,7 @@ export default function OverleapPurchaseClient() {
                 <button
                   key={p.pid}
                   type="button"
-                  onClick={() => setSelectedPid(p.pid)}
+                  onClick={() => handleSelect(p.pid)}
                   data-testid={`plan-card-${p.pid}`}
                   data-selected={selected}
                   className={`rounded-xl border p-5 text-left transition-colors ${

@@ -24,6 +24,13 @@ export default function Footer() {
   const renderItem = (item: NavItem) => {
     const text = t(item.labelKey, { brand: brand.wordmark });
     const href = item.href.replace('{contactEmail}', brand.contactEmail);
+    if (item.external) {
+      return (
+        <a href={href} className="hover:text-blue-600">
+          {text}
+        </a>
+      );
+    }
     if (isExternalHref(href)) {
       const isMail = href.startsWith('mailto:');
       return (

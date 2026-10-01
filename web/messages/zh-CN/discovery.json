@@ -96,7 +96,8 @@
   "cookieConsent": {
     "title": "关于 Cookie 的使用",
     "description": "我们使用 Cookie 来改善您的浏览体验，包括保存您的邀请码等基本功能。继续使用本网站即表示您同意我们使用 Cookie。",
-    "details": "我们仅使用必要的功能性 Cookie（如邀请码关联），不会收集或分享您的个人信息用于广告或追踪目的。您可以随时在浏览器设置中管理 Cookie 偏好。",
+    "details": "我们使用必要的功能性 Cookie（如登录、邀请码关联），以及一个第一方 Cookie 用于聚合的访问与购买转化统计；不用于广告。点击“拒绝”或页脚的“不参与访问统计”即可退出统计。您也可以随时在浏览器设置中管理 Cookie。",
+    "detailsThirdParty": "本网站还使用第三方网站分析服务（Google Analytics），该服务会设置它自己的 Cookie；您可以在浏览器设置中拒绝这些 Cookie。",
     "accept": "接受",
     "decline": "拒绝"
   }

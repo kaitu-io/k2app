@@ -213,5 +213,191 @@
       "name": "ErrorInvalidClientClass",
       "code": 422003
     }
+  ],
+  "funnelEvents": [
+    {
+      "name": "page_view",
+      "surfaces": [
+        "web"
+      ],
+      "kind": "view"
+    },
+    {
+      "name": "pricing_view",
+      "surfaces": [
+        "web"
+      ],
+      "kind": "view"
+    },
+    {
+      "name": "checkout_view",
+      "surfaces": [
+        "web"
+      ],
+      "kind": "view"
+    },
+    {
+      "name": "install_view",
+      "surfaces": [
+        "web"
+      ],
+      "kind": "view"
+    },
+    {
+      "name": "welcome_view",
+      "surfaces": [
+        "web"
+      ],
+      "kind": "view"
+    },
+    {
+      "name": "install_click",
+      "surfaces": [
+        "web"
+      ],
+      "kind": "action"
+    },
+    {
+      "name": "checkout_cancelled",
+      "surfaces": [
+        "web"
+      ],
+      "kind": "action"
+    },
+    {
+      "name": "refund_click",
+      "surfaces": [
+        "web"
+      ],
+      "kind": "action"
+    },
+    {
+      "name": "cancel_click",
+      "surfaces": [
+        "web"
+      ],
+      "kind": "action"
+    },
+    {
+      "name": "app_first_open",
+      "surfaces": [
+        "app"
+      ],
+      "kind": "action"
+    },
+    {
+      "name": "first_connect_attempt",
+      "surfaces": [
+        "app"
+      ],
+      "kind": "action"
+    },
+    {
+      "name": "first_connect_ok",
+      "surfaces": [
+        "app"
+      ],
+      "kind": "action"
+    },
+    {
+      "name": "connect_ok",
+      "surfaces": [
+        "app"
+      ],
+      "kind": "action"
+    },
+    {
+      "name": "manage_click",
+      "surfaces": [
+        "app"
+      ],
+      "kind": "action"
+    },
+    {
+      "name": "login_view",
+      "surfaces": [
+        "app"
+      ],
+      "kind": "view"
+    },
+    {
+      "name": "paywall_view",
+      "surfaces": [
+        "app"
+      ],
+      "kind": "view"
+    },
+    {
+      "name": "plan_select",
+      "surfaces": [
+        "web",
+        "app"
+      ],
+      "kind": "action"
+    },
+    {
+      "name": "auth_code_sent",
+      "surfaces": [
+        "web",
+        "app"
+      ],
+      "kind": "action"
+    },
+    {
+      "name": "auth_done",
+      "surfaces": [
+        "web",
+        "app"
+      ],
+      "kind": "action"
+    },
+    {
+      "name": "checkout_start",
+      "surfaces": [
+        "web",
+        "app"
+      ],
+      "kind": "action"
+    },
+    {
+      "name": "signup",
+      "surfaces": [],
+      "kind": "fact"
+    },
+    {
+      "name": "purchase",
+      "surfaces": [],
+      "kind": "fact"
+    },
+    {
+      "name": "renewal",
+      "surfaces": [],
+      "kind": "fact"
+    },
+    {
+      "name": "refund",
+      "surfaces": [],
+      "kind": "fact"
+    },
+    {
+      "name": "trial_start",
+      "surfaces": [],
+      "kind": "fact"
+    },
+    {
+      "name": "cancel_request",
+      "surfaces": [],
+      "kind": "fact"
+    },
+    {
+      "name": "resume",
+      "surfaces": [],
+      "kind": "fact"
+    },
+    {
+      "name": "email_sent",
+      "surfaces": [],
+      "kind": "fact"
+    }
   ]
 }

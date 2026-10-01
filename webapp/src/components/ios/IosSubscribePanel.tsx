@@ -38,6 +38,7 @@ import { useIapPurchase, IAP_PRODUCT_IDS } from '../../hooks/useIapPurchase';
 import { useAppLinks } from '../../hooks/useAppLinks';
 import { useUser } from '../../hooks/useUser';
 import { useAlert } from '../../stores/alert.store';
+import { statsService } from '../../services/stats';
 import { getThemeColors } from '../../theme/colors';
 import MembershipBenefits from '../MembershipBenefits';
 import EmailLoginForm from '../EmailLoginForm';
@@ -120,6 +121,7 @@ export default function IosSubscribePanel({
   };
 
   const handleManageSubscription = () => {
+    void statsService.trackFunnel('manage_click');
     void window._platform?.openExternal?.(
       'itms-apps://apps.apple.com/account/subscriptions',
     );
@@ -248,7 +250,10 @@ export default function IosSubscribePanel({
           size="large"
           fullWidth
           data-testid="iap-subscribe-btn"
-          onClick={() => void purchase(row.id, accountToken)}
+          onClick={() => {
+            void statsService.trackFunnel('checkout_start', { plan: row.id, channel: 'apple' });
+            void purchase(row.id, accountToken);
+          }}
           disabled={!isAuthenticated || purchasing || restoring}
           startIcon={purchasing ? <CircularProgress size={18} color="inherit" /> : undefined}
           sx={{

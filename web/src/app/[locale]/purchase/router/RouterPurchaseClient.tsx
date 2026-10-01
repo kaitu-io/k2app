@@ -26,6 +26,7 @@ import { useEmbedMode } from '@/hooks/useEmbedMode';
 import { api, ApiError, ErrorCode, type Order, type Plan, type RouterShipping, type UserRouter } from '@/lib/api';
 import { getApiErrorMessage } from '@/lib/api-errors';
 import { formatShipsFrom, formatUsd, routerOffer } from '@/lib/router-edition';
+import { track } from '@/lib/funnel';
 
 const EMPTY_SHIPPING: RouterShipping = { name: '', phone: '', address: '' };
 
@@ -136,6 +137,16 @@ export default function RouterPurchaseClient() {
     };
   }, [wantsService, isAuthenticated]);
 
+  // Funnel: this page shows a price and is where a router visitor decides, so it
+  // reports the pricing step itself — once per mount, when an offer is on screen.
+  const pricingViewSent = useRef(false);
+  const offerVisible = !plansLoading && !!selected;
+  useEffect(() => {
+    if (!offerVisible || pricingViewSent.current) return;
+    pricingViewSent.current = true;
+    track('pricing_view');
+  }, [offerVisible]);
+
   const orderRegion = renewMode ? undefined : region || undefined;
 
   // 2) 选中套餐变化 → region 不在允许列表时回落到首项。
@@ -201,6 +212,9 @@ export default function RouterPurchaseClient() {
     if (!selected) return;
     setSubmitting(true);
     try {
+      // Funnel: only this real order counts as starting a checkout — fetchPreview
+      // above is the page pricing itself and must stay silent.
+      track('checkout_start', { plan: selected.pid, source: 'self' });
       const request = {
         preview: false as const,
         plan: selected.pid,

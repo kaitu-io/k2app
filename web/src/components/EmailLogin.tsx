@@ -29,10 +29,12 @@ function getCookie(name: string): string | null {
 
 export interface EmailLoginProps {
   onLoginSuccess?: () => void;
+  /** Fired after a verification code was sent (funnel instrumentation; only the purchase page passes it). */
+  onCodeSent?: () => void;
   mode?: 'login' | 'bind';
 }
 
-export default function EmailLogin({ onLoginSuccess, mode = 'login' }: EmailLoginProps) {
+export default function EmailLogin({ onLoginSuccess, onCodeSent, mode = 'login' }: EmailLoginProps) {
   const { login } = useAuth();
   const { appConfig } = useAppConfig();
   const t = useTranslations();
@@ -90,6 +92,7 @@ export default function EmailLogin({ onLoginSuccess, mode = 'login' }: EmailLogi
 
       toast.success(t('auth.login.codeSuccess'));
       setStep(2);
+      onCodeSent?.();
     } catch (error) {
       if (error instanceof ApiError) {
         toast.error(getApiErrorMessage(error.code, t, undefined, error.message));

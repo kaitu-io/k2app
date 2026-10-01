@@ -31,7 +31,7 @@ export default function MembershipGuard({ children }: MembershipGuardProps) {
   // 只有在用户数据已加载且用户过期的情况下，才进行重定向
   if (isExpired && !allowedPaths.includes(location.pathname)) {
     console.debug('[MembershipGuard] 重定向到购买页面');
-    return <Navigate to="/purchase" replace />;
+    return <Navigate to="/purchase" replace state={{ from: 'membership_guard' }} />;
   }
   
   return <>{children}</>;

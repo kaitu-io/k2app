@@ -1,7 +1,17 @@
+'use client';
+
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Link } from '@/i18n/routing';
 import { Check } from 'lucide-react';
+import { track } from '@/lib/funnel';
+import { siteConfig } from '@/lib/site';
+
+// Funnel events group by plan; the purchase page reports the Center plan pid, so the static table must too.
+function planPid(key: string): string {
+  const pids = siteConfig().pricing?.pids as Record<string, string> | undefined;
+  return pids?.[key] ?? key;
+}
 
 export interface PricingPlan { key: string; name: string; price: string; period: string; note: string; featured: boolean }
 
@@ -25,7 +35,7 @@ export default function OverleapPricing({ title, subtitle, plans, includes, cta,
               </p>
               <p className="text-sm text-secondary mb-6">{plan.note}</p>
               <Button asChild className="w-full font-semibold" variant={plan.featured ? 'default' : 'outline'}>
-                <Link href="/purchase">{cta}</Link>
+                <Link href="/purchase" onClick={() => track('plan_select', { plan: planPid(plan.key) })}>{cta}</Link>
               </Button>
             </Card>
           ))}

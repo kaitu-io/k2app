@@ -248,6 +248,16 @@ Unified `Provider` interface (`provider.go`); constants `Provider*` there, one `
 
 Asynqmon UI available at `/app/asynqmon` (admin auth required).
 
+## Funnel (转化漏斗 / 留存)
+
+- **两类数据**：行为事件（客户端上报，落 `funnel_events`，`funnel_identities` 把匿名 sid/did 关联到用户）与事实（signup/purchase/renewal/refund —— **不落事件表**，查询时由 `logic_funnel_facts.go` 从 users / orders / subscription_credits 现场投影；任何客户端上报的事实名一律丢弃）。
+- **注册表**：事件 `funnelEventRegistry`（`logic_funnel_events.go`），路径 `funnelPathRegistry`（`logic_funnel_paths.go`）；计算是纯函数 `computeFunnel`（`logic_funnel_compute.go`），留存是 `computePaidCohorts` / `computeActiveCohorts`（`logic_funnel_retention.go`）。
+- **加行为事件**：`funnelEventRegistry` 加一行（名字 / 可上报的面 / kind）+ 对应客户端埋点。**加路径**：`funnelPathRegistry` 加一项（key 不含品牌词），管理端列表与 dashboard 自动出现。**加事实**：在 `loadFunnelFacts` 加一段投影并在事件注册表登记为 fact。
+- **管理端**（`api_admin_funnel.go`，`opsAdmin` + `RoleMarketing`）：`GET /app/stats/funnels`、`/app/stats/funnels/:key?brand=&from=&to=&groupBy=`、`/app/stats/retention?metric=paid|active`。`from`/`to` 是 UTC 日且 `to` 含当日，最多 90 天；后续步骤以「进入时刻 + Window」为界，所以装载区间是 `[from, to+Window)`；行为事件数超过 `funnelQueryMaxEvents` 直接拒绝。品牌只是 `?brand=` 参数，结构上不分叉。
+- **付费留存按付款记录推算，不读 `users.expired_at`**（它还会被赠送 / 试用 / 人工发放推动）：每笔付款从 `max(上段到期, 付款时刻)` 起叠加时长（订单 = 套餐快照月数，入账行 = `credited_seconds`，退款订单不算），检查点 = 首付满 N 个月 + 7 天宽限（`paidRetentionGrace`，订阅续费入账总比周期结束晚一点），覆盖到期**严格晚于**检查点才算留存；月份运算一律 `addMonthsClamped`。
+- **保留期**：`funnel_events` 按 `received_at` 留 120 天（`worker_stats_retention.go`）；活跃留存读 `stat_app_opens.brand`——该列上线前的历史行品牌为空，带品牌筛选时不计入打开，但仍用来识别老设备。
+- **总开关**：viper `funnel.enabled`（未设置 = 开）只管采集；采集永不阻塞或弄坏产品路径（入队即返回，队列满就丢）。
+
 ## Approval Workflow (Maker-Checker)
 
 Critical admin operations (EDM, campaigns, plans, withdrawals, hard delete, license key batches, order refunds) require dual approval via `SubmitApproval()`. Superadmin (`is_admin`) bypasses approval and executes synchronously. Non-superadmin creates a pending record requiring another admin's approval.

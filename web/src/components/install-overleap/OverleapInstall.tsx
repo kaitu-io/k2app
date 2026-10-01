@@ -10,6 +10,7 @@ import { PlatformIcon } from '@/app/[locale]/install/platform-icons';
 import { detectDevice, type DeviceType } from '@/lib/device-detection';
 import { useBrand } from '@/hooks/useBrand';
 import { Download, ExternalLink } from 'lucide-react';
+import { track } from '@/lib/funnel';
 
 /**
  * overleap 下载页（spec 2026-09-04-overleap-site-decoupling §3.3）。
@@ -40,6 +41,8 @@ export default function OverleapInstall({ targets }: { targets: InstallTarget[] 
   const [detected, setDetected] = useState<InstallPlatform | null>(null);
 
   useEffect(() => {
+    // Funnel: a visit that renders the download page is an install view.
+    track('install_view');
     setDetected(toPlatform(detectDevice().type));
   }, []);
 
@@ -89,7 +92,13 @@ export default function OverleapInstall({ targets }: { targets: InstallTarget[] 
               <div className="mt-auto space-y-2">
                 {available ? (
                   <Button asChild className="w-full font-semibold" variant={featured ? 'default' : 'outline'}>
-                    <NextLink href={target.url} {...(target.store ? { target: '_blank', rel: 'noopener noreferrer' } : {})}>
+                    {/* Funnel: only a real download / store link counts; the disabled
+                        placeholder below is not a link and reports nothing. */}
+                    <NextLink
+                      href={target.url}
+                      onClick={() => track('install_click', { plan: platform, source: 'button' })}
+                      {...(target.store ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                    >
                       {target.store ? <ExternalLink className="w-4 h-4 mr-2" /> : <Download className="w-4 h-4 mr-2" />}
                       {label}
                     </NextLink>

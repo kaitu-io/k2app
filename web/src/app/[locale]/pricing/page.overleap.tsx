@@ -5,6 +5,7 @@ import { siteBrand } from '@/lib/brands';
 import { landingPrices } from '@/lib/landing-prices';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import FunnelEvent from '@/components/FunnelEvent';
 import OverleapPricing from '@/components/home-overleap/OverleapPricing';
 import OverleapFAQ from '@/components/home-overleap/OverleapFAQ';
 import { generateMetadata as generateBaseMetadata } from '../metadata';
@@ -93,6 +94,7 @@ export default async function PricingPage({
     <div className="min-h-screen bg-background text-foreground">
       <script type="application/ld+json" suppressHydrationWarning dangerouslySetInnerHTML={{ __html: JSON.stringify(faqPageJsonLd).replace(/</g, '\\u003c') }} />
       <script type="application/ld+json" suppressHydrationWarning dangerouslySetInnerHTML={{ __html: JSON.stringify(offersJsonLd).replace(/</g, '\\u003c') }} />
+      <FunnelEvent event="pricing_view" />
       <Header />
       <section className="pt-16 pb-4 px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto text-center">

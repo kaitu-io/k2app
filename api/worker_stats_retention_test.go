@@ -85,3 +85,30 @@ func TestStatsRetentionCleanup_SweepsStatTablesByReportedAt(t *testing.T) {
 	require.Len(t, rows, 1, "row past reported_at retention purged, recent kept")
 	assert.WithinDuration(t, recentTime, rows[0].ReportedAt, time.Minute)
 }
+
+// TestStatsRetentionCleanup_SweepsFunnelEventsByReceivedAt: funnel_events 按 received_at
+// （服务端入库时间）清扫——occurred_at 是客户端时钟，不能拿来定保留期。
+func TestStatsRetentionCleanup_SweepsFunnelEventsByReceivedAt(t *testing.T) {
+	skipIfNoConfig(t)
+	marker := generateId("ret-sweep")
+	t.Cleanup(func() {
+		factsCleanup(t, db.Get().Where("plan = ?", marker).Delete(&FunnelEvent{}).Error)
+	})
+
+	oldTime := time.Now().AddDate(0, 0, -(statsRetentionDays + 1))
+	recentTime := time.Now().AddDate(0, 0, -10)
+	// 两行的 occurred_at 都是"现在"：只有 received_at 决定去留。
+	for _, receivedAt := range []time.Time{oldTime, recentTime} {
+		require.NoError(t, db.Get().Create(&FunnelEvent{
+			OccurredAt: time.Now(), ReceivedAt: receivedAt, Brand: string(BrandKaitu),
+			Surface: FunnelSurfaceApp, Event: "paywall_view", Plan: marker,
+		}).Error)
+	}
+
+	require.NoError(t, handleStatsRetentionCleanup(context.Background(), nil))
+
+	var rows []FunnelEvent
+	require.NoError(t, db.Get().Where("plan = ?", marker).Find(&rows).Error)
+	require.Len(t, rows, 1, "row past received_at retention purged, recent kept")
+	assert.WithinDuration(t, recentTime, rows[0].ReceivedAt, time.Minute)
+}

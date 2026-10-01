@@ -15,6 +15,7 @@ import { useStripeCheckout } from '../hooks/useStripeCheckout';
 import { useUser } from '../hooks/useUser';
 import MembershipBenefits from './MembershipBenefits';
 import type { DataSubscription } from '../services/api-types';
+import { statsService } from '../services/stats';
 
 interface SubscriptionManagePanelProps {
   activeSub?: DataSubscription;
@@ -69,7 +70,10 @@ export default function SubscriptionManagePanel({ activeSub }: SubscriptionManag
               variant="contained"
               endIcon={<OpenInNewIcon />}
               disabled={loading}
-              onClick={() => void openPortal()}
+              onClick={() => {
+                void statsService.trackFunnel('manage_click');
+                void openPortal();
+              }}
             >
               {t('purchase:purchase.stripe.manageButton')}
             </Button>
@@ -81,7 +85,10 @@ export default function SubscriptionManagePanel({ activeSub }: SubscriptionManag
             data-testid="stripe-manage-apple-btn"
             variant="contained"
             endIcon={<OpenInNewIcon />}
-            onClick={() => void window._platform?.openExternal?.(appleSubsUrl())}
+            onClick={() => {
+              void statsService.trackFunnel('manage_click');
+              void window._platform?.openExternal?.(appleSubsUrl());
+            }}
           >
             {t('purchase:purchase.iap.openManage')}
           </Button>
@@ -92,7 +99,10 @@ export default function SubscriptionManagePanel({ activeSub }: SubscriptionManag
             data-testid="stripe-manage-url-btn"
             variant="contained"
             endIcon={<OpenInNewIcon />}
-            onClick={() => void window._platform?.openExternal?.(manage.url!)}
+            onClick={() => {
+              void statsService.trackFunnel('manage_click');
+              void window._platform?.openExternal?.(manage.url!);
+            }}
           >
             {t('purchase:purchase.iap.openManage')}
           </Button>

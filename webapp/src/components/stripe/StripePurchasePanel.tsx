@@ -18,6 +18,7 @@ import MembershipBenefits from '../MembershipBenefits';
 import SubscriptionManagePanel from '../SubscriptionManagePanel';
 import type { Plan } from '../../services/api-types';
 import { formatMinor, planAmount } from '../../utils/pricing';
+import { statsService } from '../../services/stats';
 
 interface StripePurchasePanelProps {
   plans: Plan[];
@@ -50,6 +51,7 @@ export default function StripePurchasePanel({ plans, plansLoading }: StripePurch
       return;
     }
     clearError();
+    void statsService.trackFunnel('checkout_start', { plan: selectedPid, channel: 'stripe' });
     if (await checkout(selectedPid)) setOpened(true);
   };
 
@@ -96,7 +98,10 @@ export default function StripePurchasePanel({ plans, plansLoading }: StripePurch
             <Card
               key={p.pid}
               variant="outlined"
-              onClick={() => setSelected(p.pid)}
+              onClick={() => {
+                setSelected(p.pid);
+                void statsService.trackFunnel('plan_select', { plan: p.pid });
+              }}
               sx={{
                 cursor: 'pointer',
                 borderColor: p.pid === selectedPid ? 'primary.main' : 'divider',

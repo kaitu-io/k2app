@@ -37,6 +37,7 @@ import type { SendCodeResponse, AuthResult } from "../services/api-types";
 import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
 import { getDeviceUdid } from '../services/device-udid';
+import { statsService } from '../services/stats';
 import { useAppConfig } from '../hooks/useAppConfig';
 import { delayedFocus } from '../utils/ui';
 
@@ -153,6 +154,7 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
         setIsActivated(response.data.isActivated);
         setStep("code");
         setCountdown(60);
+        void statsService.trackFunnel('auth_code_sent');
         console.info(
           `Verification code sent to ${email}, isActivated: ${response.data.isActivated}`
         );
@@ -207,6 +209,8 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
       console.info(`Login successful for user: ${email}`);
       setIsAuthenticated(true);
       onLoginSuccess?.();
+      // Funnel: after the product path, so analytics can never get in its way.
+      void statsService.trackFunnel('auth_done');
 
 
     } catch (err) {
@@ -249,6 +253,8 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
       cacheStore.clear();
       setIsAuthenticated(true);
       onLoginSuccess?.();
+      // Funnel: after the product path, so analytics can never get in its way.
+      void statsService.trackFunnel('auth_done');
 
 
     } catch (err) {

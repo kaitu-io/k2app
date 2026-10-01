@@ -39,6 +39,7 @@ import { OVERLEAP_BRAND } from '../overleap';
 import type { WebappBrandConfig } from '../types';
 import { allowedEmbedOrigins } from '../../utils/embed-origins';
 import { ERROR_CODES } from '../../utils/errorCode';
+import { APP_FUNNEL_EVENTS } from '../../services/funnel-events';
 
 // ---------------------------------------------------------------------------
 // Mocks for the cloud-api dependency graph (§B drives the real request path).
@@ -104,6 +105,7 @@ interface ApiContract {
   brands: Record<string, ContractBrand>;
   cors: { api: { allowHeaders: string[] }; app: { allowHeaders: string[] } };
   errorCodes: { name: string; code: number }[];
+  funnelEvents: { name: string; surfaces: string[]; kind: string }[];
 }
 
 const REGENERATE_CMD =
@@ -406,5 +408,15 @@ describe('cross-layer contract: request headers ⇄ backend CORS allow-list', ()
   it('X-K2-Brand specifically is allowed (regression: the outage that motivated this file)', () => {
     const allowed = contract.cors.api.allowHeaders.map((h) => h.toLowerCase());
     expect(allowed).toContain('x-k2-brand');
+  });
+});
+
+describe('cross-layer contract: funnel events (webapp ⇄ api funnel registry)', () => {
+  it('app-surface funnel event names match APP_FUNNEL_EVENTS exactly', () => {
+    const fromContract = contract.funnelEvents
+      .filter((e) => e.surfaces.includes('app'))
+      .map((e) => e.name)
+      .sort();
+    expect(fromContract, `regenerate: ${REGENERATE_CMD}`).toEqual([...APP_FUNNEL_EVENTS].sort());
   });
 });

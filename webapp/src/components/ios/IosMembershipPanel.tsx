@@ -23,6 +23,7 @@ import { useUser } from '../../hooks/useUser';
 import { useAppConfig } from '../../hooks/useAppConfig';
 import { getCurrentAppConfig } from '../../config/apps';
 import { useAlert } from '../../stores/alert.store';
+import { statsService } from '../../services/stats';
 import MembershipBenefits from '../MembershipBenefits';
 import RenewalStatusCard from './RenewalStatusCard';
 import InviteRewardCard from './InviteRewardCard';
@@ -60,6 +61,7 @@ export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPan
   // 开了 apple_iap + stripe_checkout，同一个 iOS 会员中心可能对应任一 provider——
   // stripe_portal 必须走 Billing Portal，不能塌缩成 App Store 订阅页。
   const openManage = () => {
+    void statsService.trackFunnel('manage_click');
     const manage = activeSub?.manage;
     if (manage?.kind === 'stripe_portal') {
       void openPortal();

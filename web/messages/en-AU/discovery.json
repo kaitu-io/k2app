@@ -96,7 +96,8 @@
   "cookieConsent": {
     "title": "About Cookie Usage",
     "description": "We use cookies to improve your browsing experience, including basic functions like saving your invitation code. Continuing to use this website indicates your consent to our use of cookies.",
-    "details": "We only use necessary functional cookies (such as invitation code linking), and do not collect or share your personal information for advertising or tracking purposes. You can manage cookie preferences in your browser settings at any time.",
+    "details": "We use essential functional cookies (sign-in, invitation code) and one first-party cookie for aggregate visit and purchase-conversion statistics; none are used for advertising. Choose Decline, or the “Do not count my visits” link in the footer, to opt out of the statistics. You can also manage cookies in your browser settings at any time.",
+    "detailsThirdParty": "This site also uses a third-party web-analytics service (Google Analytics), which sets its own cookies; you can refuse them in your browser settings.",
     "accept": "Accept",
     "decline": "Decline"
   }

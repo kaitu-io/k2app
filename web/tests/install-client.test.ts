@@ -173,3 +173,29 @@ describe('install page brand gating', () => {
     expect(container.textContent).toContain('curl -fsSL https://kaitu.io/i/k2 | sudo bash');
   });
 });
+
+
+describe('InstallClient funnel install_view', () => {
+  function viewsFor(search: string): number {
+    const srcs: string[] = [];
+    vi.stubGlobal('Image', function (this: object) {
+      Object.defineProperty(this, 'src', { set: (v: string) => srcs.push(v) });
+    } as unknown as typeof Image);
+    window.history.pushState({}, '', `/install${search}`);
+    try {
+      renderInstallClient();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    return srcs.filter((s) => new URL(s, 'http://x').searchParams.get('e') === 'install_view').length;
+  }
+  afterEach(() => window.history.pushState({}, '', '/'));
+
+  it('fires install_view when the page renders', () => {
+    expect(viewsFor('?nodownload=1')).toBe(1);
+  });
+
+  it('does not fire install_view for a visit redirected to /routers', () => {
+    expect(viewsFor('?platform=router')).toBe(0);
+  });
+});

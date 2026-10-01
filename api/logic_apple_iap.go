@@ -45,6 +45,10 @@ func deriveAppleAccountToken(userUUID string) string {
 	return uuid.NewSHA1(appleAccountNS, []byte(userUUID)).String()
 }
 
+// errApplePlanAmbiguous：一个 Apple 商品 ID 在同品牌下对应多个 plan（配置问题，不是基础设施故障）。
+// planByAppleProductID 用 %w 包它，调用方可用 errors.Is 区分。
+var errApplePlanAmbiguous = errors.New("定价配置有歧义，拒绝猜测")
+
 // planByAppleProductID 按 Apple 商品ID 查套餐（品牌过滤——同一商品 id 绝不跨品牌入账）；
 // 找不到即拒绝入账（未知商品）。
 func planByAppleProductID(ctx context.Context, tx *gorm.DB, productID string, brand Brand) (*Plan, error) {
@@ -67,8 +71,8 @@ func planByAppleProductID(ctx context.Context, tx *gorm.DB, productID string, br
 	case 1:
 		return &plans[0], nil
 	default:
-		return nil, fmt.Errorf("apple product %s (brand %s) maps to multiple plans (%d, %d) — 定价配置有歧义，拒绝猜测",
-			productID, brand, plans[0].ID, plans[1].ID)
+		return nil, fmt.Errorf("apple product %s (brand %s) maps to multiple plans (%d, %d) — %w",
+			productID, brand, plans[0].ID, plans[1].ID, errApplePlanAmbiguous)
 	}
 }
 

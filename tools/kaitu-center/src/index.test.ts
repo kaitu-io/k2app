@@ -54,6 +54,9 @@ describe('createServer', () => {
     expect(Object.keys(registeredTools)).toContain('list_orders')
     expect(Object.keys(registeredTools)).toContain('list_campaigns')
     expect(Object.keys(registeredTools)).toContain('lookup_user')
+    expect(Object.keys(registeredTools)).toContain('funnel_paths')
+    expect(Object.keys(registeredTools)).toContain('funnel')
+    expect(Object.keys(registeredTools)).toContain('retention')
 
     // Should have 50+ tools
     expect(Object.keys(registeredTools).length).toBeGreaterThan(50)

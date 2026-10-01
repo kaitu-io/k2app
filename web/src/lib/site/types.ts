@@ -17,6 +17,8 @@ export interface NavItem {
   /** 站内路径（交给 i18n Link 加 locale 前缀）或外链（http(s):// / mailto:）。
    *  `mailto:{contactEmail}` 由 Footer 用 Brand.contactEmail 填充——配置文件不放品牌域名。 */
   href: string;
+  /** 同站但不属于页面树的路径（如 /api/*）：用原生 <a>，不加 locale 前缀。 */
+  external?: boolean;
   /** 有子项时渲染为下拉（桌面）/ 折叠段（移动）。 */
   children?: NavItem[];
 }
@@ -62,6 +64,8 @@ export interface SiteConfig {
   pricing?: {
     yearly: Record<string, number>;
     monthly: Record<string, number>;
+    /** 价表档位 → Center 套餐 pid。漏斗事件按套餐分组，静态价表与购买页必须报同一个标识。 */
+    pids?: { yearly: string; monthly: string };
   };
   /**
    * 定价页 App 版套餐的静态快照（美分），供 /pricing 服务端渲染出价格（SEO 与首屏），

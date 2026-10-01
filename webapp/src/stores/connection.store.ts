@@ -602,6 +602,10 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     // Dispatch state machine event and execute
     console.warn('[Connection] TRACE USER_CONNECT dispatch t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms)');
     vpnDispatch('USER_CONNECT');
+    // Funnel: fire-and-forget; dynamic import keeps the store free of a stats dependency cycle.
+    import('../services/stats').then(({ statsService }) => {
+      void statsService.trackFunnelOnce('first_connect_attempt');
+    }).catch(() => {});
     try {
       const resp = await window._k2.run('up', { config, alwaysOn });
       console.warn('[Connection] TRACE _k2.run(up) returned t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms) code=' + resp.code);

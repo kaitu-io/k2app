@@ -310,6 +310,10 @@ func SetupRouter() *gin.Engine {
 			stats.POST("/k2s-download", api_stats_k2s_download)
 		}
 
+		// 官网转化漏斗像素 + 退出（无认证，永远返回 GIF/302）
+		api.GET("/px", api_funnel_px)
+		api.GET("/px/optout", api_funnel_px_optout)
+
 		// 问卷调查
 		survey := api.Group("/survey")
 		{
@@ -553,6 +557,9 @@ func SetupRouter() *gin.Engine {
 		opsAdmin.GET("/campaigns/code/:code/stats", RoleRequired(RoleMarketing), api_admin_get_campaign_stats)
 		opsAdmin.GET("/campaigns/code/:code/orders", RoleRequired(RoleMarketing), api_admin_get_campaign_orders)
 		opsAdmin.GET("/campaigns/code/:code/funnel", RoleRequired(RoleMarketing), api_admin_get_campaign_funnel)
+
+		// 转化漏斗 / 留存（只读，RoleMarketing）
+		registerAdminFunnelRoutes(opsAdmin)
 
 		// 授权码批次管理
 		opsAdmin.GET("/license-key-batches/stats", RoleRequired(RoleMarketing), api_admin_license_key_batch_stats)

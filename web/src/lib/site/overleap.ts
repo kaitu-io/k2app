@@ -29,6 +29,7 @@ export const OVERLEAP_SITE: SiteConfig = {
         { labelKey: 'discovery.privacy.title', href: '/privacy' },
         { labelKey: 'discovery.terms.title', href: '/terms' },
         { labelKey: 'discovery.deleteAccount.title', href: '/delete-account' },
+        { labelKey: 'nav.footer.optOut', href: '/api/px/optout', external: true },
         { labelKey: 'nav.nav.contactUs', href: 'mailto:{contactEmail}' },
       ],
     },
@@ -38,6 +39,7 @@ export const OVERLEAP_SITE: SiteConfig = {
   pricing: {
     yearly: { usd: 7900, gbp: 7900, eur: 8900 },
     monthly: { usd: 1199, gbp: 999, eur: 1199 },
+    pids: { yearly: 'overleap-basic-1y', monthly: 'overleap-basic-1m' },
   },
   contentCategories: {
     blog: {

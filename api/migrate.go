@@ -168,6 +168,8 @@ func Migrate() error {
 		&StatAppOpen{},
 		&StatConnection{},
 		&StatK2sDownload{},
+		&FunnelEvent{},
+		&FunnelIdentity{},
 		// Admin audit log
 		&AdminAuditLog{},
 		// Admin approval system

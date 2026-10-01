@@ -179,7 +179,9 @@ function BottomNavigation() {
   // Memoize navigation handler to avoid recreating on every render
   const handleNavigationChange = useMemo(() => {
     return (_: any, newValue: string) => {
-      navigate(newValue);
+      // Funnel: /purchase entries identify themselves (see Purchase paywall_view).
+      if (newValue === '/purchase') navigate(newValue, { state: { from: 'nav' } });
+      else navigate(newValue);
     };
   }, [navigate]);
 

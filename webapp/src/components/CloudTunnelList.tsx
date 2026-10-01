@@ -303,7 +303,7 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
           action={
             purchaseSurfaceAvailable() ? (
               <Button
-                onClick={() => navigate('/purchase')}
+                onClick={() => navigate('/purchase', { state: { from: 'tunnel_locked' } })}
                 variant="contained"
                 size="small"
               >

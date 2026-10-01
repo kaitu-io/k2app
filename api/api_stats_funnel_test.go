@@ -1,0 +1,396 @@
+package center
+
+import (
+	"crypto/md5"
+	"encoding/hex"
+	"fmt"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/spf13/viper"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	db "github.com/wordgate/qtoolkit/db"
+)
+
+func statsFunnelRouter() *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	g := r.Group("/api")
+	g.Use(BrandResolver())
+	g.POST("/stats/events", api_stats_ingest)
+	return r
+}
+
+// sfMarker: 唯一 plan 标记 + 清理该标记的事件。
+func sfMarker(t *testing.T) string {
+	t.Helper()
+	m := fmt.Sprintf("tsf%d", time.Now().UnixNano())
+	t.Cleanup(func() { db.Get().Where("plan = ?", m).Delete(&FunnelEvent{}) })
+	return m
+}
+
+// sfHash：由标记派生的合法设备哈希（32 位小写十六进制，与客户端 UDID 同形）。
+func sfHash(m string) string {
+	sum := md5.Sum([]byte(m))
+	return hex.EncodeToString(sum[:])
+}
+
+func sfItem(m, hash, event string) map[string]any {
+	return map[string]any{
+		"eid": uuid.NewString(), "device_hash": hash, "os": "macos", "app_version": "0.4.0",
+		"event": event, "plan": m, "created_at": time.Now().UTC().Format(time.RFC3339),
+	}
+}
+
+func sfPost(items ...map[string]any) *TestRequest {
+	return NewTestRequest("POST", "/api/stats/events").WithBody(map[string]any{"funnel": items})
+}
+
+func sfRows(t *testing.T, m string) []FunnelEvent {
+	t.Helper()
+	funnelFlushForTest()
+	var rows []FunnelEvent
+	require.NoError(t, db.Get().Where("plan = ?", m).Find(&rows).Error)
+	return rows
+}
+
+func sfCode(t *testing.T, w *httptest.ResponseRecorder) int {
+	t.Helper()
+	resp, err := ParseResponse(w)
+	require.NoError(t, err)
+	return resp.Code
+}
+
+func TestStatsIngest_FunnelRecorded(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	it := sfItem(m, sfHash(m), "paywall_view")
+	it["source"] = "account"
+	w := sfPost(it).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorNone, sfCode(t, w))
+	rows := sfRows(t, m)
+	require.Len(t, rows, 1)
+	r := rows[0]
+	assert.Equal(t, "app", r.Surface)
+	assert.Equal(t, "account", r.Source)
+	assert.Equal(t, "desktop", r.Device)
+	assert.Equal(t, "macos", r.OS)
+	assert.Equal(t, "paywall_view", r.Event)
+	assert.Equal(t, sfHash(m), r.AnonID)
+	assert.Equal(t, "kaitu", r.Brand)
+	assert.Equal(t, "0.4.0", r.AppVersion)
+	assert.Equal(t, uint64(0), r.UserID)
+	require.NotNil(t, r.Eid)
+	assert.Equal(t, it["eid"], *r.Eid)
+}
+
+func TestStatsIngest_FunnelMobileDeviceAndOSNormalize(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	a := sfItem(m, sfHash(m), "paywall_view")
+	a["os"] = "ios"
+	b := sfItem(m, sfHash(m), "login_view")
+	b["os"] = "web"
+	sfPost(a, b).Execute(statsFunnelRouter())
+	rows := sfRows(t, m)
+	require.Len(t, rows, 2)
+	for _, r := range rows {
+		if r.Event == "paywall_view" {
+			assert.Equal(t, "mobile", r.Device)
+			assert.Equal(t, "ios", r.OS)
+		} else {
+			assert.Equal(t, "desktop", r.Device)
+			assert.Equal(t, "other", r.OS)
+		}
+	}
+}
+
+func TestStatsIngest_FunnelSameEidTwice(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	it := sfItem(m, sfHash(m), "paywall_view")
+	r := statsFunnelRouter()
+	assert.EqualValues(t, ErrorNone, sfCode(t, sfPost(it).Execute(r)))
+	assert.EqualValues(t, ErrorNone, sfCode(t, sfPost(it).Execute(r)))
+	assert.Len(t, sfRows(t, m), 1)
+}
+
+func TestStatsIngest_FunnelRejectsFactAndWebOnly(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	bad := sfItem(m, sfHash(m), "x")
+	bad["eid"] = "not-a-uuid"
+	w := sfPost(
+		sfItem(m, sfHash(m), "purchase"),
+		sfItem(m, sfHash(m), "page_view"),
+		sfItem(m, sfHash(m), "nope"),
+		bad,
+		sfItem(m, sfHash(m), "login_view"),
+	).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorNone, sfCode(t, w))
+	rows := sfRows(t, m)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "login_view", rows[0].Event)
+}
+
+func TestStatsIngest_FunnelIgnoresClientUser(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	it := sfItem(m, sfHash(m), "paywall_view")
+	it["user_id"] = 999
+	sfPost(it).Execute(statsFunnelRouter())
+	rows := sfRows(t, m)
+	require.Len(t, rows, 1)
+	assert.Equal(t, uint64(0), rows[0].UserID)
+}
+
+func TestStatsIngest_FunnelBearerLinksDevice(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	user := CreateTestUser(t)
+	udid := "sf-udid-" + m
+	CreateTestDevice(t, user.ID, udid)
+	hash := sfHash(m)
+	t.Cleanup(func() { db.Get().Where("user_id = ?", user.ID).Delete(&FunnelIdentity{}) })
+	tok := GenerateTestToken(user.ID, udid, time.Hour)
+	w := sfPost(sfItem(m, hash, "paywall_view"), sfItem(m, hash, "login_view")).
+		WithBearerToken(tok).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorNone, sfCode(t, w))
+	rows := sfRows(t, m)
+	require.Len(t, rows, 2)
+	for _, r := range rows {
+		assert.Equal(t, user.ID, r.UserID)
+	}
+	var n int64
+	require.NoError(t, db.Get().Model(&FunnelIdentity{}).
+		Where("kind = 'did' AND anon_id = ? AND user_id = ?", hash, user.ID).Count(&n).Error)
+	assert.Equal(t, int64(1), n)
+}
+
+func TestStatsIngest_FunnelOnlyAndTruncation(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	it := sfItem(m, sfHash(m), "plan_select")
+	it["source"] = "ssssssssssssssssssssssssssssssssssssssssssssssss" // 48 > 32
+	it["channel"] = "cccccccccccccccccccccc"                          // 22 > 16
+	it["app_version"] = "9.9.9-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	w := sfPost(it).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorNone, sfCode(t, w))
+	rows := sfRows(t, m)
+	require.Len(t, rows, 1)
+	assert.Len(t, rows[0].Source, 32)
+	assert.Len(t, rows[0].Channel, 16)
+	assert.Len(t, rows[0].AppVersion, 32)
+}
+
+func TestStatsIngest_FunnelDisabledStillStoresLegacy(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	hash := "sfleg-" + m
+	t.Cleanup(func() { factsCleanup(t, db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}).Error) })
+	viper.Set("funnel.enabled", false)
+	t.Cleanup(func() { viper.Set("funnel.enabled", true) })
+	body := map[string]any{
+		"app_opens": []map[string]any{{"device_hash": hash, "os": "macos", "app_version": "0.4.0", "created_at": time.Now().UTC().Format(time.RFC3339)}},
+		"funnel":    []map[string]any{sfItem(m, hash, "paywall_view")},
+	}
+	w := NewTestRequest("POST", "/api/stats/events").WithBody(body).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorNone, sfCode(t, w))
+	assert.Len(t, sfRows(t, m), 0)
+	var n int64
+	require.NoError(t, db.Get().Model(&StatAppOpen{}).Where("device_hash = ?", hash).Count(&n).Error)
+	assert.Equal(t, int64(1), n)
+}
+
+func TestStatsIngest_LegacyBodyUnchanged(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	hash := "sfleg-" + m
+	t.Cleanup(func() { factsCleanup(t, db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}).Error) })
+	body := map[string]any{"app_opens": []map[string]any{sfLegacyOpen(hash)}}
+	w := NewTestRequest("POST", "/api/stats/events").WithBody(body).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorNone, sfCode(t, w))
+	funnelFlushForTest()
+	var n, fn int64
+	require.NoError(t, db.Get().Model(&StatAppOpen{}).Where("device_hash = ?", hash).Count(&n).Error)
+	assert.Equal(t, int64(1), n)
+	require.NoError(t, db.Get().Model(&FunnelEvent{}).Where("anon_id = ?", hash).Count(&fn).Error)
+	assert.Equal(t, int64(0), fn)
+}
+
+func sfLegacyOpen(hash string) map[string]any {
+	return map[string]any{"device_hash": hash, "os": "macos", "app_version": "0.4.0", "created_at": time.Now().UTC().Format(time.RFC3339)}
+}
+
+func sfLegacyCount(t *testing.T, hash string) int64 {
+	t.Helper()
+	var n int64
+	require.NoError(t, db.Get().Model(&StatAppOpen{}).Where("device_hash = ?", hash).Count(&n).Error)
+	return n
+}
+
+func TestStatsIngest_BadFunnelItemDoesNotDropLegacy(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	hash := "sfleg-" + m
+	t.Cleanup(func() { factsCleanup(t, db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}).Error) })
+	bad := sfItem(m, hash, "paywall_view")
+	bad["created_at"] = "garbage"
+	body := map[string]any{"app_opens": []map[string]any{sfLegacyOpen(hash)}, "funnel": []map[string]any{bad}}
+	w := NewTestRequest("POST", "/api/stats/events").WithBody(body).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorNone, sfCode(t, w))
+	assert.Equal(t, int64(1), sfLegacyCount(t, hash))
+	assert.Len(t, sfRows(t, m), 0)
+}
+
+func TestStatsIngest_WrongTypedFieldSkipsOnlyThatItem(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	bad := sfItem(m, sfHash(m), "paywall_view")
+	bad["event"] = 5
+	good := sfItem(m, sfHash(m), "login_view")
+	w := sfPost(bad, good).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorNone, sfCode(t, w))
+	rows := sfRows(t, m)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "login_view", rows[0].Event)
+}
+
+func TestStatsIngest_FunnelNotAnArrayKeepsLegacy(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	hash := "sfleg-" + m
+	t.Cleanup(func() { factsCleanup(t, db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}).Error) })
+	body := map[string]any{"app_opens": []map[string]any{sfLegacyOpen(hash)}, "funnel": "not-an-array"}
+	w := NewTestRequest("POST", "/api/stats/events").WithBody(body).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorNone, sfCode(t, w))
+	assert.Equal(t, int64(1), sfLegacyCount(t, hash))
+}
+
+func TestStatsIngest_FunnelItemMissingFieldsSkipped(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	noHash := sfItem(m, "", "paywall_view")
+	noOS := sfItem(m, sfHash(m), "paywall_view")
+	noOS["os"] = ""
+	noVer := sfItem(m, sfHash(m), "paywall_view")
+	noVer["app_version"] = ""
+	noTime := sfItem(m, sfHash(m), "login_view")
+	delete(noTime, "created_at")
+	w := sfPost(noHash, noOS, noVer, noTime).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorNone, sfCode(t, w))
+	rows := sfRows(t, m)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "login_view", rows[0].Event)
+	assert.WithinDuration(t, time.Now(), rows[0].OccurredAt, time.Minute)
+}
+
+func TestStatsIngest_FunnelCountsTowardLimit(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	items := make([]map[string]any, 101)
+	for i := range items {
+		items[i] = sfItem(m, sfHash(m), "paywall_view")
+	}
+	w := sfPost(items...).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorInvalidArgument, sfCode(t, w))
+	assert.Len(t, sfRows(t, m), 0)
+}
+
+// app-open 行带上请求品牌（活跃留存按品牌过滤靠它）。
+func TestStatsIngest_AppOpenStampsBrand(t *testing.T) {
+	skipIfNoConfig(t)
+	hash := generateId("sf-open")
+	t.Cleanup(func() { factsCleanup(t, db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}).Error) })
+	post := func(brandHeader string) {
+		t.Helper()
+		req := NewTestRequest("POST", "/api/stats/events").WithBody(map[string]any{"app_opens": []map[string]any{{
+			"device_hash": hash, "os": "macos", "app_version": "0.4.0", "created_at": time.Now().UTC().Format(time.RFC3339),
+		}}})
+		if brandHeader != "" {
+			req = req.WithHeader("X-K2-Brand", brandHeader)
+		}
+		assert.EqualValues(t, ErrorNone, sfCode(t, req.Execute(statsFunnelRouter())))
+	}
+	post("overleap")
+	post("")
+
+	var rows []StatAppOpen
+	require.NoError(t, db.Get().Where("device_hash = ?", hash).Order("id ASC").Find(&rows).Error)
+	require.Len(t, rows, 2)
+	assert.Equal(t, "overleap", rows[0].Brand)
+	assert.Equal(t, "kaitu", rows[1].Brand, "no header / unknown host resolves to the default brand")
+}
+
+// 请求体上限 1 MiB：超限按现有的参数错误返回，不 panic、不落库。
+func TestStatsIngest_OverLimitBodyRejected(t *testing.T) {
+	testInitConfig()
+	body := map[string]any{"pad": strings.Repeat("x", 2<<20)}
+	w := NewTestRequest("POST", "/api/stats/events").WithBody(body).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorInvalidArgument, sfCode(t, w))
+	// 上限以内的同形请求照常成功
+	ok := map[string]any{"pad": strings.Repeat("x", 512<<10)}
+	w = NewTestRequest("POST", "/api/stats/events").WithBody(ok).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorNone, sfCode(t, w))
+}
+
+// 设备哈希必须是 32–64 位小写十六进制：客户端取不到 UDID 时的兜底值 "unknown" 等
+// 一律跳过——否则所有取不到 UDID 的设备会并成同一个"人"，登录后还会被关联到某个用户。
+func TestStatsIngest_FunnelRejectsBadDeviceHash(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	user := CreateTestUser(t)
+	udid := "sf-udid-" + m
+	CreateTestDevice(t, user.ID, udid)
+	good32 := sfHash(m)
+	good64 := good32 + sfHash(m+"x")
+	bad := []string{
+		"unknown",
+		strings.ToUpper(good32),          // 大写
+		good32[:31],                      // 太短
+		good64 + "a",                     // 太长
+		good32[:31] + "g",                // 非十六进制
+		good32 + "\n",                    // 尾随换行
+		"sfdev-" + m,                     // 任意字符串
+		strings.Repeat("a", 31) + "\xff", // 清洗后才变短的非法 UTF-8
+	}
+	t.Cleanup(func() {
+		db.Get().Where("user_id = ?", user.ID).Delete(&FunnelIdentity{})
+	})
+	items := []map[string]any{sfItem(m, good32, "paywall_view"), sfItem(m, good64, "login_view")}
+	for _, h := range bad {
+		items = append(items, sfItem(m, h, "paywall_view"))
+	}
+	w := sfPost(items...).WithBearerToken(GenerateTestToken(user.ID, udid, time.Hour)).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorNone, sfCode(t, w))
+
+	rows := sfRows(t, m)
+	var got []string
+	for _, r := range rows {
+		got = append(got, r.AnonID)
+	}
+	assert.ElementsMatch(t, []string{good32, good64}, got)
+
+	var ids []FunnelIdentity
+	require.NoError(t, db.Get().Where("user_id = ?", user.ID).Find(&ids).Error)
+	var linked []string
+	for _, id := range ids {
+		linked = append(linked, id.AnonID)
+	}
+	assert.ElementsMatch(t, []string{good32, good64}, linked, "only well-formed hashes are ever linked")
+}
+
+func TestValidFunnelDeviceHash(t *testing.T) {
+	h := strings.Repeat("0123456789abcdef", 4)
+	assert.True(t, validFunnelDeviceHash(h[:32]))
+	assert.True(t, validFunnelDeviceHash(h[:40]))
+	assert.True(t, validFunnelDeviceHash(h))
+	for _, bad := range []string{"", "unknown", h[:31], h + "0", strings.ToUpper(h[:32]), h[:31] + "g", h[:32] + "\n", " " + h[:32]} {
+		assert.False(t, validFunnelDeviceHash(bad), "%q", bad)
+	}
+}

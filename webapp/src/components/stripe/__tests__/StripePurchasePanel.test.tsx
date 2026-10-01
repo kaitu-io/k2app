@@ -21,6 +21,11 @@ vi.mock('../../../hooks/useUser', () => ({ useUser: () => userMock }));
 vi.mock('../../../stores/login-dialog.store', () => ({
   useLoginDialogStore: (sel: any) => sel({ open: vi.fn() }),
 }));
+// The panel reports funnel events; the real statsService pulls in cloud-api →
+// i18n init, which the react-i18next mock below cannot satisfy (unhandled rejection).
+vi.mock('../../../services/stats', () => ({
+  statsService: { trackFunnel: vi.fn(), trackFunnelOnce: vi.fn(), trackFunnelDaily: vi.fn() },
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string) => k, i18n: { language: 'en-US' } }),
 }));

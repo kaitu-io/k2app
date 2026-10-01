@@ -283,6 +283,12 @@ func api_delete_user_account(c *gin.Context) {
 		if err := tx.Where("user_id = ?", userID).Delete(&Device{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("user_id = ?", userID).Delete(&FunnelIdentity{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", userID).Delete(&FunnelEvent{}).Error; err != nil {
+			return err
+		}
 		return tx.Delete(&user).Error
 	}); err != nil {
 		log.Errorf(c, "failed to delete user %d: %v", userID, err)

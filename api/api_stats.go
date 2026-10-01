@@ -4,7 +4,10 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,6 +21,21 @@ import (
 type StatsEventRequest struct {
 	AppOpens    []StatsAppOpenEvent    `json:"app_opens"`
 	Connections []StatsConnectionEvent `json:"connections"`
+	// Funnel 保持原始 JSON：逐条解码，坏条目只跳过自己，绝不拖累同请求里的旧事件。
+	Funnel json.RawMessage `json:"funnel"`
+}
+
+// StatsFunnelEvent 是 app 上报的转化漏斗行为事件（只收行为事件，事实事件由服务端投影）。
+type StatsFunnelEvent struct {
+	Eid        string    `json:"eid"`
+	DeviceHash string    `json:"device_hash"`
+	OS         string    `json:"os"`
+	AppVersion string    `json:"app_version"`
+	Event      string    `json:"event"`
+	Plan       string    `json:"plan"`
+	Source     string    `json:"source"`
+	Channel    string    `json:"channel"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type StatsAppOpenEvent struct {
@@ -51,17 +69,23 @@ type StatsK2sDownloadRequest struct {
 
 // ========================= Handlers =========================
 
-const maxEventsPerRequest = 100
+const (
+	maxEventsPerRequest = 100
+	statsIngestMaxBody  = 1 << 20 // 1 MiB
+)
 
 // api_stats_ingest handles POST /api/stats/events
 func api_stats_ingest(c *gin.Context) {
+	// 未认证端点：请求体封顶，超限时解码失败 → 走下面同一个参数错误。
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, statsIngestMaxBody)
 	var req StatsEventRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		Error(c, ErrorInvalidArgument, "invalid request body")
 		return
 	}
 
-	totalEvents := len(req.AppOpens) + len(req.Connections)
+	funnelItems := splitFunnelItems(req.Funnel)
+	totalEvents := len(req.AppOpens) + len(req.Connections) + len(funnelItems)
 	if totalEvents == 0 {
 		SuccessEmpty(c)
 		return
@@ -75,6 +99,7 @@ func api_stats_ingest(c *gin.Context) {
 
 	// Insert app opens
 	if len(req.AppOpens) > 0 {
+		brand := string(ReqBrand(c))
 		records := make([]StatAppOpen, len(req.AppOpens))
 		for i, e := range req.AppOpens {
 			records[i] = StatAppOpen{
@@ -83,6 +108,7 @@ func api_stats_ingest(c *gin.Context) {
 				OS:         e.OS,
 				AppVersion: e.AppVersion,
 				Locale:     e.Locale,
+				Brand:      brand,
 			}
 		}
 		if err := tx.Create(&records).Error; err != nil {
@@ -117,8 +143,11 @@ func api_stats_ingest(c *gin.Context) {
 		}
 	}
 
-	log.Debugf(c, "ingested %d stats events (app_opens=%d, connections=%d)",
-		totalEvents, len(req.AppOpens), len(req.Connections))
+	// 漏斗事件：入队即返回，任何失败都不影响响应。
+	ingestStatsFunnel(c, funnelItems)
+
+	log.Debugf(c, "ingested %d stats events (app_opens=%d, connections=%d, funnel=%d)",
+		totalEvents, len(req.AppOpens), len(req.Connections), len(funnelItems))
 	SuccessEmpty(c)
 }
 
@@ -182,4 +211,89 @@ func hashIPWithDailySalt(c *gin.Context, ip string) (string, error) {
 
 	h := sha256.Sum256([]byte(ip + salt))
 	return hex.EncodeToString(h[:]), nil
+}
+
+var funnelEidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+func validEid(s string) bool { return funnelEidRe.MatchString(s) }
+
+// funnelDeviceHashRe：客户端 UDID 是 SHA-256 的小写十六进制前缀（现为 32 位）。
+// 客户端取不到 UDID 时发的兜底值 "unknown" 不匹配。
+var funnelDeviceHashRe = regexp.MustCompile(`^[0-9a-f]{32,64}$`)
+
+func validFunnelDeviceHash(s string) bool { return funnelDeviceHashRe.MatchString(s) }
+
+func normalizeFunnelOS(os string) string {
+	switch os {
+	case "windows", "macos", "ios", "android", "linux":
+		return os
+	}
+	return "other"
+}
+
+// splitFunnelItems 把 funnel 原始 JSON 拆成逐条原始消息；不是数组（或缺失）按空处理。
+func splitFunnelItems(raw json.RawMessage) []json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	var items []json.RawMessage
+	if json.Unmarshal(raw, &items) != nil {
+		return nil
+	}
+	return items
+}
+
+// ingestStatsFunnel 把 app 上报的漏斗事件非阻塞入队。用户归因只信 token（只读解析），
+// 绝不信请求体；设备哈希与登录用户配对写入 identity。
+func ingestStatsFunnel(c *gin.Context, raws []json.RawMessage) {
+	items := raws
+	if len(items) == 0 || !funnelEnabled() {
+		return
+	}
+	uid := funnelSilentUserID(c)
+	brand := ReqBrand(c)
+	now := time.Now()
+	linked := map[string]struct{}{}
+	for _, raw := range items {
+		var e StatsFunnelEvent
+		if json.Unmarshal(raw, &e) != nil {
+			continue
+		}
+		// 设备哈希不合形（含兜底值 "unknown"）整条跳过：既不记事件，也绝不拿去关联用户。
+		if !funnelEventAllowed(e.Event, FunnelSurfaceApp) || !validEid(e.Eid) ||
+			!validFunnelDeviceHash(e.DeviceHash) || e.OS == "" || e.AppVersion == "" {
+			continue
+		}
+		hash := e.DeviceHash
+		occurred := now
+		if !e.CreatedAt.IsZero() {
+			occurred = clampOccurredAt(e.CreatedAt, now)
+		}
+		eid := e.Eid
+		device := "desktop"
+		if e.OS == "ios" || e.OS == "android" {
+			device = "mobile"
+		}
+		funnelEnqueue(FunnelEvent{
+			OccurredAt: occurred,
+			Eid:        &eid,
+			Brand:      string(brand),
+			Surface:    FunnelSurfaceApp,
+			Event:      e.Event,
+			AnonID:     hash,
+			UserID:     uid,
+			Plan:       funnelTruncate(e.Plan, 64),
+			Source:     funnelTruncate(e.Source, 32),
+			Channel:    funnelTruncate(e.Channel, 16),
+			Device:     device,
+			OS:         normalizeFunnelOS(e.OS),
+			AppVersion: funnelTruncate(e.AppVersion, 32),
+		})
+		if uid != 0 {
+			if _, done := linked[hash]; !done {
+				linked[hash] = struct{}{}
+				linkFunnelIdentity(c, "did", hash, uid, brand)
+			}
+		}
+	}
 }

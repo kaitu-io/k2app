@@ -68,4 +68,24 @@ describe('web OTA boot handshake wiring (main.tsx)', () => {
     expect(injectDesktop, 'bridge injection must precede render').toBeLessThan(render);
     expect(injectMobile, 'bridge injection must precede render').toBeLessThan(render);
   });
+
+  // Funnel: the existing-install seeding reads the `device-udid` storage key,
+  // which the first getDeviceUdid() call creates. If store init (or the
+  // app_first_open report) runs first, every pre-funnel install reports as new.
+  it('seeds funnel once-flags for existing installs before stores or stats can create the udid', () => {
+    const seed = MAIN.indexOf('await seedFunnelOnceFlagsForExistingInstall()');
+    expect(seed, 'main.tsx never awaits seedFunnelOnceFlagsForExistingInstall()').toBeGreaterThan(-1);
+    const stores = MAIN.indexOf('initializeAllStores()');
+    const firstOpen = MAIN.indexOf("trackFunnelOnce('app_first_open')");
+    const seeded = MAIN.indexOf('ensureSeeded()');
+    expect(stores).toBeGreaterThan(-1);
+    expect(firstOpen).toBeGreaterThan(-1);
+    expect(seeded).toBeGreaterThan(-1);
+    expect(seed, 'seeding must precede initializeAllStores()').toBeLessThan(stores);
+    expect(seed, 'seeding must precede the app_first_open report').toBeLessThan(firstOpen);
+    expect(seed, 'seeding must precede the first cloud traffic (entry-pool seed)').toBeLessThan(seeded);
+    // …and it needs the injected platform storage.
+    expect(seed).toBeGreaterThan(MAIN.indexOf('injectCapacitorGlobals('));
+    expect(seed).toBeGreaterThan(MAIN.indexOf('ensureK2Injected()'));
+  });
 });
