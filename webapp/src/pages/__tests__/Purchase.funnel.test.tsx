@@ -288,5 +288,8 @@ describe.runIf(brandConfig.features.wordgatePurchase)('Purchase funnel: WordGate
       expect((cloudApi.post as any).mock.calls.some(([, b]: [string, any]) => b?.preview === false)).toBe(true),
     );
     expect(calls('checkout_start')).toEqual([['checkout_start', { plan: PLAN_1M.pid }]]);
+    // The server groups purchases by this plan; the channel is unknown client-side.
+    expect(calls('checkout_start')[0][1].plan).toBeTruthy();
+    expect('channel' in calls('checkout_start')[0][1]).toBe(false);
   });
 });

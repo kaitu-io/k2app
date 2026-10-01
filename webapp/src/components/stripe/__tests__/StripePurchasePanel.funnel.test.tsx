@@ -66,6 +66,7 @@ describe.runIf(brandConfig.features.stripeCheckout)('StripePurchasePanel funnel 
     expect(calls('checkout_start')).toEqual([
       ['checkout_start', { plan: 'ol-basic-1y', channel: 'stripe' }],
     ]);
+    expect(calls('checkout_start')[0][1].plan).toBeTruthy();
   });
 
   it('clicking a plan card reports plan_select with its pid', () => {

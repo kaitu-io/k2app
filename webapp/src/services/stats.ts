@@ -160,6 +160,8 @@ async function clearQueue(): Promise<void> {
 // ========================= Device Hash =========================
 
 let _deviceHash: string | null = null;
+/** Fallback when the device UDID cannot be read. The server rejects it for funnel events. */
+const UNKNOWN_DEVICE_HASH = 'unknown';
 
 async function getDeviceHash(): Promise<string> {
   if (_deviceHash) return _deviceHash;
@@ -167,7 +169,7 @@ async function getDeviceHash(): Promise<string> {
     _deviceHash = await getDeviceUdid();
     return _deviceHash;
   } catch {
-    return 'unknown';
+    return UNKNOWN_DEVICE_HASH;
   }
 }
 
@@ -465,9 +467,19 @@ export async function seedFunnelOnceFlagsForExistingInstall(): Promise<void> {
   }
 }
 
-/** Resolves true iff the event was persisted to the queue. */
+/**
+ * Resolves true iff the event was persisted to the queue. Events the server
+ * would reject are not queued at all (and so never set a once/daily flag):
+ *  - no device identity — one bad item fails the whole batch, legacy stats included;
+ *  - `checkout_start` without a plan — the server groups purchases by that plan.
+ */
 async function enqueueFunnel(event: AppFunnelEvent, props?: FunnelProps): Promise<boolean> {
+  if (event === 'checkout_start' && !props?.plan) {
+    console.warn('[Stats] checkout_start without a plan dropped');
+    return false;
+  }
   const deviceHash = await getDeviceHash();
+  if (deviceHash === UNKNOWN_DEVICE_HASH) return false;
   const { os, app_version } = getPlatformInfo();
   const item: FunnelQueued = {
     eid: randomUUID(),

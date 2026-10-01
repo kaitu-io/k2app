@@ -56,6 +56,7 @@ describe('IosSubscribePanel funnel events', () => {
     fireEvent.click(screen.getByTestId('iap-subscribe-btn'));
     const tracked = (statsService.trackFunnel as any).mock.calls.filter((c: any[]) => c[0] === 'checkout_start');
     expect(tracked).toEqual([['checkout_start', { plan: BASIC_1Y, channel: 'apple' }]]);
+    expect(tracked[0][1].plan).toBeTruthy();
     expect(mockPurchase).toHaveBeenCalledWith(BASIC_1Y, 'tok');
     expect((statsService.trackFunnel as any).mock.invocationCallOrder[0])
       .toBeLessThan(mockPurchase.mock.invocationCallOrder[0]);

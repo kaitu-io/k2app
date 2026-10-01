@@ -644,4 +644,45 @@ describe('statsService', () => {
       expect(mockRequest).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('funnel events the server would reject are never queued', () => {
+    const flushWait = () => new Promise(r => setTimeout(r, 50));
+
+    it('unknown device hash: nothing queued, once/daily flags not set, retried later', async () => {
+      const { getDeviceUdid } = await import('../device-udid');
+      vi.mocked(getDeviceUdid).mockRejectedValue(new Error('no UDID'));
+
+      await statsService.trackFunnel('paywall_view', { source: 'nav' });
+      await statsService.trackFunnelOnce('app_first_open');
+      await statsService.trackFunnelDaily('connect_ok');
+      await flushWait();
+
+      expect(mockRequest).not.toHaveBeenCalled();
+      expect(mockStorage.get('stats_queue')).toBeUndefined();
+      expect(mockStorage.get('funnel_once:app_first_open')).toBeUndefined();
+      expect(mockStorage.get('funnel_day:connect_ok')).toBeUndefined();
+
+      // The UDID becomes readable later: the once-event is still owed and goes out.
+      vi.mocked(getDeviceUdid).mockResolvedValue('test-udid-123');
+      await statsService.trackFunnelOnce('app_first_open');
+      await flushWait();
+      const sent = mockRequest.mock.calls.flatMap(c => (c[2] as any).funnel ?? []);
+      expect(sent.map((e: any) => [e.event, e.device_hash])).toEqual([['app_first_open', 'test-udid-123']]);
+      expect(mockStorage.get('funnel_once:app_first_open')).toBeTruthy();
+    });
+
+    it('checkout_start always carries a plan: one without is dropped', async () => {
+      await statsService.trackFunnel('checkout_start');
+      await statsService.trackFunnel('checkout_start', { plan: '', channel: 'stripe' });
+      await flushWait();
+      expect(mockRequest).not.toHaveBeenCalled();
+
+      await statsService.trackFunnel('checkout_start', { plan: 'p-1m' });
+      await flushWait();
+      const sent = mockRequest.mock.calls.flatMap(c => (c[2] as any).funnel ?? []);
+      expect(sent).toHaveLength(1);
+      expect(sent[0].plan).toBe('p-1m');
+      expect('channel' in sent[0]).toBe(false);
+    });
+  });
 });
