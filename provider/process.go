@@ -35,6 +35,34 @@ type ProcessPathSearcher interface {
 	FindProcessPath(network string, srcIP netip.Addr, srcPort uint16) (processName, processPath string)
 }
 
+// DNSClientSearcher is an optional extension for platforms where apps hand
+// their lookups to a system resolver service and the kernel socket table
+// cannot say on whose behalf the service is asking — Windows, where every
+// getaddrinfo / DnsQuery goes out from the Dnscache service (svchost.exe).
+// (macOS needs none of this: the delegated pid is on the socket, so
+// FindProcessPath already answers with the app.)
+//
+// The watch behind it is a system-wide event subscription, so it is held
+// only while a ruleset with process criteria is loaded.
+type DNSClientSearcher interface {
+	// StartDNSClientWatch begins observing resolver calls and returns the
+	// function that gives this hold back. Holds are counted: the watch runs
+	// until every holder has released, so overlapping engines (one stopping,
+	// one starting) cannot switch each other off. release is safe to call
+	// more than once. An error means the platform refused (not elevated);
+	// FindDNSClient then reports ok=false and DNS attribution stays
+	// socket-only.
+	StartDNSClientWatch() (release func(), err error)
+	// FindDNSClient names the app that asked the system resolver for qname,
+	// given that the DNS query's own socket belongs to resolverName. It
+	// returns ok=false at once when resolverName is not the system resolver
+	// (the socket owner IS the app) or the watch is off. Otherwise it may
+	// block for a few tens of milliseconds: the platform reports the caller
+	// slightly after the query hits the wire. Call it when the query
+	// arrives, once per query.
+	FindDNSClient(resolverName, qname string) (processName, processPath string, ok bool)
+}
+
 // ConnProcessSearcher is an optional extension of ProcessSearcher for
 // platforms whose kernel attribution needs the full connection 4-tuple —
 // Android's ConnectivityManager.getConnectionOwnerUid takes (protocol,
