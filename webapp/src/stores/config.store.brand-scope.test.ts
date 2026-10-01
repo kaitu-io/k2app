@@ -81,13 +81,13 @@ describe('config.store — brand routing scope', () => {
       tzSpy.mockRestore();
     });
 
-    it('detectGeo clamps a bundle-less country to cn for routing, keeps raw detection for display', async () => {
+    it('detectGeo clamps a bundle-less country to the brand default (gb) for routing, keeps raw detection for display', async () => {
       const tzSpy = vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
         .mockReturnValue({ timeZone: 'Asia/Tokyo' } as Intl.ResolvedDateTimeFormatOptions);
       await useConfigStore.getState().detectGeo();
       const s = useConfigStore.getState();
       expect(s.detectedCountry).toBe('jp'); // raw — travel banner material
-      expect(s.country).toBe('cn');         // clamped — jp has no rule bundles
+      expect(s.country).toBe('gb');         // clamped — jp has no rule bundles
       tzSpy.mockRestore();
     });
 
@@ -102,13 +102,13 @@ describe('config.store — brand routing scope', () => {
       tzSpy.mockRestore();
     });
 
-    it('detectGeo falls back to cn when the runtime has no timezone', async () => {
+    it('detectGeo falls back to the brand default (gb) when the runtime has no timezone', async () => {
       const tzSpy = vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
         .mockImplementation(() => { throw new Error('no ICU'); });
       await useConfigStore.getState().detectGeo();
       const s = useConfigStore.getState();
-      expect(s.detectedCountry).toBe('cn');
-      expect(s.country).toBe('cn');
+      expect(s.detectedCountry).toBe('gb');
+      expect(s.country).toBe('gb');
       tzSpy.mockRestore();
     });
 
