@@ -171,6 +171,8 @@ Two read paths, both pure (RLock, no state mutation):
 - `summary_test.go` / `observability_test.go` — histogram/Sub unit tests + reflection guard; Snapshot purity and `-race` mutation tests; accumulator path tests (each mirrors an existing control-path test)
 - `k2cc_test.go` — ~68 test functions (convergence, loss tolerance, rate bounds, stale loss filtering, snapshot fallback, AIMD-ε, ackRate tracker, CongestionControlEx, app-limited anchor, stable probing, slow start saturation, BW estimator, BW-anchored probing)
 - `k2cc_integration_test.go` — QUIC integration tests: real client+server bulk transfer with UDP relay (delay, loss, rate limiting), MI completion hook for per-MI diagnostics
+- `loss_attribution_test.go` / `loss_attribution_unit_test.go` — per-MI loss attribution accuracy (`lossProbeCC` wrapper, `runLossAttributionTransfer`), pins that K2CC sees ~half of QUIC-declared loss
+- `relay_fifo_test.go` — harness self-proof: order counter unit test + FIFO relay declares < 1 % loss at 0 % configured
 - `helpers_test.go` — test fixtures
 
 ## Testing
@@ -185,7 +187,9 @@ go test ./wire/k2cc/... -run TestDescent_Benchmark -v      # descent: rate start
 ### Integration Test Architecture
 
 `k2cc_integration_test.go` uses a UDP relay between QUIC client and server to simulate realistic network conditions:
-- **Delay**: `delayFunc` abstraction — `stableDelay(d)` for fixed, `jitterDelay(base, maxJitter)` for ±segment-based jitter (100ms segments to avoid QUIC reordering false-positives)
+- **Relay = FIFO by default**: `runBulkTransfer` / `runBulkTransferFull` (every benchmark) use `newUDPRelayFIFOWithBandwidth` — one queue per direction with monotonic release times, so packets are never reordered, including across `jitterDelay` segment boundaries (a downward delay step becomes a short burst, counted in `held`). The old per-packet goroutine+timer relay (`newUDPRelay`) reorders, and QUIC's packet-threshold detection turned that into ~35–45 % spurious declared loss at 0 % configured loss — every benchmark number recorded before 2026-10-01 was measured at that inflated loss. It survives only for the `reorder_*` scenarios in `loss_attribution_test.go` and the control in `relay_fifo_test.go`; do not use it for new tests.
+- **Harness self-proof**: the relay counts out-of-order deliveries per direction (`outOfOrder`); `runBulkTransferFull` fails the test if it is non-zero, and `TestRelayFIFO_NoReorder_NoSpuriousLoss` asserts QUIC-declared loss < 1 % at 0 % configured loss (stable and jitter delays).
+- **Delay**: `delayFunc` abstraction — `stableDelay(d)` for fixed, `jitterDelay(base, maxJitter)` for ±segment-based jitter (100ms segments; order is preserved by the FIFO relay, not by the segments)
 - **Loss**: Configurable packet drop rate on both directions
 - **Rate limiting**: Server write rate can be capped to simulate upstream bandwidth
 - **MI hook**: `SetMICompletedHook()` collects per-MI data (BytesSent, BytesAcked, duration, throughput, app-limited) for analysis without parsing logs

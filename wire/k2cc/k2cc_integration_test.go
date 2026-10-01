@@ -83,9 +83,14 @@ func stableDelay(d time.Duration) delayFunc {
 }
 
 // jitterDelay returns segment-based jitter: the base delay changes every
-// ~100ms, but packets within the same segment get the same delay. This avoids
-// artificial packet reordering (which QUIC misdetects as loss) while still
-// producing realistic RTT variation over time.
+// ~100ms, but packets within the same segment get the same delay, producing
+// realistic RTT variation over time.
+//
+// Segments alone do NOT prevent reordering: when the delay steps DOWN at a
+// segment boundary, a per-packet-timer relay lets the first packets of the new
+// segment overtake the tail of the old one. Order is preserved by the FIFO
+// relay (monotonic release times, see newUDPRelayFIFO), where a downward step
+// shows up as a short delivery burst instead.
 func jitterDelay(base, maxJitter time.Duration) delayFunc {
 	const segmentDur = 100 * time.Millisecond
 	current := base
@@ -137,16 +142,51 @@ type udpRelay struct {
 	// Order-preserving delivery (newUDPRelayFIFO): [0]=s2c, [1]=c2s.
 	fifoQ [2]chan delayedPkt
 	wg    sync.WaitGroup
+
+	// Delivery-order ground truth, per direction ([0]=s2c, [1]=c2s). Every
+	// forwarded datagram gets its direction's next sequence number on receive
+	// (relayLoop only) and reports it just before it is written out; a
+	// datagram written after a higher-numbered one counts as out of order.
+	// Must stay 0 on the FIFO relay — runBulkTransferFull asserts it — and is
+	// non-zero on the per-packet relay, which is what makes it a discriminator.
+	nextSeq       [2]uint64
+	lastDelivered [2]atomic.Uint64
+	outOfOrder    [2]atomic.Uint64
+
+	// FIFO only: last scheduled release time per direction (relayLoop only),
+	// and how many datagrams had their release pushed back to it because the
+	// delay function stepped down (jitterDelay segment boundary).
+	lastRelease [2]time.Time
+	held        [2]atomic.Uint64
 }
 
+const (
+	dirS2C = 0
+	dirC2S = 1
+)
+
+// noteDelivered records that the datagram with per-direction sequence seq is
+// about to be written. Safe for concurrent use (per-packet relay goroutines).
+func (r *udpRelay) noteDelivered(dir int, seq uint64) {
+	for {
+		last := r.lastDelivered[dir].Load()
+		if seq < last {
+			r.outOfOrder[dir].Add(1)
+			return
+		}
+		if r.lastDelivered[dir].CompareAndSwap(last, seq) {
+			return
+		}
+	}
+}
+
+// newUDPRelay is the REORDERING relay (one goroutine+timer per packet). It is
+// kept only so TestIntegration_LossAttributionAccuracy's reorder_* scenarios
+// and TestRelayFIFO_NoReorder_NoSpuriousLoss's control can show the artifact.
+// Benchmarks must use the FIFO relay (runBulkTransfer* do).
 func newUDPRelay(t *testing.T, serverAddr *net.UDPAddr, delay delayFunc, lossRate float64) *udpRelay {
 	t.Helper()
-	return newUDPRelayWithBandwidth(t, serverAddr, delay, lossRate, 0)
-}
-
-func newUDPRelayWithBandwidth(t *testing.T, serverAddr *net.UDPAddr, delay delayFunc, lossRate float64, bandwidthCapBps float64) *udpRelay {
-	t.Helper()
-	return newUDPRelayOpts(t, serverAddr, delay, lossRate, bandwidthCapBps, false)
+	return newUDPRelayOpts(t, serverAddr, delay, lossRate, 0, false)
 }
 
 // newUDPRelayFIFO is newUDPRelay with order-preserving delivery: each
@@ -155,17 +195,32 @@ func newUDPRelayWithBandwidth(t *testing.T, serverAddr *net.UDPAddr, delay delay
 // under scheduler pressure (timers created microseconds apart fire in
 // arbitrary goroutine order), and QUIC's packet-threshold (3) loss detection
 // turns that reordering into spurious loss — see
-// TestIntegration_LossAttributionAccuracy. Only order-preserving for delay
-// functions that are non-decreasing between consecutive packets (stableDelay).
+// TestIntegration_LossAttributionAccuracy.
+//
+// Order is preserved for ANY delay function, including jitterDelay: release
+// times are forced monotonic per direction (releaseAt = max(receive+delay,
+// previous releaseAt)), so when the delay steps down a packet waits behind
+// its predecessor instead of overtaking it. The effective delay of such a
+// packet is therefore larger than what the delay function returned; `held`
+// counts them.
 func newUDPRelayFIFO(t *testing.T, serverAddr *net.UDPAddr, delay delayFunc, lossRate float64) *udpRelay {
 	t.Helper()
 	return newUDPRelayOpts(t, serverAddr, delay, lossRate, 0, true)
+}
+
+// newUDPRelayFIFOWithBandwidth is newUDPRelayFIFO plus the server→client
+// token-bucket bandwidth cap. This is the relay every benchmark uses.
+func newUDPRelayFIFOWithBandwidth(t *testing.T, serverAddr *net.UDPAddr, delay delayFunc, lossRate float64, bandwidthCapBps float64) *udpRelay {
+	t.Helper()
+	return newUDPRelayOpts(t, serverAddr, delay, lossRate, bandwidthCapBps, true)
 }
 
 type delayedPkt struct {
 	data      []byte
 	dst       *net.UDPAddr
 	releaseAt time.Time
+	dir       int
+	seq       uint64
 }
 
 func newUDPRelayOpts(t *testing.T, serverAddr *net.UDPAddr, delay delayFunc, lossRate float64, bandwidthCapBps float64, fifo bool) *udpRelay {
@@ -299,15 +354,26 @@ func (r *udpRelay) relayLoop() {
 			dstAddr = r.serverAddr
 		}
 
+		dir := dirC2S
+		if isFromServer {
+			dir = dirS2C
+		}
+		r.nextSeq[dir]++
+		seq := r.nextSeq[dir]
+
 		// Send with delay — use timer+select so goroutines exit on close
 		d := r.delay(r.rng)
 		if r.fifoQ[0] != nil {
-			q := r.fifoQ[1]
-			if isFromServer {
-				q = r.fifoQ[0]
+			// Monotonic release times: never schedule a packet before its
+			// predecessor in the same direction (delay stepped down).
+			releaseAt := time.Now().Add(d)
+			if releaseAt.Before(r.lastRelease[dir]) {
+				releaseAt = r.lastRelease[dir]
+				r.held[dir].Add(1)
 			}
 			select {
-			case q <- delayedPkt{data: pkt, dst: dstAddr, releaseAt: time.Now().Add(d)}:
+			case r.fifoQ[dir] <- delayedPkt{data: pkt, dst: dstAddr, releaseAt: releaseAt, dir: dir, seq: seq}:
+				r.lastRelease[dir] = releaseAt
 			default: // queue overflow: reclassify forwarded → dropped, keep ground truth honest
 				if isFromServer {
 					r.s2cForwarded.Add(^uint64(0))
@@ -327,11 +393,13 @@ func (r *udpRelay) relayLoop() {
 				defer t.Stop()
 				select {
 				case <-t.C:
+					r.noteDelivered(dir, seq)
 					r.conn.WriteToUDP(pkt, dst)
 				case <-r.closed:
 				}
 			}()
 		} else {
+			r.noteDelivered(dir, seq)
 			r.conn.WriteToUDP(pkt, dstAddr)
 		}
 	}
@@ -353,6 +421,7 @@ func (r *udpRelay) fifoLoop(q chan delayedPkt) {
 					return
 				}
 			}
+			r.noteDelivered(p.dir, p.seq)
 			r.conn.WriteToUDP(p.data, p.dst)
 		}
 	}
@@ -369,6 +438,7 @@ func (r *udpRelay) countDrop(isFromServer bool) {
 // ccTestEnv holds a QUIC client+server test environment with CC instrumentation.
 type ccTestEnv struct {
 	serverCC  *K2CCSender
+	relay     *udpRelay // counters stay readable after the transfer (relay is closed)
 	miRecords []MIRecord
 	miMu      sync.Mutex
 }
@@ -468,8 +538,9 @@ func logMIAnalysis(t *testing.T, env *ccTestEnv, totalRead int64, elapsed time.D
 	t.Logf("  Avg MI throughput: %.1f Mbps", avgTP/1_000_000)
 }
 
-// runBulkTransfer creates QUIC client+server via a UDP relay with configurable
-// delay and loss, transfers data, and returns MI diagnostics.
+// runBulkTransfer creates QUIC client+server via the order-preserving (FIFO)
+// UDP relay with configurable delay and loss, transfers data, and returns MI
+// diagnostics.
 // writeRateBytesPerSec limits server write speed (0 = unlimited).
 func runBulkTransfer(t *testing.T, transferSize int, delay delayFunc, lossRate float64, writeRateBytesPerSec int) (*ccTestEnv, int64, time.Duration) {
 	t.Helper()
@@ -480,6 +551,11 @@ func runBulkTransfer(t *testing.T, transferSize int, delay delayFunc, lossRate f
 // cap (bps). When bandwidthCapBps > 0, the relay drops packets exceeding the cap
 // using a token bucket — simulating a congested bottleneck link where loss increases
 // with sending rate (unlike random lossRate which is constant).
+//
+// The relay is the FIFO one, and the helper fails the test if the relay
+// delivered anything out of order: with the per-packet relay used until
+// 2026-10-01, QUIC declared ~35–45 % spurious loss at 0 % configured loss, so
+// every benchmark ran far above its nominal lossRate.
 func runBulkTransferFull(t *testing.T, transferSize int, delay delayFunc, lossRate float64, writeRateBytesPerSec int, bandwidthCapBps float64) (*ccTestEnv, int64, time.Duration) {
 	t.Helper()
 	cert := generateTestCert(t)
@@ -518,8 +594,14 @@ func runBulkTransferFull(t *testing.T, transferSize int, delay delayFunc, lossRa
 	defer ln.Close()
 
 	// --- UDP relay ---
-	relay := newUDPRelayWithBandwidth(t, serverUDP.LocalAddr().(*net.UDPAddr), delay, lossRate, bandwidthCapBps)
+	relay := newUDPRelayFIFOWithBandwidth(t, serverUDP.LocalAddr().(*net.UDPAddr), delay, lossRate, bandwidthCapBps)
 	defer relay.Close()
+	env.relay = relay
+	defer func() {
+		if s2c, c2s := relay.outOfOrder[dirS2C].Load(), relay.outOfOrder[dirC2S].Load(); s2c != 0 || c2s != 0 {
+			t.Errorf("harness relay reordered packets (s2c=%d c2s=%d out of order) — results are polluted by spurious QUIC loss", s2c, c2s)
+		}
+	}()
 
 	// --- Server goroutine ---
 	serverDone := make(chan error, 1)
@@ -968,6 +1050,15 @@ func TestConvergence_Benchmark(t *testing.T) {
 	})
 
 	// Gates: all parallel subtests are now complete.
+	//
+	// NOTE (2026-10-01): these thresholds — and those of the Descent and
+	// Bottleneck gates below — were recorded on the old reordering relay, i.e.
+	// at ~35–45 % spurious declared loss. The harness now uses the FIFO relay;
+	// the thresholds are deliberately UNCHANGED (not loosened, not yet
+	// tightened) because no run on a quiet machine (load < 12) was possible
+	// that day. A single FIFO run at load ~170 gave near/mid/far medians
+	// 90/65/38 % and min 24.9 %, so they are expected to pass with a wide
+	// margin; re-record as (min across ≥2 quiet runs × 0.8).
 	t.Run("gates", func(t *testing.T) {
 		results := convergenceResults
 
