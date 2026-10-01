@@ -54,7 +54,8 @@ var funnelPathRegistry = []funnelPath{
 		Steps: []funnelStep{
 			{Label: "发验证码", Events: []string{"auth_code_sent"}, Surface: FunnelSurfaceWeb},
 			{Label: "登录成功", Events: []string{"auth_done"}, Surface: FunnelSurfaceWeb},
-			{Label: "发起支付", Events: []string{"checkout_start"}},
+			// 这条路径诊断的是网站内联登录，所以末步也限 web 面（购买路径的 checkout_start 不限面）。
+			{Label: "发起支付", Events: []string{"checkout_start"}, Surface: FunnelSurfaceWeb},
 		},
 	},
 	{

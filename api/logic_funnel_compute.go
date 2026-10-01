@@ -17,6 +17,7 @@ const (
 	funnelMaxGroups     = 50
 	funnelGroupDirect   = "direct"
 	funnelGroupUnknown  = "unknown"
+	funnelGroupOther    = "(other)"
 	funnelDailyDateForm = "2006-01-02"
 )
 
@@ -42,7 +43,7 @@ type FunnelGroup struct {
 type FunnelResult struct {
 	Steps  []FunnelStepResult `json:"steps"`
 	Daily  []FunnelDay        `json:"daily"`  // 按进入日（UTC），区间内每天都有一项
-	Groups []FunnelGroup      `json:"groups"` // 不分组时为空数组；按第 1 步人数降序、key 升序，最多 50 组
+	Groups []FunnelGroup      `json:"groups"` // 不分组时为空数组；按第 1 步人数降序、key 升序取前 50 组，其余并进末尾的 "(other)"
 }
 
 // matches 判断一条记录是否满足该步。带 Surface 过滤的步骤不匹配事实（事实的 Surface 为 ""）。
@@ -279,8 +280,15 @@ func computeFunnel(p funnelPath, recs []funnelRecord, identities map[string]uint
 		}
 		return a.Key < b.Key
 	})
+	// 第 51 名起并进最后一个 "(other)" 组，保证每一步各组相加 = 该步总数。
 	if len(res.Groups) > funnelMaxGroups {
-		res.Groups = res.Groups[:funnelMaxGroups]
+		other := FunnelGroup{Key: funnelGroupOther, Steps: make([]int, nSteps)}
+		for _, g := range res.Groups[funnelMaxGroups:] {
+			for i, n := range g.Steps {
+				other.Steps[i] += n
+			}
+		}
+		res.Groups = append(res.Groups[:funnelMaxGroups], other)
 	}
 	return res
 }

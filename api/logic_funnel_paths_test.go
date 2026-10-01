@@ -60,7 +60,7 @@ func TestFunnelPaths_RegistryContent(t *testing.T) {
 		}},
 		{"web_checkout_auth", 24 * time.Hour, []step{
 			{"发验证码", "web", []string{"auth_code_sent"}}, {"登录成功", "web", []string{"auth_done"}},
-			{"发起支付", "", []string{"checkout_start"}},
+			{"发起支付", "web", []string{"checkout_start"}},
 		}},
 		{"web_install", 7 * day, []step{
 			{"访问", "web", views}, {"安装页", "", []string{"install_view"}}, {"点下载", "", []string{"install_click"}},

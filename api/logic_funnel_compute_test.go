@@ -230,15 +230,46 @@ func TestCompute_SurfaceFilter(t *testing.T) {
 	}, nil, "")
 	assert.Equal(t, []int{0, 0, 0}, stepCounts(res))
 
-	// 没有面过滤的步骤接受任意面：web 发码 + web 登录 + app 面的 checkout_start。
 	res = compute30d(t, "web_checkout_auth", []funnelRecord{
 		rec("u:7", "auth_code_sent", 0),
 		rec("u:7", "auth_done", 1, withSurface("app")), // 面不对 → 不满足第 2 步
 		rec("u:7", "auth_done", 2),
-		rec("u:7", "checkout_start", 3, withSurface("app")),
+		rec("u:7", "checkout_start", 3),
 	}, nil, "")
 	assert.Equal(t, []int{1, 1, 1}, stepCounts(res))
 	assert.Equal(t, int64(120), *res.Steps[1].MedianSecFromPrev)
+}
+
+// web_checkout_auth 诊断的是网站内联登录：第 3 步只认 web 面的 checkout_start。
+func TestCompute_WebCheckoutAuthNeedsWebCheckout(t *testing.T) {
+	auth := []funnelRecord{rec("u:7", "auth_code_sent", 0), rec("u:7", "auth_done", 1)}
+	res := compute30d(t, "web_checkout_auth", append(slices.Clone(auth), rec("u:7", "checkout_start", 2, withSurface("app"))), nil, "")
+	assert.Equal(t, []int{1, 1, 0}, stepCounts(res))
+	res = compute30d(t, "web_checkout_auth", append(slices.Clone(auth), rec("u:7", "checkout_start", 2, withSurface("web"))), nil, "")
+	assert.Equal(t, []int{1, 1, 1}, stepCounts(res))
+}
+
+// 购买路径的 checkout_start 不限面：一个面上看、另一个面上付是真实转化。
+func TestCompute_PurchasePathsAcceptCheckoutOnEitherSurface(t *testing.T) {
+	res := compute30d(t, "web_purchase", []funnelRecord{
+		rec("u:7", "pricing_view", 0), rec("u:7", "plan_select", 1), rec("u:7", "checkout_start", 2, withSurface("app")),
+	}, nil, "")
+	assert.Equal(t, []int{1, 1, 1, 1, 0}, stepCounts(res))
+	res = compute30d(t, "app_purchase", []funnelRecord{
+		rec("u:7", "paywall_view", 0), rec("u:7", "plan_select", 1, withSurface("app")), rec("u:7", "checkout_start", 2, withSurface("web")),
+	}, nil, "")
+	assert.Equal(t, []int{1, 1, 1, 0}, stepCounts(res))
+}
+
+// groupStepSums 把各组逐步相加。
+func groupStepSums(res FunnelResult) []int {
+	sum := make([]int, len(res.Steps))
+	for _, g := range res.Groups {
+		for i, c := range g.Steps {
+			sum[i] += c
+		}
+	}
+	return sum
 }
 
 // 带面过滤的步骤不匹配事实（Surface==""）；不带面过滤的匹配。
@@ -345,6 +376,7 @@ func TestCompute_GroupBySource(t *testing.T) {
 		{Key: "direct", Steps: []int{1, 0, 0, 0, 0}}, // 并列按 key 升序
 		{Key: "google.com", Steps: []int{1, 0, 0, 0, 0}},
 	}, res.Groups)
+	assert.Equal(t, stepCounts(res), groupStepSums(res))
 }
 
 func TestCompute_GroupByPlanUsesLastStep(t *testing.T) {
@@ -403,6 +435,39 @@ func TestCompute_UnknownGroupByIsNoGrouping(t *testing.T) {
 	}
 }
 
+// 超过 50 组：第 51 名起并进最后一个 "(other)" 组，各组逐步相加仍等于总数。
+func TestCompute_GroupsBeyond50FoldIntoOther(t *testing.T) {
+	var recs []funnelRecord
+	// 53 个来源。前 50 个各 2 人（其中 1 人走到第 2 步）；后 3 个各 1 人，其中 s51 的走到第 3 步。
+	for i := 0; i < 53; i++ {
+		src := withUtmSource(fmt.Sprintf("s%02d", i))
+		a := fmt.Sprintf("sid:S%dA", i)
+		recs = append(recs, rec(a, "page_view", 0, src), rec(a, "pricing_view", 1))
+		if i < 50 {
+			recs = append(recs, rec(fmt.Sprintf("sid:S%dB", i), "page_view", 0, src))
+		}
+		if i == 51 {
+			recs = append(recs, rec(a, "plan_select", 2))
+		}
+	}
+	res := compute30d(t, "web_purchase", recs, nil, "source")
+	require.Equal(t, []int{103, 53, 1, 0, 0}, stepCounts(res))
+	require.Len(t, res.Groups, 51)
+	assert.Equal(t, FunnelGroup{Key: "s00", Steps: []int{2, 1, 0, 0, 0}}, res.Groups[0])
+	assert.Equal(t, FunnelGroup{Key: "s49", Steps: []int{2, 1, 0, 0, 0}}, res.Groups[49])
+	assert.Equal(t, FunnelGroup{Key: "(other)", Steps: []int{3, 3, 1, 0, 0}}, res.Groups[50])
+	assert.Equal(t, stepCounts(res), groupStepSums(res))
+
+	// 正好 50 组：不产生 "(other)"。
+	var fifty []funnelRecord
+	for i := 0; i < 50; i++ {
+		fifty = append(fifty, rec(fmt.Sprintf("sid:P%d", i), "page_view", 0, withUtmSource(fmt.Sprintf("s%02d", i))))
+	}
+	res = compute30d(t, "web_purchase", fifty, nil, "source")
+	require.Len(t, res.Groups, 50)
+	assert.Equal(t, "s49", res.Groups[49].Key)
+}
+
 func TestCompute_GroupsCappedAt50(t *testing.T) {
 	var recs []funnelRecord
 	// 60 个来源；来源 i 有 (i%3)+1 个人。
@@ -412,9 +477,12 @@ func TestCompute_GroupsCappedAt50(t *testing.T) {
 		}
 	}
 	res := compute30d(t, "web_purchase", recs, nil, "source")
-	require.Len(t, res.Groups, 50)
-	assert.Equal(t, 120, res.Steps[0].Count) // 总数不受截断影响
-	for i := 1; i < len(res.Groups); i++ {
+	require.Len(t, res.Groups, 51)
+	assert.Equal(t, 120, res.Steps[0].Count)
+	assert.Equal(t, stepCounts(res), groupStepSums(res))
+	// "(other)" 排最后，不参与排序（它的人数比前面的组多）。
+	assert.Equal(t, FunnelGroup{Key: "(other)", Steps: []int{10, 0, 0, 0, 0}}, res.Groups[50])
+	for i := 1; i < 50; i++ {
 		a, b := res.Groups[i-1], res.Groups[i]
 		assert.True(t, a.Steps[0] > b.Steps[0] || (a.Steps[0] == b.Steps[0] && a.Key < b.Key), "order at %d", i)
 	}
