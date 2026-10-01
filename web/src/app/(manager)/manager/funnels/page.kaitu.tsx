@@ -48,7 +48,8 @@ export default function FunnelsPage() {
 
   const [funnel, setFunnel] = useState<FunnelResult | null>(null);
   const [funnelLoading, setFunnelLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [funnelError, setFunnelError] = useState<string | null>(null);
+  const [retentionError, setRetentionError] = useState<string | null>(null);
 
   const [paid, setPaid] = useState<PaidRetentionResult | null>(null);
   const [active, setActive] = useState<ActiveRetentionResult | null>(null);
@@ -66,7 +67,7 @@ export default function FunnelsPage() {
         setGroupDims(r.groupDims);
         setPathKey(r.paths[0]?.key ?? "");
       })
-      .catch((e) => !cancelled && setError(errorText(e)))
+      .catch((e) => !cancelled && setFunnelError(errorText(e)))
       .finally(() => !cancelled && setPathsLoading(false));
     return () => {
       cancelled = true;
@@ -77,15 +78,16 @@ export default function FunnelsPage() {
     if (!pathKey) return;
     let cancelled = false;
     const { from, to } = dateRange(Number(days));
+    setFunnel(null); // 不让上一次选择的数字在新请求落地前继续显示
     setFunnelLoading(true);
-    setError(null);
+    setFunnelError(null);
     api
       .getFunnel(pathKey, { brand: brandParam, from, to, groupBy: groupBy === NO_GROUP ? undefined : groupBy })
       .then((r) => !cancelled && setFunnel(r))
       .catch((e) => {
         if (cancelled) return;
         setFunnel(null);
-        setError(errorText(e));
+        setFunnelError(errorText(e));
       })
       .finally(() => !cancelled && setFunnelLoading(false));
     return () => {
@@ -96,8 +98,10 @@ export default function FunnelsPage() {
   useEffect(() => {
     if (tab !== "retention") return;
     let cancelled = false;
+    setPaid(null);
+    setActive(null);
     setRetentionLoading(true);
-    setError(null);
+    setRetentionError(null);
     Promise.all([
       api.getRetention({ brand: brandParam, metric: "paid" }),
       api.getRetention({ brand: brandParam, metric: "active" }),
@@ -107,7 +111,7 @@ export default function FunnelsPage() {
         setPaid(p);
         setActive(a);
       })
-      .catch((e) => !cancelled && setError(errorText(e)))
+      .catch((e) => !cancelled && setRetentionError(errorText(e)))
       .finally(() => !cancelled && setRetentionLoading(false));
     return () => {
       cancelled = true;
@@ -149,9 +153,9 @@ export default function FunnelsPage() {
         </Select>
       </div>
 
-      {error && (
+      {(tab === "funnel" ? funnelError : retentionError) && (
         <div role="alert" className="rounded-md border border-destructive/50 bg-destructive/10 text-destructive px-4 py-3 text-sm">
-          {error}
+          {tab === "funnel" ? funnelError : retentionError}
         </div>
       )}
 
@@ -162,7 +166,7 @@ export default function FunnelsPage() {
         </TabsList>
 
         <TabsContent value="funnel" className="space-y-6">
-          {(pathsLoading || funnelLoading) && !funnel ? (
+          {pathsLoading || funnelLoading ? (
             <div className="text-muted-foreground text-sm py-8 text-center">加载中…</div>
           ) : funnel ? (
             <FunnelView
@@ -174,7 +178,7 @@ export default function FunnelsPage() {
         </TabsContent>
 
         <TabsContent value="retention" className="space-y-6">
-          {retentionLoading && !paid ? (
+          {retentionLoading ? (
             <div className="text-muted-foreground text-sm py-8 text-center">加载中…</div>
           ) : (
             <>
@@ -226,7 +230,7 @@ function FunnelView({ funnel, windowHours, dimLabel }: { funnel: FunnelResult; w
                   </div>
                   <span className="text-right tabular-nums">{s.count}</span>
                   <span className="text-right tabular-nums">{prev === null ? "—" : pct(s.rateFromPrev)}</span>
-                  <span className="text-right tabular-nums">{prev === null ? "—" : <span>{prev - s.count}</span>}</span>
+                  <span className="text-right tabular-nums">{prev === null ? "—" : <span>{Math.max(0, prev - s.count)}</span>}</span>
                   <span className="text-right tabular-nums">{formatDuration(s.medianSecFromPrev)}</span>
                 </div>
               );

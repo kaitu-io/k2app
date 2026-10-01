@@ -3,7 +3,7 @@
  */
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ManagerBrandProvider, MANAGER_BRAND_STORAGE_KEY } from '@/components/manager/brand';
+import { ManagerBrandProvider, MANAGER_BRAND_STORAGE_KEY, useManagerBrand } from '@/components/manager/brand';
 
 const mockPaths = vi.fn();
 const mockFunnel = vi.fn();
@@ -141,5 +141,107 @@ describe('manager funnels page', () => {
     expect(alert.textContent).toBeTruthy();
     expect(alert.textContent).not.toContain('raw backend boom');
     expect(/[一-龥]/.test(alert.textContent || '')).toBe(true);
+  });
+
+  function deferred<T>() {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => { resolve = r; });
+    return { promise, resolve };
+  }
+
+  it('hides the previous numbers while a new selection loads, then shows the new ones', async () => {
+    renderPage();
+    expect(await screen.findByText('40.0%')).toBeTruthy();
+    const d = deferred<ReturnType<typeof funnel>>();
+    mockFunnel.mockReturnValueOnce(d.promise);
+    fireEvent.change(screen.getByLabelText('path'), { target: { value: 'install_to_connect' } });
+    await waitFor(() => expect(mockFunnel).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('40.0%')).toBeNull();
+    expect(screen.getByText('加载中…')).toBeTruthy();
+    d.resolve(funnel([50, 5]));
+    expect(await screen.findByText('10.0%')).toBeTruthy();
+    expect(screen.queryByText('加载中…')).toBeNull();
+  });
+
+  it('clears the old brand numbers when the brand changes', async () => {
+    function Switch() {
+      const { setBrand } = useManagerBrand();
+      return <button onClick={() => setBrand('overleap')}>switch</button>;
+    }
+    render(
+      <ManagerBrandProvider>
+        <Switch />
+        <FunnelsPage />
+      </ManagerBrandProvider>,
+    );
+    expect(await screen.findByText('40.0%')).toBeTruthy();
+    const d = deferred<ReturnType<typeof funnel>>();
+    mockFunnel.mockReturnValueOnce(d.promise);
+    fireEvent.click(screen.getByText('switch'));
+    await waitFor(() => expect(mockFunnel).toHaveBeenCalledTimes(2));
+    expect(mockFunnel.mock.calls[1][1]).toMatchObject({ brand: 'overleap' });
+    expect(screen.queryByText('40.0%')).toBeNull();
+    d.resolve(funnel([20, 10]));
+    expect(await screen.findByText('50.0%')).toBeTruthy();
+  });
+
+  it('an older response resolving after a newer one does not overwrite it', async () => {
+    renderPage();
+    await screen.findByText('40.0%');
+    const slow = deferred<ReturnType<typeof funnel>>();
+    const fast = deferred<ReturnType<typeof funnel>>();
+    mockFunnel.mockReturnValueOnce(slow.promise).mockReturnValueOnce(fast.promise);
+    fireEvent.change(screen.getByLabelText('path'), { target: { value: 'install_to_connect' } });
+    await waitFor(() => expect(mockFunnel).toHaveBeenCalledTimes(2));
+    fireEvent.change(screen.getByLabelText('range'), { target: { value: '7' } });
+    await waitFor(() => expect(mockFunnel).toHaveBeenCalledTimes(3));
+    fast.resolve(funnel([200, 100]));
+    expect(await screen.findByText('50.0%')).toBeTruthy();
+    slow.resolve(funnel([10, 9]));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByText('50.0%')).toBeTruthy();
+    expect(screen.queryByText('90.0%')).toBeNull();
+  });
+
+  it('keeps funnel and retention errors on their own tab', async () => {
+    mockFunnel.mockRejectedValue(new ApiError(ErrorCode.SystemError, 'x'));
+    renderPage();
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: '留存' }));
+    expect(await screen.findByText('2026-09')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    mockRetention.mockReset().mockRejectedValue(new ApiError(ErrorCode.SystemError, 'y'));
+    fireEvent.click(screen.getByRole('button', { name: '漏斗' }));
+    expect(screen.getByRole('alert')).toBeTruthy(); // funnel error still there
+  });
+
+  it('a non-ApiError failure (network error) still shows a Chinese message', async () => {
+    mockFunnel.mockRejectedValue(new TypeError('Failed to fetch'));
+    renderPage();
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).not.toContain('Failed to fetch');
+    expect(/[\u4e00-\u9fa5]/.test(alert.textContent || '')).toBe(true);
+  });
+
+  it('never shows a negative drop-off', async () => {
+    mockFunnel.mockResolvedValue(funnel([10, 15]));
+    renderPage();
+    await screen.findByText('1.5 分');
+    expect(screen.queryByText('-5')).toBeNull();
+    expect(screen.getByText('0')).toBeTruthy();
+  });
+
+  it('formats median durations in the largest fitting unit', async () => {
+    const f = funnel([100, 90, 80, 70, 60, 50, 40]);
+    const secs = [null, 0.4, 45, 60, 7200, 86400, 129600];
+    f.steps.forEach((st, i) => { st.medianSecFromPrev = secs[i]; });
+    mockFunnel.mockResolvedValue(f);
+    renderPage();
+    await screen.findByText('0.4 秒');
+    expect(screen.getByText('45 秒')).toBeTruthy();
+    expect(screen.getByText('1 分')).toBeTruthy();
+    expect(screen.getByText('2 小时')).toBeTruthy();
+    expect(screen.getByText('1 天')).toBeTruthy();
+    expect(screen.getByText('1.5 天')).toBeTruthy();
   });
 });

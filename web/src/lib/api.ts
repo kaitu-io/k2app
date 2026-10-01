@@ -205,7 +205,6 @@ export interface OrderStatisticsResponse {
   revenueByPeriod: RevenuePeriod[];
 }
 
-// Usage analytics types
 // ==================== Funnel Analytics types ====================
 
 export interface FunnelPathInfo {
@@ -254,6 +253,7 @@ export interface PaidRetentionResult { rows: PaidRetentionRow[]; note?: string }
 export interface ActiveRetentionResult { rows: ActiveRetentionRow[]; note?: string }
 export type RetentionResult = PaidRetentionResult | ActiveRetentionResult;
 
+// Usage analytics types
 export interface UsageOverviewResponse {
   activeDevices: { date: string; count: number }[];
   connections: { date: string; count: number }[];
