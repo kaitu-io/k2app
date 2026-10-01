@@ -57,13 +57,13 @@ describe('RoutingModeSelector — country picker brand gate', () => {
 
     const openWith = (query: string) => {
       render(<RoutingModeSelector />);
-      const input = within(screen.getByTestId('country-select')).getByRole('combobox');
-      fireEvent.focus(input);
+      fireEvent.click(screen.getByTestId('country-select'));
+      const input = screen.getByRole('textbox');
       fireEvent.change(input, { target: { value: query } });
       return input;
     };
     const optionCodes = () =>
-      screen.getAllByRole('option').map((el) => el.getAttribute('data-testid'));
+      within(screen.getByRole('list')).getAllByRole('button').map((el) => el.getAttribute('data-testid'));
 
     it('lists the brand default country first when nothing is typed', () => {
       openWith('');

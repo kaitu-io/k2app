@@ -11,19 +11,18 @@
  * All controls disabled when VPN is connected/connecting (isInteractive).
  */
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
-  Autocomplete,
   Box,
+  ButtonBase,
   Checkbox,
   FormControlLabel,
-  InputAdornment,
   Radio,
   RadioGroup,
   Stack,
-  TextField,
   Typography,
 } from '@mui/material';
+import { Search as SearchIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 
 import { useConfigStore, type RoutePreset } from '../stores/config.store';
@@ -35,6 +34,7 @@ import {
 } from '../utils/countries';
 import { getCurrentAppConfig } from '../config/apps';
 import { brandConfig } from '../brands';
+import SearchPickerDialog, { type PickerOption } from './SearchPickerDialog';
 
 // ---- Preset definitions ----
 
@@ -114,11 +114,21 @@ export default function RoutingModeSelector() {
     [setPreset],
   );
 
-  const handleCountryChange = useCallback(
-    (_: unknown, cc: string | null) => {
-      if (cc) setCountry(cc);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const handleCountryPick = useCallback(
+    (cc: string) => {
+      setPickerOpen(false);
+      setCountry(cc);
     },
     [setCountry],
+  );
+
+  const handleAutoDetectToggle = useCallback(
+    (_: React.ChangeEvent<HTMLInputElement>, checked: boolean) => {
+      setAutoDetect(checked);
+    },
+    [setAutoDetect],
   );
 
   // 品牌默认国家置顶，其余按当前语言的名称排序。
@@ -131,23 +141,25 @@ export default function RoutingModeSelector() {
     });
   }, [i18n.language]);
 
-  const filterCountries = useCallback(
-    (options: string[], state: { inputValue: string }) => {
-      const q = state.inputValue.trim().toLowerCase();
-      if (!q) return options;
-      return options.filter((cc) =>
-        cc === q
-        || countryName(cc, i18n.language).toLowerCase().includes(q)
-        || countryName(cc, 'en').toLowerCase().includes(q));
+  // 按当前语言名、英文名、两位代码都能搜到。
+  const getCountryOptions = useCallback(
+    (query: string): PickerOption[] => {
+      const q = query.trim().toLowerCase();
+      return countryOptions
+        .filter((cc) =>
+          !q
+          || cc === q
+          || countryName(cc, i18n.language).toLowerCase().includes(q)
+          || countryName(cc, 'en').toLowerCase().includes(q))
+        .map((cc) => ({
+          id: cc,
+          primary: `${countryFlagEmoji(cc)} ${countryName(cc, i18n.language)}`,
+          secondary: countryName(cc, 'en') === countryName(cc, i18n.language)
+            ? undefined
+            : countryName(cc, 'en'),
+        }));
     },
-    [i18n.language],
-  );
-
-  const handleAutoDetectToggle = useCallback(
-    (_: React.ChangeEvent<HTMLInputElement>, checked: boolean) => {
-      setAutoDetect(checked);
-    },
-    [setAutoDetect],
+    [countryOptions, i18n.language],
   );
 
   const multiCountry = getCurrentAppConfig().features.multiCountryRouting === true;
@@ -211,49 +223,45 @@ export default function RoutingModeSelector() {
             {t('smartMode.countryLabel')}
           </Typography>
 
-          {/* 可搜索：国家会越加越多，下拉长列表在手机上翻不动。按当前语言名、
-              英文名、两位代码都能搜到；品牌默认国家置顶。 */}
-          <Autocomplete
-            value={(displayCountry || null) as string}
-            onChange={handleCountryChange}
-            options={countryOptions}
-            getOptionLabel={(cc) => countryName(cc, i18n.language)}
-            filterOptions={filterCountries}
+          {/* 点开是一个顶部对齐的搜索弹窗（SearchPickerDialog），而不是挂在输入框
+              下面的下拉：下拉会被手机键盘盖住，盖住的那几行点不到。 */}
+          <ButtonBase
+            onClick={() => setPickerOpen(true)}
             disabled={isInteractive}
-            disableClearable
-            autoHighlight
-            openOnFocus
-            selectOnFocus
-            size="small"
-            fullWidth
-            noOptionsText={t('smartMode.noCountryMatch')}
             data-testid="country-select"
-            renderOption={(props, cc) => (
-              <li {...props} key={cc} data-testid={`country-option-${cc}`}>
-                <Typography variant="body2" sx={{ fontSize: '0.85rem' }}>
-                  {countryFlagEmoji(cc)} {countryName(cc, i18n.language)}
-                </Typography>
-              </li>
-            )}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder={autoDetect ? t('smartMode.autoDetecting') : t('smartMode.searchCountry')}
-                InputProps={{
-                  ...params.InputProps,
-                  startAdornment: displayCountry ? (
-                    <InputAdornment position="start" sx={{ ml: 0.5, mr: 0 }}>
-                      {countryFlagEmoji(displayCountry)}
-                    </InputAdornment>
-                  ) : undefined,
-                }}
-                inputProps={{
-                  ...params.inputProps,
-                  'aria-label': t('smartMode.countryLabel'),
-                  style: { fontSize: '0.85rem' },
-                }}
-              />
-            )}
+            aria-label={t('smartMode.countryLabel')}
+            sx={{
+              width: '100%',
+              justifyContent: 'space-between',
+              px: 1.5,
+              py: 1,
+              borderRadius: 1,
+              border: 1,
+              borderColor: 'divider',
+              opacity: isInteractive ? 0.5 : 1,
+            }}
+          >
+            <Typography
+              variant="body2"
+              color={displayCountry ? 'text.primary' : 'text.secondary'}
+              sx={{ fontSize: '0.85rem' }}
+            >
+              {displayCountry
+                ? `${countryFlagEmoji(displayCountry)} ${countryName(displayCountry, i18n.language)}`
+                : autoDetect ? t('smartMode.autoDetecting') : t('smartMode.selectCountry')}
+            </Typography>
+            <SearchIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+          </ButtonBase>
+          <SearchPickerDialog
+            open={pickerOpen}
+            title={t('smartMode.countryLabel')}
+            searchLabel={t('smartMode.searchCountry')}
+            emptyText={t('smartMode.noCountryMatch')}
+            value={displayCountry || null}
+            getOptions={getCountryOptions}
+            onClose={() => setPickerOpen(false)}
+            onSelect={handleCountryPick}
+            optionTestIdPrefix="country-option-"
           />
 
           <FormControlLabel
