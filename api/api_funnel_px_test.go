@@ -335,7 +335,8 @@ func TestPx_RefererFallback_BehindRewrite(t *testing.T) {
 }
 
 func TestPxOptOut_BehindRewrite(t *testing.T) {
-	pxMarker(t)
+	// 无 DB：只有 cookie 与重定向。不要调 pxMarker —— 它注册的清理会查库，
+	// 在没有数据库配置的环境（CI test-macos）里直接空指针。
 	r := pxRouter()
 	w := NewTestRequest("GET", "http://api.internal.test/api/px/optout").
 		WithHeader("X-K2-Brand", "overleap").WithHeader("Referer", "https://www.overleap.io:443/en-GB/privacy").Execute(r)
