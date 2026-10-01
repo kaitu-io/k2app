@@ -138,7 +138,7 @@ func TestAppRouteStats_CountedThroughHandleUDP(t *testing.T) {
 	if r := got["Doubao"]; r.Reject != 1 || r.Proxy != 0 || r.Direct != 0 || r.Fail != 0 {
 		t.Errorf("Doubao = %+v, want one rejected connection", r)
 	}
-	if r := got["curl"]; r.Proxy != 1 || r.Fail != 1 || r.LastFail != "proxy 203.0.113.9:443" {
+	if r := got["curl"]; r.Proxy != 1 || r.Fail != 1 || r.LastFail != "proxy/203.0.113.9:443" {
 		t.Errorf("curl = %+v, want one failed proxy dial naming its destination", r)
 	}
 	if again := tunnel.TakeAppRouteStats(); len(again) != 0 {

@@ -165,6 +165,22 @@ func TestWindowsFindProcess_RealKernelTable_IPv6TCP(t *testing.T) {
 	if pkg != "" || installer != "" {
 		t.Errorf("Windows carries no package/installer fields, got (%q, %q)", pkg, installer)
 	}
+
+	// match.app_paths compares against the image path: it must be the child's
+	// real executable in the engine's canonical Windows form (lowercased,
+	// backslashes), so an install-dir prefix built from the registry matches.
+	wantPath, err := filepath.Abs(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPath = strings.ToLower(wantPath)
+	gotName, gotPath := NewWindowsProcessSearcher().FindProcessPath("tcp", srcIP, uint16(raddr.Port))
+	if gotName != name || gotPath != wantPath {
+		t.Fatalf("FindProcessPath = (%q, %q), want (%q, %q)", gotName, gotPath, name, wantPath)
+	}
+	if strings.Contains(gotPath, "/") || !strings.HasSuffix(gotPath, `\`+name) {
+		t.Errorf("image path %q is not a backslash path ending in the image name %q", gotPath, name)
+	}
 }
 
 func TestWindowsFindProcess_RealKernelTable_IPv6UDP(t *testing.T) {

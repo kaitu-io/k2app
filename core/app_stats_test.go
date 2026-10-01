@@ -32,18 +32,18 @@ func TestAppStats_RecordTakeFormat(t *testing.T) {
 	if got := rows[0]; got.Direct != 3 || got.Proxy != 0 || got.Fail != 0 || got.LastFail != "" {
 		t.Errorf("Doubao row = %+v", got)
 	}
-	if got := rows[1]; got.Direct != 1 || got.Proxy != 2 || got.Fail != 2 || got.LastFail != "direct 4.4.4.4:80" {
+	if got := rows[1]; got.Direct != 1 || got.Proxy != 2 || got.Fail != 2 || got.LastFail != "direct/4.4.4.4:80" {
 		t.Errorf("curl row = %+v", got)
 	}
 	if got := rows[2]; got.Reject != 1 || got.Direct != 0 || got.Proxy != 0 {
 		t.Errorf("ads row = %+v", got)
 	}
 
-	want := `"Doubao Browser Helper" direct=3 proxy=0 fail=0; "curl" direct=1 proxy=2 fail=2 lastFail="direct 4.4.4.4:80"; "ads" direct=0 proxy=0 reject=1 fail=0`
+	want := `Doubao Browser Helper: direct=3 proxy=0 fail=0; curl: direct=1 proxy=2 fail=2 lastFail=direct/4.4.4.4:80; ads: direct=0 proxy=0 reject=1 fail=0`
 	if got := FormatAppRouteStats(rows, 12); got != want {
 		t.Errorf("format:\n got %s\nwant %s", got, want)
 	}
-	if got := FormatAppRouteStats(rows, 1); got != `"Doubao Browser Helper" direct=3 proxy=0 fail=0; +2 more` {
+	if got := FormatAppRouteStats(rows, 1); got != `Doubao Browser Helper: direct=3 proxy=0 fail=0; +2 more` {
 		t.Errorf("truncated format = %s", got)
 	}
 
@@ -72,7 +72,7 @@ func TestAppStats_BoundedTable(t *testing.T) {
 	if overflow == nil || overflow.Direct != 50 {
 		t.Fatalf("overflow row = %+v, want 50 folded connections", overflow)
 	}
-	if !strings.HasPrefix(FormatAppRouteStats(rows, 1), `"(other)" direct=50`) {
+	if !strings.HasPrefix(FormatAppRouteStats(rows, 1), `(other): direct=50`) {
 		t.Errorf("overflow row should sort first: %s", FormatAppRouteStats(rows, 1))
 	}
 }

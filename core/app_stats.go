@@ -16,7 +16,7 @@ type AppRouteStat struct {
 	Reject  int64 // connections dropped by a reject route
 	Fail    int64 // of Direct+Proxy, dials that failed
 
-	// LastFail is the most recent failed dial ("direct 1.2.3.4:443"), kept so
+	// LastFail is the most recent failed dial ("direct/1.2.3.4:443"), kept so
 	// the summary names one concrete destination to chase.
 	LastFail string
 }
@@ -71,10 +71,10 @@ func (s *appStats) record(process string, outbound Outbound, dest string, err er
 		d.Reject = 1
 	case isDirectOutbound(outbound):
 		d.Direct = 1
-		d.LastFail = "direct " + dest
+		d.LastFail = "direct/" + dest
 	default:
 		d.Proxy = 1
-		d.LastFail = "proxy " + dest
+		d.LastFail = "proxy/" + dest
 	}
 	if err != nil {
 		d.Fail = 1
@@ -124,7 +124,7 @@ func (r AppRouteStat) total() int64 { return r.Direct + r.Proxy + r.Reject }
 
 // FormatAppRouteStats renders up to max rows as one log value:
 //
-//	"Doubao Browser Helper" direct=41 proxy=0 fail=0; "curl" direct=0 proxy=3 fail=1 lastFail="proxy 1.2.3.4:443"
+//	Doubao Browser Helper: direct=41 proxy=0 fail=0; curl: direct=0 proxy=3 fail=1 lastFail=proxy/1.2.3.4:443
 //
 // reject is printed only when non-zero. Rows past max are summarized as
 // "+N more".
@@ -138,13 +138,13 @@ func FormatAppRouteStats(rows []AppRouteStat, max int) string {
 		if i > 0 {
 			b.WriteString("; ")
 		}
-		fmt.Fprintf(&b, "%q direct=%d proxy=%d", r.Process, r.Direct, r.Proxy)
+		fmt.Fprintf(&b, "%s: direct=%d proxy=%d", r.Process, r.Direct, r.Proxy)
 		if r.Reject > 0 {
 			fmt.Fprintf(&b, " reject=%d", r.Reject)
 		}
 		fmt.Fprintf(&b, " fail=%d", r.Fail)
 		if r.LastFail != "" {
-			fmt.Fprintf(&b, " lastFail=%q", r.LastFail)
+			fmt.Fprintf(&b, " lastFail=%s", r.LastFail)
 		}
 	}
 	return b.String()
