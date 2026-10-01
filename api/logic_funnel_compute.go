@@ -42,8 +42,8 @@ type FunnelGroup struct {
 
 type FunnelResult struct {
 	Steps  []FunnelStepResult `json:"steps"`
-	Daily  []FunnelDay        `json:"daily"`  // 按进入日（UTC），区间内每天都有一项
-	Groups []FunnelGroup      `json:"groups"` // 不分组时为空数组；按第 1 步人数降序、key 升序取前 50 组，其余并进末尾的 "(other)"
+	Daily  []FunnelDay        `json:"daily"`  // 按所选进入记录的日期（UTC），区间内每天都有一项
+	Groups []FunnelGroup      `json:"groups"` // 不分组时为空数组。前 50 组按第 1 步人数降序、key 升序；其余并进末尾的 "(other)"，它不参与排序，人数可以比前面的组多
 }
 
 // matches 判断一条记录是否满足该步。带 Surface 过滤的步骤不匹配事实（事实的 Surface 为 ""）。
@@ -114,49 +114,57 @@ func funnelGroupKey(groupBy string, entry, last *funnelRecord) string {
 // funnelWalk 走一个人的漏斗。recs 已按 At 升序（稳定）。返回到达的每一步所用记录的下标
 // （长度 = 到达的步数；0 = 没有进入）。
 //
-//   - 进入：最早一条满足第 1 步且 from <= At < to 的记录。
-//   - 推进：第 i 步取最早一条满足该步、At >= 上一步 At、At <= 进入 At + Window 的记录；
+//   - 候选进入：每一条满足第 1 步且 from <= At < to 的记录。
+//   - 从一个候选推进：第 i 步取最早一条满足该步、At >= 上一步 At、At <= 候选 At + Window 的记录；
 //     同一条记录可以连续满足多步。
+//   - 取走得最深的那次；一样深取最早的候选。回访者在区间内晚些时候走完全程因此算转化，
+//     而不是被钉死在第一次到访上。
+//
+// 每步的命中下标只建一次，每个候选每步一次二分：O(记录数 × 步数 + 候选数 × 步数 × log)。
 func funnelWalk(p funnelPath, recs []*funnelRecord, from, to time.Time) []int {
-	if len(p.Steps) == 0 {
+	nSteps := len(p.Steps)
+	if nSteps == 0 {
 		return nil
 	}
-	entry := -1
+	hits := make([][]int, nSteps) // hits[s] = 满足第 s 步的记录下标，升序
 	for i, r := range recs {
-		if !r.At.Before(to) {
-			break
-		}
-		if !r.At.Before(from) && p.Steps[0].matches(r) {
-			entry = i
-			break
+		for s := range p.Steps {
+			if p.Steps[s].matches(r) {
+				hits[s] = append(hits[s], i)
+			}
 		}
 	}
-	if entry < 0 {
-		return nil
-	}
-	reached := make([]int, 1, len(p.Steps))
-	reached[0] = entry
-	deadline := recs[entry].At.Add(p.Window)
-	prevAt := recs[entry].At
-	lo := 0 // 第一条 At >= prevAt 的记录；prevAt 单调不减，所以 lo 只进不退
-	for _, step := range p.Steps[1:] {
-		for lo < len(recs) && recs[lo].At.Before(prevAt) {
-			lo++
+	var best []int
+	walk := make([]int, 0, nSteps)
+	for _, c := range hits[0] {
+		at := recs[c].At
+		if at.Before(from) {
+			continue
 		}
-		found := -1
-		for i := lo; i < len(recs) && !recs[i].At.After(deadline); i++ {
-			if step.matches(recs[i]) {
-				found = i
+		if !at.Before(to) {
+			break
+		}
+		walk = append(walk[:0], c)
+		deadline := at.Add(p.Window)
+		prevAt := at
+		for s := 1; s < nSteps; s++ {
+			h := hits[s]
+			// 按时间而不是按下标找：同一时刻、排在上一步记录之前的记录也满足 At >= 上一步。
+			k := sort.Search(len(h), func(j int) bool { return !recs[h[j]].At.Before(prevAt) })
+			if k == len(h) || recs[h[k]].At.After(deadline) {
+				break
+			}
+			walk = append(walk, h[k])
+			prevAt = recs[h[k]].At
+		}
+		if len(walk) > len(best) { // 严格更深才替换 → 一样深时保留最早的候选
+			best = slices.Clone(walk)
+			if len(best) == nSteps {
 				break
 			}
 		}
-		if found < 0 {
-			break
-		}
-		reached = append(reached, found)
-		prevAt = recs[found].At
 	}
-	return reached
+	return best
 }
 
 // funnelRate：分母为 0 时为 0（不产生 NaN / Inf）。
@@ -182,7 +190,7 @@ func funnelUTCDay(t time.Time) time.Time {
 	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
-// computeFunnel 计算路径 p 在 [from, to) 内进入的人各走到了哪一步。
+// computeFunnel 计算路径 p 在 [from, to) 内进入的人各走到了哪一步（每人至多计一次，进入规则见 funnelWalk）。
 // recs 可以是任意顺序、不会被修改；identities 的键是 AnonKind+":"+AnonID。
 // groupBy 不在 funnelGroupDims 里（含 ""）时不分组。
 func computeFunnel(p funnelPath, recs []funnelRecord, identities map[string]uint64, from, to time.Time, groupBy string) FunnelResult {
@@ -280,15 +288,24 @@ func computeFunnel(p funnelPath, recs []funnelRecord, identities map[string]uint
 		}
 		return a.Key < b.Key
 	})
-	// 第 51 名起并进最后一个 "(other)" 组，保证每一步各组相加 = 该步总数。
+	// 超过 50 组：第 51 名起并进最后一个 "(other)" 组，保证每一步各组相加 = 该步总数。
+	// 真实取值恰好是 "(other)" 的组也并进去（否则会出现两个同名的组）；不超过 50 组时它就是普通的一组。
 	if len(res.Groups) > funnelMaxGroups {
 		other := FunnelGroup{Key: funnelGroupOther, Steps: make([]int, nSteps)}
-		for _, g := range res.Groups[funnelMaxGroups:] {
+		fold := func(g FunnelGroup) {
 			for i, n := range g.Steps {
 				other.Steps[i] += n
 			}
 		}
-		res.Groups = append(res.Groups[:funnelMaxGroups], other)
+		kept := make([]FunnelGroup, 0, funnelMaxGroups+1)
+		for _, g := range res.Groups {
+			if g.Key == funnelGroupOther || len(kept) == funnelMaxGroups {
+				fold(g)
+				continue
+			}
+			kept = append(kept, g)
+		}
+		res.Groups = append(kept, other)
 	}
 	return res
 }
