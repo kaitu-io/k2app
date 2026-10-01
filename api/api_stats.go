@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"time"
@@ -19,20 +20,21 @@ import (
 type StatsEventRequest struct {
 	AppOpens    []StatsAppOpenEvent    `json:"app_opens"`
 	Connections []StatsConnectionEvent `json:"connections"`
-	Funnel      []StatsFunnelEvent     `json:"funnel"`
+	// Funnel 保持原始 JSON：逐条解码，坏条目只跳过自己，绝不拖累同请求里的旧事件。
+	Funnel json.RawMessage `json:"funnel"`
 }
 
 // StatsFunnelEvent 是 app 上报的转化漏斗行为事件（只收行为事件，事实事件由服务端投影）。
 type StatsFunnelEvent struct {
-	Eid        string    `json:"eid" binding:"required"`
-	DeviceHash string    `json:"device_hash" binding:"required"`
-	OS         string    `json:"os" binding:"required"`
-	AppVersion string    `json:"app_version" binding:"required"`
-	Event      string    `json:"event" binding:"required"`
+	Eid        string    `json:"eid"`
+	DeviceHash string    `json:"device_hash"`
+	OS         string    `json:"os"`
+	AppVersion string    `json:"app_version"`
+	Event      string    `json:"event"`
 	Plan       string    `json:"plan"`
 	Source     string    `json:"source"`
 	Channel    string    `json:"channel"`
-	CreatedAt  time.Time `json:"created_at" binding:"required"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type StatsAppOpenEvent struct {
@@ -76,7 +78,8 @@ func api_stats_ingest(c *gin.Context) {
 		return
 	}
 
-	totalEvents := len(req.AppOpens) + len(req.Connections) + len(req.Funnel)
+	funnelItems := splitFunnelItems(req.Funnel)
+	totalEvents := len(req.AppOpens) + len(req.Connections) + len(funnelItems)
 	if totalEvents == 0 {
 		SuccessEmpty(c)
 		return
@@ -133,10 +136,10 @@ func api_stats_ingest(c *gin.Context) {
 	}
 
 	// 漏斗事件：入队即返回，任何失败都不影响响应。
-	ingestStatsFunnel(c, req.Funnel)
+	ingestStatsFunnel(c, funnelItems)
 
 	log.Debugf(c, "ingested %d stats events (app_opens=%d, connections=%d, funnel=%d)",
-		totalEvents, len(req.AppOpens), len(req.Connections), len(req.Funnel))
+		totalEvents, len(req.AppOpens), len(req.Connections), len(funnelItems))
 	SuccessEmpty(c)
 }
 
@@ -214,9 +217,22 @@ func normalizeFunnelOS(os string) string {
 	return "other"
 }
 
+// splitFunnelItems 把 funnel 原始 JSON 拆成逐条原始消息；不是数组（或缺失）按空处理。
+func splitFunnelItems(raw json.RawMessage) []json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	var items []json.RawMessage
+	if json.Unmarshal(raw, &items) != nil {
+		return nil
+	}
+	return items
+}
+
 // ingestStatsFunnel 把 app 上报的漏斗事件非阻塞入队。用户归因只信 token（只读解析），
 // 绝不信请求体；设备哈希与登录用户配对写入 identity。
-func ingestStatsFunnel(c *gin.Context, items []StatsFunnelEvent) {
+func ingestStatsFunnel(c *gin.Context, raws []json.RawMessage) {
+	items := raws
 	if len(items) == 0 || !funnelEnabled() {
 		return
 	}
@@ -224,18 +240,27 @@ func ingestStatsFunnel(c *gin.Context, items []StatsFunnelEvent) {
 	brand := ReqBrand(c)
 	now := time.Now()
 	linked := map[string]struct{}{}
-	for _, e := range items {
-		if !funnelEventAllowed(e.Event, FunnelSurfaceApp) || !validEid(e.Eid) {
+	for _, raw := range items {
+		var e StatsFunnelEvent
+		if json.Unmarshal(raw, &e) != nil {
+			continue
+		}
+		if !funnelEventAllowed(e.Event, FunnelSurfaceApp) || !validEid(e.Eid) ||
+			e.DeviceHash == "" || e.OS == "" || e.AppVersion == "" {
 			continue
 		}
 		hash := funnelTruncate(e.DeviceHash, 64)
+		occurred := now
+		if !e.CreatedAt.IsZero() {
+			occurred = clampOccurredAt(e.CreatedAt, now)
+		}
 		eid := e.Eid
 		device := "desktop"
 		if e.OS == "ios" || e.OS == "android" {
 			device = "mobile"
 		}
 		funnelEnqueue(FunnelEvent{
-			OccurredAt: clampOccurredAt(e.CreatedAt, now),
+			OccurredAt: occurred,
 			Eid:        &eid,
 			Brand:      string(brand),
 			Surface:    FunnelSurfaceApp,

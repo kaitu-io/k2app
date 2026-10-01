@@ -203,20 +203,82 @@ func TestStatsIngest_LegacyBodyUnchanged(t *testing.T) {
 	m := sfMarker(t)
 	hash := "sfleg-" + m
 	t.Cleanup(func() { db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}) })
-	var before int64
-	require.NoError(t, db.Get().Model(&FunnelEvent{}).Count(&before).Error)
-	body := map[string]any{
-		"app_opens": []map[string]any{{"device_hash": hash, "os": "macos", "app_version": "0.4.0", "created_at": time.Now().UTC().Format(time.RFC3339)}},
-	}
+	body := map[string]any{"app_opens": []map[string]any{sfLegacyOpen(hash)}}
 	w := NewTestRequest("POST", "/api/stats/events").WithBody(body).Execute(statsFunnelRouter())
 	assert.EqualValues(t, ErrorNone, sfCode(t, w))
 	funnelFlushForTest()
-	var n, after int64
+	var n, fn int64
 	require.NoError(t, db.Get().Model(&StatAppOpen{}).Where("device_hash = ?", hash).Count(&n).Error)
 	assert.Equal(t, int64(1), n)
-	require.NoError(t, db.Get().Model(&FunnelEvent{}).Count(&after).Error)
-	assert.GreaterOrEqual(t, after, before) // shared DB: other writers may add; none from this request
+	require.NoError(t, db.Get().Model(&FunnelEvent{}).Where("anon_id = ?", hash).Count(&fn).Error)
+	assert.Equal(t, int64(0), fn)
+}
+
+func sfLegacyOpen(hash string) map[string]any {
+	return map[string]any{"device_hash": hash, "os": "macos", "app_version": "0.4.0", "created_at": time.Now().UTC().Format(time.RFC3339)}
+}
+
+func sfLegacyCount(t *testing.T, hash string) int64 {
+	t.Helper()
+	var n int64
+	require.NoError(t, db.Get().Model(&StatAppOpen{}).Where("device_hash = ?", hash).Count(&n).Error)
+	return n
+}
+
+func TestStatsIngest_BadFunnelItemDoesNotDropLegacy(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	hash := "sfleg-" + m
+	t.Cleanup(func() { db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}) })
+	bad := sfItem(m, hash, "paywall_view")
+	bad["created_at"] = "garbage"
+	body := map[string]any{"app_opens": []map[string]any{sfLegacyOpen(hash)}, "funnel": []map[string]any{bad}}
+	w := NewTestRequest("POST", "/api/stats/events").WithBody(body).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorNone, sfCode(t, w))
+	assert.Equal(t, int64(1), sfLegacyCount(t, hash))
 	assert.Len(t, sfRows(t, m), 0)
+}
+
+func TestStatsIngest_WrongTypedFieldSkipsOnlyThatItem(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	bad := sfItem(m, "sfdev-"+m, "paywall_view")
+	bad["event"] = 5
+	good := sfItem(m, "sfdev-"+m, "login_view")
+	w := sfPost(bad, good).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorNone, sfCode(t, w))
+	rows := sfRows(t, m)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "login_view", rows[0].Event)
+}
+
+func TestStatsIngest_FunnelNotAnArrayKeepsLegacy(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	hash := "sfleg-" + m
+	t.Cleanup(func() { db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}) })
+	body := map[string]any{"app_opens": []map[string]any{sfLegacyOpen(hash)}, "funnel": "not-an-array"}
+	w := NewTestRequest("POST", "/api/stats/events").WithBody(body).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorNone, sfCode(t, w))
+	assert.Equal(t, int64(1), sfLegacyCount(t, hash))
+}
+
+func TestStatsIngest_FunnelItemMissingFieldsSkipped(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	noHash := sfItem(m, "", "paywall_view")
+	noOS := sfItem(m, "sfdev-"+m, "paywall_view")
+	noOS["os"] = ""
+	noVer := sfItem(m, "sfdev-"+m, "paywall_view")
+	noVer["app_version"] = ""
+	noTime := sfItem(m, "sfdev-"+m, "login_view")
+	delete(noTime, "created_at")
+	w := sfPost(noHash, noOS, noVer, noTime).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorNone, sfCode(t, w))
+	rows := sfRows(t, m)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "login_view", rows[0].Event)
+	assert.WithinDuration(t, time.Now(), rows[0].OccurredAt, time.Minute)
 }
 
 func TestStatsIngest_FunnelCountsTowardLimit(t *testing.T) {
