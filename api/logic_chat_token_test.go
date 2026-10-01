@@ -34,20 +34,32 @@ func TestChatWSToken_RoundTripAndExpiry(t *testing.T) {
 	_, err = parseChatWSToken(tok, time.Now().Add(6*time.Minute))
 	assert.Error(t, err, "过期令牌必须被拒")
 
-	// 篡改任一字符都必须被拒
+	// 每个位置逐一篡改（两种替换字符），每一次都必须被拒。
+	// 严格 base64 解码保证"改签名末位字符"不会解码成同样的字节而侥幸通过。
 	for i := 0; i < len(tok); i++ {
-		b := []byte(tok)
-		if b[i] == 'A' {
-			b[i] = 'B'
-		} else {
-			b[i] = 'A'
+		for _, repl := range []byte{'A', 'B'} {
+			b := []byte(tok)
+			if b[i] == repl || b[i] == '.' {
+				continue
+			}
+			b[i] = repl
+			_, err := parseChatWSToken(string(b), time.Now())
+			assert.Errorf(t, err, "篡改第 %d 个字符为 %q 后仍被接受", i, repl)
 		}
-		if string(b) == tok {
+	}
+	// 签名末位字符：遍历整个 base64url 字母表，任何与原值不同的字符都必须被拒
+	// （非严格解码下，与原值只差尾部填充比特的字符会解码成同样字节而被接受）。
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+	for _, ch := range []byte(alphabet) {
+		if ch == tok[len(tok)-1] {
 			continue
 		}
-		_, err := parseChatWSToken(string(b), time.Now())
-		assert.Errorf(t, err, "篡改第 %d 个字符后仍被接受", i)
+		_, err := parseChatWSToken(tok[:len(tok)-1]+string(ch), time.Now())
+		assert.Errorf(t, err, "签名末位改为 %q 后仍被接受", ch)
 	}
+	// 去掉/多加分隔符
+	_, err = parseChatWSToken(strings.Replace(tok, ".", "", 1), time.Now())
+	assert.Error(t, err)
 
 	// resume 令牌不能冒充 ws 令牌
 	resume := signChatResumeToken("conv-uuid-1", time.Hour)

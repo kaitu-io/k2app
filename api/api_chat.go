@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +27,16 @@ const (
 	chatContentMaxRunes = 2000
 	chatClientIDMaxLen  = 36
 	chatEntryTTL        = 24 * time.Hour
+	chatMaxBodyBytes    = 16 << 10 // POST 请求体上限
+
+	// 限流（每分钟）。IP 可伪造，所以新建 guest 与发消息另有全局上限、发消息另有按主体上限。
+	chatSessionPerIPPerMin      = 30   // POST /session 每 IP
+	chatMessagePerIPPerMin      = 60   // POST /messages、/email 每 IP
+	chatReadPerIPPerMin         = 120  // GET /messages、/ws-token 每 IP
+	chatGuestCreateGlobalPerMin = 600  // session 里新建 guest 的全局上限
+	chatSendGlobalPerMin        = 1200 // 访客发消息的全局上限
+	chatSendPerSubjectPerMin    = 20   // 每主体发消息
+	chatEmailMaxPerCluster      = 3    // 每个 guest 簇最多留几个不同邮箱
 )
 
 func registerChatRoutes(api *gin.RouterGroup) {
@@ -140,6 +152,8 @@ func chatSubjectIDs(ctx context.Context, s chatSubject) ([]uint64, error) {
 
 // findOpenChatConversation 返回主体当前 open 的会话，按簇内任一 id 查找
 // （合并前建的会话仍挂在被并入的 guest id 上）。没有返回 nil, nil。
+// 簇内可能同时有多个 open 会话（same_sid 自动合并两个各有会话的 guest 时）：取最新的（id 最大），
+// 较旧的那条不再被访客接触，随空闲自动关闭（closeIdleConversations）。
 func findOpenChatConversation(ctx context.Context, s chatSubject) (*Conversation, error) {
 	return findChatConversation(ctx, s, ConvOpen)
 }
@@ -188,6 +202,26 @@ func chatCleanEntryPath(p string) string {
 	return funnelTruncate(collapseFunnelCodePath(stripFunnelLocale(p)), funnelPathMaxLen)
 }
 
+// chatLimitBody 给 POST 请求体加上限。
+func chatLimitBody(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, chatMaxBodyBytes)
+}
+
+// chatSubjectSendAllow 按主体限速（Redis 计数，60 秒窗口）。Redis 故障时放行并记日志——限流不应拖垮聊天。
+func chatSubjectSendAllow(ctx context.Context, s chatSubject) bool {
+	key := "chat:send:" + s.Channel()
+	rdb := redis.Client()
+	n, err := rdb.Incr(ctx, key).Result()
+	if err != nil {
+		log.Warnf(ctx, "chat send limiter: %v", err)
+		return true
+	}
+	if n == 1 {
+		_ = rdb.Expire(ctx, key, time.Minute).Err()
+	}
+	return n <= chatSendPerSubjectPerMin
+}
+
 // ---- handlers ----
 
 type chatSessionReq struct {
@@ -203,14 +237,23 @@ func api_chat_session(c *gin.Context) {
 		Error(c, ErrorTooManyRequests, "too many requests")
 		return
 	}
+	chatLimitBody(c)
 	var req chatSessionReq
-	_ = c.ShouldBindJSON(&req)
+	// 空请求体合法；格式错误在做任何主体解析之前拒绝
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		Error(c, ErrorInvalidArgument, "invalid request")
+		return
+	}
 	if !chatEnabled() && !req.Preview {
 		Success(c, &ChatSessionResp{Enabled: false, Messages: []ChatMsgDTO{}})
 		return
 	}
 
-	subj, ok := chatSubjectFromRequest(c, true)
+	subj, ok, limited := chatResolveSubject(c, true)
+	if limited {
+		Error(c, ErrorTooManyRequests, "too many requests")
+		return
+	}
 	if !ok {
 		Error(c, ErrorSystemError, "failed to resolve visitor")
 		return
@@ -255,8 +298,11 @@ func api_chat_session(c *gin.Context) {
 	Success(c, resp)
 }
 
-// chatApplyResume 处理邮件里的继续对话令牌：无效静默忽略；有效且会话主体是同品牌 guest 时，
-// 把当前 guest 与之合并（resume_link），返回合并后的根主体。user 主体或会话主体是 user 一律忽略。
+// chatApplyResume 处理邮件里的继续对话令牌：无效静默忽略。
+// 令牌可在 7 天内重放，所以合并有多重边界：同品牌、会话主体必须是 guest，
+// 且当前 guest 簇必须"全新"——名下没有任何状态的会话（否则别人把自己的链接发给受害者，
+// 就能把受害者已有的对话并进自己的簇）；客服撤销过的合并不被令牌重做。
+// 满足才合并（resume_link），返回合并后的根主体；否则原样返回，访客保留自己的历史。
 func chatApplyResume(ctx context.Context, c *gin.Context, subj chatSubject, token string) chatSubject {
 	if token == "" || subj.Kind != SubjectGuest {
 		return subj
@@ -268,6 +314,19 @@ func chatApplyResume(ctx context.Context, c *gin.Context, subj chatSubject, toke
 	var conv Conversation
 	if err := db.Get().WithContext(ctx).Where("uuid = ? AND brand = ? AND subject_kind = ?",
 		convUUID, string(subj.Brand), SubjectGuest).First(&conv).Error; err != nil {
+		return subj
+	}
+	ids, err := guestClusterIDs(ctx, subj.ID)
+	if err != nil {
+		return subj
+	}
+	var own int64
+	if err := db.Get().WithContext(ctx).Model(&Conversation{}).
+		Where("brand = ? AND subject_kind = ? AND subject_id IN ?", string(subj.Brand), SubjectGuest, ids).
+		Count(&own).Error; err != nil || own > 0 {
+		return subj
+	}
+	if undone, err := guestMergeUndoneBetween(ctx, subj.ID, conv.SubjectID); err != nil || undone {
 		return subj
 	}
 	if _, err := mergeGuests(ctx, subj.ID, conv.SubjectID, MergeResumeLink, nil, nil); err != nil {
@@ -285,6 +344,10 @@ func chatApplyResume(ctx context.Context, c *gin.Context, subj chatSubject, toke
 // api_chat_messages_list: GET /api/chat/messages?after=
 func api_chat_messages_list(c *gin.Context) {
 	ctx := c.Request.Context()
+	if !chatReadLimiter.Allow(c.ClientIP()) {
+		Error(c, ErrorTooManyRequests, "too many requests")
+		return
+	}
 	subj, ok := chatSubjectFromRequest(c, false)
 	if !ok {
 		Error(c, ErrorInvalidArgument, "no chat session")
@@ -321,10 +384,11 @@ type chatSendReq struct {
 // api_chat_messages_send: POST /api/chat/messages
 func api_chat_messages_send(c *gin.Context) {
 	ctx := c.Request.Context()
-	if !chatMessageLimiter.Allow(c.ClientIP()) {
+	if !chatMessageLimiter.Allow(c.ClientIP()) || !chatSendGlobalLimiter.Allow("*") {
 		Error(c, ErrorTooManyRequests, "too many requests")
 		return
 	}
+	chatLimitBody(c)
 	var req chatSendReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		Error(c, ErrorInvalidArgument, "invalid request")
@@ -345,6 +409,10 @@ func api_chat_messages_send(c *gin.Context) {
 	subj, ok := chatSubjectFromRequest(c, false)
 	if !ok {
 		Error(c, ErrorInvalidArgument, "no chat session")
+		return
+	}
+	if !chatSubjectSendAllow(ctx, subj) {
+		Error(c, ErrorTooManyRequests, "too many requests")
 		return
 	}
 
@@ -387,6 +455,30 @@ func api_chat_messages_send(c *gin.Context) {
 	}{dto, chatConversationDTO(conv)})
 }
 
+var errChatEmailCap = errors.New("chat email cap reached")
+
+// chatCheckEmailCap 每个 guest 簇最多 chatEmailMaxPerCluster 个不同邮箱；重复提交已有的不算新增。
+func chatCheckEmailCap(ctx context.Context, s chatSubject, email string) error {
+	ids, err := chatSubjectIDs(ctx, s)
+	if err != nil {
+		return err
+	}
+	var have []string
+	if err := db.Get().WithContext(ctx).Model(&GuestIdentity{}).
+		Where("guest_id IN ? AND kind = ?", ids, IdentityEmail).Distinct().Pluck("value", &have).Error; err != nil {
+		return fmt.Errorf("list emails: %w", err)
+	}
+	for _, v := range have {
+		if v == email {
+			return nil
+		}
+	}
+	if len(have) >= chatEmailMaxPerCluster {
+		return errChatEmailCap
+	}
+	return nil
+}
+
 type chatEmailReq struct {
 	Email string `json:"email"`
 }
@@ -398,6 +490,7 @@ func api_chat_email(c *gin.Context) {
 		Error(c, ErrorTooManyRequests, "too many requests")
 		return
 	}
+	chatLimitBody(c)
 	var req chatEmailReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		Error(c, ErrorInvalidArgument, "invalid request")
@@ -414,6 +507,15 @@ func api_chat_email(c *gin.Context) {
 		return
 	}
 	if subj.Kind == SubjectGuest {
+		if err := chatCheckEmailCap(ctx, subj, email); err != nil {
+			if errors.Is(err, errChatEmailCap) {
+				Error(c, ErrorInvalidArgument, "too many emails")
+			} else {
+				log.Errorf(ctx, "api_chat_email: %v", err)
+				Error(c, ErrorSystemError, "failed to save email")
+			}
+			return
+		}
 		if err := addGuestEmail(ctx, subj.ID, subj.Brand, email); err != nil {
 			log.Errorf(ctx, "api_chat_email: %v", err)
 			Error(c, ErrorSystemError, "failed to save email")
@@ -430,6 +532,10 @@ func api_chat_email(c *gin.Context) {
 
 // api_chat_ws_token: GET /api/chat/ws-token —— 给 WebSocket 重连换新令牌。
 func api_chat_ws_token(c *gin.Context) {
+	if !chatReadLimiter.Allow(c.ClientIP()) {
+		Error(c, ErrorTooManyRequests, "too many requests")
+		return
+	}
 	subj, ok := chatSubjectFromRequest(c, false)
 	if !ok {
 		Error(c, ErrorInvalidArgument, "no chat session")

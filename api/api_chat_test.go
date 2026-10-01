@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	db "github.com/wordgate/qtoolkit/db"
+	"github.com/wordgate/qtoolkit/redis"
 )
 
 func chatRouter() *gin.Engine {
@@ -32,8 +33,14 @@ func chatSetup(t *testing.T, enabled bool) *gin.Engine {
 	skipIfNoConfig(t)
 	chatSessionLimiter.reset()
 	chatMessageLimiter.reset()
+	chatReadLimiter.reset()
+	chatGuestCreateLimiter.reset()
+	chatSendGlobalLimiter.reset()
 	t.Cleanup(chatSessionLimiter.reset)
 	t.Cleanup(chatMessageLimiter.reset)
+	t.Cleanup(chatReadLimiter.reset)
+	t.Cleanup(chatGuestCreateLimiter.reset)
+	t.Cleanup(chatSendGlobalLimiter.reset)
 	old := viper.Get("chat.enabled")
 	viper.Set("chat.enabled", enabled)
 	t.Cleanup(func() { viper.Set("chat.enabled", old) })
@@ -91,6 +98,19 @@ func chatCleanupCID(t *testing.T, cid string) {
 	})
 }
 
+// chatLocaleMarker 返回本测试独有的 Accept-Language 值（≤16 字符，落到 guests.locale），
+// 用来精确数"本测试触发建了几个 guest"，不受并行 agent 干扰。
+func chatLocaleMarker() string {
+	return fmt.Sprintf("x%015d", time.Now().UnixNano()%1_000_000_000_000_000)
+}
+
+func chatGuestsWithLocale(t *testing.T, marker string) int64 {
+	t.Helper()
+	var n int64
+	require.NoError(t, db.Get().Model(&Guest{}).Where("locale = ?", marker).Count(&n).Error)
+	return n
+}
+
 func chatOpenSession(t *testing.T, r *gin.Engine, path string, extra func(*TestRequest) *TestRequest) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
 	req := NewTestRequest("POST", "/api/chat/session").WithBody(map[string]any{"path": path})
@@ -129,16 +149,20 @@ func chatConvCount(t *testing.T, cid string) int64 {
 
 func TestChatSession_DisabledByDefault(t *testing.T) {
 	r := chatSetup(t, false)
-	w, data := chatOpenSession(t, r, "/pricing", nil)
+	marker := chatLocaleMarker()
+	withMarker := func(q *TestRequest) *TestRequest { return q.WithHeader("Accept-Language", marker) }
+	w, data := chatOpenSession(t, r, "/pricing", withMarker)
 	assert.Equal(t, false, data["enabled"])
+	assert.Equal(t, int64(0), chatGuestsWithLocale(t, marker), "关闭状态不得建 guest")
 	assert.Nil(t, data["conversation"])
 	assert.Nil(t, data["ws"])
 	assert.Nil(t, chatCookie(w, CookieChatCid), "关闭状态不得种 cid")
 
 	w, data = chatOpenSession(t, r, "/pricing", func(q *TestRequest) *TestRequest {
-		return q.WithBody(map[string]any{"path": "/pricing", "preview": true})
+		return withMarker(q.WithBody(map[string]any{"path": "/pricing", "preview": true}))
 	})
 	assert.Equal(t, true, data["enabled"])
+	assert.Equal(t, int64(1), chatGuestsWithLocale(t, marker), "对照：预览会建 guest（marker 有效）")
 	ck := chatCookie(w, CookieChatCid)
 	require.NotNil(t, ck)
 	chatCleanupCID(t, ck.Value)
@@ -494,4 +518,247 @@ func TestChatSession_ResumeFindsConversationOnAbsorbedGuest(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.Get().Model(&Conversation{}).Where("subject_kind = ? AND subject_id IN ?", SubjectGuest, ids).Count(&n).Error)
 	assert.Equal(t, int64(1), n)
+}
+
+func chatGetMessages(t *testing.T, r *gin.Engine, cid string) (chatResp, string) {
+	t.Helper()
+	w := NewTestRequest("GET", "/api/chat/messages").WithCookie(CookieChatCid, cid).Execute(r)
+	resp, _ := chatDecode(t, w)
+	return resp, w.Body.String()
+}
+
+// 新 guest 持有 cid，另一个 guest 已有自己的会话：带着别人的 resume 令牌来也不合并。
+func TestChatSession_ResumeIgnoredWhenCurrentGuestHasHistory(t *testing.T) {
+	r := chatSetup(t, true)
+	wA, _ := chatOpenSession(t, r, "/", nil)
+	cidA := chatCookie(wA, CookieChatCid).Value
+	chatCleanupCID(t, cidA)
+	resp, _ := chatPostMessage(t, r, cidA, "ha-1", "victim secret AAA")
+	require.Equal(t, 0, resp.Code, resp.Message)
+	var convA Conversation
+	ownerA, _ := findIdentityOwner(context.Background(), BrandKaitu, IdentityCID, cidA)
+	require.NoError(t, db.Get().Where("subject_kind = ? AND subject_id = ?", SubjectGuest, ownerA.GuestID).First(&convA).Error)
+
+	wB, _ := chatOpenSession(t, r, "/", nil)
+	cidB := chatCookie(wB, CookieChatCid).Value
+	chatCleanupCID(t, cidB)
+	resp, _ = chatPostMessage(t, r, cidB, "hb-1", "attacker BBB")
+	require.Equal(t, 0, resp.Code, resp.Message)
+
+	_, data := chatOpenSession(t, r, "/", func(q *TestRequest) *TestRequest {
+		return q.WithCookie(CookieChatCid, cidB).WithBody(map[string]any{"path": "/", "resume": signChatResumeToken(convA.UUID, time.Hour)})
+	})
+	assert.Contains(t, fmt.Sprint(data["messages"]), "attacker BBB")
+	assert.NotContains(t, fmt.Sprint(data["messages"]), "victim secret AAA")
+	ownerB, _ := findIdentityOwner(context.Background(), BrandKaitu, IdentityCID, cidB)
+	var merges int64
+	require.NoError(t, db.Get().Model(&GuestMerge{}).Where("from_guest_id IN ? OR into_guest_id IN ?",
+		[]uint64{ownerA.GuestID, ownerB.GuestID}, []uint64{ownerA.GuestID, ownerB.GuestID}).Count(&merges).Error)
+	assert.Equal(t, int64(0), merges)
+
+	// A 的 cid 读不到 B 的消息
+	_, body := chatGetMessages(t, r, cidA)
+	assert.NotContains(t, body, "attacker BBB")
+}
+
+func TestChatSession_ResumeRespectsUndoneMerge(t *testing.T) {
+	r := chatSetup(t, true)
+	wA, _ := chatOpenSession(t, r, "/", nil)
+	cidA := chatCookie(wA, CookieChatCid).Value
+	chatCleanupCID(t, cidA)
+	resp, _ := chatPostMessage(t, r, cidA, "u-1", "history of A")
+	require.Equal(t, 0, resp.Code, resp.Message)
+	ownerA, _ := findIdentityOwner(context.Background(), BrandKaitu, IdentityCID, cidA)
+	var convA Conversation
+	require.NoError(t, db.Get().Where("subject_kind = ? AND subject_id = ?", SubjectGuest, ownerA.GuestID).First(&convA).Error)
+	tok := signChatResumeToken(convA.UUID, time.Hour)
+
+	wB, _ := chatOpenSession(t, r, "/", nil)
+	cidB := chatCookie(wB, CookieChatCid).Value
+	chatCleanupCID(t, cidB)
+	resume := func(q *TestRequest) *TestRequest {
+		return q.WithCookie(CookieChatCid, cidB).WithBody(map[string]any{"path": "/", "resume": tok})
+	}
+	_, data := chatOpenSession(t, r, "/", resume)
+	require.NotNil(t, data["conversation"], "全新 guest 首次使用令牌应合并")
+
+	// 客服撤销该合并
+	ownerB, _ := findIdentityOwner(context.Background(), BrandKaitu, IdentityCID, cidB)
+	var m GuestMerge
+	require.NoError(t, db.Get().Where("from_guest_id IN ? AND into_guest_id IN ?",
+		[]uint64{ownerA.GuestID, ownerB.GuestID}, []uint64{ownerA.GuestID, ownerB.GuestID}).First(&m).Error)
+	require.NoError(t, undoGuestMerge(context.Background(), m.ID, 1))
+
+	_, data = chatOpenSession(t, r, "/", resume)
+	assert.Nil(t, data["conversation"], "撤销过的合并不得被令牌重做")
+	_, body := chatGetMessages(t, r, cidB)
+	assert.NotContains(t, body, "history of A")
+}
+
+func TestChat_ClusterWithTwoOpenConversationsUsesNewest(t *testing.T) {
+	r := chatSetup(t, true)
+	ctx := context.Background()
+	var cids [2]string
+	var convs [2]*Conversation
+	for i := range cids {
+		w, _ := chatOpenSession(t, r, "/", nil)
+		cids[i] = chatCookie(w, CookieChatCid).Value
+		chatCleanupCID(t, cids[i])
+		resp, _ := chatPostMessage(t, r, cids[i], fmt.Sprintf("two-%d", i), fmt.Sprintf("conv number %d", i))
+		require.Equal(t, 0, resp.Code, resp.Message)
+		o, _ := findIdentityOwner(ctx, BrandKaitu, IdentityCID, cids[i])
+		c, err := openConversationFor(ctx, chatSubject{Brand: BrandKaitu, Kind: SubjectGuest, ID: o.GuestID})
+		require.NoError(t, err)
+		require.NotNil(t, c)
+		convs[i] = c
+		time.Sleep(1100 * time.Millisecond)
+	}
+	o0, _ := findIdentityOwner(ctx, BrandKaitu, IdentityCID, cids[0])
+	o1, _ := findIdentityOwner(ctx, BrandKaitu, IdentityCID, cids[1])
+	_, err := mergeGuests(ctx, o0.GuestID, o1.GuestID, MergeSameSID, nil, nil)
+	require.NoError(t, err)
+
+	for _, cid := range cids {
+		_, data := chatOpenSession(t, r, "/", func(q *TestRequest) *TestRequest { return q.WithCookie(CookieChatCid, cid) })
+		c, _ := data["conversation"].(map[string]any)
+		require.NotNil(t, c)
+		assert.Equal(t, convs[1].UUID, c["uuid"], "簇内多个 open 会话取最新")
+	}
+}
+
+func TestChatMessages_PerSubjectSendLimit(t *testing.T) {
+	r := chatSetup(t, true)
+	w, _ := chatOpenSession(t, r, "/", nil)
+	cid := chatCookie(w, CookieChatCid).Value
+	chatCleanupCID(t, cid)
+	owner, _ := findIdentityOwner(context.Background(), BrandKaitu, IdentityCID, cid)
+	key := "chat:send:" + chatSubject{Brand: BrandKaitu, Kind: SubjectGuest, ID: owner.GuestID}.Channel()
+	t.Cleanup(func() { redis.Client().Del(context.Background(), key) })
+	for i := 0; i < chatSendPerSubjectPerMin; i++ {
+		resp, _ := chatPostMessage(t, r, cid, fmt.Sprintf("lim-%d", i), "spam")
+		require.Equal(t, 0, resp.Code, "第 %d 条", i)
+	}
+	resp, _ := chatPostMessage(t, r, cid, "lim-over", "spam")
+	assert.Equal(t, int(ErrorTooManyRequests), resp.Code)
+}
+
+func TestChatEmail_CapPerCluster(t *testing.T) {
+	r := chatSetup(t, true)
+	w, _ := chatOpenSession(t, r, "/", nil)
+	cid := chatCookie(w, CookieChatCid).Value
+	chatCleanupCID(t, cid)
+	post := func(e string) int {
+		resp, _ := chatDecode(t, NewTestRequest("POST", "/api/chat/email").WithCookie(CookieChatCid, cid).
+			WithBody(map[string]any{"email": e}).Execute(r))
+		return resp.Code
+	}
+	for i := 0; i < chatEmailMaxPerCluster; i++ {
+		require.Equal(t, 0, post(fmt.Sprintf("v%d@example.com", i)))
+	}
+	assert.Equal(t, int(ErrorInvalidArgument), post("v99@example.com"), "第 4 个不同邮箱被拒")
+	assert.Equal(t, 0, post("V1@example.com"), "重复已有邮箱幂等成功")
+}
+
+func TestChatSession_GlobalGuestCreateCap(t *testing.T) {
+	r := chatSetup(t, true)
+	oldLimit := chatGuestCreateLimiter.limit
+	chatGuestCreateLimiter.limit = 1
+	t.Cleanup(func() { chatGuestCreateLimiter.limit = oldLimit })
+
+	marker := chatLocaleMarker()
+	hdr := func(q *TestRequest) *TestRequest { return q.WithHeader("Accept-Language", marker) }
+	w, _ := chatOpenSession(t, r, "/", hdr)
+	ck := chatCookie(w, CookieChatCid)
+	require.NotNil(t, ck)
+	chatCleanupCID(t, ck.Value)
+
+	// 已存在的 cid 不受影响（不新建）
+	_, data := chatOpenSession(t, r, "/", func(q *TestRequest) *TestRequest { return hdr(q).WithCookie(CookieChatCid, ck.Value) })
+	assert.Equal(t, true, data["enabled"])
+
+	// 第二个新访客：429，无 cookie，无新行
+	w2 := NewTestRequest("POST", "/api/chat/session").WithBody(map[string]any{"path": "/"}).WithHeader("Accept-Language", marker).Execute(r)
+	resp, _ := chatDecode(t, w2)
+	assert.Equal(t, int(ErrorTooManyRequests), resp.Code)
+	assert.Nil(t, chatCookie(w2, CookieChatCid))
+	assert.Equal(t, int64(1), chatGuestsWithLocale(t, marker))
+}
+
+func TestChatMessages_GlobalSendCap(t *testing.T) {
+	r := chatSetup(t, true)
+	w, _ := chatOpenSession(t, r, "/", nil)
+	cid := chatCookie(w, CookieChatCid).Value
+	chatCleanupCID(t, cid)
+	oldLimit := chatSendGlobalLimiter.limit
+	chatSendGlobalLimiter.limit = 1
+	t.Cleanup(func() { chatSendGlobalLimiter.limit = oldLimit })
+	resp, _ := chatPostMessage(t, r, cid, "g-1", "one")
+	assert.Equal(t, 0, resp.Code, resp.Message)
+	resp, _ = chatPostMessage(t, r, cid, "g-2", "two")
+	assert.Equal(t, int(ErrorTooManyRequests), resp.Code)
+}
+
+func TestChatReads_PerIPLimit(t *testing.T) {
+	r := chatSetup(t, true)
+	for i := 0; i < chatReadPerIPPerMin; i++ {
+		NewTestRequest("GET", "/api/chat/ws-token").Execute(r)
+	}
+	for _, path := range []string{"/api/chat/messages", "/api/chat/ws-token"} {
+		resp, _ := chatDecode(t, NewTestRequest("GET", path).Execute(r))
+		assert.Equal(t, int(ErrorTooManyRequests), resp.Code, path)
+	}
+}
+
+func TestChatPost_BodyLimitAndMalformedSession(t *testing.T) {
+	r := chatSetup(t, true)
+	marker := chatLocaleMarker()
+	// 格式错误的 JSON：session 在解析主体之前就拒绝
+	req, err := http.NewRequest("POST", "/api/chat/session", strings.NewReader("{not json"))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Language", marker)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	resp, _ := chatDecode(t, w)
+	assert.Equal(t, int(ErrorInvalidArgument), resp.Code)
+	assert.Nil(t, chatCookie(w, CookieChatCid))
+	assert.Equal(t, int64(0), chatGuestsWithLocale(t, marker))
+
+	// 空请求体合法
+	req, _ = http.NewRequest("POST", "/api/chat/session", http.NoBody)
+	req.Header.Set("Accept-Language", marker)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	resp, _ = chatDecode(t, w)
+	assert.Equal(t, 0, resp.Code)
+	if ck := chatCookie(w, CookieChatCid); ck != nil {
+		chatCleanupCID(t, ck.Value)
+	}
+
+	// 超 16KB 的请求体被拒
+	w = NewTestRequest("POST", "/api/chat/messages").WithCookie(CookieChatCid, "AAAAAAAAAAAAAAAAAAAAAA").
+		WithBody(map[string]any{"kind": "text", "content": "x", "clientId": "c", "pad": strings.Repeat("p", 20<<10)}).Execute(r)
+	resp, _ = chatDecode(t, w)
+	assert.Equal(t, int(ErrorInvalidArgument), resp.Code)
+}
+
+func TestChatMessages_FallsBackToClosedAndHidesNotes(t *testing.T) {
+	r := chatSetup(t, true)
+	w, _ := chatOpenSession(t, r, "/", nil)
+	cid := chatCookie(w, CookieChatCid).Value
+	chatCleanupCID(t, cid)
+	resp, _ := chatPostMessage(t, r, cid, "cl-1", "before close")
+	require.Equal(t, 0, resp.Code, resp.Message)
+	ctx := context.Background()
+	owner, _ := findIdentityOwner(ctx, BrandKaitu, IdentityCID, cid)
+	conv, err := openConversationFor(ctx, chatSubject{Brand: BrandKaitu, Kind: SubjectGuest, ID: owner.GuestID})
+	require.NoError(t, err)
+	require.NotNil(t, conv)
+	_, _, err = appendMessage(ctx, conv, appendMessageInput{SenderType: SenderStaff, SenderName: "staff", Kind: MsgNote, Content: "internal note ZZZ"})
+	require.NoError(t, err)
+	require.NoError(t, closeConversation(ctx, conv))
+
+	_, body := chatGetMessages(t, r, cid)
+	assert.Contains(t, body, "before close", "无 open 会话时回落到最近关闭的那条")
+	assert.NotContains(t, body, "internal note ZZZ", "内部备注不外露")
 }
