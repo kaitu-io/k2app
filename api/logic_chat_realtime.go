@@ -24,9 +24,13 @@ const (
 
 	chatWSMaxPerChannel = 5 // 本实例上每个频道的并发连接上限
 
-	chatOnlineTTL      = 90 * time.Second
-	chatOnlineRefresh  = 30 * time.Second
 	chatPublishTimeout = 2 * time.Second
+)
+
+// 在线标记的 TTL 与续期间隔：包级变量，测试可缩短。
+var (
+	chatOnlineTTL     = 90 * time.Second
+	chatOnlineRefresh = 30 * time.Second
 )
 
 var (
@@ -195,18 +199,22 @@ func chatWSHandler(bcFn func() *redis.Broadcast) gin.HandlerFunc {
 		defer cancel()
 		rdb := redis.Client()
 		key := chatOnlineKey(s)
-		if err := rdb.Set(ctx, key, "1", chatOnlineTTL).Err(); err != nil {
+		// 标记是尽力而为：写失败（或超时）只记日志，握手照常进行
+		setCtx, setCancel := context.WithTimeout(ctx, chatPublishTimeout)
+		if err := rdb.Set(setCtx, key, "1", chatOnlineTTL).Err(); err != nil {
 			log.Warnf(ctx, "chat online marker: %v", err)
 		}
+		setCancel()
+		ttl, refresh := chatOnlineTTL, chatOnlineRefresh
 		go func() {
-			t := time.NewTicker(chatOnlineRefresh)
+			t := time.NewTicker(refresh)
 			defer t.Stop()
 			for {
 				select {
 				case <-ctx.Done():
 					return
 				case <-t.C:
-					_ = rdb.Set(ctx, key, "1", chatOnlineTTL).Err()
+					_ = rdb.Set(ctx, key, "1", ttl).Err()
 				}
 			}
 		}()

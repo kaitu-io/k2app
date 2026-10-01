@@ -390,3 +390,63 @@ func TestChatSession_WelcomeIsFixedCopy(t *testing.T) {
 	}
 	assert.Equal(t, []string{"install", "purchase", "usage"}, values)
 }
+
+// 经生产路由（SetupRouter：请求日志 + 恢复 + BrandResolver + CORS 全链路）拨 /api/chat/ws。
+// 其余测试把处理器挂在裸 gin 引擎上，删掉路由注册也不会红。
+func TestChatWS_ThroughRealRouter(t *testing.T) {
+	chatStartSingleton(t)
+	srv := httptest.NewServer(SetupRouter())
+	t.Cleanup(srv.Close)
+
+	t.Run("bad token 401", func(t *testing.T) {
+		conn, resp, err := chatDialWS(t, srv, "garbage", nil)
+		if conn != nil {
+			conn.Close()
+		}
+		require.Error(t, err)
+		require.NotNil(t, resp)
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	})
+
+	t.Run("token brand wins over Host", func(t *testing.T) {
+		s := chatSubject{Brand: BrandOverleap, Kind: SubjectGuest, ID: uint64(time.Now().UnixNano()%1e12) + 23}
+		hdr := http.Header{}
+		hdr.Set("Host", "www.kaitu.io")
+		hdr.Set("Origin", "https://www.overleap.io")
+		conn, resp, err := chatDialWS(t, srv, signChatWSToken(s, time.Minute), hdr)
+		require.NoError(t, err, "resp=%v", resp)
+		require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+		defer conn.Close()
+		chatWaitSubscribed(t, chatBroadcast(), s, 1)
+
+		require.NoError(t, chatBroadcast().Pub(context.Background(), s.Channel(),
+			chatWirePayload{Type: "message", Message: ChatMsgDTO{ID: 31337}}))
+		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_, data, err := conn.ReadMessage()
+		require.NoError(t, err)
+		var f chatWireFrame
+		require.NoError(t, json.Unmarshal(data, &f))
+		assert.Equal(t, uint64(31337), f.Payload.Message.ID)
+	})
+}
+
+// 续期：缩短 TTL/间隔，socket 保持连接时标记应活过原 TTL；若续期从不触发则在 FastForward 后消失。
+func TestChatVisitorOnline_RefreshedWhileConnected(t *testing.T) {
+	skipIfNoConfig(t)
+	origTTL, origRefresh := chatOnlineTTL, chatOnlineRefresh
+	chatOnlineTTL, chatOnlineRefresh = 2*time.Second, 50*time.Millisecond
+	t.Cleanup(func() { chatOnlineTTL, chatOnlineRefresh = origTTL, origRefresh })
+
+	srv := chatWSServer(t, chatWSHandler(chatBroadcast))
+	ctx := context.Background()
+	s := chatSubject{Brand: BrandKaitu, Kind: SubjectGuest, ID: uint64(time.Now().UnixNano()%1e12) + 29}
+	chatMustDial(t, srv, s, nil)
+	chatWaitFor(t, func() bool { return chatVisitorOnline(ctx, s) }, "online")
+
+	for i := 0; i < 4; i++ {
+		time.Sleep(150 * time.Millisecond) // 让续期协程至少跑过
+		testMiniRedis.FastForward(1500 * time.Millisecond)
+		// 累计已快进 >2s，没有续期的话早已过期
+	}
+	assert.True(t, chatVisitorOnline(ctx, s), "marker must be refreshed while the socket stays connected")
+}

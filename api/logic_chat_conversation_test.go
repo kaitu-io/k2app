@@ -24,7 +24,9 @@ func newChatSubject(t *testing.T) chatSubject {
 func newChatSubjectBrand(t *testing.T, brand Brand) chatSubject {
 	t.Helper()
 	require.NoError(t, Migrate())
-	id := uint64(time.Now().UnixNano())%1_000_000_000_000 + chatSubjectSeq.Add(1)
+	// 真实 guest 行：发布钩子要把 guest 解析到簇根，伪造的 id 会让每条消息都记一条警告
+	id, err := resolveGuest(context.Background(), brand, generateId("nsj")+fmt.Sprint(chatSubjectSeq.Add(1)), "", "zh-CN", "CN")
+	require.NoError(t, err)
 	s := chatSubject{Brand: brand, Kind: SubjectGuest, ID: id}
 	t.Cleanup(func() {
 		d := db.Get()
@@ -34,6 +36,8 @@ func newChatSubjectBrand(t *testing.T, brand Brand) chatSubject {
 			d.Where("conversation_id IN ?", ids).Delete(&ConversationMessage{})
 			d.Where("id IN ?", ids).Delete(&Conversation{})
 		}
+		d.Where("guest_id = ?", id).Delete(&GuestIdentity{})
+		d.Where("id = ?", id).Delete(&Guest{})
 	})
 	return s
 }
