@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,6 +19,20 @@ import (
 type StatsEventRequest struct {
 	AppOpens    []StatsAppOpenEvent    `json:"app_opens"`
 	Connections []StatsConnectionEvent `json:"connections"`
+	Funnel      []StatsFunnelEvent     `json:"funnel"`
+}
+
+// StatsFunnelEvent 是 app 上报的转化漏斗行为事件（只收行为事件，事实事件由服务端投影）。
+type StatsFunnelEvent struct {
+	Eid        string    `json:"eid" binding:"required"`
+	DeviceHash string    `json:"device_hash" binding:"required"`
+	OS         string    `json:"os" binding:"required"`
+	AppVersion string    `json:"app_version" binding:"required"`
+	Event      string    `json:"event" binding:"required"`
+	Plan       string    `json:"plan"`
+	Source     string    `json:"source"`
+	Channel    string    `json:"channel"`
+	CreatedAt  time.Time `json:"created_at" binding:"required"`
 }
 
 type StatsAppOpenEvent struct {
@@ -61,7 +76,7 @@ func api_stats_ingest(c *gin.Context) {
 		return
 	}
 
-	totalEvents := len(req.AppOpens) + len(req.Connections)
+	totalEvents := len(req.AppOpens) + len(req.Connections) + len(req.Funnel)
 	if totalEvents == 0 {
 		SuccessEmpty(c)
 		return
@@ -117,8 +132,11 @@ func api_stats_ingest(c *gin.Context) {
 		}
 	}
 
-	log.Debugf(c, "ingested %d stats events (app_opens=%d, connections=%d)",
-		totalEvents, len(req.AppOpens), len(req.Connections))
+	// 漏斗事件：入队即返回，任何失败都不影响响应。
+	ingestStatsFunnel(c, req.Funnel)
+
+	log.Debugf(c, "ingested %d stats events (app_opens=%d, connections=%d, funnel=%d)",
+		totalEvents, len(req.AppOpens), len(req.Connections), len(req.Funnel))
 	SuccessEmpty(c)
 }
 
@@ -182,4 +200,60 @@ func hashIPWithDailySalt(c *gin.Context, ip string) (string, error) {
 
 	h := sha256.Sum256([]byte(ip + salt))
 	return hex.EncodeToString(h[:]), nil
+}
+
+var funnelEidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+func validEid(s string) bool { return funnelEidRe.MatchString(s) }
+
+func normalizeFunnelOS(os string) string {
+	switch os {
+	case "windows", "macos", "ios", "android", "linux":
+		return os
+	}
+	return "other"
+}
+
+// ingestStatsFunnel 把 app 上报的漏斗事件非阻塞入队。用户归因只信 token（只读解析），
+// 绝不信请求体；设备哈希与登录用户配对写入 identity。
+func ingestStatsFunnel(c *gin.Context, items []StatsFunnelEvent) {
+	if len(items) == 0 || !funnelEnabled() {
+		return
+	}
+	uid := funnelSilentUserID(c)
+	brand := ReqBrand(c)
+	now := time.Now()
+	linked := map[string]struct{}{}
+	for _, e := range items {
+		if !funnelEventAllowed(e.Event, FunnelSurfaceApp) || !validEid(e.Eid) {
+			continue
+		}
+		hash := funnelTruncate(e.DeviceHash, 64)
+		eid := e.Eid
+		device := "desktop"
+		if e.OS == "ios" || e.OS == "android" {
+			device = "mobile"
+		}
+		funnelEnqueue(FunnelEvent{
+			OccurredAt: clampOccurredAt(e.CreatedAt, now),
+			Eid:        &eid,
+			Brand:      string(brand),
+			Surface:    FunnelSurfaceApp,
+			Event:      e.Event,
+			AnonID:     hash,
+			UserID:     uid,
+			Plan:       funnelTruncate(e.Plan, 64),
+			Source:     funnelTruncate(e.Source, 32),
+			Channel:    funnelTruncate(e.Channel, 16),
+			Device:     device,
+			OS:         normalizeFunnelOS(e.OS),
+			AppVersion: funnelTruncate(e.AppVersion, 32),
+		})
+		if uid != 0 && hash != "" {
+			if _, done := linked[hash]; !done {
+				linked[hash] = struct{}{}
+				linkFunnelIdentity(c, "did", hash, uid, brand)
+			}
+		}
+	}
 }
