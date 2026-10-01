@@ -400,7 +400,10 @@ webapp/scripts/check-brand-purity.sh <brand> dist   # artifact purity after any 
   `app_paths` are the overridden apps' directories (`InstalledApp.paths`, macOS: the
   `.app` bundle; stored per override, derived as `forceDirectPaths`/`forceProxyPaths`);
   the engine ORs them with the names. An override saved before paths existed gains
-  its directory on the next `refreshOverrideNames` (opening the App Bypass page).
+  its directory at boot: `load()` fires `syncOverridePaths()` (lists apps once, unions
+  paths in, then persists `pathsSynced: true`). The flag is only set when the shell
+  actually reported directories — the webapp can arrive by OTA before a path-capable
+  shell, and the reconcile must stay owed until that shell is installed.
   `AppBypass.tsx` (`appBypass.v2.*` i18n) has **two data sources**: `listInstalled`
   is primary, `listRunning` only becomes primary when it is the sole provider (iOS has
   neither). When both exist (desktop bridge — `installed_apps.rs` / `app_list.rs`, see

@@ -265,3 +265,103 @@ describe('app-routes classify cache + toggles', () => {
     expect(s.forceProxyPaths).toEqual([]);
   });
 });
+
+// Overrides saved by a version that knew only process names must gain their
+// app's directory at BOOT — the user should not have to open the App Bypass
+// page for an upgrade to take effect.
+describe('app-routes.store boot-time path reconcile', () => {
+  let store: Map<string, unknown>;
+  const id = '/Applications/Doubao.app';
+  const legacy = () => ({ v: 2, apps: { [id]: { mode: 'direct', names: ['Doubao', 'Doubao Browser Helper'] } } });
+  const withAppList = (appList: unknown) => { (window as any)._platform.appList = appList; };
+  // load() fires the reconcile without awaiting it; let it settle.
+  const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
+
+  beforeEach(() => {
+    store = installStorageMock();
+    resetStore(false);
+  });
+
+  test('load() adds directories to a names-only override and marks it reconciled', async () => {
+    store.set(STORAGE_KEY, legacy());
+    const listInstalled = vi.fn(async () => [{ id, label: 'Doubao', processNames: ['Doubao'], paths: [id] }]);
+    withAppList({ listInstalled });
+
+    await useAppRoutesStore.getState().load();
+    await settle();
+
+    const s = useAppRoutesStore.getState();
+    expect(s.overrides[id]).toEqual({ mode: 'direct', names: ['Doubao', 'Doubao Browser Helper'], paths: [id] });
+    expect(s.forceDirectPaths).toEqual([id]);
+    expect(store.get(STORAGE_KEY)).toEqual({
+      v: 2,
+      apps: { [id]: { mode: 'direct', names: ['Doubao', 'Doubao Browser Helper'], paths: [id] } },
+      pathsSynced: true,
+    });
+
+    // Reconciled once: the next launch does not enumerate apps again.
+    resetStore(false);
+    await useAppRoutesStore.getState().load();
+    await settle();
+    expect(listInstalled).toHaveBeenCalledTimes(1);
+  });
+
+  test('an override made from the running list is reconciled by its running id', async () => {
+    const rid = 'com.bytedance.doubao';
+    store.set(STORAGE_KEY, { v: 2, apps: { [rid]: { mode: 'proxy', names: ['Doubao'] } } });
+    withAppList({
+      listInstalled: async () => [{ id: '/Applications/Other.app', label: 'Other', processNames: ['Other'], paths: ['/Applications/Other.app'] }],
+      listRunning: async () => [{ id: rid, label: 'Doubao', processNames: ['Doubao'], paths: [id] }],
+    });
+
+    await useAppRoutesStore.getState().load();
+    await settle();
+
+    expect(useAppRoutesStore.getState().overrides[rid]?.paths).toEqual([id]);
+    expect(useAppRoutesStore.getState().forceProxyPaths).toEqual([id]);
+  });
+
+  // The webapp can arrive (OTA) before the shell that reports directories.
+  // Reconciling against such a shell must NOT be recorded as done, or the
+  // override would never be upgraded once the shell is.
+  test('a shell that reports no directories leaves the reconcile owed', async () => {
+    store.set(STORAGE_KEY, legacy());
+    const oldShell = vi.fn(async () => [{ id, label: 'Doubao', processNames: ['Doubao', 'Doubao Browser Helper'] }]);
+    withAppList({ listInstalled: oldShell });
+
+    await useAppRoutesStore.getState().load();
+    await settle();
+    expect(useAppRoutesStore.getState().overrides[id]?.paths).toBeUndefined();
+    expect((store.get(STORAGE_KEY) as any).pathsSynced).toBeUndefined();
+
+    // Shell upgraded: next launch reconciles.
+    withAppList({ listInstalled: async () => [{ id, label: 'Doubao', processNames: ['Doubao'], paths: [id] }] });
+    resetStore(false);
+    await useAppRoutesStore.getState().load();
+    await settle();
+    expect(useAppRoutesStore.getState().overrides[id]?.paths).toEqual([id]);
+    expect((store.get(STORAGE_KEY) as any).pathsSynced).toBe(true);
+  });
+
+  test('a failing enumeration is retried next launch and never breaks load()', async () => {
+    store.set(STORAGE_KEY, legacy());
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    withAppList({ listInstalled: async () => { throw new Error('ipc down'); } });
+
+    await useAppRoutesStore.getState().load();
+    await settle();
+    const s = useAppRoutesStore.getState();
+    expect(s.loaded).toBe(true);
+    expect(s.forceDirect).toEqual(['Doubao', 'Doubao Browser Helper']); // names still route
+    expect((store.get(STORAGE_KEY) as any).pathsSynced).toBeUndefined();
+    warn.mockRestore();
+  });
+
+  test('no overrides → no enumeration at boot', async () => {
+    const listInstalled = vi.fn(async () => []);
+    withAppList({ listInstalled });
+    await useAppRoutesStore.getState().load();
+    await settle();
+    expect(listInstalled).not.toHaveBeenCalled();
+  });
+});
