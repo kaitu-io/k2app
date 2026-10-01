@@ -22,7 +22,7 @@ import {
   Alert,
 } from "@mui/material";
 import { Add as AddIcon, EmojiEvents as EmojiEventsIcon, Error as ErrorIcon } from "@mui/icons-material";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAlert, useAuthStore } from "../stores";
 import { useUser } from "../hooks/useUser";
@@ -48,6 +48,8 @@ import { brandConfig } from '../brands';
 import { previewOrderEnabled } from '../utils/purchase-preview';
 import { cacheStore } from '../services/cache-store';
 import { formatBytes } from '../utils/ui';
+import { statsService } from '../services/stats';
+import { PAYWALL_SOURCES, type PaywallSource } from '../services/funnel-events';
 
 // 斜角彩带组件
 function Ribbon({ text }: { text: string }) {
@@ -561,6 +563,18 @@ export default function Purchase() {
   // page (incl. already-deployed old clients, which only ever call /api/plans).
   // Entry to the dedicated-line scope is the "buy a line" CTA on /private-node.
   const [searchParams] = useSearchParams();
+  // Funnel: paywall_view fires once per mount. The entry point passes its
+  // identity via router state; anything outside PAYWALL_SOURCES is 'direct'.
+  // Deliberately an empty-deps effect: do NOT merge it into the preview effect below.
+  const location = useLocation();
+  useEffect(() => {
+    const from = (location.state as { from?: string } | null)?.from;
+    const source: PaywallSource = (PAYWALL_SOURCES as readonly string[]).includes(from ?? '')
+      ? (from as PaywallSource)
+      : 'direct';
+    void statsService.trackFunnel('paywall_view', { source });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per mount
+  }, []);
   const purchaseProduct = searchParams.get('product') === 'private_node' ? 'private_node' : 'app';
   // /api/plans is frozen as the app-only legacy endpoint; new product scopes use
   // the nested /api/products/:product/plans. Cache key is per product.
@@ -695,6 +709,10 @@ export default function Purchase() {
         message: t('auth:auth.startNowHint'),
       });
       return;
+    }
+
+    if (!preview) {
+      void statsService.trackFunnel('checkout_start', { plan });
     }
 
     setIsLoading(true);
@@ -886,6 +904,7 @@ export default function Purchase() {
   // 处理套餐选择（使用 useCallback 保证引用稳定，避免 PlanList 不必要的重新渲染）
   const handlePlanSelect = useCallback((pid: string) => {
     setPlan(pid);
+    void statsService.trackFunnel('plan_select', { plan: pid });
   }, []);
 
   const handlePaySuccess = async () => {

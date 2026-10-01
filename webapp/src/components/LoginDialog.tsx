@@ -50,6 +50,7 @@ import { useSubscriptionAffordance } from '../hooks/useSubscriptionAffordance';
 import { brandConfig } from '../brands';
 import { purchaseSurfaceAvailable } from '../utils/purchase-surface';
 import { getCurrentAppConfig } from '../config/apps';
+import { statsService } from '../services/stats';
 
 /**
  * DialogContent is a flex column, so a form taller than the viewport squashes its
@@ -121,6 +122,14 @@ export default function LoginDialog() {
     }
   }, [isOpen]);
 
+  // Funnel: dialog became visible. source = what opened it (truncated).
+  useEffect(() => {
+    if (isOpen) {
+      void statsService.trackFunnel('login_view', { source: (trigger || '').slice(0, 32) });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once per open, not per trigger change
+  }, [isOpen]);
+
   // Delayed focus management - avoids autoFocus timing issues on old WebViews
   useEffect(() => {
     if (!isOpen) return;
@@ -170,6 +179,7 @@ export default function LoginDialog() {
         setIsActivated(response.data.isActivated);
         setStep("code");
         setCountdown(60);
+        void statsService.trackFunnel('auth_code_sent');
       }
     } catch (err) {
       console.error('[LoginDialog] Failed to send verification code:', err);
@@ -220,6 +230,7 @@ export default function LoginDialog() {
       // Clear all cache to ensure fresh data after login
       cacheStore.clear();
       setIsAuthenticated(true);
+      void statsService.trackFunnel('auth_done');
       close();
 
 
@@ -258,6 +269,7 @@ export default function LoginDialog() {
       handleResponseError(response.code, response.message, t, t("auth:auth.loginFailed"));
       cacheStore.clear();
       setIsAuthenticated(true);
+      void statsService.trackFunnel('auth_done');
       close();
     } catch (err) {
       console.error('[LoginDialog] Password login failed:', err);
@@ -493,7 +505,7 @@ export default function LoginDialog() {
                   variant="outlined"
                   onClick={() => {
                     close();
-                    navigate("/purchase");
+                    navigate("/purchase", { state: { from: 'login_dialog' } });
                   }}
                 >
                   {t("auth:auth.activateService")}

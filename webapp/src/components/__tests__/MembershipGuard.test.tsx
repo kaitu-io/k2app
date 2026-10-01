@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import MembershipGuard from '../MembershipGuard';
 
 // Mock useUser hook
@@ -162,6 +162,27 @@ describe('MembershipGuard', () => {
 
       // Still shows content
       expect(screen.getByTestId('protected-content')).toBeInTheDocument();
+    });
+  });
+
+  describe('Funnel source', () => {
+    it('redirecting an expired user to /purchase passes from=membership_guard as router state', () => {
+      mockUserState.isExpired = true;
+      let seen: unknown = 'unset';
+      const Probe = () => {
+        seen = useLocation().state;
+        return <div data-testid="purchase-probe" />;
+      };
+      render(
+        <MemoryRouter initialEntries={['/dashboard']}>
+          <Routes>
+            <Route path="/dashboard" element={<MembershipGuard><div>Dashboard</div></MembershipGuard>} />
+            <Route path="/purchase" element={<Probe />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      expect(screen.getByTestId('purchase-probe')).toBeInTheDocument();
+      expect(seen).toEqual({ from: 'membership_guard' });
     });
   });
 });

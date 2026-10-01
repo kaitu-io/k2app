@@ -165,6 +165,7 @@ async function main() {
   // Track app open for usage analytics
   import('./services/stats').then(({ statsService }) => {
     statsService.trackAppOpen();
+    void statsService.trackFunnelOnce('app_first_open');
   }).catch(() => {});
 
   // Start beta auto-upload timer (no-op if not on beta channel)

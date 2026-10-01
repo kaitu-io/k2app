@@ -421,7 +421,7 @@ export default function Account() {
                   size="small"
                   fullWidth
                   startIcon={<ShoppingCartIcon sx={{ fontSize: 18 }} />}
-                  onClick={() => navigate("/purchase")}
+                  onClick={() => navigate("/purchase", { state: { from: 'account_expired' } })}
                   sx={{
                     borderRadius: 1.5,
                     textTransform: 'none',
@@ -587,7 +587,7 @@ export default function Account() {
                     size="small"
                     variant="contained"
                     color="error"
-                    onClick={() => navigate("/purchase")}
+                    onClick={() => navigate("/purchase", { state: { from: 'account' } })}
                     sx={{
                       borderRadius: 1.5,
                       textTransform: 'none',

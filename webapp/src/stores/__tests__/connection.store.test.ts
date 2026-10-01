@@ -25,6 +25,18 @@ vi.mock('../../services/cloud-api', () => ({
   },
 }));
 
+// Funnel: connect() reports first_connect_attempt through statsService.
+const mockTrackFunnelOnce = vi.fn();
+vi.mock('../../services/stats', () => ({
+  statsService: {
+    trackFunnel: vi.fn(),
+    trackFunnelOnce: (...args: unknown[]) => mockTrackFunnelOnce(...args),
+    trackAppOpen: vi.fn(),
+    trackConnect: vi.fn(),
+    trackDisconnect: vi.fn(),
+  },
+}));
+
 // Mock window globals
 const mockRun = vi.fn();
 const mockStorage = {
@@ -46,6 +58,7 @@ beforeEach(() => {
   mockStorage.get.mockReset();
   mockStorage.set.mockReset();
   mockCloudApiGet.mockReset();
+  mockTrackFunnelOnce.mockReset();
   mockCloudApiGet.mockResolvedValue({ code: 0, message: 'ok', data: { items: [], echConfigList: undefined } });
 });
 
@@ -193,6 +206,28 @@ describe('Connection Store - Connect', () => {
 
     // USER_CONNECT dispatched
     expect(vpn.useVPNMachineStore.getState().state).toBe('connecting');
+  });
+
+  it('user-initiated connect reports first_connect_attempt (once-variant); a rejected connect does not', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildTunnelUrl).mockResolvedValue('k2v5://u:t@tokyo.example.com:443');
+    useConnectionStore.getState().selectCloudTunnel({
+      id: 1, domain: 'tokyo.example.com', name: 'Tokyo', protocol: 'k2v5',
+      port: 443, serverUrl: 'k2v5://tokyo.example.com:443', node: { country: 'JP' },
+    } as any);
+
+    // Already connecting -> connect() is rejected before USER_CONNECT: no attempt reported.
+    vpn.useVPNMachineStore.setState({ state: 'connecting' });
+    await useConnectionStore.getState().connect();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockTrackFunnelOnce).not.toHaveBeenCalled();
+
+    vpn.useVPNMachineStore.setState({ state: 'idle' });
+    await useConnectionStore.getState().connect();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockTrackFunnelOnce).toHaveBeenCalledWith('first_connect_attempt');
   });
 
   it('connect with self-hosted uses raw URI (no auth injection)', async () => {

@@ -134,6 +134,7 @@ export function initializeAllStores(): () => void {
       (s) => s.state,
       (state, prevState) => {
         if (state === 'connected' && prevState !== 'connected') {
+          void statsService.trackFunnelOnce('first_connect_ok');
           // Prefer engine's startAt (survives webapp reload mid-session) over local Date.now().
           // dispatchStatus updates startAt before dispatching the state event, so it's already
           // populated by the time this subscriber fires.
