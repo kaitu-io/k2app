@@ -45,6 +45,13 @@ function renderForm() {
   );
 }
 
+// Load-tolerant waits. Negative assertions first wait for the rendered error
+// alert — the positive sign that the failed handler ran to completion — so
+// "nothing reported" is not asserted before anything could have been.
+const WAIT = { timeout: 5000 };
+const errorShown = (container: HTMLElement) =>
+  waitFor(() => expect(container.querySelector('[role="alert"]')).not.toBeNull(), WAIT);
+
 const calls = (event: string) =>
   (statsService.trackFunnel as any).mock.calls.filter((c: any[]) => c[0] === event);
 
@@ -72,8 +79,8 @@ describe('EmailLoginForm funnel events', () => {
     const { container } = renderForm();
     const input = typeEmail(container);
     fireEvent.keyDown(input, { key: 'Enter' });
-    await waitFor(() => expect(cloudApi.post).toHaveBeenCalledWith('/api/auth/code', expect.anything()));
-    await waitFor(() => expect(calls('auth_code_sent')).toEqual([['auth_code_sent']]));
+    await waitFor(() => expect(cloudApi.post).toHaveBeenCalledWith('/api/auth/code', expect.anything()), WAIT);
+    await waitFor(() => expect(calls('auth_code_sent')).toEqual([['auth_code_sent']]), WAIT);
   });
 
   it('a failed code request reports nothing', async () => {
@@ -81,8 +88,8 @@ describe('EmailLoginForm funnel events', () => {
     const { container } = renderForm();
     const input = typeEmail(container);
     fireEvent.keyDown(input, { key: 'Enter' });
-    await waitFor(() => expect(cloudApi.post).toHaveBeenCalledWith('/api/auth/code', expect.anything()));
-    await new Promise((r) => setTimeout(r, 50));
+    await waitFor(() => expect(cloudApi.post).toHaveBeenCalledWith('/api/auth/code', expect.anything()), WAIT);
+    await errorShown(container);
     expect(statsService.trackFunnel).not.toHaveBeenCalled();
   });
 
@@ -90,7 +97,7 @@ describe('EmailLoginForm funnel events', () => {
     const { container } = renderForm();
     const input = typeEmail(container);
     fireEvent.keyDown(input, { key: 'Enter' });
-    await waitFor(() => expect(calls('auth_code_sent')).toHaveLength(1));
+    await waitFor(() => expect(calls('auth_code_sent')).toHaveLength(1), WAIT);
 
     const code = await waitFor(() => {
       const el = container.querySelector('input[autocomplete="one-time-code"]') as HTMLInputElement;
@@ -101,15 +108,15 @@ describe('EmailLoginForm funnel events', () => {
 
     (cloudApi.post as any).mockResolvedValueOnce({ code: 400003, message: 'wrong code', data: null });
     fireEvent.keyDown(code, { key: 'Enter' });
-    await waitFor(() => expect(cloudApi.post).toHaveBeenCalledWith('/api/auth/login', expect.anything()));
-    await new Promise((r) => setTimeout(r, 50));
+    await waitFor(() => expect(cloudApi.post).toHaveBeenCalledWith('/api/auth/login', expect.anything()), WAIT);
+    await errorShown(container);
     expect(calls('auth_done')).toHaveLength(0);
     expect(onLoginSuccess).not.toHaveBeenCalled();
 
     (cloudApi.post as any).mockResolvedValueOnce({ code: 0, data: { accessToken: 'x', refreshToken: 'y' } });
     fireEvent.change(code, { target: { value: '654321' } });
     fireEvent.keyDown(code, { key: 'Enter' });
-    await waitFor(() => expect(calls('auth_done')).toEqual([['auth_done']]));
+    await waitFor(() => expect(calls('auth_done')).toEqual([['auth_done']]), WAIT);
     expect(onLoginSuccess).toHaveBeenCalledTimes(1);
   });
 
@@ -123,13 +130,13 @@ describe('EmailLoginForm funnel events', () => {
 
     (cloudApi.post as any).mockResolvedValueOnce({ code: 400003, message: 'nope', data: null });
     fireEvent.keyDown(pw, { key: 'Enter' });
-    await waitFor(() => expect(cloudApi.post).toHaveBeenCalledWith('/api/auth/login/password', expect.anything()));
-    await new Promise((r) => setTimeout(r, 50));
+    await waitFor(() => expect(cloudApi.post).toHaveBeenCalledWith('/api/auth/login/password', expect.anything()), WAIT);
+    await errorShown(container);
     expect(calls('auth_done')).toHaveLength(0);
 
     (cloudApi.post as any).mockResolvedValueOnce({ code: 0, data: { accessToken: 'x', refreshToken: 'y' } });
     fireEvent.keyDown(pw, { key: 'Enter' });
-    await waitFor(() => expect(calls('auth_done')).toEqual([['auth_done']]));
+    await waitFor(() => expect(calls('auth_done')).toEqual([['auth_done']]), WAIT);
     expect(onLoginSuccess).toHaveBeenCalledTimes(1);
   });
 
@@ -143,6 +150,6 @@ describe('EmailLoginForm funnel events', () => {
     fireEvent.change(pw, { target: { value: 'k7N#mq2P!xT9' } });
     (cloudApi.post as any).mockResolvedValueOnce({ code: 0, data: { accessToken: 'x', refreshToken: 'y' } });
     fireEvent.keyDown(pw, { key: 'Enter' });
-    await waitFor(() => expect(onLoginSuccess).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onLoginSuccess).toHaveBeenCalledTimes(1), WAIT);
   });
 });

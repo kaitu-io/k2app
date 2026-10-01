@@ -159,28 +159,43 @@ beforeEach(() => {
   });
 });
 
+// paywall_view is reported asynchronously (after the user/affordance state has
+// resolved), so:
+//  - positive assertions WAIT for the call (reported()), then settle and
+//    re-check to pin "exactly once";
+//  - negative assertions first wait for a positive sign that the page has fully
+//    resolved into a non-paywall surface (a rendered marker) — an immediate
+//    "no calls" would pass vacuously, before anything could have fired.
+const WAIT = { timeout: 5000 };
+async function reported(expected: unknown[][]) {
+  await waitFor(() => expect(calls('paywall_view')).toEqual(expected), WAIT);
+  await settle();
+  expect(calls('paywall_view')).toEqual(expected);
+}
+/** Both brands render SubscriptionManagePanel for an active subscriber off iOS. */
+const managePanel = () => screen.findByTestId('stripe-manage-panel', {}, WAIT);
+const userInfoRequested = () =>
+  waitFor(() => expect(cloudApi.get).toHaveBeenCalledWith('/api/user/info'), WAIT);
+
 describe('Purchase funnel: paywall_view (both brands)', () => {
   it('reports the entry point passed through router state, exactly once', async () => {
     renderPurchase({ from: 'account_expired' });
-    await settle();
-    expect(calls('paywall_view')).toEqual([['paywall_view', { source: 'account_expired' }]]);
+    await reported([['paywall_view', { source: 'account_expired' }]]);
   });
 
   it('no router state -> direct', async () => {
     renderPurchase();
-    await settle();
-    expect(calls('paywall_view')).toEqual([['paywall_view', { source: 'direct' }]]);
+    await reported([['paywall_view', { source: 'direct' }]]);
   });
 
   it('a source outside PAYWALL_SOURCES -> direct', async () => {
     renderPurchase({ from: 'evil' });
-    await settle();
-    expect(calls('paywall_view')).toEqual([['paywall_view', { source: 'direct' }]]);
+    await reported([['paywall_view', { source: 'direct' }]]);
   });
 
   it('re-rendering does not report again', async () => {
     const { again } = renderPurchase({ from: 'tunnel_locked' });
-    await settle();
+    await reported([['paywall_view', { source: 'tunnel_locked' }]]);
     again(); again(); again();
     await settle();
     expect(calls('paywall_view')).toHaveLength(1);
@@ -190,24 +205,22 @@ describe('Purchase funnel: paywall_view (both brands)', () => {
 describe('Purchase funnel: paywall_view only on a purchase surface (both brands)', () => {
   it('entry from the navigation tab -> nav', async () => {
     renderPurchase({ from: 'nav' });
-    await settle();
-    expect(calls('paywall_view')).toEqual([['paywall_view', { source: 'nav' }]]);
+    await reported([['paywall_view', { source: 'nav' }]]);
   });
 
   it('a signed-out visitor is at the paywall: exactly one', async () => {
     auth.isAuthenticated = false;
     renderPurchase({ from: 'nav' });
-    await settle();
-    expect(calls('paywall_view')).toEqual([['paywall_view', { source: 'nav' }]]);
+    await reported([['paywall_view', { source: 'nav' }]]);
   });
 
   it('a member in manage mode is not at a paywall: no paywall_view', async () => {
     mockUser(USER_SUBSCRIBER('stripe'));
     const { again } = renderPurchase({ from: 'nav' });
+    expect(await managePanel()).toBeTruthy(); // user resolved, manage surface rendered
     await settle();
     again();
     await settle();
-    expect(cloudApi.get).toHaveBeenCalledWith('/api/user/info');
     expect(calls('paywall_view')).toHaveLength(0);
   });
 
@@ -215,10 +228,13 @@ describe('Purchase funnel: paywall_view only on a purchase surface (both brands)
     let resolveUser!: (v: unknown) => void;
     mockUser(new Promise((res) => { resolveUser = res; }));
     renderPurchase({ from: 'account' });
+    await userInfoRequested(); // the page is mounted and waiting on the user record
     await settle();
+    expect(screen.queryByTestId('stripe-manage-panel')).toBeNull();
     expect(calls('paywall_view')).toHaveLength(0);
 
     await act(async () => { resolveUser({ code: 0, data: USER_SUBSCRIBER('stripe') }); });
+    expect(await managePanel()).toBeTruthy();
     await settle();
     expect(calls('paywall_view')).toHaveLength(0);
   });
@@ -227,27 +243,28 @@ describe('Purchase funnel: paywall_view only on a purchase surface (both brands)
     let resolveUser!: (v: unknown) => void;
     mockUser(new Promise((res) => { resolveUser = res; }));
     renderPurchase({ from: 'account' });
+    await userInfoRequested();
     await settle();
     expect(calls('paywall_view')).toHaveLength(0);
 
     await act(async () => { resolveUser({ code: 0, data: USER_PROSPECT }); });
-    await settle();
-    expect(calls('paywall_view')).toEqual([['paywall_view', { source: 'account' }]]);
+    await reported([['paywall_view', { source: 'account' }]]);
   });
 
   it('iOS: subscribe panel -> one paywall_view', async () => {
     (window as any)._platform = { os: 'ios', iap: {} };
     renderPurchase({ from: 'tunnel_locked' });
-    expect(await screen.findByTestId('ios-subscribe-panel')).toBeTruthy();
-    await settle();
-    expect(calls('paywall_view')).toEqual([['paywall_view', { source: 'tunnel_locked' }]]);
+    expect(await screen.findByTestId('ios-subscribe-panel', {}, WAIT)).toBeTruthy();
+    await reported([['paywall_view', { source: 'tunnel_locked' }]]);
   });
 
+  // The membership panel only replaces the subscribe panel once the user record
+  // has resolved to manage/status — finding it IS the "fully resolved" signal.
   it('iOS: membership panel (manage) -> no paywall_view', async () => {
     (window as any)._platform = { os: 'ios', iap: {} };
     mockUser(USER_SUBSCRIBER('apple'));
     renderPurchase({ from: 'nav' });
-    expect(await screen.findByTestId('ios-membership-panel')).toBeTruthy();
+    expect(await screen.findByTestId('ios-membership-panel', {}, WAIT)).toBeTruthy();
     await settle();
     expect(calls('paywall_view')).toHaveLength(0);
   });
@@ -256,7 +273,7 @@ describe('Purchase funnel: paywall_view only on a purchase surface (both brands)
     (window as any)._platform = { os: 'ios', iap: {} };
     mockUser({ ...USER_PROSPECT, expiredAt: FAR_FUTURE });
     renderPurchase({ from: 'nav' });
-    expect(await screen.findByTestId('ios-membership-panel')).toBeTruthy();
+    expect(await screen.findByTestId('ios-membership-panel', {}, WAIT)).toBeTruthy();
     await settle();
     expect(calls('paywall_view')).toHaveLength(0);
   });
@@ -265,15 +282,15 @@ describe('Purchase funnel: paywall_view only on a purchase surface (both brands)
 describe.runIf(brandConfig.features.wordgatePurchase)('Purchase funnel: WordGate flow', () => {
   it('clicking a plan reports plan_select with its pid', async () => {
     renderPurchase();
-    fireEvent.click(await screen.findByText('$120.00'));
-    expect(calls('plan_select')).toEqual([['plan_select', { plan: PLAN_12M.pid }]]);
+    fireEvent.click(await screen.findByText('$120.00', {}, WAIT));
+    await waitFor(() => expect(calls('plan_select')).toEqual([['plan_select', { plan: PLAN_12M.pid }]]), WAIT);
   });
 
   it('the default selection and preview orders do not report plan_select / checkout_start', async () => {
     renderPurchase();
     await waitFor(() =>
       expect((cloudApi.post as any).mock.calls.some(([, b]: [string, any]) => b?.preview === true)).toBe(true),
-    );
+    WAIT);
     await settle();
     expect(calls('plan_select')).toHaveLength(0);
     expect(calls('checkout_start')).toHaveLength(0);
@@ -281,13 +298,16 @@ describe.runIf(brandConfig.features.wordgatePurchase)('Purchase funnel: WordGate
 
   it('paying (logged in) reports checkout_start exactly once, with no channel', async () => {
     renderPurchase();
-    const pay = await screen.findByText(i18n.t('purchase:purchase.payNow'));
-    await waitFor(() => expect(pay.closest('button')).not.toBeDisabled());
+    const pay = await screen.findByText(i18n.t('purchase:purchase.payNow'), {}, WAIT);
+    await waitFor(() => expect(pay.closest('button')).not.toBeDisabled(), WAIT);
     await act(async () => { fireEvent.click(pay); });
     await waitFor(() =>
       expect((cloudApi.post as any).mock.calls.some(([, b]: [string, any]) => b?.preview === false)).toBe(true),
+    WAIT);
+    await waitFor(
+      () => expect(calls('checkout_start')).toEqual([['checkout_start', { plan: PLAN_1M.pid }]]),
+      WAIT,
     );
-    expect(calls('checkout_start')).toEqual([['checkout_start', { plan: PLAN_1M.pid }]]);
     // The server groups purchases by this plan; the channel is unknown client-side.
     expect(calls('checkout_start')[0][1].plan).toBeTruthy();
     expect('channel' in calls('checkout_start')[0][1]).toBe(false);
