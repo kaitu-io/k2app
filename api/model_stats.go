@@ -12,6 +12,7 @@ type StatAppOpen struct {
 	OS         string    `gorm:"type:varchar(16);not null;index"`
 	AppVersion string    `gorm:"type:varchar(32);not null"`
 	Locale     string    `gorm:"type:varchar(8)"`
+	Brand      string    `gorm:"type:varchar(16);not null;default:'';index"` // 请求品牌；该列上线前的历史行为空
 }
 
 // StatConnection tracks VPN connect/disconnect events.

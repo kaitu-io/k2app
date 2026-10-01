@@ -45,6 +45,8 @@ var statsRetentionTargets = []statsRetentionTarget{
 	{"stat_app_opens", "reported_at", statsRetentionDays},
 	{"stat_k2s_downloads", "created_at", statsRetentionDays},
 	{"connection_ratings", "created_at", statsRetentionDays},
+	// 按服务端入库时间；occurred_at 是客户端时钟。漏斗查询最大回看 90 天 + 14 天时间窗。
+	{"funnel_events", "received_at", statsRetentionDays},
 }
 
 // deleteInBatches removes rows where column < cutoff, batchSize rows per

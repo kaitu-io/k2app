@@ -558,6 +558,9 @@ func SetupRouter() *gin.Engine {
 		opsAdmin.GET("/campaigns/code/:code/orders", RoleRequired(RoleMarketing), api_admin_get_campaign_orders)
 		opsAdmin.GET("/campaigns/code/:code/funnel", RoleRequired(RoleMarketing), api_admin_get_campaign_funnel)
 
+		// 转化漏斗 / 留存（只读，RoleMarketing）
+		registerAdminFunnelRoutes(opsAdmin)
+
 		// 授权码批次管理
 		opsAdmin.GET("/license-key-batches/stats", RoleRequired(RoleMarketing), api_admin_license_key_batch_stats)
 		opsAdmin.GET("/license-key-batches/stats/by-source", RoleRequired(RoleMarketing), api_admin_license_key_batch_stats_by_source)

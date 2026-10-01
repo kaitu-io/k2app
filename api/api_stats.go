@@ -93,6 +93,7 @@ func api_stats_ingest(c *gin.Context) {
 
 	// Insert app opens
 	if len(req.AppOpens) > 0 {
+		brand := string(ReqBrand(c))
 		records := make([]StatAppOpen, len(req.AppOpens))
 		for i, e := range req.AppOpens {
 			records[i] = StatAppOpen{
@@ -101,6 +102,7 @@ func api_stats_ingest(c *gin.Context) {
 				OS:         e.OS,
 				AppVersion: e.AppVersion,
 				Locale:     e.Locale,
+				Brand:      brand,
 			}
 		}
 		if err := tx.Create(&records).Error; err != nil {

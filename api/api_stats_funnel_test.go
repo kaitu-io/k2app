@@ -292,3 +292,28 @@ func TestStatsIngest_FunnelCountsTowardLimit(t *testing.T) {
 	assert.EqualValues(t, ErrorInvalidArgument, sfCode(t, w))
 	assert.Len(t, sfRows(t, m), 0)
 }
+
+// app-open 行带上请求品牌（活跃留存按品牌过滤靠它）。
+func TestStatsIngest_AppOpenStampsBrand(t *testing.T) {
+	skipIfNoConfig(t)
+	hash := generateId("sf-open")
+	t.Cleanup(func() { db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}) })
+	post := func(brandHeader string) {
+		t.Helper()
+		req := NewTestRequest("POST", "/api/stats/events").WithBody(map[string]any{"app_opens": []map[string]any{{
+			"device_hash": hash, "os": "macos", "app_version": "0.4.0", "created_at": time.Now().UTC().Format(time.RFC3339),
+		}}})
+		if brandHeader != "" {
+			req = req.WithHeader("X-K2-Brand", brandHeader)
+		}
+		assert.EqualValues(t, ErrorNone, sfCode(t, req.Execute(statsFunnelRouter())))
+	}
+	post("overleap")
+	post("")
+
+	var rows []StatAppOpen
+	require.NoError(t, db.Get().Where("device_hash = ?", hash).Order("id ASC").Find(&rows).Error)
+	require.Len(t, rows, 2)
+	assert.Equal(t, "overleap", rows[0].Brand)
+	assert.Equal(t, "kaitu", rows[1].Brand, "no header / unknown host resolves to the default brand")
+}
