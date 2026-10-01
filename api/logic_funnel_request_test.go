@@ -29,6 +29,12 @@ func TestParseFunnelLocation(t *testing.T) {
 			assert.Equal(t, c.camp, ca)
 		})
 	}
+	// 无前导斜杠 → "/"；完整 URL 只保留 path；非法 UTF-8 被清洗
+	p0, _, _, _ := parseFunnelLocation("pricing", "", "h")
+	assert.Equal(t, "/", p0)
+	p1, _, _, _ := parseFunnelLocation("https://x.example/y", "", "h")
+	assert.Equal(t, "/y", p1)
+	assert.Equal(t, "ab", funnelTruncate("a\xffb", 10))
 	long := "/" + strings.Repeat("a", 400) + "?utm_source=" + strings.Repeat("b", 100)
 	p, s, _, _ := parseFunnelLocation(long, "", "h")
 	assert.Len(t, p, 255)

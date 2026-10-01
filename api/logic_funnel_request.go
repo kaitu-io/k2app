@@ -3,6 +3,7 @@ package center
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -11,6 +12,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+	db "github.com/wordgate/qtoolkit/db"
 )
 
 const (
@@ -58,9 +61,15 @@ func setFunnelSidCookie(c *gin.Context, value string) {
 	c.SetCookie(CookieFunnelSid, value, funnelSidMaxAge, "/", "", isSecure, true)
 }
 
+func funnelGPC(c *gin.Context) bool { return c.GetHeader("Sec-GPC") == "1" }
+
 // ensureFunnelSid: 有合法 sid 返回之；optout / GPC / 未启用 → ""；否则新建并 Set-Cookie。
 func ensureFunnelSid(c *gin.Context) string {
 	if !funnelEnabled() {
+		return ""
+	}
+	// GPC：即使已有合法 sid 也不使用（不删 cookie），事件按无 anon 记录。
+	if funnelGPC(c) {
 		return ""
 	}
 	sid, optedOut := readFunnelSid(c)
@@ -70,29 +79,79 @@ func ensureFunnelSid(c *gin.Context) string {
 	if sid != "" {
 		return sid
 	}
-	if c.GetHeader("Sec-GPC") == "1" {
-		return ""
-	}
 	sid = newFunnelSid()
 	setFunnelSidCookie(c, sid)
 	return sid
 }
 
-// funnelSilentUserID: 静默取登录用户，绝不 abort。无凭据时不调 ReqUser（避免刷日志）；
+// funnelSilentUserID: 只读解析登录用户，绝不写 cookie、绝不写 DB、绝不 abort，
+// 无效凭据不打 Info/Warn。不走 ReqUser —— 那条路径会滑动续期 cookie、刷新设备信息、刷日志。
 // 用户品牌与请求品牌不符按匿名处理。
 func funnelSilentUserID(c *gin.Context) uint64 {
-	tok, _ := c.Cookie(CookieAccessToken)
-	if tok == "" && c.GetHeader("Authorization") == "" {
+	token, _ := c.Cookie(CookieAccessToken)
+	if token == "" {
+		if h := c.GetHeader("Authorization"); strings.HasPrefix(h, "Bearer ") {
+			token = strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
+		}
+	}
+	if token == "" {
 		return 0
 	}
-	u := ReqUser(c)
-	if u == nil || u.Brand != string(ReqBrand(c)) {
+	claims := &TokenClaims{}
+	parsed, err := jwt.ParseWithClaims(token, claims, func(*jwt.Token) (interface{}, error) {
+		return []byte(configJwt(c).Secret), nil
+	})
+	if err != nil || !parsed.Valid || claims.Type != TokenTypeAccess || claims.UserID == 0 {
 		return 0
 	}
-	return u.ID
+	var user User
+	if claims.DeviceID == "" {
+		if db.Get().First(&user, claims.UserID).Error != nil {
+			return 0
+		}
+	} else {
+		var device Device
+		if db.Get().Preload("User").Where("udid = ? AND user_id = ?", claims.DeviceID, claims.UserID).First(&device).Error != nil ||
+			device.TokenIssueAt != claims.TokenIssueAt || device.User == nil {
+			return 0
+		}
+		user = *device.User
+	}
+	if user.Brand != string(ReqBrand(c)) {
+		return 0
+	}
+	return user.ID
+}
+
+func stripHostPort(h string) string {
+	h = strings.ToLower(h)
+	if host, _, err := net.SplitHostPort(h); err == nil {
+		return host
+	}
+	return h
+}
+
+// funnelRefererSameSite: Referer 的 host 等于请求 Host（直连）或请求品牌的站点域名
+// （官网经 Next.js rewrite 到 API，此时 Host 是 API 域名）。返回 Referer 的原始 Host。
+func funnelRefererSameSite(c *gin.Context, referer string) (string, bool) {
+	r, err := url.Parse(referer)
+	if err != nil || r.Host == "" {
+		return "", false
+	}
+	h := stripHostPort(r.Host)
+	if h == stripHostPort(c.Request.Host) {
+		return r.Host, true
+	}
+	for _, bh := range ReqBrand(c).Config().Hosts {
+		if h == strings.ToLower(bh) {
+			return r.Host, true
+		}
+	}
+	return "", false
 }
 
 func funnelTruncate(s string, n int) string {
+	s = strings.ToValidUTF8(s, "")
 	if len(s) <= n {
 		return s
 	}
@@ -129,7 +188,11 @@ func parseFunnelLocation(u, referer, host string) (path, utmSource, utmMedium, u
 	if parsed == nil {
 		return "", "", "", ""
 	}
-	path = funnelTruncate(stripFunnelLocale(parsed.Path), funnelPathMaxLen)
+	p := parsed.Path
+	if !strings.HasPrefix(p, "/") {
+		p = "/"
+	}
+	path = funnelTruncate(stripFunnelLocale(p), funnelPathMaxLen)
 	q := parsed.Query()
 	return path,
 		funnelTruncate(q.Get("utm_source"), funnelUtmMaxLen),
@@ -200,12 +263,24 @@ func sanitizeRefHost(r string) string {
 	return funnelTruncate(h, 128)
 }
 
-// funnelIPLimiter: 每 IP 每分钟固定窗口；结构照 telemetry.go 的 ruleMissIPLimiter。
+// funnelIPLimiter: 固定窗口计数；结构照 telemetry.go 的 ruleMissIPLimiter，
+// 但 map 有硬上限（满了之后新 key 共用一个溢出桶），过期桶每窗口最多清扫一次。
+//
+// 已知局限：IP 来自 c.ClientIP()，在可信代理未配置前取自客户端可控的头，可被伪造以绕过
+// 单 IP 限额；因此另有与 IP 无关的全进程上限 funnelPxGlobal 兜底。
 type funnelIPLimiter struct {
-	mu      sync.Mutex
-	limit   int
-	buckets map[string]*ruleMissBucket
+	mu        sync.Mutex
+	limit     int
+	buckets   map[string]*ruleMissBucket
+	lastSweep time.Time
 }
+
+const (
+	funnelLimiterMaxKeys = 20000
+	funnelLimiterWindow  = time.Minute
+	funnelOverflowKey    = "\x00overflow"
+	funnelPxGlobalPerMin = 6000
+)
 
 func newFunnelIPLimiter(limit int) *funnelIPLimiter {
 	return &funnelIPLimiter{limit: limit, buckets: make(map[string]*ruleMissBucket)}
@@ -215,7 +290,8 @@ func (l *funnelIPLimiter) Allow(ip string) bool {
 	now := time.Now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if len(l.buckets) > 1024 {
+	if now.Sub(l.lastSweep) >= funnelLimiterWindow {
+		l.lastSweep = now
 		for k, v := range l.buckets {
 			if now.After(v.resetAt) {
 				delete(l.buckets, k)
@@ -223,8 +299,12 @@ func (l *funnelIPLimiter) Allow(ip string) bool {
 		}
 	}
 	b, ok := l.buckets[ip]
+	if !ok && len(l.buckets) >= funnelLimiterMaxKeys {
+		ip = funnelOverflowKey
+		b, ok = l.buckets[ip]
+	}
 	if !ok || now.After(b.resetAt) {
-		l.buckets[ip] = &ruleMissBucket{resetAt: now.Add(time.Minute), count: 1}
+		l.buckets[ip] = &ruleMissBucket{resetAt: now.Add(funnelLimiterWindow), count: 1}
 		return true
 	}
 	if b.count >= l.limit {
@@ -238,7 +318,15 @@ func (l *funnelIPLimiter) Allow(ip string) bool {
 func (l *funnelIPLimiter) reset() {
 	l.mu.Lock()
 	l.buckets = make(map[string]*ruleMissBucket)
+	l.lastSweep = time.Time{}
 	l.mu.Unlock()
 }
 
-var funnelPxLimiter = newFunnelIPLimiter(funnelPxPerMin)
+var (
+	funnelPxLimiter = newFunnelIPLimiter(funnelPxPerMin)
+	funnelPxGlobal  = newFunnelIPLimiter(funnelPxGlobalPerMin)
+)
+
+func funnelPxAllow(ip string) bool {
+	return funnelPxLimiter.Allow(ip) && funnelPxGlobal.Allow("*")
+}

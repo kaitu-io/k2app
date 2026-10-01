@@ -25,7 +25,7 @@ func writePxGIF(c *gin.Context) {
 func api_funnel_px(c *gin.Context) {
 	defer writePxGIF(c)
 
-	if !funnelEnabled() || !funnelPxLimiter.Allow(c.ClientIP()) {
+	if !funnelEnabled() || !funnelPxAllow(c.ClientIP()) {
 		return
 	}
 	device, osName, isBot := classifyUserAgent(c.GetHeader("User-Agent"))
@@ -42,7 +42,11 @@ func api_funnel_px(c *gin.Context) {
 	if uid != 0 && anon != "" {
 		linkFunnelIdentity(c, "sid", anon, uid, brand)
 	}
-	path, us, um, uc := parseFunnelLocation(c.Query("u"), c.GetHeader("Referer"), c.Request.Host)
+	refHostForMatch := c.Request.Host
+	if h, ok := funnelRefererSameSite(c, c.GetHeader("Referer")); ok {
+		refHostForMatch = h
+	}
+	path, us, um, uc := parseFunnelLocation(c.Query("u"), c.GetHeader("Referer"), refHostForMatch)
 	funnelEnqueue(FunnelEvent{
 		OccurredAt:  time.Now(),
 		Brand:       string(brand),
@@ -67,7 +71,8 @@ func api_funnel_px(c *gin.Context) {
 func api_funnel_px_optout(c *gin.Context) {
 	setFunnelSidCookie(c, funnelSidOptOut)
 	dest := "/"
-	if r, err := url.Parse(c.GetHeader("Referer")); err == nil && r.Host != "" && r.Host == c.Request.Host {
+	if _, ok := funnelRefererSameSite(c, c.GetHeader("Referer")); ok {
+		r, _ := url.Parse(c.GetHeader("Referer"))
 		p := r.EscapedPath()
 		// 只接受单斜杠开头的站内路径，杜绝 //host 形式的开放重定向。
 		if strings.HasPrefix(p, "/") && !strings.HasPrefix(p, "//") && !strings.Contains(p, `\`) {

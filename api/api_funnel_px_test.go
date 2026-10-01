@@ -30,7 +30,9 @@ func pxRouter() *gin.Engine {
 func pxMarker(t *testing.T) string {
 	t.Helper()
 	funnelPxLimiter.reset()
+	funnelPxGlobal.reset()
 	t.Cleanup(funnelPxLimiter.reset)
+	t.Cleanup(funnelPxGlobal.reset)
 	m := fmt.Sprintf("tpx%d", time.Now().UnixNano())
 	t.Cleanup(func() { db.Get().Where("plan = ?", m).Delete(&FunnelEvent{}) })
 	return m
@@ -76,6 +78,9 @@ func TestPx_SetsSidAndRecords(t *testing.T) {
 	assert.Contains(t, sc, "HttpOnly")
 	assert.Contains(t, sc, "SameSite=Lax")
 	assert.Contains(t, sc, "Max-Age=34560000")
+	assert.Contains(t, sc, "Path=/")
+	assert.NotContains(t, sc, "Domain")
+	assert.NotContains(t, sc, "Secure")
 	rows := pxRows(t, m)
 	require.Len(t, rows, 1)
 	assert.Equal(t, "/pricing", rows[0].Path)
@@ -213,4 +218,154 @@ func TestPxOptOut_SetsCookieAndRedirects(t *testing.T) {
 
 	none := NewTestRequest("GET", "http://kaitu.test/api/px/optout").Execute(r)
 	assert.Equal(t, "/", none.Header().Get("Location"))
+}
+
+func TestPx_SecureCookieBehindHTTPS(t *testing.T) {
+	skipIfNoConfig(t)
+	m := pxMarker(t)
+	w := pxReq(m, "pricing_view").WithHeader("X-Forwarded-Proto", "https").Execute(pxRouter())
+	assert.Contains(t, strings.Join(w.Header().Values("Set-Cookie"), ";"), "Secure")
+	pxRows(t, m)
+}
+
+func TestPx_GPC_IgnoresExistingSid(t *testing.T) {
+	skipIfNoConfig(t)
+	m := pxMarker(t)
+	user := CreateTestUser(t)
+	tok := GenerateTestToken(user.ID, "", time.Hour)
+	sid := newFunnelSid()
+	t.Cleanup(func() { db.Get().Where("anon_id = ?", sid).Delete(&FunnelIdentity{}) })
+	w := pxReq(m, "pricing_view").WithHeader("Sec-GPC", "1").WithCookie("sid", sid).
+		WithCookie(CookieAccessToken, tok).Execute(pxRouter())
+	assertGIF(t, w)
+	assert.Empty(t, w.Header().Values("Set-Cookie"))
+	rows := pxRows(t, m)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "", rows[0].AnonID)
+	var n int64
+	require.NoError(t, db.Get().Model(&FunnelIdentity{}).Where("anon_id = ?", sid).Count(&n).Error)
+	assert.Equal(t, int64(0), n)
+}
+
+func TestPx_NearExpiryToken_NoAuthSideEffects(t *testing.T) {
+	skipIfNoConfig(t)
+	m := pxMarker(t)
+	user := CreateTestUser(t)
+	tok := GenerateTestToken(user.ID, "", 24*time.Hour) // < 7d renewal threshold
+	w := pxReq(m, "pricing_view").WithCookie(CookieAccessToken, tok).Execute(pxRouter())
+	assertGIF(t, w)
+	for _, c := range w.Result().Cookies() {
+		assert.NotEqual(t, CookieAccessToken, c.Name)
+		assert.NotEqual(t, CookieCSRFToken, c.Name)
+	}
+	rows := pxRows(t, m)
+	require.Len(t, rows, 1)
+	assert.Equal(t, user.ID, rows[0].UserID)
+	t.Cleanup(func() { db.Get().Where("user_id = ?", user.ID).Delete(&FunnelIdentity{}) })
+}
+
+func TestPx_BadCredentials_Anonymous(t *testing.T) {
+	skipIfNoConfig(t)
+	cases := map[string]func(*TestRequest) *TestRequest{
+		"garbage cookie": func(r *TestRequest) *TestRequest { return r.WithCookie(CookieAccessToken, "not.a.jwt") },
+		"basic auth":     func(r *TestRequest) *TestRequest { return r.WithHeader("Authorization", "Basic xyz") },
+		"garbage bearer": func(r *TestRequest) *TestRequest { return r.WithBearerToken("zzz") },
+	}
+	for name, mod := range cases {
+		t.Run(name, func(t *testing.T) {
+			m := pxMarker(t)
+			w := mod(pxReq(m, "pricing_view")).Execute(pxRouter())
+			assertGIF(t, w)
+			rows := pxRows(t, m)
+			require.Len(t, rows, 1)
+			assert.Equal(t, uint64(0), rows[0].UserID)
+		})
+	}
+}
+
+func TestPx_BearerWebToken_Resolves(t *testing.T) {
+	skipIfNoConfig(t)
+	m := pxMarker(t)
+	user := CreateTestUser(t)
+	t.Cleanup(func() { db.Get().Where("user_id = ?", user.ID).Delete(&FunnelIdentity{}) })
+	w := pxReq(m, "pricing_view").WithBearerToken(GenerateTestToken(user.ID, "", time.Hour)).Execute(pxRouter())
+	assertGIF(t, w)
+	rows := pxRows(t, m)
+	require.Len(t, rows, 1)
+	assert.Equal(t, user.ID, rows[0].UserID)
+}
+
+func TestPx_RefererFallback_BehindRewrite(t *testing.T) {
+	skipIfNoConfig(t)
+	m := pxMarker(t)
+	// Host 是 API 域名，品牌经头到达，Referer 是品牌站点域名。
+	w := NewTestRequest("GET", "http://api.internal.test/api/px?e=pricing_view&p="+m).
+		WithHeader("User-Agent", pxDesktopUA).WithHeader("X-K2-Brand", "overleap").
+		WithHeader("Referer", "https://overleap.io/ja/pricing").Execute(pxRouter())
+	assertGIF(t, w)
+	rows := pxRows(t, m)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "/pricing", rows[0].Path)
+
+	m2 := pxMarker(t)
+	NewTestRequest("GET", "http://api.internal.test/api/px?e=pricing_view&p="+m2).
+		WithHeader("User-Agent", pxDesktopUA).WithHeader("X-K2-Brand", "overleap").
+		WithHeader("Referer", "https://evil.example/ja/pricing").Execute(pxRouter())
+	rows = pxRows(t, m2)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "", rows[0].Path)
+}
+
+func TestPxOptOut_BehindRewrite(t *testing.T) {
+	r := pxRouter()
+	w := NewTestRequest("GET", "http://api.internal.test/api/px/optout").
+		WithHeader("X-K2-Brand", "overleap").WithHeader("Referer", "https://www.overleap.io:443/en-GB/privacy").Execute(r)
+	assert.Equal(t, "/en-GB/privacy", w.Header().Get("Location"))
+	f := NewTestRequest("GET", "http://api.internal.test/api/px/optout").
+		WithHeader("X-K2-Brand", "overleap").WithHeader("Referer", "https://kaitu.io/en-GB/privacy").Execute(r)
+	assert.Equal(t, "/", f.Header().Get("Location"))
+}
+
+func TestFunnelLimiter_WindowReset(t *testing.T) {
+	l := newFunnelIPLimiter(2)
+	assert.True(t, l.Allow("a"))
+	assert.True(t, l.Allow("a"))
+	assert.False(t, l.Allow("a"))
+	l.buckets["a"].resetAt = time.Now().Add(-time.Second)
+	assert.True(t, l.Allow("a"))
+}
+
+func TestFunnelLimiter_CapOverflowSharesBucket(t *testing.T) {
+	l := newFunnelIPLimiter(2)
+	for i := 0; i < funnelLimiterMaxKeys; i++ {
+		l.buckets[fmt.Sprintf("k%d", i)] = &ruleMissBucket{resetAt: time.Now().Add(time.Minute), count: 1}
+	}
+	l.lastSweep = time.Now()
+	assert.True(t, l.Allow("new1"))
+	assert.True(t, l.Allow("new2"))
+	assert.False(t, l.Allow("new3")) // 溢出桶共享限额
+	assert.Equal(t, funnelLimiterMaxKeys+1, len(l.buckets))
+	assert.True(t, l.Allow("k0")) // 既有 key 不受影响
+}
+
+func TestFunnelLimiter_SweepsExpiredOncePerWindow(t *testing.T) {
+	l := newFunnelIPLimiter(2)
+	l.buckets["old"] = &ruleMissBucket{resetAt: time.Now().Add(-time.Second), count: 1}
+	l.lastSweep = time.Now()
+	l.Allow("x")
+	assert.Contains(t, l.buckets, "old") // 窗口内不清扫
+	l.lastSweep = time.Now().Add(-2 * time.Minute)
+	l.Allow("y")
+	assert.NotContains(t, l.buckets, "old")
+}
+
+func TestFunnelPxGlobalCeiling(t *testing.T) {
+	funnelPxLimiter.reset()
+	funnelPxGlobal.reset()
+	t.Cleanup(funnelPxLimiter.reset)
+	t.Cleanup(funnelPxGlobal.reset)
+	for i := 0; i < funnelPxGlobalPerMin; i++ {
+		require.True(t, funnelPxAllow(fmt.Sprintf("ip%d", i)))
+	}
+	assert.False(t, funnelPxAllow("another"))
 }
