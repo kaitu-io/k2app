@@ -57,21 +57,21 @@ export const statsTools: ToolRegistration[] = [
 
   defineApiTool({
     name: 'funnel_paths',
-    description: 'List the registered conversion funnel keys (path keys, brand-agnostic) that can be passed to funnel.',
+    description: 'List the registered conversion funnel keys (path keys, brand-agnostic) that can be passed to funnel, plus groupDims — the only values funnel accepts as group_by.',
     group: 'stats',
     path: '/app/stats/funnels',
   }),
 
   defineApiTool({
     name: 'funnel',
-    description: 'Get conversion funnel step counts for a funnel key, optionally narrowed by brand and date range and grouped by a dimension.',
+    description: 'Get conversion funnel step counts for a funnel key, optionally narrowed by brand and date range and grouped by a dimension. The range is from..to with `to` inclusive, at most 90 days. group_by must be one of the groupDims returned by funnel_paths.',
     group: 'stats',
     params: {
       key: z.string().regex(/^[a-z_]+$/).describe('Funnel key from funnel_paths (lowercase letters and underscores)'),
       brand: brandFilter,
       from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Start date YYYY-MM-DD'),
-      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('End date YYYY-MM-DD'),
-      group_by: z.string().optional().describe('Dimension to group by (e.g. source)'),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('End date YYYY-MM-DD, inclusive; from..to spans at most 90 days'),
+      group_by: z.string().optional().describe('Dimension to group by — must be one of the groupDims returned by funnel_paths (e.g. source)'),
     },
     path: (p) => `/app/stats/funnels/${encodeURIComponent(String(p.key))}`,
     mapQuery: (p) => {
@@ -87,12 +87,12 @@ export const statsTools: ToolRegistration[] = [
 
   defineApiTool({
     name: 'retention',
-    description: 'Get monthly cohort retention for paid users or active users.',
+    description: 'Get cohort retention. metric=paid: monthly first-payment cohorts with M1/M3/M6/M12 retention (coverage-based). metric=active: daily first-seen cohorts with D1/D7/D30 retention. `months` applies to paid only.',
     group: 'stats',
     params: {
       brand: brandFilter,
       metric: z.enum(['paid', 'active']).describe('Retention metric'),
-      months: z.number().int().min(1).max(24).optional().describe('Number of monthly cohorts (1-24)'),
+      months: z.number().int().min(1).max(24).optional().describe('Number of monthly cohorts (1-24); paid only, ignored for active'),
     },
     path: '/app/stats/retention',
   }),
