@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"os/exec"
 	"testing"
 	"time"
@@ -127,7 +128,7 @@ func TestPCB_UDP_WildcardFallback(t *testing.T) {
 }
 
 func TestPCB_UnknownNetworkMisses(t *testing.T) {
-	if got := pcbFindProcess("icmp", netip.MustParseAddr("127.0.0.1"), 1); got != "" {
+	if got, _ := pcbFindProcess("icmp", netip.MustParseAddr("127.0.0.1"), 1); got != "" {
 		t.Fatalf("unknown network returned %q, want empty", got)
 	}
 }
@@ -202,7 +203,7 @@ func TestFindProcess_PCB_OtherProcess(t *testing.T) {
 	ra := peer.RemoteAddr().(*net.TCPAddr)
 	s := NewDarwinProcessSearcher()
 	s.attribBackend = backendPCB
-	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("127.0.0.1"), uint16(ra.Port))
+	name, path := s.FindProcessPath("tcp", netip.MustParseAddr("127.0.0.1"), uint16(ra.Port))
 
 	want := pcbProcName(int32(cmd.Process.Pid))
 	if want == "" {
@@ -210,6 +211,30 @@ func TestFindProcess_PCB_OtherProcess(t *testing.T) {
 	}
 	if name != want {
 		t.Fatalf("helper socket attributed as %q, want %q", name, want)
+	}
+
+	// The path is what match.app_paths compares against a bundle directory:
+	// it must be the helper's real executable, absolute, with symlinks
+	// resolved the way the kernel reports them (the test binary lives under
+	// /var → /private/var).
+	wantPath, err := filepath.EvalSymlinks(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wantPath, err = filepath.Abs(wantPath); err != nil {
+		t.Fatal(err)
+	}
+	if path != wantPath {
+		t.Fatalf("helper executable path = %q, want %q", path, wantPath)
+	}
+
+	// FindProcess is the same lookup minus the path — and the second call is
+	// served from the cache, which must hand back the path too.
+	if n2, _, _ := s.FindProcess("tcp", netip.MustParseAddr("127.0.0.1"), uint16(ra.Port)); n2 != want {
+		t.Errorf("FindProcess = %q, want %q", n2, want)
+	}
+	if _, p2 := s.FindProcessPath("tcp", netip.MustParseAddr("127.0.0.1"), uint16(ra.Port)); p2 != wantPath {
+		t.Errorf("cached path = %q, want %q", p2, wantPath)
 	}
 }
 

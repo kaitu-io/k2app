@@ -124,6 +124,8 @@ type ClientTunnel struct {
 	proxyDialFail  atomic.Int64
 	directDialOK   atomic.Int64
 	directDialFail atomic.Int64
+
+	appStats appStats // per-process routing outcomes, drained by the heartbeat
 }
 
 // DialOutcomes is a cumulative count of outbound dial attempts since tunnel
@@ -397,6 +399,7 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 
 	outbound := t.outbound(action)
 	if outbound == nil {
+		t.appStats.record(connMeta.ProcessName, nil, dest, nil)
 		return // reject: silently drop
 	}
 
@@ -417,6 +420,7 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 
 	remote, err := outbound.DialTCP(t.ctx, dest, earlyData)
 	t.recordDial(outbound, err)
+	t.appStats.record(connMeta.ProcessName, outbound, dest, err)
 	if err != nil {
 		slog.Warn("tunnel: TCP dial failed", "dest", dest, "outbound", outbound.Name(), "err", err)
 		return
@@ -572,10 +576,12 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 
 	outbound := t.outbound(action)
 	if outbound == nil {
+		t.appStats.record(connMeta.ProcessName, nil, dest, nil)
 		return // reject: silently drop
 	}
 	remote, destAddr, err := outbound.DialUDP(t.ctx, dest)
 	t.recordDial(outbound, err)
+	t.appStats.record(connMeta.ProcessName, outbound, dest, err)
 	if err != nil {
 		slog.Warn("tunnel: UDP dial failed", "dest", dest, "outbound", outbound.Name(), "err", err)
 		return
@@ -642,7 +648,13 @@ func (t *ClientTunnel) routeConn(dest, network string, srcAddr *net.UDPAddr) (ru
 			}
 		}
 		if !attributed {
-			meta.ProcessName, meta.PackageName, meta.InstallerPackage = t.processSearcher.FindProcess(network, meta.SrcIP, uint16(srcAddr.Port))
+			if ps, ok := t.processSearcher.(provider.ProcessPathSearcher); ok {
+				// Desktop: the executable's path identifies the app it belongs
+				// to (match.app_paths), the name stays for match.apps.
+				meta.ProcessName, meta.ProcessPath = ps.FindProcessPath(network, meta.SrcIP, uint16(srcAddr.Port))
+			} else {
+				meta.ProcessName, meta.PackageName, meta.InstallerPackage = t.processSearcher.FindProcess(network, meta.SrcIP, uint16(srcAddr.Port))
+			}
 		}
 	}
 

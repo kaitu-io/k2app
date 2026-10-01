@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"log/slog"
 	"runtime"
 	"strings"
 
@@ -65,19 +66,65 @@ func expandRegionRouteDisk(b *krs.DiskBundle, target rule.Target) *rule.RouteEnt
 	}
 }
 
-// expandAppsRoute converts one logical `match.apps` route into a meta-only
-// rule.RouteEntry by platform-dispatching the globs. darwin/windows/android
-// route through buildMetaEntryFromApps; linux is built inline (krs has no
-// Linux field); iOS falls through to nil (sandbox precludes attribution).
+// expandAppsRoute converts one logical "these applications" route —
+// `match.apps` name globs plus `match.app_paths` directories — into a single
+// meta-only rule.RouteEntry. Names and paths land in the same entry, so they
+// are OR'd (rule.matchMeta's process group): a process matches by living
+// inside one of the directories OR by its name.
 //
-// Returns nil when globs is empty or the runtime platform has no place
-// to put them (iOS on desktop; nothing on linux server).
-func expandAppsRoute(globs []string, target rule.Target) *rule.RouteEntry {
+// Globs are platform-dispatched: darwin/windows/android route through
+// buildMetaEntryFromApps; linux is built inline (krs has no Linux field);
+// iOS contributes nothing (sandbox precludes attribution).
+//
+// Returns nil when neither half contributes a criterion on this platform.
+func expandAppsRoute(globs, paths []string, target rule.Target) *rule.RouteEntry {
+	return expandAppsRouteFor(runtime.GOOS, globs, paths, target)
+}
+
+// expandAppsRouteFor is the goos-parameterized body of expandAppsRoute, split
+// out so tests can exercise every platform branch on any host.
+func expandAppsRouteFor(goos string, globs, paths []string, target rule.Target) *rule.RouteEntry {
+	entry := appGlobsEntryFor(goos, globs, target)
+	if prefixes := appPathPrefixesFor(goos, paths); len(prefixes) > 0 {
+		if entry == nil {
+			entry = &rule.RouteEntry{Target: target}
+		}
+		entry.ProcessPathPrefixes = prefixes
+	}
+	return entry
+}
+
+// appPathPrefixesFor compiles match.app_paths into ProcessPathPrefixes.
+// Desktop platforms only — the mobile searchers report no executable path.
+// Directories rule.NormalizeProcessDir rejects (relative, a filesystem or
+// drive root) are dropped with a warning rather than becoming a prefix that
+// captures every process.
+func appPathPrefixesFor(goos string, paths []string) []string {
+	switch goos {
+	case "darwin", "windows", "linux":
+	default:
+		return nil
+	}
+	var out []string
+	for _, p := range paths {
+		dir := rule.NormalizeProcessDir(goos, p)
+		if dir == "" {
+			slog.Warn("engine: match.app_paths entry is not a usable directory — skipped", "path", p)
+			continue
+		}
+		out = append(out, dir)
+	}
+	return out
+}
+
+// appGlobsEntryFor builds the name half of an apps route. Returns nil when
+// globs is empty or the platform has no place to put them.
+func appGlobsEntryFor(goos string, globs []string, target rule.Target) *rule.RouteEntry {
 	if len(globs) == 0 {
 		return nil
 	}
 	apps := &krs.AppPatterns{}
-	switch runtime.GOOS {
+	switch goos {
 	case "darwin":
 		apps.Darwin.Apps = append([]string(nil), globs...)
 	case "windows":
@@ -104,7 +151,7 @@ func expandAppsRoute(globs []string, target rule.Target) *rule.RouteEntry {
 	default:
 		return nil
 	}
-	return buildMetaEntryFromApps(apps, target)
+	return buildMetaEntryFromAppsFor(goos, apps, target)
 }
 
 // buildMetaEntryFromApps assembles a meta-only RouteEntry from the

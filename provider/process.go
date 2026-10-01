@@ -20,6 +20,21 @@ func (NopProcessSearcher) FindProcess(string, netip.Addr, uint16) (string, strin
 	return "", "", ""
 }
 
+// ProcessPathSearcher is an optional extension of ProcessSearcher for the
+// desktop platforms, where "which application is this" is better answered by
+// where the executable lives than by what it is called: every process of an
+// app sits under its bundle / install directory, while basenames collide
+// across apps (every Chromium app ships chrome_crashpad_handler, JDK-bundling
+// apps ship java).
+//
+// processPath is the executable's full path in rule.NormalizeProcessPath form
+// for the platform (Windows: lowercased), or "" when it cannot be read —
+// callers then fall back to name matching alone.
+type ProcessPathSearcher interface {
+	ProcessSearcher
+	FindProcessPath(network string, srcIP netip.Addr, srcPort uint16) (processName, processPath string)
+}
+
 // ConnProcessSearcher is an optional extension of ProcessSearcher for
 // platforms whose kernel attribution needs the full connection 4-tuple —
 // Android's ConnectivityManager.getConnectionOwnerUid takes (protocol,

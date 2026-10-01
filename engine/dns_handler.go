@@ -87,6 +87,13 @@ func (h *dnsHandler) queryMeta(network string, src *net.UDPAddr, dest string) *r
 			return meta
 		}
 	}
+	if ps, ok := h.searcher.(provider.ProcessPathSearcher); ok {
+		name, path := ps.FindProcessPath(network, addr.Unmap(), uint16(src.Port))
+		if name == "" && path == "" {
+			return nil
+		}
+		return &rule.ConnMeta{ProcessName: name, ProcessPath: path}
+	}
 	name, pkg, installer := h.searcher.FindProcess(network, addr.Unmap(), uint16(src.Port))
 	if name == "" && pkg == "" && installer == "" {
 		return nil

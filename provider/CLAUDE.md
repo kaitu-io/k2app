@@ -124,6 +124,15 @@ compatible), with a `proc_pidpath`-basename fallback for cross-uid callers
 without root. One fetch+scan measures **~230 µs p50** on a loaded desktop, so
 there is no snapshot, TTL, or throttle — and that is the point:
 
+**Name AND path.** Desktop searchers implement `ProcessPathSearcher`
+(`FindProcessPath` → name + executable path): macOS `proc_pidpath`, Windows
+`QueryFullProcessImageName` (lowercased). The path is what `match.app_paths`
+matches — "is this process inside that app's bundle / install dir" — because
+basenames collide across apps (`chrome_crashpad_handler`, `java`) while
+directories do not. Name and path always describe the SAME pid
+(`pcbOwnerIdent`). The lsof fallback backend has no path; rules then match by
+name only.
+
 **The owner is `so_e_pid` when set, else `so_last_pid`** (`pcbOwnerName`).
 System services open sockets *on an app's behalf* and stamp the app in
 `so_e_pid` (SOF_DELEGATED; 0 on ordinary sockets). Measured 2026-09:

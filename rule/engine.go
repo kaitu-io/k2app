@@ -29,6 +29,12 @@ type RouteEntry struct {
 	PackageNamePrefixes []string
 	InstallerPackages   []string
 
+	// ProcessPathPrefixes: directories in NormalizeProcessDir form (trailing
+	// separator, so "/Applications/A.app/" never matches "A.app2"). Part of
+	// the process group: a connection whose ConnMeta.ProcessPath starts with
+	// any of them hits, exactly like a ProcessNames hit.
+	ProcessPathPrefixes []string
+
 	NetworkMatch string // "tcp" or "udp" (empty = any)
 	IPIsPrivate  bool   // match private/loopback IPs
 
@@ -62,7 +68,7 @@ func (r *RouteEntry) hasHostCriteria() bool {
 func (r *RouteEntry) hasMetaCriteria() bool {
 	return len(r.ProcessNames) > 0 || len(r.PackageNames) > 0 ||
 		len(r.ProcessNamePrefixes) > 0 || len(r.PackageNamePrefixes) > 0 ||
-		len(r.InstallerPackages) > 0 ||
+		len(r.InstallerPackages) > 0 || len(r.ProcessPathPrefixes) > 0 ||
 		r.NetworkMatch != "" || len(r.SrcCIDRs) > 0 || len(r.PortRanges) > 0 ||
 		len(r.Protocols) > 0
 }
@@ -77,7 +83,7 @@ func (r *RouteEntry) hasMetaCriteria() bool {
 func (r *RouteEntry) hasProcessCriteria() bool {
 	return len(r.ProcessNames) > 0 || len(r.PackageNames) > 0 ||
 		len(r.ProcessNamePrefixes) > 0 || len(r.PackageNamePrefixes) > 0 ||
-		len(r.InstallerPackages) > 0
+		len(r.InstallerPackages) > 0 || len(r.ProcessPathPrefixes) > 0
 }
 
 // Engine is the multi-ruleset matching engine.
@@ -331,7 +337,7 @@ func (e *Engine) matchHostLocked(host string) Target {
 // supersedes IP-level caching: a process bypass must fire regardless of which
 // route the destination's domain happened to resolve to via DNS.
 func (e *Engine) matchConnLocked(host string, meta ConnMeta) Target {
-	hasAnyMeta := meta.ProcessName != "" || meta.PackageName != "" || len(meta.PackageNames) > 0 || meta.Network != ""
+	hasAnyMeta := meta.ProcessName != "" || meta.ProcessPath != "" || meta.PackageName != "" || len(meta.PackageNames) > 0 || meta.Network != ""
 	if hasAnyMeta {
 		for i := range e.routes {
 			r := &e.routes[i]
@@ -461,7 +467,7 @@ func packageEntryHit(r *RouteEntry, pkg string) bool {
 // matchMeta checks connection metadata against route criteria.
 //
 // Semantics:
-//   - Process group   = ProcessNames ∪ ProcessNamePrefixes (any hit)
+//   - Process group   = ProcessNames ∪ ProcessNamePrefixes ∪ ProcessPathPrefixes (any hit)
 //   - Package group   = PackageNames ∪ PackageNamePrefixes ∪ InstallerPackages (any hit)
 //   - Network         = exact match if set
 //
@@ -486,19 +492,30 @@ func matchMeta(r *RouteEntry, meta ConnMeta) bool {
 		}
 	}
 
-	hasProcess := len(r.ProcessNames) > 0 || len(r.ProcessNamePrefixes) > 0
+	hasProcess := len(r.ProcessNames) > 0 || len(r.ProcessNamePrefixes) > 0 || len(r.ProcessPathPrefixes) > 0
 	if hasProcess {
-		if meta.ProcessName == "" {
+		if meta.ProcessName == "" && meta.ProcessPath == "" {
 			return false
 		}
 		hit := false
-		for _, p := range r.ProcessNames {
-			if processNameMatches(p, meta.ProcessName) {
-				hit = true
-				break
+		if meta.ProcessPath != "" {
+			for _, p := range r.ProcessPathPrefixes {
+				// Both sides are in NormalizeProcessPath form.
+				if strings.HasPrefix(meta.ProcessPath, p) {
+					hit = true
+					break
+				}
 			}
 		}
-		if !hit && len(r.ProcessNamePrefixes) > 0 {
+		if !hit && meta.ProcessName != "" {
+			for _, p := range r.ProcessNames {
+				if processNameMatches(p, meta.ProcessName) {
+					hit = true
+					break
+				}
+			}
+		}
+		if !hit && meta.ProcessName != "" && len(r.ProcessNamePrefixes) > 0 {
 			lower := strings.ToLower(meta.ProcessName)
 			for _, p := range r.ProcessNamePrefixes {
 				// Entries pre-lowercased at compile time.

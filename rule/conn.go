@@ -7,6 +7,13 @@ import "net/netip"
 // Zero value = no metadata available (all criteria pass).
 type ConnMeta struct {
 	ProcessName      string // OS process name (empty = unknown)
+
+	// ProcessPath is the full path of the owning process's executable, in
+	// the platform's canonical form (see NormalizeProcessPath) — desktop
+	// only, empty when the searcher cannot report it. Matched by
+	// RouteEntry.ProcessPathPrefixes: "is this process inside that app's
+	// bundle / install directory".
+	ProcessPath string
 	PackageName      string // Android package name (empty = not Android or unknown)
 	InstallerPackage string // Android only: package that installed PackageName (empty otherwise)
 
