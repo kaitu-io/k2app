@@ -115,34 +115,37 @@ func funnelEventQuery(ctx context.Context, brand Brand, hasBrand bool, from, to 
 	return q.Where("brand IN ?", names)
 }
 
-// funnelRecordColumns：funnelRecord 用得到的列（少取几列，贴着事件数上限装载时省内存）。
-var funnelRecordColumns = []string{
-	"occurred_at", "event", "surface", "anon_id", "user_id", "plan", "source", "channel", "path",
-	"ref_host", "utm_source", "utm_campaign", "country", "device", "os", "app_version",
-}
+// funnelRecordSelect：funnelRecord 用得到的列（少取几列，贴着事件数上限装载时省内存）。
+// occurred_at 取别名 at，逐行直接扫进 funnelRecord（列名 ↔ 字段名按 GORM 命名规则对应）。
+const funnelRecordSelect = "occurred_at AS at, event, surface, anon_id, user_id, plan, source, channel, path, " +
+	"ref_host, utm_source, utm_campaign, country, device, os, app_version"
 
 // loadFunnelEvents 加载 [from, to) 内给定事件名的行为事件，按时间升序。
+// 流式逐行扫进 funnelRecord（不先物化成 []FunnelEvent 再拷一遍）；行数超过 funnelQueryMaxEvents
+// 立即停止并返回 errFunnelRangeTooLarge——调用方先 count 过，这里兜住 count 之后新写入的行。
 func loadFunnelEvents(ctx context.Context, brand Brand, hasBrand bool, from, to time.Time, events []string) ([]funnelRecord, error) {
 	if len(events) == 0 {
 		return nil, nil
 	}
-	var rows []FunnelEvent
-	if err := funnelEventQuery(ctx, brand, hasBrand, from, to, events).
-		Select(funnelRecordColumns).
-		Order("occurred_at ASC, id ASC").Find(&rows).Error; err != nil {
+	q := funnelEventQuery(ctx, brand, hasBrand, from, to, events).
+		Select(funnelRecordSelect).
+		Order("occurred_at ASC, id ASC")
+	rows, err := q.Rows()
+	if err != nil {
 		return nil, err
 	}
-	recs := make([]funnelRecord, 0, len(rows))
-	for i := range rows {
-		r := &rows[i]
-		rec := funnelRecord{
-			At: r.OccurredAt, Event: r.Event, Surface: r.Surface, AnonID: r.AnonID, UserID: r.UserID,
-			Plan: r.Plan, Source: r.Source, Channel: r.Channel, Path: r.Path, RefHost: r.RefHost,
-			UtmSource: r.UtmSource, UtmCampaign: r.UtmCampaign, Country: r.Country,
-			Device: r.Device, OS: r.OS, AppVersion: r.AppVersion,
+	defer rows.Close()
+	var recs []funnelRecord
+	for rows.Next() {
+		if int64(len(recs)) >= funnelQueryMaxEvents {
+			return nil, errFunnelRangeTooLarge
 		}
-		if r.AnonID != "" {
-			switch r.Surface {
+		var rec funnelRecord
+		if err := q.ScanRows(rows, &rec); err != nil {
+			return nil, err
+		}
+		if rec.AnonID != "" {
+			switch rec.Surface {
 			case FunnelSurfaceWeb:
 				rec.AnonKind = funnelAnonKindSid
 			case FunnelSurfaceApp:
@@ -150,6 +153,9 @@ func loadFunnelEvents(ctx context.Context, brand Brand, hasBrand bool, from, to 
 			}
 		}
 		recs = append(recs, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return recs, nil
 }

@@ -335,9 +335,24 @@ func loadActiveOpens(ctx context.Context, brand Brand, hasBrand bool, since time
 		}
 		return q
 	}
+	inRange := func() *gorm.DB { return scope().Where("reported_at >= ?", since) }
+
+	// 规模闸门：区间内的打开记录数超过上限就不装载。
+	var n int64
+	if err := inRange().Count(&n).Error; err != nil {
+		return nil, err
+	}
+	if n > funnelActiveMaxOpens {
+		return nil, errFunnelRangeTooLarge
+	}
+
 	// 区间之前就出现过的设备不属于这些群组。带品牌过滤时，无品牌的历史行（brand 列上线前）也算
 	// "出现过"——否则上线那天整个存量装机都会被当成新设备。
-	seenBefore := db.Get().WithContext(ctx).Model(&StatAppOpen{}).Where("reported_at < ?", since)
+	// 只问「区间内出现的设备里哪些更早就有记录」：结果集以区间内的设备数为界（已被上面的闸门限住），
+	// 而不是保留期内全部老设备。
+	seenBefore := db.Get().WithContext(ctx).Model(&StatAppOpen{}).
+		Where("reported_at < ?", since).
+		Where("device_hash IN (?)", inRange().Select("device_hash"))
 	if hasBrand {
 		seenBefore = seenBefore.Where("brand IN ?", []string{string(brand), ""})
 	}
@@ -349,17 +364,31 @@ func loadActiveOpens(ctx context.Context, brand Brand, hasBrand bool, since time
 	for _, h := range old {
 		exclude[h] = true
 	}
-	var rows []activeOpenRow
-	if err := scope().Select("device_hash, reported_at as at").
-		Where("reported_at >= ?", since).Scan(&rows).Error; err != nil {
+
+	// 流式装载；闸门之后新写入的行也守住上限。
+	q := inRange().Select("device_hash, reported_at as at")
+	rows, err := q.Rows()
+	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 	opens := make(map[string][]time.Time)
-	for i := range rows {
-		if exclude[rows[i].DeviceHash] {
+	var loaded int64
+	for rows.Next() {
+		if loaded++; loaded > funnelActiveMaxOpens {
+			return nil, errFunnelRangeTooLarge
+		}
+		var row activeOpenRow
+		if err := q.ScanRows(rows, &row); err != nil {
+			return nil, err
+		}
+		if exclude[row.DeviceHash] {
 			continue
 		}
-		opens[rows[i].DeviceHash] = append(opens[rows[i].DeviceHash], rows[i].At)
+		opens[row.DeviceHash] = append(opens[row.DeviceHash], row.At)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return opens, nil
 }

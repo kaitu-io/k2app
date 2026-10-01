@@ -282,7 +282,9 @@ func TestAdminFunnel_RangeTooLarge(t *testing.T) {
 	funnelQueryMaxEvents = n - 1
 	resp := afGet(t, r, key, afPath("web_purchase", day, ""))
 	assert.Equal(t, int(ErrorInvalidArgument), resp.Code)
-	assert.Equal(t, "range too large", resp.Message)
+	assert.Equal(t, funnelRangeTooLargeMsg, resp.Message)
+	assert.Contains(t, resp.Message, "range too large")
+	assert.Contains(t, resp.Message, "shorten the date range", "the message must tell the operator what to do")
 
 	funnelQueryMaxEvents = n // 恰好等于上限不算超
 	resp = afGet(t, r, key, afPath("web_purchase", day, ""))
@@ -290,7 +292,61 @@ func TestAdminFunnel_RangeTooLarge(t *testing.T) {
 }
 
 func TestAdminFunnel_MaxEventsDefault(t *testing.T) {
-	assert.EqualValues(t, 2_000_000, funnelQueryMaxEvents)
+	assert.EqualValues(t, 500_000, funnelQueryMaxEvents)
+	assert.EqualValues(t, 2_000_000, funnelActiveMaxOpens)
+}
+
+// 装载器自己也守上限（count 与 load 之间新写入的行不能把内存顶穿）：流式读到超过上限就停。
+func TestLoadFunnelEvents_StopsPastCap(t *testing.T) {
+	skipIfNoConfig(t)
+	day := afDay(t)
+	afSeedWebPurchase(t, day) // 3 行行为事件
+	names := []string{"pricing_view", "plan_select", "checkout_start"}
+	ctx := context.Background()
+	n, err := countFunnelEvents(ctx, BrandKaitu, false, day, day.AddDate(0, 0, 1), names)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, n, int64(3))
+	old := funnelQueryMaxEvents
+	t.Cleanup(func() { funnelQueryMaxEvents = old })
+
+	funnelQueryMaxEvents = n - 1
+	recs, err := loadFunnelEvents(ctx, BrandKaitu, false, day, day.AddDate(0, 0, 1), names)
+	assert.ErrorIs(t, err, errFunnelRangeTooLarge)
+	assert.Nil(t, recs)
+
+	funnelQueryMaxEvents = n
+	recs, err = loadFunnelEvents(ctx, BrandKaitu, false, day, day.AddDate(0, 0, 1), names)
+	require.NoError(t, err)
+	assert.Len(t, recs, int(n))
+}
+
+// 活跃留存：区间内的打开记录数超过上限 → 同一个 "range too large" 错误，不装载。
+func TestAdminRetention_ActiveOpensCapped(t *testing.T) {
+	skipIfNoConfig(t)
+	hash := generateId("af-cap")
+	t.Cleanup(func() { factsCleanup(t, db.Get().Where("device_hash = ?", hash).Delete(&StatAppOpen{}).Error) })
+	at := time.Now().UTC().Add(-time.Hour)
+	for i := 0; i < 2; i++ {
+		require.NoError(t, db.Get().Create(&StatAppOpen{
+			DeviceHash: hash, OS: "test", AppVersion: "0", Brand: "overleap", CreatedAt: at, ReportedAt: at,
+		}).Error)
+	}
+	old := funnelActiveMaxOpens
+	t.Cleanup(func() { funnelActiveMaxOpens = old })
+	r, key := adminFunnelRouter(), afMarketingKey(t)
+
+	funnelActiveMaxOpens = 1
+	resp := afGet(t, r, key, "/app/stats/retention?metric=active&brand=overleap")
+	assert.Equal(t, int(ErrorInvalidArgument), resp.Code)
+	assert.Equal(t, funnelRangeTooLargeMsg, resp.Message)
+
+	since := funnelUTCDay(time.Now()).AddDate(0, 0, -(activeCohortDays - 1))
+	_, err := loadActiveOpens(context.Background(), BrandOverleap, true, since)
+	assert.ErrorIs(t, err, errFunnelRangeTooLarge)
+
+	funnelActiveMaxOpens = old
+	resp = afGet(t, r, key, "/app/stats/retention?metric=active&brand=overleap")
+	assert.Equal(t, int(ErrorNone), resp.Code, resp.Message)
 }
 
 func TestAdminFunnel_RequiresMarketingRole(t *testing.T) {

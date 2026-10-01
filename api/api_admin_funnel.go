@@ -1,6 +1,7 @@
 package center
 
 import (
+	"errors"
 	"strconv"
 	"time"
 
@@ -16,8 +17,19 @@ const (
 	funnelQueryMaxDays     = 90 // 含首尾
 )
 
-// funnelQueryMaxEvents：一次查询最多装载的行为事件数（装载前先 count）。变量仅为测试调低。
-var funnelQueryMaxEvents int64 = 2_000_000
+// 管理端查询的内存上界。变量仅为测试调低。
+//   - funnelQueryMaxEvents：一次漏斗查询最多装载的行为事件数（装载前先 count，流式装载时再守一次）。
+//   - funnelActiveMaxOpens：一次活跃留存查询最多装载的打开记录数。
+var (
+	funnelQueryMaxEvents int64 = 500_000
+	funnelActiveMaxOpens int64 = 2_000_000
+)
+
+// funnelRangeTooLargeMsg：超过上界时给运营看的话，要说清楚怎么办。
+const funnelRangeTooLargeMsg = "range too large: shorten the date range or filter by brand"
+
+// errFunnelRangeTooLarge：装载器发现数据量超过上界。处理函数把它翻成 funnelRangeTooLargeMsg。
+var errFunnelRangeTooLarge = errors.New("funnel: range too large")
 
 const (
 	retentionNotePaid        = "留存 = 到检查点时仍在付费覆盖期内，按付款记录推算（赠送、试用的时长不计）；检查点为首次付款满 N 个月后再加 7 天宽限；已退款的订单不提供覆盖；银行卡自动续费订阅渠道的退款暂未反映。"
@@ -127,10 +139,15 @@ func api_admin_get_funnel(c *gin.Context) {
 	}
 	if n > funnelQueryMaxEvents {
 		log.Warnf(c, "funnel %s range too large: %d events", path.Key, n)
-		Error(c, ErrorInvalidArgument, "range too large")
+		Error(c, ErrorInvalidArgument, funnelRangeTooLargeMsg)
 		return
 	}
 	recs, err := loadFunnelEvents(c, brand, hasBrand, from, loadTo, behaviors)
+	if errors.Is(err, errFunnelRangeTooLarge) {
+		log.Warnf(c, "funnel %s range too large (grew past the cap while loading)", path.Key)
+		Error(c, ErrorInvalidArgument, funnelRangeTooLargeMsg)
+		return
+	}
 	if err != nil {
 		log.Errorf(c, "failed to load funnel events for %s: %v", path.Key, err)
 		Error(c, ErrorSystemError, "failed to compute funnel")
@@ -186,6 +203,11 @@ func api_admin_get_retention(c *gin.Context) {
 	case "active":
 		since := funnelUTCDay(now).AddDate(0, 0, -(activeCohortDays - 1))
 		opens, err := loadActiveOpens(c, brand, hasBrand, since)
+		if errors.Is(err, errFunnelRangeTooLarge) {
+			log.Warnf(c, "active retention range too large (more than %d opens)", funnelActiveMaxOpens)
+			Error(c, ErrorInvalidArgument, funnelRangeTooLargeMsg)
+			return
+		}
 		if err != nil {
 			log.Errorf(c, "failed to load active cohorts: %v", err)
 			Error(c, ErrorSystemError, "failed to compute retention")
