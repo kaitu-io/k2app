@@ -35,6 +35,14 @@ func funnelViewsWeb() []string {
 	return out
 }
 
+// funnelPaidFacts：购买路径的末步。首购与续费都算「付款」——回头客走完同一条路径时
+// 产生的是 renewal 而不是 purchase，只认 purchase 会把他们全算成流失。
+var funnelPaidFacts = []string{funnelFactPurchase, funnelFactRenewal}
+
+// 步骤只能用「走到下一步的人一定会产生」的事件（挂载即发的 view、唯一往前走的按钮、事实）。
+// 可选交互不能当步骤：plan_select 照常注册和记录，但默认选中套餐的人从不发它，所以不在任何路径里。
+// 发射点登记在 logic_funnel_paths_test.go 的 funnelStepEmitSites。
+//
 // funnelPathRegistry 有序。funnelEventRegistry 在同包的变量初始化里先于它完成（Go 按依赖排序）。
 var funnelPathRegistry = []funnelPath{
 	{
@@ -43,13 +51,12 @@ var funnelPathRegistry = []funnelPath{
 		Steps: []funnelStep{
 			{Label: "访问", Events: funnelViewsWeb(), Surface: FunnelSurfaceWeb},
 			{Label: "看定价", Events: []string{"pricing_view"}},
-			{Label: "选套餐", Events: []string{"plan_select"}, Surface: FunnelSurfaceWeb},
 			{Label: "发起支付", Events: []string{"checkout_start"}},
-			{Label: "付款", Events: []string{funnelFactPurchase}},
+			{Label: "付款", Events: funnelPaidFacts},
 		},
 	},
 	{
-		Key: "web_checkout_auth", Title: "网站结账登录", Question: "结账前的验证码登录这一关，流失了多少人？",
+		Key: "web_checkout_auth", Title: "网站结账登录", Question: "在购买页内联登录（发验证码 → 登录）的人里，有多少走到了发起支付？只量购买页上的内联登录，不含站内其它登录入口。",
 		Window: 24 * time.Hour,
 		Steps: []funnelStep{
 			{Label: "发验证码", Events: []string{"auth_code_sent"}, Surface: FunnelSurfaceWeb},
@@ -82,9 +89,8 @@ var funnelPathRegistry = []funnelPath{
 		Window: 7 * funnelDay,
 		Steps: []funnelStep{
 			{Label: "付费墙", Events: []string{"paywall_view"}},
-			{Label: "选套餐", Events: []string{"plan_select"}, Surface: FunnelSurfaceApp},
 			{Label: "发起支付", Events: []string{"checkout_start"}},
-			{Label: "付款", Events: []string{funnelFactPurchase}},
+			{Label: "付款", Events: funnelPaidFacts},
 		},
 	},
 	{
@@ -92,7 +98,8 @@ var funnelPathRegistry = []funnelPath{
 		Window: 7 * funnelDay,
 		Steps: []funnelStep{
 			{Label: "付款", Events: []string{funnelFactPurchase}},
-			{Label: "连上", Events: []string{"first_connect_ok"}},
+			// 老用户续费 / 换设备后不会再有 first_connect_ok：任何一次连上都算激活。
+			{Label: "连上", Events: []string{"first_connect_ok", "connect_ok"}},
 		},
 	},
 }

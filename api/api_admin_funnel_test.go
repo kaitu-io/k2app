@@ -50,6 +50,7 @@ func afDay(t *testing.T) time.Time {
 
 // afSeedWebPurchase：一个匿名访客（sid）在 day 当天走完 web_purchase 全程：
 // pricing_view → plan_select → checkout_start，登录关联到用户，用户有一张已付订单。
+// plan_select 照常记录但不是路径的一步（默认选中套餐的人不发它）。
 func afSeedWebPurchase(t *testing.T, day time.Time) (marker string) {
 	t.Helper()
 	marker = generateId("af")
@@ -133,7 +134,7 @@ func TestAdminFunnels_List(t *testing.T) {
 
 	first := data.Paths[0]
 	require.Equal(t, "web_purchase", first.Key)
-	assert.Equal(t, []string{"访问", "看定价", "选套餐", "发起支付", "付款"}, first.Steps)
+	assert.Equal(t, []string{"访问", "看定价", "发起支付", "付款"}, first.Steps)
 	require.NotNil(t, first.WindowHours)
 	assert.InDelta(t, 336, *first.WindowHours, 1e-9)
 
@@ -150,11 +151,11 @@ func TestAdminFunnel_EndToEnd(t *testing.T) {
 	day := afDay(t)
 	marker := afSeedWebPurchase(t, day)
 	r, key := adminFunnelRouter(), afMarketingKey(t)
-	all := []int{1, 1, 1, 1, 1}
+	all := []int{1, 1, 1, 1}
 
 	assert.Equal(t, all, afMarkerSteps(t, r, key, day, marker, ""))
 
-	// 不分组的总数：这一天只有本测试的行时恰好是五个 1。
+	// 不分组的总数：这一天只有本测试的行时恰好是四个 1。
 	resp := afGet(t, r, key, afPath("web_purchase", day, ""))
 	assert.Equal(t, all, afCounts(t, resp))
 	var res FunnelResult
@@ -170,6 +171,26 @@ func TestAdminFunnel_EndToEnd(t *testing.T) {
 	resp = afGet(t, r, key, afPath("web_purchase", day, "&groupBy=channel"))
 	require.NoError(t, json.Unmarshal(resp.Data, &res))
 	assert.Contains(t, res.Groups, FunnelGroup{Key: OrderChannelNextpay, Steps: all})
+}
+
+// 回头客：这一天的付款是续费（renewal）而不是首购，末步照样算到达；
+// 而且他根本没发过 plan_select（默认选中的套餐）。
+func TestAdminFunnel_RenewalCompletesPurchasePath(t *testing.T) {
+	skipIfNoConfig(t)
+	day := afDay(t)
+	marker := generateId("af")
+	user := factsUser(t, BrandKaitu, day.AddDate(0, -2, 0))
+	t.Cleanup(func() { factsCleanup(t, db.Get().Where("plan = ?", marker).Delete(&FunnelEvent{}).Error) })
+	for i, ev := range []string{"pricing_view", "checkout_start"} {
+		require.NoError(t, db.Get().Create(&FunnelEvent{
+			OccurredAt: day.Add(time.Duration(i+1) * time.Hour), Brand: string(BrandKaitu),
+			Surface: FunnelSurfaceWeb, Event: ev, UserID: user.ID, Plan: marker, UtmCampaign: marker,
+		}).Error)
+	}
+	factsOrder(t, user.ID, OrderChannelNextpay, factsPaid(day.AddDate(0, -1, 0))) // 首购，早于区间
+	factsOrder(t, user.ID, OrderChannelNextpay, factsPaid(day.Add(5*time.Hour)))  // 续费
+
+	assert.Equal(t, []int{1, 1, 1, 1}, afMarkerSteps(t, adminFunnelRouter(), afMarketingKey(t), day, marker, ""))
 }
 
 // 后续步骤的界是"进入时刻 + 时间窗"，不是 `to`：付款落在 `to` 之后几天也要算进来，
@@ -188,7 +209,7 @@ func TestAdminFunnel_LaterStepsLoadedPastTo(t *testing.T) {
 	}
 	factsOrder(t, user.ID, OrderChannelNextpay, factsPaid(day.AddDate(0, 0, 10)))
 
-	assert.Equal(t, []int{1, 1, 1, 1, 1}, afMarkerSteps(t, adminFunnelRouter(), afMarketingKey(t), day, marker, ""))
+	assert.Equal(t, []int{1, 1, 1, 1}, afMarkerSteps(t, adminFunnelRouter(), afMarketingKey(t), day, marker, ""))
 }
 
 func TestAdminFunnel_BrandFilter(t *testing.T) {
@@ -198,8 +219,8 @@ func TestAdminFunnel_BrandFilter(t *testing.T) {
 	r, key := adminFunnelRouter(), afMarketingKey(t)
 
 	assert.Nil(t, afMarkerSteps(t, r, key, day, marker, "&brand=overleap"))
-	assert.Equal(t, []int{1, 1, 1, 1, 1}, afMarkerSteps(t, r, key, day, marker, "&brand=kaitu"))
-	assert.Equal(t, []int{0, 0, 0, 0, 0}, afCounts(t, afGet(t, r, key, afPath("web_purchase", day, "&brand=overleap"))),
+	assert.Equal(t, []int{1, 1, 1, 1}, afMarkerSteps(t, r, key, day, marker, "&brand=kaitu"))
+	assert.Equal(t, []int{0, 0, 0, 0}, afCounts(t, afGet(t, r, key, afPath("web_purchase", day, "&brand=overleap"))),
 		"nothing of the other brand exists on this historical day")
 }
 
@@ -247,13 +268,13 @@ func TestAdminFunnel_RangeTooLarge(t *testing.T) {
 	skipIfNoConfig(t)
 	day := afDay(t)
 	afSeedWebPurchase(t, day)
-	// 上限按这次查询实际会数到的行数来设（装载区间 = 当天 + 时间窗），不假设区间里只有本测试的 3 行。
+	// 上限按这次查询实际会数到的行数来设（装载区间 = 当天 + 时间窗），不假设区间里只有本测试的行。
 	path, ok := funnelPathByKey("web_purchase")
 	require.True(t, ok)
 	behaviors, _ := path.eventNames()
 	n, err := countFunnelEvents(context.Background(), BrandKaitu, false, day, day.AddDate(0, 0, 1).Add(path.Window), behaviors)
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, n, int64(3))
+	require.GreaterOrEqual(t, n, int64(2))
 	old := funnelQueryMaxEvents
 	t.Cleanup(func() { funnelQueryMaxEvents = old })
 	r, key := adminFunnelRouter(), afMarketingKey(t)
