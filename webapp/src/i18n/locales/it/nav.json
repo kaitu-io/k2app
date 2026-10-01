@@ -1,0 +1,50 @@
+{
+  "appBar": {
+    "refreshAuth": "Aggiorna Autorizzazione"
+  },
+  "navigation": {
+    "dashboard": "Dashboard",
+    "discover": "Scopri",
+    "account": "Account",
+    "router": "Router",
+    "devices": "Dispositivi",
+    "faq": "Feedback",
+    "purchase": "Acquista",
+    "activate": "Attiva",
+    "invite": "Invita",
+    "retailer": "Rivenditore",
+    "proHistory": "Cronologia Autorizzazioni",
+    "help": "Aiuto"
+  },
+  "appBarConnector": {
+    "disconnecting": "Disconnessione in corso",
+    "connecting": "Connessione in corso",
+    "antiClickProtection": "Protezione anti-spam: Operazioni troppo frequenti",
+    "refreshDataFailed": "Impossibile aggiornare i dati dopo l'operazione:",
+    "connectionOperationFailed": "Operazione di connessione fallita:",
+    "disconnectingTooltip": "Disconnessione in corso...",
+    "connectingTooltip": "Connessione in corso...",
+    "clickToDisconnect": "Clicca per disconnettere",
+    "clickToConnect": "Clicca per connettere",
+    "anonymous": "Anonimo",
+    "disconnect": "Disconnetti",
+    "connect": "Connetti",
+    "panel": "Pannello",
+    "noNodeSelected": "Per favore seleziona un nodo prima di connetterti"
+  },
+  "appBarMembership": {
+    "trial": "Prova",
+    "standard": "Standard",
+    "expired": "Scaduto",
+    "proTrial": "Pro Prova",
+    "recharge": "Ricarica",
+    "firstOrderPending": "Primo Ordine In Sospeso",
+    "unlimitedTrial": "Prova Illimitata",
+    "completePurchase": "Completa Acquisto"
+  },
+  "layout": {
+    "deviceInstall": "Installa su Altri Dispositivi",
+    "troubleshooting": "Troubleshooting",
+    "accountAndSettings": "Account e Impostazioni"
+  }
+}

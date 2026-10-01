@@ -1,0 +1,17 @@
+{
+  "primary": "منوی اصلی",
+  "account": "حساب کاربری",
+  "login": "ورود",
+  "language": "زبان",
+  "searchLanguage": "جستجوی زبان",
+  "noLanguageFound": "زبانی پیدا نشد",
+  "footer": {
+    "tagline": "یک VPN خصوصی. بدون ثبت فعالیت، سریع روی هر شبکه.",
+    "company": "شرکت",
+    "privacy": "سیاست حفظ حریم خصوصی",
+    "terms": "شرایط استفاده از خدمات",
+    "deleteAccount": "حذف حساب کاربری",
+    "contact": "تماس با ما",
+    "copyright": "© {year} {legalName}. تمامی حقوق محفوظ است."
+  }
+}

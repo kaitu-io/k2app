@@ -1,0 +1,28 @@
+{
+  "feedback": {
+    "buttonLabel": "Laporkan Isu",
+    "buttonTooltip": "Menghadapi masalah? Klik untuk melaporkan",
+    "dialogTitle": "Laporkan Isu",
+    "dialogDescription": "Klik serahkan akan mengumpulkan log apl untuk membantu kami mengenal pasti dan menyelesaikan isu. Log tidak mengandungi maklumat sensitif.",
+    "submitButton": "Serahkan Maklum Balas",
+    "uploading": "Memuat naik log...",
+    "uploadSuccess": "Maklum Balas Diserahkan",
+    "uploadSuccessDescription": "Terima kasih atas maklum balas anda! Kami akan menanganinya tidak lama lagi.",
+    "uploadError": "Penyerahan Gagal",
+    "uploadFailed": "Gagal memuat naik log. Sila cuba lagi kemudian.",
+    "platformNotSupported": "Ciri ini belum disokong pada platform semasa",
+    "disconnectFeedback": {
+      "title": "Bagaimana sambungan anda?",
+      "thankYou": "Terima kasih atas maklum balas anda",
+      "detailTitle": "Apa yang salah? (pilihan)",
+      "submit": "Serahkan",
+      "tags": {
+        "slow": "Perlahan",
+        "cantConnect": "Tidak dapat menyambung",
+        "frequentDrops": "Putus kerap",
+        "contentBlocked": "Laman/video disekat",
+        "other": "Lain"
+      }
+    }
+  }
+}

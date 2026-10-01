@@ -1,0 +1,17 @@
+{
+  "primary": "Navigasi utama",
+  "account": "Akaun",
+  "login": "Log masuk",
+  "language": "Bahasa",
+  "searchLanguage": "Cari bahasa",
+  "noLanguageFound": "Tiada bahasa yang sepadan",
+  "footer": {
+    "tagline": "VPN peribadi. Tanpa log, laju di mana-mana rangkaian.",
+    "company": "Syarikat",
+    "privacy": "Dasar Privasi",
+    "terms": "Terma Perkhidmatan",
+    "deleteAccount": "Padam akaun anda",
+    "contact": "Hubungi kami",
+    "copyright": "© {year} {legalName}. Hak cipta terpelihara."
+  }
+}

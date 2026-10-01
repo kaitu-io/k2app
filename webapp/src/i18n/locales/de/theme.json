@@ -1,0 +1,9 @@
+{
+  "theme": {
+    "switchToLight": "Hell",
+    "switchToDark": "Dunkel",
+    "light": "Heller Modus",
+    "dark": "Dunkler Modus",
+    "system": "Systemeinstellung folgen"
+  }
+}

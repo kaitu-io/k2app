@@ -38,7 +38,10 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const SRC = path.resolve(here, '../..');
 const LOCALES = path.resolve(here, '../locales');
 const OVERLAY = path.resolve(SRC, 'brands', brandConfig.id, 'locales');
-const LANGS = ['en-AU', 'en-GB', 'en-US', 'ja', 'zh-CN', 'zh-HK', 'zh-TW'] as const;
+// Every locale dir on disk; locale-coverage.test.ts pins that set to the language registry.
+const LANGS = fs
+  .readdirSync(LOCALES)
+  .filter((d) => fs.statSync(path.join(LOCALES, d)).isDirectory());
 
 function deepMerge(a: any, b: any): any {
   const out = { ...a };
@@ -143,7 +146,7 @@ describe('static i18n keys resolve in every locale', () => {
     expect(REFS.some((r) => r.key === 'common:common.cancel')).toBe(true);
   });
 
-  it('every statically-written key exists in all 7 locales', () => {
+  it('every statically-written key exists in every locale', () => {
     const missing: string[] = [];
     for (const ref of REFS) {
       const dotted = ref.key.includes(':') ? ref.key.slice(ref.key.indexOf(':') + 1) : ref.key;

@@ -1,0 +1,79 @@
+{
+  "startup": {
+    "activeUsers": "Utenti Attivi",
+    "certified": "Certificato ISO 27001",
+    "uptime": "Tempo di Attività",
+    "authSuccess": "Autenticazione riuscita, stato accesso utente aggiornato",
+    "deviceCanDirectLogin": "Il dispositivo può accedere direttamente",
+    "deviceCannotDirectLogin": "Il dispositivo non può accedere direttamente",
+    "checkDeviceLoginFailed": "Impossibile verificare lo stato di accesso del dispositivo",
+    "deviceLoginFailed": "Accesso dispositivo fallito",
+    "deviceLoginFailedRetry": "Accesso dispositivo fallito, per favore riprova",
+    "deviceLoginSuccess": "Accesso dispositivo riuscito",
+    "pleaseEnterInviteCode": "Per favore inserisci il codice di invito",
+    "registrationFailed": "Registrazione Fallita",
+    "registrationFailedRetry": "Registrazione fallita, per favore riprova",
+    "newDevice": "Nuovo Dispositivo",
+    "freeDeviceRegistrationFailed": "Registrazione dispositivo gratuito fallita",
+    "inviteCodeIncorrect": "Codice di invito errato",
+    "inviteCodeInvalidOrExpired": "Codice di invito non valido o scaduto",
+    "getInviteCodeInfoFailed": "Impossibile ottenere le informazioni del codice di invito",
+    "haveProAccount": "Hai già un account Pro?",
+    "loginProAccountDesc": "Accedi al tuo account Pro e goditi tutte le funzionalità",
+    "deviceAlreadyRegistered": "Rilevato che questo dispositivo ha un account registrato",
+    "deviceReady": "Dispositivo pronto per l'accesso",
+    "deviceReadyDesc": "Il tuo dispositivo è registrato e pronto all'uso",
+    "orEmailLogin": "O accedi con email",
+    "experienceProFeatures": "Esperienza Funzionalità Pro",
+    "enterInviteCodeDesc": "Inserisci il codice di invito per esperire le funzionalità Pro istantaneamente",
+    "inviteCode": "Codice di Invito",
+    "enterInviteCodePlaceholder": "Per favore inserisci il codice di invito (facoltativo)",
+    "youHaveGoodFriend": "🎁 Hai un amico fantastico😼",
+    "enjoyNow": "Goditi ora",
+    "days": "giorni",
+    "pro": "Pro",
+    "extraBonus": "Bonus Extra!",
+    "experience": "Esperienza {{days}} giorni",
+    "purchaseBonus": "L'acquisto ottiene {{purchaseDays}}+{{downloadDays}} giorni",
+    "buyNowExtraBonus": "Compra ora, ottieni {{days}} giorni extra",
+    "buyNowEnjoyAllPro": "Acquista ora per tutti i vantaggi Pro",
+    "experienceOnly": "Esperienza {{days}} giorni solo",
+    "experienceNow": "Esperienza Ora",
+    "or": "o",
+    "noAccountNoInviteCode": "Nessun account o codice di invito?",
+    "processing": "Elaborazione in corso...",
+    "registerNewAccount": "Registra un nuovo account direttamente"
+  },
+  "serviceStatus": {
+    "disconnected": "Servizio disconnesso, riconnessione in corso..."
+  },
+  "upgradeRequired": {
+    "title": "Per favore Aggiorna App",
+    "description": "La versione attuale è obsoleta, per favore scarica la versione più recente per continuare.",
+    "downloadButton": "Vai al Download"
+  },
+  "forceUpgrade": {
+    "title": "Versione Troppo Vecchia, Aggiornamento Richiesto",
+    "description": "La tua versione app attuale ({{currentVersion}}) non è più supportata. Per favore aggiorna alla versione {{minVersion}} o superiore per continuare.",
+    "downloadButton": "Aggiorna Ora"
+  },
+  "app": {
+    "slogan": "Servizio proxy di rete sicuro e conveniente",
+    "error": "Errore",
+    "updateNow": "Aggiorna Ora",
+    "readyToInstall": "è pronto per l'installazione",
+    "hoverForDetails": "passa il mouse per i dettagli",
+    "releaseNotes": "Note di Rilascio",
+    "newVersionAvailable": "Nuova versione {{version}} disponibile!",
+    "updating": "Aggiornamento in corso",
+    "downloadingUpdate": "Download e installazione dell'aggiornamento... {{progress}}%",
+    "errorBoundary": {
+      "title": "Errore Applicazione",
+      "description": "L'errore è stato segnalato automaticamente, lo fisseremo presto.",
+      "details": "Dettagli Errore",
+      "retry": "Riprova"
+    },
+    "installing": "Installazione in corso...",
+    "beingInstalled": "è in corso di installazione..."
+  }
+}

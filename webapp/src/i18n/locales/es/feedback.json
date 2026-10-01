@@ -1,0 +1,28 @@
+{
+  "feedback": {
+    "buttonLabel": "Reportar Problema",
+    "buttonTooltip": "¿Tienes problemas? Haz clic para reportar",
+    "dialogTitle": "Reportar Problema",
+    "dialogDescription": "Hacer clic en enviar recopilará registros de la aplicación para ayudarnos a identificar y resolver problemas. Los registros no contienen información sensible.",
+    "submitButton": "Enviar Retroalimentación",
+    "uploading": "Cargando registros...",
+    "uploadSuccess": "Retroalimentación Enviada",
+    "uploadSuccessDescription": "¡Gracias por tu retroalimentación! Lo abordaremos pronto.",
+    "uploadError": "Error en Envío",
+    "uploadFailed": "Error al cargar los registros. Por favor, intenta más tarde.",
+    "platformNotSupported": "Esta función aún no es compatible en la plataforma actual",
+    "disconnectFeedback": {
+      "title": "¿Cómo fue tu conexión?",
+      "thankYou": "Gracias por tu retroalimentación",
+      "detailTitle": "¿Qué salió mal? (opcional)",
+      "submit": "Enviar",
+      "tags": {
+        "slow": "Lento",
+        "cantConnect": "No se puede conectar",
+        "frequentDrops": "Desconexiones frecuentes",
+        "contentBlocked": "Sitios/videos bloqueados",
+        "other": "Otro"
+      }
+    }
+  }
+}

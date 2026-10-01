@@ -1,0 +1,79 @@
+{
+  "startup": {
+    "activeUsers": "Utilisateurs actifs",
+    "certified": "Certifié ISO 27001",
+    "uptime": "Disponibilité",
+    "authSuccess": "Authentification réussie, statut de connexion utilisateur mis à jour",
+    "deviceCanDirectLogin": "L'appareil peut se connecter directement",
+    "deviceCannotDirectLogin": "L'appareil ne peut pas se connecter directement",
+    "checkDeviceLoginFailed": "Échec de la vérification du statut de connexion de l'appareil",
+    "deviceLoginFailed": "Échec de la connexion de l'appareil",
+    "deviceLoginFailedRetry": "Échec de la connexion de l'appareil, veuillez réessayer",
+    "deviceLoginSuccess": "Connexion de l'appareil réussie",
+    "pleaseEnterInviteCode": "Veuillez entrer le code d'invitation",
+    "registrationFailed": "Échec de l'inscription",
+    "registrationFailedRetry": "Échec de l'inscription, veuillez réessayer",
+    "newDevice": "Nouvel appareil",
+    "freeDeviceRegistrationFailed": "Échec de l'enregistrement du dispositif gratuit",
+    "inviteCodeIncorrect": "Code d'invitation incorrect",
+    "inviteCodeInvalidOrExpired": "Code d'invitation invalide ou expiré",
+    "getInviteCodeInfoFailed": "Échec de l'obtention des informations sur le code d'invitation",
+    "haveProAccount": "Vous avez déjà un compte Pro ?",
+    "loginProAccountDesc": "Connectez-vous à votre compte Pro et profitez de toutes les fonctionnalités",
+    "deviceAlreadyRegistered": "Détecté que cet appareil a un compte enregistré",
+    "deviceReady": "Appareil prêt à se connecter",
+    "deviceReadyDesc": "Votre appareil est enregistré et prêt à utiliser",
+    "orEmailLogin": "Ou se connecter avec un e-mail",
+    "experienceProFeatures": "Découvrir les fonctionnalités Pro",
+    "enterInviteCodeDesc": "Entrez le code d'invitation pour découvrir les fonctionnalités Pro instantanément",
+    "inviteCode": "Code d'invitation",
+    "enterInviteCodePlaceholder": "Veuillez entrer le code d'invitation (facultatif)",
+    "youHaveGoodFriend": "🎁 Vous avez un ami incroyable😼",
+    "enjoyNow": "Profitez maintenant",
+    "days": "jours",
+    "pro": "Pro",
+    "extraBonus": "Bonus supplémentaire !",
+    "experience": "Essai {{days}} jours",
+    "purchaseBonus": "L'achat obtient {{purchaseDays}}+{{downloadDays}} jours",
+    "buyNowExtraBonus": "Achetez maintenant, obtenez {{days}} jours supplémentaires",
+    "buyNowEnjoyAllPro": "Acheter maintenant pour tous les avantages Pro",
+    "experienceOnly": "Essai {{days}} jours seulement",
+    "experienceNow": "Essayer maintenant",
+    "or": "ou",
+    "noAccountNoInviteCode": "Pas de compte ou code d'invitation ?",
+    "processing": "Traitement en cours...",
+    "registerNewAccount": "Enregistrer directement un nouveau compte"
+  },
+  "serviceStatus": {
+    "disconnected": "Service déconnecté, reconnexion en cours..."
+  },
+  "upgradeRequired": {
+    "title": "Veuillez mettre à jour l'application",
+    "description": "La version actuelle est obsolète, veuillez télécharger la dernière version pour continuer.",
+    "downloadButton": "Aller au téléchargement"
+  },
+  "forceUpgrade": {
+    "title": "Version trop ancienne, mise à jour requise",
+    "description": "Votre version d'application actuelle ({{currentVersion}}) n'est plus prise en charge. Veuillez mettre à jour vers la version {{minVersion}} ou ultérieure pour continuer.",
+    "downloadButton": "Mettre à jour maintenant"
+  },
+  "app": {
+    "slogan": "Service de proxy réseau sûr et pratique",
+    "error": "Erreur",
+    "updateNow": "Mettre à jour maintenant",
+    "readyToInstall": "est prêt à installer",
+    "hoverForDetails": "survolez pour plus de détails",
+    "releaseNotes": "Notes de version",
+    "newVersionAvailable": "Nouvelle version {{version}} disponible !",
+    "updating": "Mise à jour",
+    "downloadingUpdate": "Téléchargement et installation de la mise à jour... {{progress}} %",
+    "errorBoundary": {
+      "title": "Erreur d'application",
+      "description": "L'erreur a été signalée automatiquement, nous la corrigerons bientôt.",
+      "details": "Détails de l'erreur",
+      "retry": "Réessayer"
+    },
+    "installing": "Installation en cours...",
+    "beingInstalled": "est en cours d'installation..."
+  }
+}

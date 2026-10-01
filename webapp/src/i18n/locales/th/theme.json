@@ -1,0 +1,9 @@
+{
+  "theme": {
+    "switchToLight": "สว่าง",
+    "switchToDark": "มืด",
+    "light": "โหมดสว่าง",
+    "dark": "โหมดมืด",
+    "system": "ตามระบบ"
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "privateNode": {
+    "title": "Nút Riêng Biệt",
+    "manage": "Quản Lý Nút Riêng Biệt",
+    "myRouter": "Bộ Định Tuyến Của Tôi",
+    "buyLine": "Mua Một Dòng Riêng Biệt",
+    "buy": "Lấy Một Nút Riêng Biệt",
+    "region": "Vùng Nút",
+    "selectRegion": "Chọn Vùng",
+    "ipTypeLabel": "Loại IP",
+    "ipType": {
+      "residential": "IP Nhà Ở",
+      "non_residential": "IP Trung Tâm Dữ Liệu"
+    },
+    "traffic": "Lưu Lượng",
+    "trafficUsed": "{{used}} / {{total}} đã sử dụng",
+    "quota": "Chỉ Tiêu Lưu Lượng",
+    "status": {
+      "title": "Trạng Thái",
+      "pending": "Chờ Xử Lý",
+      "provisioning": "Đang Cấp Phát",
+      "active": "Hoạt Động",
+      "grace": "Thời Gian Ân Hạn",
+      "suspended": "Bị Tạm Dừng",
+      "deprovisioned": "Đã Hủy Cấp Phát",
+      "failed": "Cấp Phát Không Thành Công"
+    },
+    "expiresAt": "Hết Hạn",
+    "graceHint": "Nút của bạn đang trong thời gian ân hạn. Vui lòng gia hạn sớm để tránh bị tạm dừng.",
+    "suspendedHint": "Nút bị tạm dừng nhưng IP của nó được giữ. Nó sẽ tiếp tục hoạt động sau khi gia hạn.",
+    "nodeIp": "IP Nút",
+    "provisioningHint": "Nút của bạn đang được cấp phát. Điều này thường mất vài phút, vui lòng chờ.",
+    "empty": "Bạn chưa có nút riêng biệt nào",
+    "renew": "Gia Hạn",
+    "renewOnWebsite": "Để gia hạn, truy cập Bộ Định Tuyến Của Tôi trên trang web của chúng tôi",
+    "percentUsed": "{{percent}}% đã sử dụng",
+    "quotaExhausted": {
+      "title": "Chỉ tiêu lưu lượng hàng tháng đã được sử dụng hết",
+      "resetHint": "Đặt lại vào {{date}}",
+      "resetUnknown": "Đặt lại vào đầu chu kỳ tiếp theo",
+      "cta": "Gia hạn / Nâng cấp chỉ tiêu"
+    },
+    "router": {
+      "title": "Thêm Một Bộ Định Tuyến",
+      "intro": "Cài đặt k2r trên bộ định tuyến OpenWrt của bạn — ứng dụng sẽ tự động phát hiện nó và hiển thị dưới đây.",
+      "detected": "Bộ định tuyến được phát hiện trên mạng cục bộ của bạn:",
+      "manage": "Quản Lý Bộ Định Tuyến"
+    }
+  }
+}

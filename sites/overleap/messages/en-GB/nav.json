@@ -3,6 +3,8 @@
   "account": "Account",
   "login": "Log in",
   "language": "Language",
+  "searchLanguage": "Search languages",
+  "noLanguageFound": "No matching language",
   "footer": {
     "tagline": "A private VPN. No logs, fast on any network.",
     "company": "Company",

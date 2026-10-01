@@ -1,0 +1,50 @@
+{
+  "appBar": {
+    "refreshAuth": "รีเฟรชสิทธิ์"
+  },
+  "navigation": {
+    "dashboard": "แดชบอร์ด",
+    "discover": "ค้นพบ",
+    "account": "บัญชี",
+    "router": "เราเตอร์",
+    "devices": "อุปกรณ์",
+    "faq": "ความคิดเห็น",
+    "purchase": "ซื้อ",
+    "activate": "เปิดใช้งาน",
+    "invite": "ชวนเพื่อน",
+    "retailer": "ตัวแทนจำหน่าย",
+    "proHistory": "ประวัติการให้สิทธิ์",
+    "help": "ช่วยเหลือ"
+  },
+  "appBarConnector": {
+    "disconnecting": "กำลังตัดการเชื่อมต่อ",
+    "connecting": "กำลังเชื่อมต่อ",
+    "antiClickProtection": "ระบบป้องกันการกดซ้ำ: ดำเนินการถี่เกินไป",
+    "refreshDataFailed": "รีเฟรชข้อมูลหลังดำเนินการไม่สำเร็จ:",
+    "connectionOperationFailed": "การดำเนินการเชื่อมต่อล้มเหลว:",
+    "disconnectingTooltip": "กำลังตัดการเชื่อมต่อ...",
+    "connectingTooltip": "กำลังเชื่อมต่อ...",
+    "clickToDisconnect": "แตะเพื่อตัดการเชื่อมต่อ",
+    "clickToConnect": "แตะเพื่อเชื่อมต่อ",
+    "anonymous": "นิรนาม",
+    "disconnect": "ตัดการเชื่อมต่อ",
+    "connect": "เชื่อมต่อ",
+    "panel": "แผงควบคุม",
+    "noNodeSelected": "โปรดเลือกโหนดก่อนเชื่อมต่อ"
+  },
+  "appBarMembership": {
+    "trial": "ทดลองใช้",
+    "standard": "มาตรฐาน",
+    "expired": "หมดอายุ",
+    "proTrial": "ทดลองใช้ Pro",
+    "recharge": "เติมเงิน",
+    "firstOrderPending": "รอคำสั่งซื้อแรก",
+    "unlimitedTrial": "ทดลองใช้ไม่จำกัด",
+    "completePurchase": "ซื้อให้เสร็จสมบูรณ์"
+  },
+  "layout": {
+    "deviceInstall": "ติดตั้งบนอุปกรณ์อื่น",
+    "troubleshooting": "แก้ไขปัญหา",
+    "accountAndSettings": "บัญชีและการตั้งค่า"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "metaTitle": "내 계정",
+  "title": "내 계정",
+  "subtitle": "구독과 로그인 설정을 관리하세요.",
+  "loading": "불러오는 중",
+  "navSubscription": "구독",
+  "navSecurity": "보안",
+  "signOut": "로그아웃",
+  "subscriptionTitle": "내 구독",
+  "renewsOn": "{date}에 갱신됩니다",
+  "endsOn": "{date}에 종료됩니다",
+  "manage": "구독 관리",
+  "opening": "여는 중…",
+  "noSubscriptionTitle": "이용 중인 구독이 없습니다",
+  "noSubscription": "요금제를 선택하면 최대 5대의 기기에서 Overleap을 사용할 수 있습니다.",
+  "seePlans": "요금제 보기",
+  "activating": "구독을 활성화하는 중…",
+  "activationDelayed": "결제가 완료되었습니다. 몇 분 안에 구독이 활성화됩니다. 페이지를 새로고침하여 확인해 주세요.",
+  "downloadTitle": "준비가 끝났습니다. 앱을 받아 보세요",
+  "downloadBody": "Overleap을 설치한 뒤 이 이메일 주소로 로그인하세요.",
+  "downloadCta": "Overleap 다운로드",
+  "cancel": "취소",
+  "confirm": "저장",
+  "password": {
+    "setPassword": "비밀번호 설정",
+    "changePassword": "비밀번호 변경",
+    "newPassword": "새 비밀번호",
+    "confirmPassword": "비밀번호 확인",
+    "requirements": "{length}자 이상이어야 합니다. 흔한 단어, 키보드 배열, 반복되는 문자는 피해 주세요.",
+    "mismatch": "비밀번호가 일치하지 않습니다",
+    "setSuccess": "비밀번호가 저장되었습니다",
+    "strength": {
+      "label": "비밀번호 강도",
+      "veryWeak": "매우 약함",
+      "weak": "약함",
+      "fair": "보통",
+      "good": "좋음",
+      "strong": "강함"
+    }
+  },
+  "security": {
+    "passwordSet": "비밀번호를 설정하면 이메일과 비밀번호로 로그인할 수 있습니다. 일회용 코드도 계속 사용할 수 있습니다.",
+    "passwordChange": "비밀번호가 설정되어 있습니다. 여기에서 변경할 수 있습니다."
+  }
+}

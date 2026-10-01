@@ -1,0 +1,61 @@
+{
+  "router": {
+    "title": "Router",
+    "connected": "Connesso",
+    "disconnected": "Disconnesso",
+    "connect": "Connetti",
+    "disconnect": "Disconnetti",
+    "offline": "Impossibile raggiungere il router {{name}}. Verifica che sia online.",
+    "retry": "Riprova"
+  },
+  "setup": {
+    "title": "Configura {{name}}",
+    "intro": "Tocca il pulsante sottostante per completare la configurazione iniziale del router in un passaggio.",
+    "submit": "Avvia configurazione",
+    "error": {
+      "mint_failed": "Impossibile ottenere una credenziale di connessione. Controlla la tua rete e riprova.",
+      "key_failed": "Impossibile ottenere una chiave di controllo. Controlla la tua rete e riprova.",
+      "push_failed": "Impossibile inviare la configurazione al router. Verifica che sia online."
+    }
+  },
+  "settings": {
+    "title": "Impostazioni Router",
+    "version": "Versione firmware: {{version}}",
+    "unbind": "Scollega",
+    "unbindConfirmTitle": "Scollega questo router?",
+    "unbindConfirmBody": "Dopo lo scollegamento, questa app non sarà più in grado di controllare il router. Dovrai configurarlo di nuovo per usarlo.",
+    "unbindCancel": "Annulla",
+    "unbindConfirm": "Scollega"
+  },
+  "exclusion": {
+    "title": "Connetti entrambi i tunnel?",
+    "bodyRouter": "La VPN del tuo dispositivo è già connessa. Continuare indirizzerà il traffico attraverso entrambi i tunnel contemporaneamente — consigliamo di disconnettere prima la VPN locale.",
+    "bodyDashboard": "Il router su questa rete sta già proteggendo il tuo traffico. Continuare indirizzerà il traffico attraverso entrambi i tunnel contemporaneamente — consigliamo di disconnettere prima il router.",
+    "keep": "Mantieni entrambi",
+    "proceedRouter": "Disconnetti VPN locale e continua",
+    "proceedDashboard": "Disconnetti router e continua"
+  },
+  "takeover": {
+    "banner": "Il router su questa rete sta proteggendo il tuo traffico"
+  },
+  "legacy": {
+    "upgradeHint": "Il firmware del router rilevato è obsoleto. Aggiorna k2r sul router prima di gestirlo dall'app."
+  },
+  "slots": {
+    "title": "Linee",
+    "customName": "Nome personalizzato",
+    "unbound": "Non collegato",
+    "failClosed": "Linea giù — traffico bloccato",
+    "downFor": "Giù per {{duration}}",
+    "rename": "Rinomina Wi-Fi",
+    "renameHint": "1-32 caratteri",
+    "password": "Cambia password Wi-Fi",
+    "passwordHint": "8-63 caratteri",
+    "confirm": "Applica",
+    "cancel": "Annulla",
+    "applyFailed": "Impossibile applicare, riprova",
+    "managedByAccount": "Questo router è gestito dal suo account associato",
+    "unbindEnterpriseBody": "Lo scollegamento porterà TUTTE le linee offline. Il ripristino richiede l'assistenza dell'operatore. Continuare?",
+    "managementGroup": "Rete di gestione"
+  }
+}

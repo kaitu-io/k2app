@@ -1,0 +1,45 @@
+{
+  "metaTitle": "Akun Anda",
+  "title": "Akun Anda",
+  "subtitle": "Kelola langganan dan akses masuk Anda.",
+  "loading": "Memuat",
+  "navSubscription": "Langganan",
+  "navSecurity": "Keamanan",
+  "signOut": "Keluar",
+  "subscriptionTitle": "Langganan Anda",
+  "renewsOn": "Diperpanjang pada {date}",
+  "endsOn": "Berakhir pada {date}",
+  "manage": "Kelola langganan",
+  "opening": "Membuka…",
+  "noSubscriptionTitle": "Belum ada langganan aktif",
+  "noSubscription": "Pilih paket untuk mulai memakai Overleap di hingga lima perangkat.",
+  "seePlans": "Lihat paket",
+  "activating": "Mengaktifkan langganan Anda…",
+  "activationDelayed": "Pembayaran diterima. Langganan Anda akan aktif dalam beberapa menit — muat ulang halaman ini untuk memeriksanya.",
+  "downloadTitle": "Semua sudah siap — unduh aplikasinya",
+  "downloadBody": "Pasang Overleap dan masuk dengan alamat email ini.",
+  "downloadCta": "Unduh Overleap",
+  "cancel": "Batal",
+  "confirm": "Simpan",
+  "password": {
+    "setPassword": "Atur kata sandi",
+    "changePassword": "Ubah kata sandi",
+    "newPassword": "Kata sandi baru",
+    "confirmPassword": "Konfirmasi kata sandi",
+    "requirements": "Minimal {length} karakter. Hindari kata umum, pola keyboard, dan karakter berulang.",
+    "mismatch": "Kata sandi tidak cocok",
+    "setSuccess": "Kata sandi tersimpan",
+    "strength": {
+      "label": "Kekuatan kata sandi",
+      "veryWeak": "Sangat lemah",
+      "weak": "Lemah",
+      "fair": "Cukup",
+      "good": "Baik",
+      "strong": "Kuat"
+    }
+  },
+  "security": {
+    "passwordSet": "Atur kata sandi untuk masuk dengan email dan kata sandi. Anda tetap bisa memakai kode sekali pakai.",
+    "passwordChange": "Anda sudah mengatur kata sandi. Anda bisa mengubahnya di sini."
+  }
+}

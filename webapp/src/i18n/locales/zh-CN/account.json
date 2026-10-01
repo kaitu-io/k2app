@@ -45,6 +45,8 @@
     "quotaRouter": "路由器代理",
     "language": "语言设置",
     "selectLanguage": "选择语言",
+    "searchLanguage": "搜索语言",
+    "noLanguageFound": "没有匹配的语言",
     "wallet": "我的钱包",
     "theme": "主题设置",
     "delegate": "代付人设置",

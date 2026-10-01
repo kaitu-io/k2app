@@ -1,0 +1,184 @@
+{
+  "status": {
+    "stopped": "Dừng",
+    "connecting": "Đang kết nối...",
+    "connected": "Đã kết nối",
+    "reconnecting": "Đang kết nối lại...",
+    "disconnecting": "Đang ngắt kết nối...",
+    "disconnected": "Đã ngắt kết nối",
+    "error": "Kết nối không thành công",
+    "failed": "Kết nối không thành công",
+    "offline": "Ngoại tuyến",
+    "online": "Trực tuyến",
+    "active": "Hoạt động",
+    "inactive": "Không hoạt động",
+    "enabled": "Đã bật",
+    "disabled": "Đã tắt",
+    "clickToStop": "Nhấp để ngắt kết nối",
+    "reconnectingToServer": "Đang kết nối lại với máy chủ...",
+    "waitingForNetwork": "Đang chờ mạng..."
+  },
+  "common": {
+    "justNow": "Vừa xong",
+    "back": "Quay lại",
+    "cancel": "Hủy",
+    "confirm": "Xác nhận",
+    "add": "Thêm",
+    "adding": "Đang thêm...",
+    "ok": "OK",
+    "save": "Lưu",
+    "delete": "Xóa",
+    "clear": "Xóa",
+    "copy": "Sao chép",
+    "close": "Đóng",
+    "loading": "Đang tải...",
+    "processing": "Đang xử lý...",
+    "retry": "Thử lại",
+    "download": "Tải xuống",
+    "error": "Lỗi",
+    "refresh": "Làm mới",
+    "and": "và",
+    "success": "Thành công",
+    "loadFailed": "Tải không thành công",
+    "notFound": "Không tìm thấy tài nguyên",
+    "serverError": "Lỗi máy chủ",
+    "unknownError": "Lỗi không xác định",
+    "later": "Sau",
+    "login": "Đăng nhập",
+    "viewDetails": "Xem chi tiết",
+    "experimental": "Thử nghiệm",
+    "edit": "Chỉnh sửa",
+    "next": "Tiếp theo",
+    "or": "HOẶC",
+    "changelog": "Nhật ký thay đổi"
+  },
+  "errors": {
+    "service": {
+      "serviceNotFound": "Không tìm thấy tệp dịch vụ, vui lòng cài đặt lại ứng dụng",
+      "authRequired": "Yêu cầu quyền quản trị viên để cài đặt dịch vụ",
+      "installFailed": "Cài đặt dịch vụ không thành công",
+      "connectionFailed": "Không thể kết nối với dịch vụ"
+    },
+    "config": {
+      "badConfig": "Lỗi cấu hình, vui lòng kiểm tra địa chỉ máy chủ"
+    },
+    "network": {
+      "timeout": "Kết nối hết thời gian, vui lòng kiểm tra mạng",
+      "unreachable": "Không thể truy cập máy chủ, vui lòng kiểm tra kết nối mạng",
+      "reset": "Kết nối mạng bị gián đoạn, vui lòng kiểm tra trạng thái mạng",
+      "dns": "Phân giải DNS không thành công, vui lòng kiểm tra cài đặt mạng",
+      "tls": "Kết nối an toàn không thành công, vui lòng kiểm tra môi trường mạng",
+      "refused": "Không thể kết nối với máy chủ, vui lòng thử lại sau",
+      "repairFailed": "Sửa chữa mạng không thành công, vui lòng kiểm tra cài đặt thủ công",
+      "repairDNS": "Sửa chữa DNS không thành công",
+      "repairRoute": "Sửa chữa tuyến đường không thành công",
+      "repairPreFailed": "Chuẩn bị sửa chữa mạng không thành công",
+      "unavailable": "Không có kết nối mạng. Kiểm tra mạng thiết bị của bạn và thử lại."
+    },
+    "server": {
+      "unavailable": "Máy chủ không khả dụng, vui lòng thử lại sau",
+      "overload": "Máy chủ bận, vui lòng thử lại sau",
+      "maintenance": "Máy chủ đang bảo trì, vui lòng thử lại sau",
+      "internal": "Lỗi nội bộ máy chủ, vui lòng thử lại sau",
+      "notImplemented": "Tính năng chưa có sẵn"
+    },
+    "auth": {
+      "logoutFailed": "Đăng xuất không thành công, vui lòng thử lại",
+      "tokenRefreshFailed": "Làm mới phiên không thành công, vui lòng đăng nhập lại"
+    },
+    "client": {
+      "badRequest": "Lỗi tham số yêu cầu",
+      "unauthorized": "Vui lòng đăng nhập trước",
+      "forbidden": "Không có quyền thực hiện hoạt động này",
+      "notFound": "Không tìm thấy tài nguyên được yêu cầu",
+      "paymentRequired": "Thành viên đã hết hạn, vui lòng gia hạn",
+      "notSupported": "Tính năng không được hỗ trợ",
+      "upgradeRequired": "Vui lòng nâng cấp lên phiên bản mới nhất",
+      "conflict": "Xung đột hoạt động, vui lòng thử lại",
+      "invalidArgument": "Tham số không hợp lệ",
+      "tooEarly": "Vui lòng chờ một chút rồi thử lại",
+      "tooManyRequests": "Quá nhiều yêu cầu, vui lòng thử lại sau",
+      "invalidClock": "Đồng hồ thiết bị không chính xác, vui lòng điều chỉnh",
+      "selfInvitation": "Không thể sử dụng mã mời của bạn",
+      "licenseKeyNotFound": "Không tìm thấy khóa cấp phép",
+      "licenseKeyUsed": "Khóa cấp phép đã được sử dụng",
+      "licenseKeyExpired": "Khóa cấp phép đã hết hạn",
+      "licenseKeyNotMatch": "Không đủ điều kiện cho khóa cấp phép này",
+      "licenseKeyAlreadyRedeemed": "Bạn đã quy đổi khóa cấp phép rồi (một mỗi tài khoản)",
+      "tierMismatch": "Cấp bậc hiện tại của bạn không thể mua gói này. Vui lòng liên hệ hỗ trợ để chuyển cấp bậc.",
+      "proxyPurchaseDeprecated": "Mua thay thế không được hỗ trợ nữa. Vui lòng yêu cầu người nhận mua bằng tài khoản của họ.",
+      "proxyMembersDeprecated": "Quản lý thành viên thay thế đã bị xóa. Chỉ định người nhận tại {{brandDomain}}/purchase trong quá trình thanh toán."
+    },
+    "tunnel": {
+      "listFailed": "Không thể tải danh sách máy chủ",
+      "connectFailed": "Không thể kết nối với máy chủ"
+    },
+    "vpn": {
+      "authFailed": "Xác thực không thành công, vui lòng đăng nhập lại",
+      "membershipExpired": "Thành viên đã hết hạn, vui lòng gia hạn",
+      "forbidden": "Xác minh chứng chỉ máy chủ không thành công",
+      "protocolError": "Bắt tay giao thức không thành công, vui lòng thử nút khác",
+      "connectionFatal": "Kết nối không thành công, vui lòng thử lại hoặc chuyển nút",
+      "permissionDenied": "Quyền VPN bị từ chối. Vui lòng bật VPN trong cài đặt hệ thống.",
+      "environmentSetupFailed": "Thiết lập mạng không thành công. Khởi động lại thiết bị của bạn và thử lại.",
+      "startFailed": "Không thể bắt đầu dịch vụ, vui lòng thử lại",
+      "reconnectFailed": "Kết nối lại không thành công, vui lòng thử lại",
+      "timeout": "Hoạt động hết thời gian, vui lòng thử lại",
+      "allAddrsFailed": "Tất cả địa chỉ máy chủ không thành công, vui lòng chuyển nút"
+    },
+    "action": {
+      "timeout": "Hoạt động hết thời gian, vui lòng thử lại",
+      "parseFailed": "Phân tích yêu cầu không thành công"
+    },
+    "api": {
+      "requestFailed": "Yêu cầu không thành công, vui lòng kiểm tra mạng của bạn",
+      "responseFailed": "Phân tích phản hồi không thành công"
+    },
+    "engine": {
+      "ruleBundlesUnavailable": "Không thể tải quy tắc định tuyến. Kiểm tra mạng và thử lại."
+    },
+    "installCancelled": "Cài đặt đã bị hủy",
+    "unknown": "Lỗi không xác định",
+    "unknownError": "Lỗi không xác định"
+  },
+  "features": {
+    "fastConnect": "Chóng mặt",
+    "fastConnectDesc": "Tối ưu hóa định tuyến thông minh, giảm 80% độ trễ",
+    "security": "Mã hóa cấp doanh nghiệp",
+    "securityDesc": "Mã hóa AES-256 cấp quân sự, bảo vệ bảo mật dữ liệu",
+    "global": "Nút toàn cầu",
+    "globalDesc": "50+ quốc gia, 200+ nút cao cấp",
+    "multiDevice": "Hỗ trợ nhiều thiết bị",
+    "multiDeviceDesc": "Một tài khoản, tất cả các nền tảng"
+  },
+  "messages": {
+    "sendVerificationSuccess": "Email xác minh được gửi thành công",
+    "sendVerificationFailed": "Không thể gửi email xác minh",
+    "logoutSuccess": "Người dùng đã đăng xuất",
+    "logoutFailed": "Đăng xuất không thành công",
+    "copySuccess": "Sao chép thành công",
+    "copyFailed": "Sao chép không thành công",
+    "saveSuccess": "Lưu thành công",
+    "saveFailed": "Lưu không thành công",
+    "deleteSuccess": "Xóa thành công",
+    "deleteFailed": "Xóa không thành công",
+    "serviceInstalling": "Đang cài đặt dịch vụ im lặng, vui lòng chờ...",
+    "serviceInstallSuccess": "Dịch vụ được cài đặt thành công!",
+    "serviceInstallFailedAuth": "Yêu cầu quyền quản trị viên để cài đặt dịch vụ, vui lòng nhấp \"Có\" trong hộp thoại UAC",
+    "updateSuccess": "Cập nhật thành công",
+    "updateFailed": "Cập nhật không thành công",
+    "networkError": "Lỗi mạng",
+    "serverError": "Lỗi máy chủ",
+    "unknownError": "Lỗi không xác định"
+  },
+  "loadingAndEmpty": {
+    "noHistoryTitle": "Không có lịch sử",
+    "noHistoryDescription": "Bạn chưa có lịch sử thanh toán và ủy quyền nào, hãy trải nghiệm lợi ích thành viên!",
+    "noPlansTitle": "Không có gói nào",
+    "noPlansDescription": "Các gói đang tải hoặc tạm thời không có sẵn, vui lòng thử lại sau",
+    "noInviteCodesTitle": "Không có mã mời",
+    "noInviteCodesDescription": "Bạn chưa tạo mã mời nào, hãy tạo mã mời độc quyền của bạn để chia sẻ với bạn bè!",
+    "noDevicesTitle": "Không có thiết bị",
+    "noDevicesDescription": "Bạn chưa đăng nhập trên bất kỳ thiết bị nào"
+  }
+}

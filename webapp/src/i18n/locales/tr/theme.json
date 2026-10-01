@@ -1,0 +1,9 @@
+{
+  "theme": {
+    "switchToLight": "Açık",
+    "switchToDark": "Koyu",
+    "light": "Açık Mod",
+    "dark": "Koyu Mod",
+    "system": "Sistemi İzle"
+  }
+}

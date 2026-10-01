@@ -1,0 +1,184 @@
+{
+  "status": {
+    "stopped": "Detenido",
+    "connecting": "Conectando...",
+    "connected": "Conectado",
+    "reconnecting": "Reconectando...",
+    "disconnecting": "Desconectando...",
+    "disconnected": "Desconectado",
+    "error": "Error de Conexión",
+    "failed": "Error de Conexión",
+    "offline": "Desconectado",
+    "online": "En Línea",
+    "active": "Activo",
+    "inactive": "Inactivo",
+    "enabled": "Habilitado",
+    "disabled": "Deshabilitado",
+    "clickToStop": "Haz Clic para Desconectar",
+    "reconnectingToServer": "Reconectando al servidor...",
+    "waitingForNetwork": "Esperando conexión de red..."
+  },
+  "common": {
+    "justNow": "Justo ahora",
+    "back": "Atrás",
+    "cancel": "Cancelar",
+    "confirm": "Confirmar",
+    "add": "Añadir",
+    "adding": "Añadiendo...",
+    "ok": "Aceptar",
+    "save": "Guardar",
+    "delete": "Eliminar",
+    "clear": "Limpiar",
+    "copy": "Copiar",
+    "close": "Cerrar",
+    "loading": "Cargando...",
+    "processing": "Procesando...",
+    "retry": "Reintentar",
+    "download": "Descargar",
+    "error": "Error",
+    "refresh": "Actualizar",
+    "and": "y",
+    "success": "Exitoso",
+    "loadFailed": "Error al Cargar",
+    "notFound": "Recurso No Encontrado",
+    "serverError": "Error del Servidor",
+    "unknownError": "Error Desconocido",
+    "later": "Después",
+    "login": "Iniciar Sesión",
+    "viewDetails": "Ver Detalles",
+    "experimental": "Experimental",
+    "edit": "Editar",
+    "next": "Siguiente",
+    "or": "O",
+    "changelog": "Registro de Cambios"
+  },
+  "errors": {
+    "service": {
+      "serviceNotFound": "Archivo de servicio no encontrado, por favor reinstala la aplicación",
+      "authRequired": "Se requieren privilegios de administrador para instalar el servicio",
+      "installFailed": "Error de instalación del servicio",
+      "connectionFailed": "No se puede conectar al servicio"
+    },
+    "config": {
+      "badConfig": "Error de configuración, por favor verifica la dirección del servidor"
+    },
+    "network": {
+      "timeout": "Conexión agotada, por favor verifica tu red",
+      "unreachable": "Servidor no alcanzable, por favor verifica tu conexión de red",
+      "reset": "Conexión de red interrumpida, por favor verifica el estado de tu red",
+      "dns": "Resolución DNS fallida, por favor verifica la configuración de red",
+      "tls": "Conexión segura fallida, por favor verifica el entorno de red",
+      "refused": "No se puede conectar al servidor, por favor intenta más tarde",
+      "repairFailed": "Error en la reparación de la red, por favor verifica la configuración manualmente",
+      "repairDNS": "Error en la reparación de DNS",
+      "repairRoute": "Error en la reparación de rutas",
+      "repairPreFailed": "Error en la preparación de la reparación de red",
+      "unavailable": "Sin conexión de red. Verifica la red de tu dispositivo e intenta de nuevo."
+    },
+    "server": {
+      "unavailable": "Servidor no disponible, por favor intenta más tarde",
+      "overload": "Servidor ocupado, por favor intenta más tarde",
+      "maintenance": "Servidor en mantenimiento, por favor intenta más tarde",
+      "internal": "Error interno del servidor, por favor intenta más tarde",
+      "notImplemented": "Función aún no disponible"
+    },
+    "auth": {
+      "logoutFailed": "Error al cerrar sesión, por favor intenta de nuevo",
+      "tokenRefreshFailed": "Error al actualizar sesión, por favor inicia sesión de nuevo"
+    },
+    "client": {
+      "badRequest": "Error de parámetro de solicitud",
+      "unauthorized": "Por favor, inicia sesión primero",
+      "forbidden": "Sin permiso para realizar esta operación",
+      "notFound": "Recurso solicitado no encontrado",
+      "paymentRequired": "Membresía expirada, por favor renueva",
+      "notSupported": "Función no compatible",
+      "upgradeRequired": "Por favor, actualiza a la versión más reciente",
+      "conflict": "Conflicto de operación, por favor intenta de nuevo",
+      "invalidArgument": "Parámetros inválidos",
+      "tooEarly": "Por favor espera un momento e intenta de nuevo",
+      "tooManyRequests": "Demasiadas solicitudes, por favor intenta más tarde",
+      "invalidClock": "Reloj del dispositivo incorrecto, por favor ajusta",
+      "selfInvitation": "No puedes usar tu propio código de invitación",
+      "licenseKeyNotFound": "Clave de licencia no encontrada",
+      "licenseKeyUsed": "Clave de licencia ya utilizada",
+      "licenseKeyExpired": "Clave de licencia expirada",
+      "licenseKeyNotMatch": "No eres elegible para esta clave de licencia",
+      "licenseKeyAlreadyRedeemed": "Ya has redimido una clave de licencia (una por cuenta)",
+      "tierMismatch": "Tu nivel actual no puede comprar este plan. Por favor, contacta con el equipo de soporte para cambiar de nivel.",
+      "proxyPurchaseDeprecated": "La compra de proxy ya no es compatible. Por favor, pide al destinatario que compre con su propia cuenta.",
+      "proxyMembersDeprecated": "La gestión de miembros proxy ha sido removida. Especifica el destinatario en {{brandDomain}}/purchase durante el pago."
+    },
+    "tunnel": {
+      "listFailed": "Error al cargar la lista de servidores",
+      "connectFailed": "Error al conectarse al servidor"
+    },
+    "vpn": {
+      "authFailed": "Error de autenticación, por favor vuelve a iniciar sesión",
+      "membershipExpired": "Membresía expirada, por favor renueva",
+      "forbidden": "Verificación del certificado del servidor fallida",
+      "protocolError": "Error de protocolo handshake, por favor intenta otro nodo",
+      "connectionFatal": "Error de conexión, por favor reintenta o cambia de nodo",
+      "permissionDenied": "Permiso de VPN denegado. Por favor, habilita VPN en la configuración del sistema.",
+      "environmentSetupFailed": "Error de configuración de red. Reinicia tu dispositivo e intenta de nuevo.",
+      "startFailed": "Error al iniciar el servicio, por favor intenta de nuevo",
+      "reconnectFailed": "Error al reconectar, por favor intenta de nuevo",
+      "timeout": "Operación agotada, por favor intenta de nuevo",
+      "allAddrsFailed": "Todos los direcciones del servidor fallaron, por favor cambia de nodo"
+    },
+    "action": {
+      "timeout": "Operación agotada, por favor intenta de nuevo",
+      "parseFailed": "Error al procesar solicitud"
+    },
+    "api": {
+      "requestFailed": "Error en solicitud, por favor verifica tu red",
+      "responseFailed": "Error al procesar respuesta"
+    },
+    "engine": {
+      "ruleBundlesUnavailable": "Error al descargar reglas de enrutamiento. Verifica tu red e intenta de nuevo."
+    },
+    "installCancelled": "Instalación cancelada",
+    "unknown": "Error desconocido",
+    "unknownError": "Error Desconocido"
+  },
+  "features": {
+    "fastConnect": "Velocidad Relámpago",
+    "fastConnectDesc": "Optimización inteligente de enrutamiento, reducción de latencia del 80%",
+    "security": "Encriptación Empresarial",
+    "securityDesc": "Encriptación AES-256 de grado militar, protegiendo la seguridad de datos",
+    "global": "Nodos Globales",
+    "globalDesc": "50+ países, 200+ nodos premium",
+    "multiDevice": "Compatibilidad Multi-dispositivo",
+    "multiDeviceDesc": "Una cuenta, todas las plataformas"
+  },
+  "messages": {
+    "sendVerificationSuccess": "Correo de verificación enviado exitosamente",
+    "sendVerificationFailed": "Error al enviar correo de verificación",
+    "logoutSuccess": "Usuario desconectado",
+    "logoutFailed": "Error al cerrar sesión",
+    "copySuccess": "Copiado exitosamente",
+    "copyFailed": "Error al copiar",
+    "saveSuccess": "Guardado exitosamente",
+    "saveFailed": "Error al guardar",
+    "deleteSuccess": "Eliminado exitosamente",
+    "deleteFailed": "Error al eliminar",
+    "serviceInstalling": "Instalando servicio silenciosamente, por favor espera...",
+    "serviceInstallSuccess": "¡Servicio instalado exitosamente!",
+    "serviceInstallFailedAuth": "Se requieren privilegios de administrador para instalar el servicio, por favor haz clic en \"Sí\" en el diálogo de UAC",
+    "updateSuccess": "Actualizado exitosamente",
+    "updateFailed": "Error al actualizar",
+    "networkError": "Error de Red",
+    "serverError": "Error del Servidor",
+    "unknownError": "Error Desconocido"
+  },
+  "loadingAndEmpty": {
+    "noHistoryTitle": "Sin Historial",
+    "noHistoryDescription": "Aún no tienes historial de pagos y autorizaciones, ¡ve a disfrutar de los beneficios de la membresía!",
+    "noPlansTitle": "Sin Planes Disponibles",
+    "noPlansDescription": "Los planes se están cargando o no están disponibles temporalmente, por favor intenta más tarde",
+    "noInviteCodesTitle": "Sin Códigos de Invitación",
+    "noInviteCodesDescription": "Aún no has creado ningún código de invitación, ¡crea tu código de invitación exclusivo para compartir con amigos!",
+    "noDevicesTitle": "Sin Dispositivos",
+    "noDevicesDescription": "Aún no tienes ningún dispositivo conectado"
+  }
+}

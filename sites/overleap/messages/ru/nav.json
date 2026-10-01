@@ -1,0 +1,17 @@
+{
+  "primary": "Главная навигация",
+  "account": "Аккаунт",
+  "login": "Войти",
+  "language": "Язык",
+  "searchLanguage": "Поиск языка",
+  "noLanguageFound": "Язык не найден",
+  "footer": {
+    "tagline": "Частный VPN. Без логов, быстрый в любой сети.",
+    "company": "Компания",
+    "privacy": "Политика конфиденциальности",
+    "terms": "Условия использования",
+    "deleteAccount": "Удалить аккаунт",
+    "contact": "Связаться с нами",
+    "copyright": "© {year} {legalName}. Все права защищены."
+  }
+}

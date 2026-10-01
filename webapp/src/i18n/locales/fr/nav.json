@@ -1,0 +1,50 @@
+{
+  "appBar": {
+    "refreshAuth": "Actualiser l'autorisation"
+  },
+  "navigation": {
+    "dashboard": "Tableau de bord",
+    "discover": "Découvrir",
+    "account": "Compte",
+    "router": "Routeur",
+    "devices": "Appareils",
+    "faq": "Commentaires",
+    "purchase": "Achat",
+    "activate": "Activer",
+    "invite": "Inviter",
+    "retailer": "Revendeur",
+    "proHistory": "Historique des autorisations",
+    "help": "Aide"
+  },
+  "appBarConnector": {
+    "disconnecting": "Déconnexion en cours",
+    "connecting": "Connexion en cours",
+    "antiClickProtection": "Protection anti-spam : opérations trop fréquentes",
+    "refreshDataFailed": "Échec de l'actualisation des données après l'opération :",
+    "connectionOperationFailed": "Échec de l'opération de connexion :",
+    "disconnectingTooltip": "Déconnexion en cours...",
+    "connectingTooltip": "Connexion en cours...",
+    "clickToDisconnect": "Cliquez pour vous déconnecter",
+    "clickToConnect": "Cliquez pour vous connecter",
+    "anonymous": "Anonyme",
+    "disconnect": "Déconnecter",
+    "connect": "Connecter",
+    "panel": "Panneau",
+    "noNodeSelected": "Veuillez sélectionner un nœud avant de vous connecter"
+  },
+  "appBarMembership": {
+    "trial": "Essai",
+    "standard": "Standard",
+    "expired": "Expiré",
+    "proTrial": "Essai Pro",
+    "recharge": "Recharger",
+    "firstOrderPending": "Première commande en attente",
+    "unlimitedTrial": "Essai illimité",
+    "completePurchase": "Finaliser l'achat"
+  },
+  "layout": {
+    "deviceInstall": "Installer sur d'autres appareils",
+    "troubleshooting": "Dépannage",
+    "accountAndSettings": "Compte et paramètres"
+  }
+}

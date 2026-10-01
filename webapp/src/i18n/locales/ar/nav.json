@@ -1,0 +1,50 @@
+{
+  "appBar": {
+    "refreshAuth": "تحديث التفويض"
+  },
+  "navigation": {
+    "dashboard": "لوحة التحكم",
+    "discover": "اكتشف",
+    "account": "الحساب",
+    "router": "الموجه",
+    "devices": "الأجهزة",
+    "faq": "التعليقات",
+    "purchase": "شراء",
+    "activate": "تفعيل",
+    "invite": "دعوة",
+    "retailer": "موزع",
+    "proHistory": "سجل التفويض",
+    "help": "مساعدة"
+  },
+  "appBarConnector": {
+    "disconnecting": "جاري قطع الاتصال",
+    "connecting": "جاري الاتصال",
+    "antiClickProtection": "حماية مضادة للبريد العشوائي: عمليات متكررة جداً",
+    "refreshDataFailed": "فشل تحديث البيانات بعد العملية:",
+    "connectionOperationFailed": "فشلت عملية الاتصال:",
+    "disconnectingTooltip": "جاري قطع الاتصال...",
+    "connectingTooltip": "جاري الاتصال...",
+    "clickToDisconnect": "انقر لقطع الاتصال",
+    "clickToConnect": "انقر للاتصال",
+    "anonymous": "مجهول الهوية",
+    "disconnect": "قطع الاتصال",
+    "connect": "اتصال",
+    "panel": "الكشف",
+    "noNodeSelected": "يرجى اختيار عقدة قبل الاتصال"
+  },
+  "appBarMembership": {
+    "trial": "تجربة",
+    "standard": "قياسي",
+    "expired": "منتهي الصلاحية",
+    "proTrial": "تجربة Pro",
+    "recharge": "إعادة شحن",
+    "firstOrderPending": "الطلب الأول قيد الانتظار",
+    "unlimitedTrial": "تجربة غير محدودة",
+    "completePurchase": "إكمال الشراء"
+  },
+  "layout": {
+    "deviceInstall": "التثبيت على أجهزة أخرى",
+    "troubleshooting": "استكشاف الأخطاء",
+    "accountAndSettings": "الحساب والإعدادات"
+  }
+}

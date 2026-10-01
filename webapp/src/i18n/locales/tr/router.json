@@ -1,0 +1,61 @@
+{
+  "router": {
+    "title": "Yönlendirici",
+    "connected": "Bağlandı",
+    "disconnected": "Bağlı Değil",
+    "connect": "Bağlan",
+    "disconnect": "Bağlantıyı Kes",
+    "offline": "{{name}} yönlendiricisine ulaşılamıyor. Çevrim içi olup olmadığını kontrol edin.",
+    "retry": "Yeniden Dene"
+  },
+  "setup": {
+    "title": "{{name}} ayarla",
+    "intro": "Yönlendiricinin ilk kurulumunu tek adımda tamamlamak için aşağıdaki düğmeye dokunun.",
+    "submit": "Kuruluma başla",
+    "error": {
+      "mint_failed": "Bağlantı kimlik bilgisi alınamadı. Ağınızı kontrol edin ve tekrar deneyin.",
+      "key_failed": "Kontrol anahtarı alınamadı. Ağınızı kontrol edin ve tekrar deneyin.",
+      "push_failed": "Yapılandırma yönlendiriciye gönderilemedi. Çevrim içi olup olmadığını kontrol edin."
+    }
+  },
+  "settings": {
+    "title": "Yönlendirici Ayarları",
+    "version": "Ürün yazılımı sürümü: {{version}}",
+    "unbind": "Bağlantıyı Kes",
+    "unbindConfirmTitle": "Bu yönlendiriciyi bağlantıdan kopart?",
+    "unbindConfirmBody": "Bağlantıdan çıkartıldıktan sonra, bu uygulama artık yönlendiriciyi kontrol edemeyecektir. Kullanmak için tekrar kurmanız gerekecektir.",
+    "unbindCancel": "İptal",
+    "unbindConfirm": "Bağlantıyı Kes"
+  },
+  "exclusion": {
+    "title": "Her iki tüneli de bağlansın mı?",
+    "bodyRouter": "Cihazınızın VPN'i zaten bağlı. Devam etmek trafiği aynı anda her iki tünelden yönlendirecek — yerel VPN'i önce kesmek önerilir.",
+    "bodyDashboard": "Bu ağdaki yönlendirici zaten trafiğinizi koruyor. Devam etmek trafiği aynı anda her iki tünelden yönlendirecek — yönlendiriciyi önce kesmek önerilir.",
+    "keep": "Her ikisini de tut",
+    "proceedRouter": "Yerel VPN'i kes ve devam et",
+    "proceedDashboard": "Yönlendiriciyi kes ve devam et"
+  },
+  "takeover": {
+    "banner": "Bu ağdaki yönlendirici zaten trafiğinizi koruyor"
+  },
+  "legacy": {
+    "upgradeHint": "Algılanan yönlendirici ürün yazılımı güncel değil. Uygulamadan yönetmeden önce yönlendiricideki k2r'ı yükseltmek gerekir."
+  },
+  "slots": {
+    "title": "Hatlar",
+    "customName": "Özel ad",
+    "unbound": "Bağlantısız",
+    "failClosed": "Hat kesintisi — trafik engellendi",
+    "downFor": "{{duration}} süre kesintide",
+    "rename": "Wi-Fi'ı Yeniden Adlandır",
+    "renameHint": "1-32 karakter",
+    "password": "Wi-Fi şifresini değiştir",
+    "passwordHint": "8-63 karakter",
+    "confirm": "Uygula",
+    "cancel": "İptal",
+    "applyFailed": "Uygulanması başarısız, lütfen tekrar deneyin",
+    "managedByAccount": "Bu yönlendirici, bağlı hesabı tarafından yönetilir",
+    "unbindEnterpriseBody": "Bağlantının kesilmesi TÜM hatları çevrim dışı alacaktır. Kurtarma, operatör yardımı gerektirir. Devam etmek istiyor musunuz?",
+    "managementGroup": "Yönetim ağı"
+  }
+}

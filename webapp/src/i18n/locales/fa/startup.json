@@ -1,0 +1,79 @@
+{
+  "startup": {
+    "activeUsers": "کاربران فعال",
+    "certified": "دارای گواهی ISO 27001",
+    "uptime": "سرویس‌دهی",
+    "authSuccess": "احراز هویت موفق، وضعیت ورود کاربر به‌روز شد",
+    "deviceCanDirectLogin": "دستگاه می‌تواند مستقیم وارد شود",
+    "deviceCannotDirectLogin": "دستگاه نمی‌تواند مستقیم وارد شود",
+    "checkDeviceLoginFailed": "بررسی وضعیت ورود دستگاه ناموفق بود",
+    "deviceLoginFailed": "ورود دستگاه ناموفق بود",
+    "deviceLoginFailedRetry": "ورود دستگاه ناموفق بود، لطفا دوباره تلاش کنید",
+    "deviceLoginSuccess": "ورود دستگاه موفق بود",
+    "pleaseEnterInviteCode": "لطفا کد دعوت را وارد کنید",
+    "registrationFailed": "ثبت‌نام ناموفق",
+    "registrationFailedRetry": "ثبت‌نام ناموفق بود، لطفا دوباره تلاش کنید",
+    "newDevice": "دستگاه جدید",
+    "freeDeviceRegistrationFailed": "ثبت‌نام دستگاه رایگان ناموفق بود",
+    "inviteCodeIncorrect": "کد دعوت نادرست است",
+    "inviteCodeInvalidOrExpired": "کد دعوت نامعتبر یا منقضی است",
+    "getInviteCodeInfoFailed": "دریافت اطلاعات کد دعوت ناموفق بود",
+    "haveProAccount": "قبلاً دارای حساب پرو هستید؟",
+    "loginProAccountDesc": "به حساب پرو خود وارد شوید و از تمام ویژگی‌ها لذت ببرید",
+    "deviceAlreadyRegistered": "تشخیص داده شد که این دستگاه حساب ثبت‌شده‌ای دارد",
+    "deviceReady": "دستگاه آماده‌ی ورود است",
+    "deviceReadyDesc": "دستگاه شما ثبت‌شده و برای استفاده آماده است",
+    "orEmailLogin": "یا وارد شوید با ایمیل",
+    "experienceProFeatures": "تجربهٌ ویژگی‌های پرو",
+    "enterInviteCodeDesc": "کد دعوت را وارد کنید تا فوری ویژگی‌های پرو را تجربه کنید",
+    "inviteCode": "کد دعوت",
+    "enterInviteCodePlaceholder": "لطفا کد دعوت را وارد کنید (اختیاری)",
+    "youHaveGoodFriend": "🎁 شما دوستی فوق‌العاده دارید😼",
+    "enjoyNow": "اکنون لذت ببرید",
+    "days": "روز",
+    "pro": "پرو",
+    "extraBonus": "پاداش اضافی!",
+    "experience": "تجربهٌ {{days}} روز",
+    "purchaseBonus": "خریداری {{purchaseDays}}+{{downloadDays}} روز به دست می‌آورد",
+    "buyNowExtraBonus": "اکنون خریداری کنید، {{days}} روز اضافی دریافت کنید",
+    "buyNowEnjoyAllPro": "برای تمام مزایای پرو اکنون خریداری کنید",
+    "experienceOnly": "فقط {{days}} روز تجربه کنید",
+    "experienceNow": "تجربه کنید اکنون",
+    "or": "یا",
+    "noAccountNoInviteCode": "حساب یا کد دعوت ندارید؟",
+    "processing": "درحال پردازش...",
+    "registerNewAccount": "یک حساب جدید را مستقیماً ثبت کنید"
+  },
+  "serviceStatus": {
+    "disconnected": "سرویس قطع شده، درحال اتصال مجدد..."
+  },
+  "upgradeRequired": {
+    "title": "لطفا برنامه را به‌روز کنید",
+    "description": "نسخهٌ فعلی منقضی شده است، لطفا آخرین نسخه را دانلود کنید تا ادامه دهید.",
+    "downloadButton": "برو به دانلود"
+  },
+  "forceUpgrade": {
+    "title": "نسخه بسیار قدیم، به‌روز رسانی مورد نیاز است",
+    "description": "نسخهٌ برنامهٌ فعلی شما ({{currentVersion}}) دیگر پشتیبانی نمی‌شود. لطفا به نسخهٌ {{minVersion}} یا بیشتر ارتقاء دهید تا ادامه دهید.",
+    "downloadButton": "به‌روز کنید اکنون"
+  },
+  "app": {
+    "slogan": "سرویس پروکسی شبکهٌ امن و مطبوع",
+    "error": "خطا",
+    "updateNow": "به‌روز کنید اکنون",
+    "readyToInstall": "آماده برای نصب است",
+    "hoverForDetails": "برای جزئیات بیشتر نشانگر را نگاه داشته‌اید",
+    "releaseNotes": "یادداشت‌های انتشار",
+    "newVersionAvailable": "نسخهٌ جدید {{version}} موجود!",
+    "updating": "درحال به‌روز رسانی",
+    "downloadingUpdate": "دانلود و نصب به‌روز رسانی... {{progress}}%",
+    "errorBoundary": {
+      "title": "خطای برنامه",
+      "description": "خطا به طور خودکار گزارش داده شد، ما به زودی آن را برطرف خواهیم کرد.",
+      "details": "جزئیات خطا",
+      "retry": "تلاش دوباره"
+    },
+    "installing": "درحال نصب...",
+    "beingInstalled": "درحال نصب است..."
+  }
+}

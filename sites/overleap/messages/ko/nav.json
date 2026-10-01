@@ -1,0 +1,17 @@
+{
+  "primary": "메인 내비게이션",
+  "account": "계정",
+  "login": "로그인",
+  "language": "언어",
+  "searchLanguage": "언어 검색",
+  "noLanguageFound": "일치하는 언어가 없습니다",
+  "footer": {
+    "tagline": "기록을 남기지 않는 프라이빗 VPN. 어떤 네트워크에서도 빠릅니다.",
+    "company": "회사",
+    "privacy": "개인정보처리방침",
+    "terms": "이용약관",
+    "deleteAccount": "계정 삭제",
+    "contact": "문의하기",
+    "copyright": "© {year} {legalName}. All rights reserved."
+  }
+}

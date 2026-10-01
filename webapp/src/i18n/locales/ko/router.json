@@ -1,0 +1,61 @@
+{
+  "router": {
+    "title": "라우터",
+    "connected": "연결됨",
+    "disconnected": "연결 해제됨",
+    "connect": "연결",
+    "disconnect": "연결 해제",
+    "offline": "{{name}} 라우터에 연결할 수 없습니다. 온라인 상태인지 확인해주세요.",
+    "retry": "다시 시도"
+  },
+  "setup": {
+    "title": "{{name}} 설정",
+    "intro": "아래 버튼을 클릭해서 라우터의 첫 설정을 한 번에 완료하세요.",
+    "submit": "설정 시작",
+    "error": {
+      "mint_failed": "연결 자격증명을 가져오지 못했습니다. 네트워크를 확인하고 다시 시도해주세요.",
+      "key_failed": "제어 키를 가져오지 못했습니다. 네트워크를 확인하고 다시 시도해주세요.",
+      "push_failed": "라우터에 설정을 푸시하지 못했습니다. 라우터가 온라인 상태인지 확인해주세요."
+    }
+  },
+  "settings": {
+    "title": "라우터 설정",
+    "version": "펌웨어 버전: {{version}}",
+    "unbind": "바인딩 해제",
+    "unbindConfirmTitle": "이 라우터를 바인딩 해제하시겠습니까?",
+    "unbindConfirmBody": "바인딩을 해제하면 이 앱이 라우터를 제어할 수 없게 됩니다. 다시 사용하려면 다시 설정해야 합니다.",
+    "unbindCancel": "취소",
+    "unbindConfirm": "바인딩 해제"
+  },
+  "exclusion": {
+    "title": "두 터널을 모두 연결하시겠습니까?",
+    "bodyRouter": "기기의 VPN이 이미 연결되어 있습니다. 계속하면 트래픽이 두 터널을 통해 라우팅됩니다. 먼저 로컬 VPN을 연결 해제하는 것을 권장합니다.",
+    "bodyDashboard": "이 네트워크의 라우터가 이미 트래픽을 보호하고 있습니다. 계속하면 트래픽이 두 터널을 통해 라우팅됩니다. 먼저 라우터를 연결 해제하는 것을 권장합니다.",
+    "keep": "둘 다 유지",
+    "proceedRouter": "로컬 VPN 연결 해제 및 계속",
+    "proceedDashboard": "라우터 연결 해제 및 계속"
+  },
+  "takeover": {
+    "banner": "이 네트워크의 라우터가 당신의 트래픽을 보호하고 있습니다"
+  },
+  "legacy": {
+    "upgradeHint": "감지된 라우터 펌웨어가 구버전입니다. 앱에서 라우터를 관리하기 전에 라우터에서 k2r을 업그레이드해주세요."
+  },
+  "slots": {
+    "title": "선로",
+    "customName": "사용자 정의 이름",
+    "unbound": "바인딩 해제됨",
+    "failClosed": "선로 중단 - 트래픽 차단됨",
+    "downFor": "{{duration}} 동안 중단됨",
+    "rename": "Wi-Fi 이름 바꾸기",
+    "renameHint": "1-32자",
+    "password": "Wi-Fi 비밀번호 변경",
+    "passwordHint": "8-63자",
+    "confirm": "적용",
+    "cancel": "취소",
+    "applyFailed": "적용에 실패했습니다. 다시 시도해주세요",
+    "managedByAccount": "이 라우터는 바인딩된 계정에 의해 관리됩니다",
+    "unbindEnterpriseBody": "바인딩 해제하면 모든 선로가 오프라인으로 전환됩니다. 복구하려면 운영자 지원이 필요합니다. 계속하시겠습니까?",
+    "managementGroup": "관리 네트워크"
+  }
+}

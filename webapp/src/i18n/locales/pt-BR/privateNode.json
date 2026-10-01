@@ -1,0 +1,50 @@
+{
+  "privateNode": {
+    "title": "Nó Dedicado",
+    "manage": "Gerenciar Nó Dedicado",
+    "myRouter": "Meu Roteador",
+    "buyLine": "Comprar uma Linha Dedicada",
+    "buy": "Obter um Nó Dedicado",
+    "region": "Região do Nó",
+    "selectRegion": "Selecionar Região",
+    "ipTypeLabel": "Tipo de IP",
+    "ipType": {
+      "residential": "IP Residencial",
+      "non_residential": "IP do Data Center"
+    },
+    "traffic": "Tráfego",
+    "trafficUsed": "{{used}} / {{total}} usado",
+    "quota": "Quota de Tráfego",
+    "status": {
+      "title": "Status",
+      "pending": "Pendente",
+      "provisioning": "Provisionando",
+      "active": "Ativo",
+      "grace": "Período de Carência",
+      "suspended": "Suspenso",
+      "deprovisioned": "Desprovisionado",
+      "failed": "Falha no Provisionamento"
+    },
+    "expiresAt": "Expira",
+    "graceHint": "Seu nó está em seu período de carência. Renove em breve para evitar suspensão.",
+    "suspendedHint": "O nó está suspenso mas seu IP é retido. Ele será retomado após renovação.",
+    "nodeIp": "IP do Nó",
+    "provisioningHint": "Seu nó está sendo provisionado. Isso geralmente leva alguns minutos, aguarde.",
+    "empty": "Você ainda não tem nenhum nó dedicado",
+    "renew": "Renovar",
+    "renewOnWebsite": "Para renovar, visite Meu Roteador em nosso site",
+    "percentUsed": "{{percent}}% usado",
+    "quotaExhausted": {
+      "title": "Quota de tráfego mensal usada",
+      "resetHint": "Reseta em {{date}}",
+      "resetUnknown": "Reseta no início do próximo ciclo",
+      "cta": "Renovar / Atualizar quota"
+    },
+    "router": {
+      "title": "Adicionar um Roteador",
+      "intro": "Instale k2r no seu roteador OpenWrt — o app será descoberto automaticamente e mostrado abaixo.",
+      "detected": "Roteadores detectados em sua rede local:",
+      "manage": "Gerenciar Roteador"
+    }
+  }
+}

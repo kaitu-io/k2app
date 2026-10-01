@@ -1,0 +1,61 @@
+{
+  "router": {
+    "title": "Router",
+    "connected": "Verbunden",
+    "disconnected": "Getrennt",
+    "connect": "Verbinden",
+    "disconnect": "Trennen",
+    "offline": "Router {{name}} ist nicht erreichbar. Stelle sicher, dass er online ist.",
+    "retry": "Erneut versuchen"
+  },
+  "setup": {
+    "title": "Richte {{name}} ein",
+    "intro": "Tippe auf die Schaltfläche unten, um die erste Einrichtung des Routers in einem Schritt abzuschließen.",
+    "submit": "Einrichtung starten",
+    "error": {
+      "mint_failed": "Fehler beim Abrufen einer Verbindungsanmeldedaten. Überprüfe dein Netzwerk und versuche es erneut.",
+      "key_failed": "Fehler beim Abrufen eines Steuerschlüssels. Überprüfe dein Netzwerk und versuche es erneut.",
+      "push_failed": "Fehler beim Übertragen der Konfiguration an den Router. Stelle sicher, dass er online ist."
+    }
+  },
+  "settings": {
+    "title": "Router-Einstellungen",
+    "version": "Firmware-Version: {{version}}",
+    "unbind": "Trennen",
+    "unbindConfirmTitle": "Diesen Router trennen?",
+    "unbindConfirmBody": "Nach dem Trennen kann diese App den Router nicht mehr steuern. Du musst ihn erneut einrichten, um ihn zu verwenden.",
+    "unbindCancel": "Abbrechen",
+    "unbindConfirm": "Trennen"
+  },
+  "exclusion": {
+    "title": "Beide Tunnel verbinden?",
+    "bodyRouter": "Das VPN deines Geräts ist bereits verbunden. Wenn du fortfährst, wird der Datenverkehr durch beide Tunnel gleichzeitig geleitet — wir empfehlen, das lokale VPN zuerst zu trennen.",
+    "bodyDashboard": "Der Router in diesem Netzwerk schützt bereits deinen Datenverkehr. Wenn du fortfährst, wird der Datenverkehr durch beide Tunnel gleichzeitig geleitet — wir empfehlen, den Router zuerst zu trennen.",
+    "keep": "Beide behalten",
+    "proceedRouter": "Lokales VPN trennen & fortfahren",
+    "proceedDashboard": "Router trennen & fortfahren"
+  },
+  "takeover": {
+    "banner": "Der Router in diesem Netzwerk schützt deinen Datenverkehr"
+  },
+  "legacy": {
+    "upgradeHint": "Die erkannte Router-Firmware ist veraltet. Bitte aktualisiere k2r auf dem Router, bevor du ihn von der App aus verwaltest."
+  },
+  "slots": {
+    "title": "Leitungen",
+    "customName": "Benutzerdefinierter Name",
+    "unbound": "Getrennt",
+    "failClosed": "Leitung weg — Datenverkehr blockiert",
+    "downFor": "Weg seit {{duration}}",
+    "rename": "Wi-Fi umbenennen",
+    "renameHint": "1-32 Zeichen",
+    "password": "Wi-Fi-Passwort ändern",
+    "passwordHint": "8-63 Zeichen",
+    "confirm": "Anwenden",
+    "cancel": "Abbrechen",
+    "applyFailed": "Fehler beim Anwenden, bitte versuche es erneut",
+    "managedByAccount": "Dieser Router wird von seinem gekoppelten Konto verwaltet",
+    "unbindEnterpriseBody": "Das Trennen nimmt ALLE Leitungen offline. Wiederherstellung erfordert Operatoren-Unterstützung. Fortfahren?",
+    "managementGroup": "Verwaltungsnetzwerk"
+  }
+}

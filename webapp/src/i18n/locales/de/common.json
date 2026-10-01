@@ -1,0 +1,184 @@
+{
+  "status": {
+    "stopped": "Beendet",
+    "connecting": "Wird verbunden...",
+    "connected": "Verbunden",
+    "reconnecting": "Wird erneut verbunden...",
+    "disconnecting": "Wird getrennt...",
+    "disconnected": "Getrennt",
+    "error": "Verbindung fehlgeschlagen",
+    "failed": "Verbindung fehlgeschlagen",
+    "offline": "Offline",
+    "online": "Online",
+    "active": "Aktiv",
+    "inactive": "Inaktiv",
+    "enabled": "Aktiviert",
+    "disabled": "Deaktiviert",
+    "clickToStop": "Zum Trennen klicken",
+    "reconnectingToServer": "Wird erneut mit Server verbunden...",
+    "waitingForNetwork": "Wartet auf Netzwerk..."
+  },
+  "common": {
+    "justNow": "Gerade eben",
+    "back": "Zurück",
+    "cancel": "Abbrechen",
+    "confirm": "Bestätigen",
+    "add": "Hinzufügen",
+    "adding": "Wird hinzugefügt...",
+    "ok": "OK",
+    "save": "Speichern",
+    "delete": "Löschen",
+    "clear": "Löschen",
+    "copy": "Kopieren",
+    "close": "Schließen",
+    "loading": "Wird geladen...",
+    "processing": "Wird verarbeitet...",
+    "retry": "Erneut versuchen",
+    "download": "Herunterladen",
+    "error": "Fehler",
+    "refresh": "Aktualisieren",
+    "and": "und",
+    "success": "Erfolg",
+    "loadFailed": "Laden fehlgeschlagen",
+    "notFound": "Ressource nicht gefunden",
+    "serverError": "Serverfehler",
+    "unknownError": "Unbekannter Fehler",
+    "later": "Später",
+    "login": "Anmelden",
+    "viewDetails": "Details anzeigen",
+    "experimental": "Experimentell",
+    "edit": "Bearbeiten",
+    "next": "Nächste",
+    "or": "ODER",
+    "changelog": "Änderungsprotokoll"
+  },
+  "errors": {
+    "service": {
+      "serviceNotFound": "Servicedatei nicht gefunden. Bitte installieren Sie die App neu",
+      "authRequired": "Administratorberechtigungen erforderlich, um den Service zu installieren",
+      "installFailed": "Service-Installation fehlgeschlagen",
+      "connectionFailed": "Service kann nicht verbunden werden"
+    },
+    "config": {
+      "badConfig": "Konfigurationsfehler. Bitte überprüfen Sie die Serveradresse"
+    },
+    "network": {
+      "timeout": "Verbindungszeitüberschreitung. Bitte überprüfen Sie Ihr Netzwerk",
+      "unreachable": "Server nicht erreichbar. Bitte überprüfen Sie Ihre Netzwerkverbindung",
+      "reset": "Netzwerkverbindung unterbrochen. Bitte überprüfen Sie Ihren Netzwerkstatus",
+      "dns": "DNS-Auflösung fehlgeschlagen. Bitte überprüfen Sie Ihre Netzwerkeinstellungen",
+      "tls": "Sichere Verbindung fehlgeschlagen. Bitte überprüfen Sie Ihre Netzwerkumgebung",
+      "refused": "Kann nicht mit Server verbunden werden. Bitte versuchen Sie es später erneut",
+      "repairFailed": "Netzwerkreparatur fehlgeschlagen. Bitte überprüfen Sie die Einstellungen manuell",
+      "repairDNS": "DNS-Reparatur fehlgeschlagen",
+      "repairRoute": "Routenreparatur fehlgeschlagen",
+      "repairPreFailed": "Netzwerkreparaturvorbereitung fehlgeschlagen",
+      "unavailable": "Keine Netzwerkverbindung. Überprüfen Sie Ihre Gerätenetze und versuchen Sie es erneut."
+    },
+    "server": {
+      "unavailable": "Server nicht verfügbar. Bitte versuchen Sie es später erneut",
+      "overload": "Server ist ausgelastet. Bitte versuchen Sie es später erneut",
+      "maintenance": "Server wird gewartet. Bitte versuchen Sie es später erneut",
+      "internal": "Interner Serverfehler. Bitte versuchen Sie es später erneut",
+      "notImplemented": "Funktion noch nicht verfügbar"
+    },
+    "auth": {
+      "logoutFailed": "Abmeldung fehlgeschlagen. Bitte versuchen Sie es erneut",
+      "tokenRefreshFailed": "Sitzung konnte nicht aktualisiert werden. Bitte melden Sie sich erneut an"
+    },
+    "client": {
+      "badRequest": "Anfrageparameterfehler",
+      "unauthorized": "Bitte melden Sie sich zuerst an",
+      "forbidden": "Sie haben keine Berechtigung, diese Operation durchzuführen",
+      "notFound": "Angeforderte Ressource nicht gefunden",
+      "paymentRequired": "Mitgliedschaft abgelaufen. Bitte erneuern",
+      "notSupported": "Funktion wird nicht unterstützt",
+      "upgradeRequired": "Bitte aktualisieren Sie auf die neueste Version",
+      "conflict": "Operationkonflikt. Bitte versuchen Sie es erneut",
+      "invalidArgument": "Ungültige Parameter",
+      "tooEarly": "Bitte warten Sie einen Moment und versuchen Sie es erneut",
+      "tooManyRequests": "Zu viele Anfragen. Bitte versuchen Sie es später",
+      "invalidClock": "Geräteuhr ist falsch. Bitte stellen Sie sie ein",
+      "selfInvitation": "Sie können Ihren eigenen Einladungscode nicht verwenden",
+      "licenseKeyNotFound": "Lizenzschlüssel nicht gefunden",
+      "licenseKeyUsed": "Lizenzschlüssel wurde bereits verwendet",
+      "licenseKeyExpired": "Lizenzschlüssel ist abgelaufen",
+      "licenseKeyNotMatch": "Sie kommen nicht für diesen Lizenzschlüssel in Frage",
+      "licenseKeyAlreadyRedeemed": "Sie haben bereits einen Lizenzschlüssel eingelöst (ein pro Konto)",
+      "tierMismatch": "Ihre aktuelle Stufe kann diesen Plan nicht kaufen. Bitte kontaktieren Sie den Support, um die Stufe zu wechseln.",
+      "proxyPurchaseDeprecated": "Proxy-Kauf wird nicht mehr unterstützt. Bitten Sie den Empfänger, mit seinem eigenen Konto zu kaufen.",
+      "proxyMembersDeprecated": "Proxy-Mitgliedschaftsverwaltung wurde entfernt. Geben Sie den Empfänger während des Checkouts auf {{brandDomain}}/purchase an."
+    },
+    "tunnel": {
+      "listFailed": "Server-Liste konnte nicht geladen werden",
+      "connectFailed": "Konnte nicht mit Server verbunden werden"
+    },
+    "vpn": {
+      "authFailed": "Authentifizierung fehlgeschlagen. Bitte melden Sie sich erneut an",
+      "membershipExpired": "Mitgliedschaft abgelaufen. Bitte erneuern",
+      "forbidden": "Serverzertifikatsüberprüfung fehlgeschlagen",
+      "protocolError": "Protokoll-Handshake fehlgeschlagen. Bitte versuchen Sie einen anderen Knoten",
+      "connectionFatal": "Verbindung fehlgeschlagen. Bitte versuchen Sie es erneut oder wechseln Sie den Knoten",
+      "permissionDenied": "VPN-Berechtigung verweigert. Bitte aktivieren Sie VPN in den Systemeinstellungen.",
+      "environmentSetupFailed": "Netzwerkeinrichtung fehlgeschlagen. Starten Sie Ihr Gerät neu und versuchen Sie es erneut.",
+      "startFailed": "Service konnte nicht gestartet werden. Bitte versuchen Sie es erneut",
+      "reconnectFailed": "Erneute Verbindung fehlgeschlagen. Bitte versuchen Sie es erneut",
+      "timeout": "Operation abgelaufen. Bitte versuchen Sie es erneut",
+      "allAddrsFailed": "Alle Serveradressen fehlgeschlagen. Bitte wechseln Sie den Knoten"
+    },
+    "action": {
+      "timeout": "Operation abgelaufen. Bitte versuchen Sie es erneut",
+      "parseFailed": "Anfrage-Analyse fehlgeschlagen"
+    },
+    "api": {
+      "requestFailed": "Anfrage fehlgeschlagen. Bitte überprüfen Sie Ihr Netzwerk",
+      "responseFailed": "Antwort-Analyse fehlgeschlagen"
+    },
+    "engine": {
+      "ruleBundlesUnavailable": "Routingregeln konnten nicht heruntergeladen werden. Überprüfen Sie das Netzwerk und versuchen Sie es erneut."
+    },
+    "installCancelled": "Installation abgebrochen",
+    "unknown": "Unbekannter Fehler",
+    "unknownError": "Unbekannter Fehler"
+  },
+  "features": {
+    "fastConnect": "Blitzschnell",
+    "fastConnectDesc": "Intelligente Routing-Optimierung, 80% Latenzreduktion",
+    "security": "Unternehmens-Verschlüsselung",
+    "securityDesc": "Militärstandard-AES-256-Verschlüsselung, Datensicherheit schützen",
+    "global": "Globale Knoten",
+    "globalDesc": "50+ Länder, 200+ Premium-Knoten",
+    "multiDevice": "Multi-Geräte-Unterstützung",
+    "multiDeviceDesc": "Ein Konto, alle Plattformen"
+  },
+  "messages": {
+    "sendVerificationSuccess": "Bestätigungs-E-Mail erfolgreich gesendet",
+    "sendVerificationFailed": "Bestätigungs-E-Mail konnte nicht gesendet werden",
+    "logoutSuccess": "Benutzer abgemeldet",
+    "logoutFailed": "Abmeldung fehlgeschlagen",
+    "copySuccess": "Erfolgreich kopiert",
+    "copyFailed": "Kopieren fehlgeschlagen",
+    "saveSuccess": "Erfolgreich gespeichert",
+    "saveFailed": "Speichern fehlgeschlagen",
+    "deleteSuccess": "Erfolgreich gelöscht",
+    "deleteFailed": "Löschen fehlgeschlagen",
+    "serviceInstalling": "Service wird im Hintergrund installiert. Bitte warten...",
+    "serviceInstallSuccess": "Service erfolgreich installiert!",
+    "serviceInstallFailedAuth": "Administratorberechtigungen erforderlich, um den Service zu installieren. Bitte klicken Sie \"Ja\" in der UAC-Dialogfeld",
+    "updateSuccess": "Erfolgreich aktualisiert",
+    "updateFailed": "Aktualisierung fehlgeschlagen",
+    "networkError": "Netzwerkfehler",
+    "serverError": "Serverfehler",
+    "unknownError": "Unbekannter Fehler"
+  },
+  "loadingAndEmpty": {
+    "noHistoryTitle": "Kein Verlauf",
+    "noHistoryDescription": "Sie haben noch keinen Zahlungs- und Autorisierungsverlauf. Gehen Sie und erleben Sie die Mitgliedschaftsvorteile!",
+    "noPlansTitle": "Keine verfügbaren Pläne",
+    "noPlansDescription": "Pläne werden geladen oder sind vorübergehend nicht verfügbar. Bitte versuchen Sie es später erneut",
+    "noInviteCodesTitle": "Keine Einladungscodes",
+    "noInviteCodesDescription": "Sie haben noch keinen Einladungscode erstellt. Erstellen Sie Ihren exklusiven Einladungscode, um ihn mit Freunden zu teilen!",
+    "noDevicesTitle": "Keine Geräte",
+    "noDevicesDescription": "Sie haben noch keine angemeldeten Geräte"
+  }
+}

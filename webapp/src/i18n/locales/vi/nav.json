@@ -1,0 +1,50 @@
+{
+  "appBar": {
+    "refreshAuth": "Làm mới ủy quyền"
+  },
+  "navigation": {
+    "dashboard": "Bảng điều khiển",
+    "discover": "Khám phá",
+    "account": "Tài khoản",
+    "router": "Router",
+    "devices": "Thiết bị",
+    "faq": "Phản hồi",
+    "purchase": "Mua",
+    "activate": "Kích hoạt",
+    "invite": "Mời",
+    "retailer": "Đại lý bán lẻ",
+    "proHistory": "Lịch sử ủy quyền",
+    "help": "Trợ giúp"
+  },
+  "appBarConnector": {
+    "disconnecting": "Đang ngắt kết nối",
+    "connecting": "Đang kết nối",
+    "antiClickProtection": "Bảo vệ chống spam: Hoạt động quá thường xuyên",
+    "refreshDataFailed": "Không thể làm mới dữ liệu sau hoạt động:",
+    "connectionOperationFailed": "Hoạt động kết nối không thành công:",
+    "disconnectingTooltip": "Đang ngắt kết nối...",
+    "connectingTooltip": "Đang kết nối...",
+    "clickToDisconnect": "Nhấp để ngắt kết nối",
+    "clickToConnect": "Nhấp để kết nối",
+    "anonymous": "Ẩn danh",
+    "disconnect": "Ngắt kết nối",
+    "connect": "Kết nối",
+    "panel": "Bảng",
+    "noNodeSelected": "Vui lòng chọn nút trước khi kết nối"
+  },
+  "appBarMembership": {
+    "trial": "Dùng thử",
+    "standard": "Tiêu chuẩn",
+    "expired": "Đã hết hạn",
+    "proTrial": "Dùng thử Pro",
+    "recharge": "Nạp tiền",
+    "firstOrderPending": "Đơn hàng đầu tiên đang chờ",
+    "unlimitedTrial": "Dùng thử không giới hạn",
+    "completePurchase": "Hoàn tất mua hàng"
+  },
+  "layout": {
+    "deviceInstall": "Cài đặt trên các thiết bị khác",
+    "troubleshooting": "Khắc phục sự cố",
+    "accountAndSettings": "Tài khoản & Cài đặt"
+  }
+}

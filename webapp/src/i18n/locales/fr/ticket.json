@@ -1,0 +1,108 @@
+{
+  "feedback": {
+    "newTicket": "Nouveau ticket",
+    "viewTickets": "Voir les tickets",
+    "myTickets": "Mes tickets",
+    "noTickets": "Aucun ticket pour le moment",
+    "noTicketsHint": "Vous avez un problème ? Soumettez un ticket et nous vous répondrons",
+    "loadError": "Échec du chargement, veuillez réessayer",
+    "status": {
+      "open": "Ouvert",
+      "resolved": "Résolu",
+      "closed": "Fermé"
+    },
+    "adminReplied": "Support a répondu",
+    "replyPlaceholder": "Tapez votre réponse...",
+    "closedNotice": "Ce ticket est fermé",
+    "replyFailed": "Échec de l'envoi de la réponse",
+    "loginToView": "Connectez-vous avec {{email}} pour voir la progression et les réponses",
+    "time": {
+      "justNow": "À l'instant",
+      "minutesAgo": "il y a {{count}}m",
+      "hoursAgo": "il y a {{count}}h",
+      "daysAgo": "il y a {{count}}j"
+    },
+    "send": "Envoyer"
+  },
+  "faq": {
+    "title": "FAQ",
+    "subtitle": "Vérifiez d'abord ici — la plupart des problèmes se résolvent rapidement",
+    "stillNeedHelp": "Vous n'avez pas trouvé votre réponse ?",
+    "submitCta": "Soumettre un ticket",
+    "entryTitle": "FAQ",
+    "entryHint": "Consultez la FAQ avant de soumettre — elle peut résoudre votre problème plus rapidement",
+    "items": {
+      "connection": {
+        "question": "Que dois-je faire face à une connexion instable ou une vitesse lente ?",
+        "answer": "Les problèmes de vitesse sont généralement liés à votre réseau local. Veuillez dépanner dans cet ordre :\n\n1. Essayez d'abord différentes lignes de tunnel. Si toutes les lignes sont lentes, c'est presque certainement un problème de réseau local.\n2. Redémarrez votre routeur. Cela résout la plupart des problèmes temporaires de cache de routage et de liaison.\n3. Appelez votre fournisseur d'accès Internet et demandez s'ils ont appliqué un ralentissement ciblé du trafic international.\n4. Si le fournisseur d'accès offre d'envoyer un technicien sur site, refusez — les fournisseurs d'accès ont souvent des KPI de « traitement du haut débit » et vous pousseront à rétrograder votre forfait en citant de fausses « défaillances de ligne ».\n5. Ce n'est qu'après avoir exclu les cas ci-dessus qu'il s'agit possiblement d'un problème de nœud. Soumettez des commentaires avec les journaux et nous enquêterons."
+      },
+      "appNotWorking": {
+        "question": "Une application ou un jeu spécifique a cessé de fonctionner après avoir installé {{brand}} — et maintenant ?",
+        "answer": "Certaines applications (notamment Adobe Creative Cloud, certains jeux, certains messagers tiers et des applications bancaires / gouvernementales / vidéo chinoises) mettent en cache leurs propres adresses serveur ou nécessitent une adresse IP domestique pour fonctionner. Quand {{brand}} est activé, ces requêtes sont acheminées via le proxy et peuvent être rejetées ou expirer. Essayez dans cet ordre :\n\n1. Redémarrez l'application — la plupart du temps, quitter et rouvrir permet de rafraîchir le cache du serveur.\n2. Passez au contournement intelligent — développez Paramètres avancés au bas du tableau de bord, changez le mode de routage de proxy global à contournement intelligent, et choisissez un pays (ou activez la détection automatique). Le trafic domestique s'écoule ensuite directement sur votre réseau local et seul le trafic international utilise le proxy, ce qui restaure immédiatement la plupart des applications / banques / sites vidéo chinois. Remarque : le mode de routage ne peut être modifié que lorsque {{brand}} est déconnecté. Le contournement intelligent détecte également automatiquement les applications chinoises courantes (WeChat, Taobao, Douyin, 12306, etc.) et les maintient en direct.\n3. Ajoutez l'application à « Applications qui contournent le VPN » — pour les applications récalcitrantes que le contournement intelligent ne couvre pas (jeux domestiques uniquement plus anciens, outils d'entreprise internes), allez à Paramètres avancés → Applications qui contournent le VPN et ajoutez-la. Le trafic de cette application contournera alors complètement le proxy. Sur le bureau, la liste affiche uniquement les applications actuellement en cours d'exécution — lancez d'abord l'application cible, puis revenez et ajoutez-la.\n4. Déconnectez temporairement {{brand}} — dans les cas rares (par exemple Adobe Creative Cloud mettant en cache une adresse IP héritée désormais défunte), déconnectez {{brand}} lors de l'utilisation de cette application et reconnectez-la ensuite.\n5. Si rien de ce qui précède ne fonctionne, soumettez un ticket avec les journaux et nos ingénieurs enquêteront."
+      },
+      "nodeChoice": {
+        "question": "Il y a tellement de nœuds — lequel dois-je choisir ?",
+        "answer": "Option la plus facile : utilisez la sélection automatique. Appuyez sur « Sélection automatique » en haut de la liste des nœuds et {{brand}} sélectionnera le meilleur nœud en fonction de la latence et de la charge en temps réel. Activez « Commutation automatique » et il vous déplacera vers un meilleur nœud lorsque les conditions changeront. C'est le meilleur choix pour la plupart des utilisateurs.\n\nSi vous vraiment voulez sélectionner manuellement :\n\n• Ne tapez pas toujours sur le premier nœud — les premiers (surtout AU / Australie) sont martelés parce que la plupart des utilisateurs tapent le premier par réflexe.\n• Essayez d'abord JP / SG / KR / US — généralement plus stable et plus rapide.\n• S'il ne se connecte pas ou s'il semble lent, passez à un nœud différent — le meilleur nœud varie selon la région et l'heure de la journée.\n• La diffusion en continu et la navigation ne sont pas sensibles au choix du nœud ; les jeux et les appels vidéo sont sensibles à la latence, alors essayez-en quelques-uns et restez avec le plus stable."
+      },
+      "wifiSwitch": {
+        "question": "Le VPN se déconnecte après un changement de WiFi ou de réseau ?",
+        "answer": "{{brand}} prend en charge la reconnexion automatique après les changements de réseau, mais le déclenchement a un délai de quelques secondes à une dizaine de secondes. Si vous ne voulez pas attendre, appuyez manuellement sur Déconnecter puis Connecter pour récupérer immédiatement."
+      },
+      "deviceRemoved": {
+        "question": "Pourquoi mon appareil est-il supprimé / expulsé ?",
+        "answer": "Chaque compte prend en charge jusqu'à 5 appareils connectés simultanément. Quand vous vous connectez sur un 6e appareil, le système supprime automatiquement l'appareil le plus anciennement connecté.\n\nSi vous êtes certain de ne pas avoir dépassé 5 appareils mais que vous êtes toujours expulsé, veuillez soumettre des commentaires et nous aiderons à vérifier les liaisons d'appareils de votre compte."
+      },
+      "updateIssue": {
+        "question": "L'application ne fonctionne pas après la mise à jour ?",
+        "answer": "Les mécanismes de mise à jour diffèrent selon les plateformes, et les plugins ne se rechargent parfois pas immédiatement :\n\n• Windows / macOS : Redémarrez votre ordinateur pour que la nouvelle version soit entièrement en vigueur.\n• iOS : Si vous rencontrez des problèmes après la mise à jour, supprimez l'application et réinstallez-la à partir de l'App Store — cela résout les problèmes de rechargement des plugins d'extension réseau.\n• Android : Redémarrez votre téléphone, ou forcez l'arrêt de l'application dans les paramètres et rouvrez-la."
+      },
+      "loginFailed": {
+        "question": "Échec de la connexion / code de vérification non reçu ?",
+        "answer": "La cause la plus courante est une faute de frappe dans l'e-mail — environ 30 % des utilisateurs de notre base de données font une faute de frappe sur leur e-mail à la première tentative. Veuillez vérifier lettre par lettre :\n\n• Espaces ou caractères supplémentaires autour du signe @\n• Orthographe du domaine (par ex. gmial → gmail, hotmial → hotmail)\n• Confusion entre 0 (zéro) et O (lettre)\n\nAprès confirmation, vérifiez votre dossier spam. Si rien ne s'affiche, essayez une adresse e-mail différente."
+      }
+    }
+  },
+  "ticket": {
+    "title": "Soumettre un ticket",
+    "description": "Décrivez votre problème et nous vous répondrons par e-mail dès que possible.",
+    "feedbackTitle": "Commentaires",
+    "contentLabel": "Description du problème",
+    "contentPlaceholder": "Veuillez décrire le problème en détail, y compris les étapes d'opération, les messages d'erreur, etc., ce qui nous aidera à résoudre le problème plus rapidement.",
+    "submitButton": "Soumettre un ticket",
+    "loginToSubmit": "Se connecter pour soumettre",
+    "submitting": "Envoi en cours...",
+    "submitSuccess": "Ticket soumis avec succès",
+    "submitSuccessTitle": "Ticket soumis avec succès !",
+    "submitFailed": "Échec de la soumission du ticket, veuillez réessayer ultérieurement",
+    "nextStepHint": "Veuillez vérifier votre e-mail",
+    "emailReplyHint": "Notre équipe d'assistance communiquera avec vous par e-mail, veuillez surveiller les réponses dans votre boîte de réception.",
+    "howItWorks": "Comment ça marche",
+    "dataCollectionHint": "La version de l'application, les informations système et les journaux sont automatiquement collectés à la soumission pour nous aider à diagnostiquer les problèmes plus rapidement.",
+    "stepper": {
+      "step1": "Décrire le problème",
+      "step2": "Télécharger les journaux",
+      "step3": "Réponse par e-mail"
+    },
+    "entryTitle": "Contacter le support",
+    "entryDescription": "Vous avez rencontré un problème ? Soumettez un ticket, nous vous répondrons bientôt",
+    "betaWarning": "Vous utilisez une version bêta. Si vous rencontrez des problèmes, vous pouvez revenir à la version stable dans les paramètres du compte.",
+    "switchToStable": "Passer à la version stable",
+    "emailLabel": "E-mail de contact",
+    "emailPlaceholder": "Entrez votre adresse e-mail pour que nous puissions vous répondre",
+    "anonymousHint": "Vous n'êtes pas connecté. Nous vous répondrons par e-mail après la soumission.",
+    "validation": {
+      "contentRequired": "Veuillez entrer la description du problème",
+      "contentTooLong": "La description du problème ne peut pas dépasser 5000 caractères",
+      "emailRequired": "Veuillez entrer votre adresse e-mail",
+      "emailInvalid": "Veuillez entrer une adresse e-mail valide"
+    },
+    "quickIssue": {
+      "label": "Sélection rapide",
+      "cannotConnect": "Impossible de se connecter",
+      "unstable": "Connexion instable",
+      "slow": "Vitesse lente",
+      "crash": "Application plantée",
+      "subscription": "Problème d'abonnement"
+    }
+  }
+}

@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { languages } from '../i18n';
 
 const localesDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../locales');
 const FORBIDDEN = /开途|開途|Kaitu|kaitu\.io|Overleap|overleap\.io/;
@@ -17,8 +18,8 @@ describe('locale files are brand-neutral', () => {
     .readdirSync(localesDir)
     .filter((d) => fs.statSync(path.join(localesDir, d)).isDirectory());
 
-  it('found the expected 7 locale dirs', () => {
-    expect(langs.sort()).toEqual(['en-AU', 'en-GB', 'en-US', 'ja', 'zh-CN', 'zh-HK', 'zh-TW']);
+  it('found one locale dir per registered language', () => {
+    expect(langs.sort()).toEqual(Object.keys(languages).sort());
   });
 
   for (const lang of langs) {

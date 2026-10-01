@@ -1,0 +1,79 @@
+{
+  "startup": {
+    "activeUsers": "المستخدمون النشطون",
+    "certified": "معتمد ISO 27001",
+    "uptime": "وقت التشغيل",
+    "authSuccess": "نجح المصادقة، تم تحديث حالة دخول المستخدم",
+    "deviceCanDirectLogin": "يمكن للجهاز الدخول مباشرة",
+    "deviceCannotDirectLogin": "لا يمكن للجهاز الدخول مباشرة",
+    "checkDeviceLoginFailed": "فشل التحقق من حالة دخول الجهاز",
+    "deviceLoginFailed": "فشل دخول الجهاز",
+    "deviceLoginFailedRetry": "فشل دخول الجهاز، يرجى المحاولة",
+    "deviceLoginSuccess": "نجح دخول الجهاز",
+    "pleaseEnterInviteCode": "يرجى إدخال رمز الدعوة",
+    "registrationFailed": "فشل التسجيل",
+    "registrationFailedRetry": "فشل التسجيل، يرجى المحاولة",
+    "newDevice": "جهاز جديد",
+    "freeDeviceRegistrationFailed": "فشل تسجيل الجهاز المجاني",
+    "inviteCodeIncorrect": "رمز الدعوة غير صحيح",
+    "inviteCodeInvalidOrExpired": "رمز الدعوة غير صحيح أو منتهي الصلاحية",
+    "getInviteCodeInfoFailed": "فشل الحصول على معلومات رمز الدعوة",
+    "haveProAccount": "هل لديك بالفعل حساب Pro؟",
+    "loginProAccountDesc": "قم بتسجيل الدخول إلى حساب Pro الخاص بك واستمتع بكل الميزات",
+    "deviceAlreadyRegistered": "تم الكشف عن أن هذا الجهاز لديه حساب مسجل",
+    "deviceReady": "الجهاز جاهز لتسجيل الدخول",
+    "deviceReadyDesc": "جهازك مسجل وجاهز للاستخدام",
+    "orEmailLogin": "أو قم بتسجيل الدخول بالبريد الإلكتروني",
+    "experienceProFeatures": "تجربة ميزات Pro",
+    "enterInviteCodeDesc": "أدخل رمز الدعوة لتجربة ميزات Pro فوراً",
+    "inviteCode": "رمز الدعوة",
+    "enterInviteCodePlaceholder": "يرجى إدخال رمز الدعوة (اختياري)",
+    "youHaveGoodFriend": "🎁 لديك صديق رائع😼",
+    "enjoyNow": "استمتع الآن",
+    "days": "أيام",
+    "pro": "Pro",
+    "extraBonus": "مكافأة إضافية!",
+    "experience": "تجربة {{days}} يوم",
+    "purchaseBonus": "الشراء يحصل على {{purchaseDays}}+{{downloadDays}} يوم",
+    "buyNowExtraBonus": "اشترِ الآن، احصل على {{days}} يوماً إضافياً",
+    "buyNowEnjoyAllPro": "اشترِ الآن للحصول على جميع مزايا Pro",
+    "experienceOnly": "تجربة {{days}} يوم فقط",
+    "experienceNow": "جرب الآن",
+    "or": "أو",
+    "noAccountNoInviteCode": "لا حساب أو رمز دعوة؟",
+    "processing": "جاري المعالجة...",
+    "registerNewAccount": "سجل حساباً جديداً مباشرة"
+  },
+  "serviceStatus": {
+    "disconnected": "تم قطع الخدمة، إعادة الاتصال..."
+  },
+  "upgradeRequired": {
+    "title": "يرجى تحديث التطبيق",
+    "description": "الإصدار الحالي قديم، يرجى تنزيل أحدث إصدار للمتابعة.",
+    "downloadButton": "اذهب للتحميل"
+  },
+  "forceUpgrade": {
+    "title": "الإصدار قديم جداً، التحديث مطلوب",
+    "description": "إصدار التطبيق الحالي ({{currentVersion}}) لم يعد مدعوماً. يرجى التحديث إلى الإصدار {{minVersion}} أو أحدث للمتابعة.",
+    "downloadButton": "تحديث الآن"
+  },
+  "app": {
+    "slogan": "خدمة وكيل شبكة آمنة وموثوقة",
+    "error": "خطأ",
+    "updateNow": "تحديث الآن",
+    "readyToInstall": "جاهز للتثبيت",
+    "hoverForDetails": "حرك للتفاصيل",
+    "releaseNotes": "ملاحظات الإصدار",
+    "newVersionAvailable": "الإصدار الجديد {{version}} متاح!",
+    "updating": "جاري التحديث",
+    "downloadingUpdate": "جاري تنزيل وتثبيت التحديث... {{progress}}%",
+    "errorBoundary": {
+      "title": "خطأ التطبيق",
+      "description": "تم الإبلاغ عن الخطأ تلقائياً، سنصلحه قريباً.",
+      "details": "تفاصيل الخطأ",
+      "retry": "إعادة المحاولة"
+    },
+    "installing": "جاري التثبيت...",
+    "beingInstalled": "جاري التثبيت..."
+  }
+}

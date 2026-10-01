@@ -1,0 +1,9 @@
+{
+  "theme": {
+    "switchToLight": "라이트",
+    "switchToDark": "다크",
+    "light": "라이트 모드",
+    "dark": "다크 모드",
+    "system": "시스템 따르기"
+  }
+}

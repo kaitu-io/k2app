@@ -1,0 +1,28 @@
+{
+  "feedback": {
+    "buttonLabel": "Segnala Problema",
+    "buttonTooltip": "Hai problemi? Clicca per segnalare",
+    "dialogTitle": "Segnala Problema",
+    "dialogDescription": "Cliccare su invia raccoglierà i log dell'app per aiutarci a identificare e risolvere i problemi. I log non contengono informazioni sensibili.",
+    "submitButton": "Invia Feedback",
+    "uploading": "Caricamento log in corso...",
+    "uploadSuccess": "Feedback Inviato",
+    "uploadSuccessDescription": "Grazie per il tuo feedback! Lo affronteremo presto.",
+    "uploadError": "Invio Fallito",
+    "uploadFailed": "Impossibile caricare i log. Per favore riprova più tardi.",
+    "platformNotSupported": "Questa funzione non è ancora supportata sulla piattaforma attuale",
+    "disconnectFeedback": {
+      "title": "Com'era la tua connessione?",
+      "thankYou": "Grazie per il tuo feedback",
+      "detailTitle": "Cos'è andato male? (facoltativo)",
+      "submit": "Invia",
+      "tags": {
+        "slow": "Lenta",
+        "cantConnect": "Non riesco a connettermi",
+        "frequentDrops": "Cadute frequenti",
+        "contentBlocked": "Siti/video bloccati",
+        "other": "Altro"
+      }
+    }
+  }
+}

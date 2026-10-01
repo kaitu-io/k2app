@@ -1,0 +1,108 @@
+{
+  "feedback": {
+    "newTicket": "Tiket Baru",
+    "viewTickets": "Lihat Tiket",
+    "myTickets": "Tiket Saya",
+    "noTickets": "Belum ada tiket",
+    "noTicketsHint": "Mengalami masalah? Ajukan tiket dan kami akan membalasnya",
+    "loadError": "Gagal memuat, silakan coba lagi",
+    "status": {
+      "open": "Buka",
+      "resolved": "Diselesaikan",
+      "closed": "Ditutup"
+    },
+    "adminReplied": "Dukungan membalas",
+    "replyPlaceholder": "Ketik balasan Anda...",
+    "closedNotice": "Tiket ini ditutup",
+    "replyFailed": "Gagal mengirim balasan",
+    "loginToView": "Masuk dengan {{email}} untuk melihat kemajuan dan balasan",
+    "time": {
+      "justNow": "Baru saja",
+      "minutesAgo": "{{count}}m yang lalu",
+      "hoursAgo": "{{count}}j yang lalu",
+      "daysAgo": "{{count}}h yang lalu"
+    },
+    "send": "Kirim"
+  },
+  "faq": {
+    "title": "FAQ",
+    "subtitle": "Periksa di sini dulu — sebagian besar masalah teratasi dengan cepat",
+    "stillNeedHelp": "Tidak menemukan jawaban Anda?",
+    "submitCta": "Ajukan Tiket",
+    "entryTitle": "FAQ",
+    "entryHint": "Periksa FAQ sebelum mengajukan — itu mungkin menyelesaikan masalah Anda lebih cepat",
+    "items": {
+      "connection": {
+        "question": "Apa yang harus saya lakukan tentang koneksi tidak stabil atau kecepatan lambat?",
+        "answer": "Masalah kecepatan biasanya terkait dengan jaringan lokal Anda. Silakan lakukan troubleshooting dalam urutan ini:\n\n1. Coba lini terowongan yang berbeda terlebih dahulu. Jika semua lini lambat, itu hampir pasti masalah jaringan lokal.\n2. Mulai ulang router Anda. Ini menyelesaikan sebagian besar cache rute sementara dan masalah tautan.\n3. Hubungi ISP Anda dan tanyakan apakah mereka telah menerapkan pembatasan yang ditargetkan untuk lalu lintas luar negeri.\n4. Jika ISP menawarkan untuk mengirim teknisi ke lokasi, tolak — ISP sering memiliki KPI \"pemrosesan broadband\" dan akan mendorong Anda untuk menurunkan paket dengan mengutip \"kesalahan lini\" palsu.\n5. Hanya setelah mengesampingkan hal di atas, itu mungkin masalah node. Kirim umpan balik dengan log dan kami akan menyelidiki."
+      },
+      "appNotWorking": {
+        "question": "Aplikasi atau game tertentu berhenti bekerja setelah saya menginstal {{brand}} — apa sekarang?",
+        "answer": "Beberapa aplikasi (terutama Adobe Creative Cloud, game tertentu, utusan pihak ketiga, dan aplikasi perbankan / pemerintah / video Tiongkok) menyimpan alamat server mereka sendiri atau memerlukan IP domestik untuk bekerja. Ketika {{brand}} aktif, permintaan tersebut dirutekan melalui proxy dan mungkin ditolak atau habis waktu. Coba dalam urutan ini:\n\n1. Mulai ulang aplikasi — sebagian besar waktu, keluar dan buka kembali membiarkannya menyegarkan cache server.\n2. Beralih ke Smart Bypass — perluas Pengaturan Lanjutan di bagian bawah Dasbor, ubah Mode Rute dari Proxy Global ke Smart Bypass, dan pilih negara (atau aktifkan deteksi otomatis). Lalu lintas domestik kemudian langsung melalui jaringan lokal Anda dan hanya lalu lintas luar negeri yang menggunakan proxy, yang memulihkan sebagian besar aplikasi / bank / situs video Tiongkok secara instan. Catatan: mode rute hanya dapat diubah saat {{brand}} terputus. Smart Bypass juga secara otomatis mendeteksi aplikasi Tiongkok umum (WeChat, Taobao, Douyin, 12306, dll.) dan menjaganya tetap langsung.\n3. Tambahkan aplikasi ke \"Aplikasi yang melewati VPN\" — untuk aplikasi keras yang Smart Bypass tidak tutup (game domestik saja lebih lama, alat perusahaan internal), buka Pengaturan Lanjutan → Aplikasi yang melewati VPN dan tambahkan. Lalu lintas aplikasi itu kemudian akan sepenuhnya melewati proxy. Di desktop daftar hanya menampilkan aplikasi yang sedang berjalan — luncurkan aplikasi target terlebih dahulu, lalu kembali dan tambahkan.\n4. Secara sementara putuskan {{brand}} — dalam kasus yang jarang terjadi (mis. Adobe Creative Cloud menyimpan IP warisan yang sekarang tidak berfungsi), putuskan {{brand}} saat menggunakan aplikasi itu dan sambungkan kembali setelahnya.\n5. Jika tidak ada di atas yang membantu, ajukan tiket dengan log dan insinyur kami akan menyelidiki."
+      },
+      "nodeChoice": {
+        "question": "Ada banyak node — mana yang harus saya pilih?",
+        "answer": "Opsi termudah: gunakan Pilih Otomatis. Ketuk \"Pilih Otomatis\" di bagian atas daftar node dan {{brand}} akan memilih node terbaik berdasarkan latensi dan beban real-time. Aktifkan \"Pertukaran Otomatis\" dan itu akan memindahkan Anda ke node yang lebih baik saat kondisi berubah. Ini adalah pilihan terbaik bagi sebagian besar pengguna.\n\nJika Anda benar-benar ingin memilih secara manual:\n\n• Jangan selalu ketuk node pertama — node pertama (terutama AU / Australia) mendapat banyak karena sebagian besar pengguna mengetuk yang pertama secara otomatis.\n• Coba JP / SG / KR / US terlebih dahulu — biasanya lebih stabil dan lebih cepat.\n• Jika tidak akan terhubung atau terasa lambat, beralih ke yang berbeda — node terbaik bervariasi menurut wilayah dan waktu dalam sehari.\n• Streaming dan browsing tidak sensitif terhadap pilihan node; gaming dan panggilan video sensitif terhadap latensi, jadi coba beberapa dan tetap dengan yang paling stabil."
+      },
+      "wifiSwitch": {
+        "question": "VPN terputus setelah beralih WiFi atau jaringan?",
+        "answer": "{{brand}} mendukung sambungan ulang otomatis setelah perubahan jaringan, tetapi pemicunya memiliki penundaan beberapa detik hingga sekitar selusin detik. Jika Anda tidak ingin menunggu, secara manual ketuk Putuskan lalu Hubungkan untuk pulih segera."
+      },
+      "deviceRemoved": {
+        "question": "Mengapa perangkat saya dihapus / dikick?",
+        "answer": "Setiap akun mendukung hingga 5 perangkat yang masuk secara bersamaan. Ketika Anda masuk di perangkat ke-6, sistem secara otomatis menghapus perangkat yang masuk paling awal.\n\nJika Anda yakin Anda tidak melebihi 5 perangkat tetapi masih dikick, silakan kirim umpan balik dan kami akan membantu memeriksa pengikatan perangkat akun Anda."
+      },
+      "updateIssue": {
+        "question": "Aplikasi tidak bekerja setelah pembaruan?",
+        "answer": "Mekanisme pembaruan berbeda di seluruh platform, dan plugin kadang tidak memuat ulang segera:\n\n• Windows / macOS: Mulai ulang komputer Anda sehingga versi baru berlaku penuh.\n• iOS: Jika Anda melihat masalah setelah pembaruan, hapus aplikasi dan instal ulang dari App Store — ini menyelesaikan masalah pemuatan ulang plugin Network Extension.\n• Android: Mulai ulang ponsel Anda, atau paksa-hentikan aplikasi di Pengaturan dan buka kembali."
+      },
+      "loginFailed": {
+        "question": "Login gagal / kode verifikasi tidak diterima?",
+        "answer": "Penyebab paling umum adalah kesalahan ketik di email — sekitar 30% pengguna di database kami salah mengeja email mereka pada percobaan pertama. Silakan periksa huruf demi huruf:\n\n• Spasi atau karakter ekstra di sekitar tanda @\n• Ejaan domain (mis. gmial → gmail, hotmial → hotmail)\n• Kebingungan antara 0 (nol) dan O (huruf)\n\nSetelah mengonfirmasi, periksa folder spam Anda. Jika tidak ada yang tiba, coba alamat email yang berbeda."
+      }
+    }
+  },
+  "ticket": {
+    "title": "Ajukan Tiket",
+    "description": "Jelaskan masalah Anda dan kami akan membalas melalui email sesegera mungkin.",
+    "feedbackTitle": "Umpan Balik",
+    "contentLabel": "Deskripsi Masalah",
+    "contentPlaceholder": "Silakan jelaskan masalah secara detail, termasuk langkah operasi, pesan kesalahan, dll., yang akan membantu kami menyelesaikan masalah lebih cepat.",
+    "submitButton": "Ajukan Tiket",
+    "loginToSubmit": "Masuk untuk Ajukan",
+    "submitting": "Mengirim...",
+    "submitSuccess": "Tiket berhasil dikirim",
+    "submitSuccessTitle": "Tiket Berhasil Dikirim!",
+    "submitFailed": "Gagal mengirim tiket, silakan coba lagi nanti",
+    "nextStepHint": "Silakan periksa email Anda",
+    "emailReplyHint": "Tim dukungan kami akan berkomunikasi dengan Anda melalui email, silakan perhatikan balasan di kotak masuk Anda.",
+    "howItWorks": "Cara Kerjanya",
+    "dataCollectionHint": "Versi aplikasi, info sistem, dan log secara otomatis dikumpulkan pada pengiriman untuk membantu kami mendiagnosis masalah lebih cepat.",
+    "stepper": {
+      "step1": "Jelaskan Masalah",
+      "step2": "Unggah Log",
+      "step3": "Balasan Email"
+    },
+    "entryTitle": "Hubungi Dukungan",
+    "entryDescription": "Mengalami masalah? Ajukan tiket, kami akan membalas segera",
+    "betaWarning": "Anda menggunakan versi Beta. Jika Anda mengalami masalah, Anda dapat beralih kembali ke stabil di pengaturan Akun.",
+    "switchToStable": "Beralih ke Stabil",
+    "emailLabel": "Email Kontak",
+    "emailPlaceholder": "Masukkan alamat email Anda sehingga kami dapat membalas",
+    "anonymousHint": "Anda tidak masuk. Kami akan membalas Anda melalui email setelah pengiriman.",
+    "validation": {
+      "contentRequired": "Silakan masukkan deskripsi masalah",
+      "contentTooLong": "Deskripsi masalah tidak boleh melebihi 5000 karakter",
+      "emailRequired": "Silakan masukkan alamat email Anda",
+      "emailInvalid": "Silakan masukkan alamat email yang valid"
+    },
+    "quickIssue": {
+      "label": "Pilihan cepat",
+      "cannotConnect": "Tidak dapat terhubung",
+      "unstable": "Koneksi tidak stabil",
+      "slow": "Kecepatan lambat",
+      "crash": "Kerusakan aplikasi",
+      "subscription": "Masalah langganan"
+    }
+  }
+}

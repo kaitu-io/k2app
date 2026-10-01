@@ -1,0 +1,61 @@
+{
+  "router": {
+    "title": "Router",
+    "connected": "Terhubung",
+    "disconnected": "Terputus",
+    "connect": "Hubungkan",
+    "disconnect": "Putuskan",
+    "offline": "Tidak dapat menjangkau router {{name}}. Periksa apakah router aktif.",
+    "retry": "Coba Lagi"
+  },
+  "setup": {
+    "title": "Atur {{name}}",
+    "intro": "Ketuk tombol di bawah untuk menyelesaikan pengaturan awal router dalam satu langkah.",
+    "submit": "Mulai pengaturan",
+    "error": {
+      "mint_failed": "Gagal mendapatkan kredensial koneksi. Periksa jaringan Anda dan coba lagi.",
+      "key_failed": "Gagal mendapatkan kunci kontrol. Periksa jaringan Anda dan coba lagi.",
+      "push_failed": "Gagal mendorong konfigurasi ke router. Periksa bahwa router aktif."
+    }
+  },
+  "settings": {
+    "title": "Pengaturan Router",
+    "version": "Versi firmware: {{version}}",
+    "unbind": "Lepas Ikatan",
+    "unbindConfirmTitle": "Lepas ikatan router ini?",
+    "unbindConfirmBody": "Setelah melepas ikatan, aplikasi ini tidak lagi dapat mengontrol router. Anda perlu mengaturnya lagi untuk menggunakannya.",
+    "unbindCancel": "Batal",
+    "unbindConfirm": "Lepas Ikatan"
+  },
+  "exclusion": {
+    "title": "Hubungkan kedua terowongan?",
+    "bodyRouter": "VPN perangkat Anda sudah terhubung. Melanjutkan akan merutekan lalu lintas melalui kedua terowongan sekaligus — kami merekomendasikan untuk memutuskan VPN lokal terlebih dahulu.",
+    "bodyDashboard": "Router di jaringan ini sudah melindungi lalu lintas Anda. Melanjutkan akan merutekan lalu lintas melalui kedua terowongan sekaligus — kami merekomendasikan untuk memutuskan router terlebih dahulu.",
+    "keep": "Pertahankan kedua",
+    "proceedRouter": "Putuskan VPN lokal & lanjutkan",
+    "proceedDashboard": "Putuskan router & lanjutkan"
+  },
+  "takeover": {
+    "banner": "Router di jaringan ini melindungi lalu lintas Anda"
+  },
+  "legacy": {
+    "upgradeHint": "Router firmware yang terdeteksi kedaluwarsa. Silakan tingkatkan k2r di router sebelum mengelolanya dari aplikasi."
+  },
+  "slots": {
+    "title": "Saluran",
+    "customName": "Nama khusus",
+    "unbound": "Tidak Terikat",
+    "failClosed": "Saluran turun — lalu lintas diblokir",
+    "downFor": "Turun selama {{duration}}",
+    "rename": "Ubah Nama Wi-Fi",
+    "renameHint": "1-32 karakter",
+    "password": "Ubah Kata Sandi Wi-Fi",
+    "passwordHint": "8-63 karakter",
+    "confirm": "Terapkan",
+    "cancel": "Batal",
+    "applyFailed": "Gagal menerapkan, silakan coba lagi",
+    "managedByAccount": "Router ini dikelola oleh akun yang terikat",
+    "unbindEnterpriseBody": "Melepas ikatan akan membawa SEMUA saluran offline. Pemulihan memerlukan bantuan operator. Lanjutkan?",
+    "managementGroup": "Jaringan manajemen"
+  }
+}

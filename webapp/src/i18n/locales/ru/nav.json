@@ -1,0 +1,50 @@
+{
+  "appBar": {
+    "refreshAuth": "Обновить авторизацию"
+  },
+  "navigation": {
+    "dashboard": "Панель управления",
+    "discover": "Обзор",
+    "account": "Аккаунт",
+    "router": "Роутер",
+    "devices": "Устройства",
+    "faq": "Обратная связь",
+    "purchase": "Покупка",
+    "activate": "Активировать",
+    "invite": "Приглашение",
+    "retailer": "Реселлер",
+    "proHistory": "История авторизации",
+    "help": "Помощь"
+  },
+  "appBarConnector": {
+    "disconnecting": "Отключение",
+    "connecting": "Подключение",
+    "antiClickProtection": "Защита от спама: слишком частые операции",
+    "refreshDataFailed": "Не удалось обновить данные после операции:",
+    "connectionOperationFailed": "Ошибка операции подключения:",
+    "disconnectingTooltip": "Отключение...",
+    "connectingTooltip": "Подключение...",
+    "clickToDisconnect": "Нажмите для отключения",
+    "clickToConnect": "Нажмите для подключения",
+    "anonymous": "Анонимный",
+    "disconnect": "Отключить",
+    "connect": "Подключить",
+    "panel": "Панель",
+    "noNodeSelected": "Пожалуйста выберите узел перед подключением"
+  },
+  "appBarMembership": {
+    "trial": "Пробный период",
+    "standard": "Стандартный",
+    "expired": "Истекла",
+    "proTrial": "Pro пробный период",
+    "recharge": "Пополнение",
+    "firstOrderPending": "Первый заказ в ожидании",
+    "unlimitedTrial": "Неограниченный пробный период",
+    "completePurchase": "Завершить покупку"
+  },
+  "layout": {
+    "deviceInstall": "Установить на другие устройства",
+    "troubleshooting": "Устранение неисправностей",
+    "accountAndSettings": "Аккаунт и настройки"
+  }
+}

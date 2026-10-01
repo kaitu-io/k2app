@@ -1,0 +1,50 @@
+{
+  "appBar": {
+    "refreshAuth": "အသုံးပြုခွင့် ပြန်လည်ဆန်းသစ်မည်"
+  },
+  "navigation": {
+    "dashboard": "ပင်မစာမျက်နှာ",
+    "discover": "ရှာဖွေရန်",
+    "account": "အကောင့်",
+    "router": "ရောက်တာ",
+    "devices": "စက်များ",
+    "faq": "အကြံပြုချက်",
+    "purchase": "ဝယ်ယူမည်",
+    "activate": "အသက်သွင်းမည်",
+    "invite": "ဖိတ်ခေါ်မည်",
+    "retailer": "ကိုယ်စားလှယ်",
+    "proHistory": "အသုံးပြုခွင့် မှတ်တမ်း",
+    "help": "အကူအညီ"
+  },
+  "appBarConnector": {
+    "disconnecting": "ချိတ်ဆက်မှု ဖြတ်နေသည်",
+    "connecting": "ချိတ်ဆက်နေသည်",
+    "antiClickProtection": "စပမ်းကာကွယ်ရေး - လုပ်ဆောင်မှု မြန်လွန်းနေသည်",
+    "refreshDataFailed": "လုပ်ဆောင်ပြီးနောက် ဒေတာ ပြန်လည်ဖွင့်၍ မရပါ -",
+    "connectionOperationFailed": "ချိတ်ဆက်မှု လုပ်ဆောင်ချက် မအောင်မြင်ပါ -",
+    "disconnectingTooltip": "ချိတ်ဆက်မှု ဖြတ်နေသည်...",
+    "connectingTooltip": "ချိတ်ဆက်နေသည်...",
+    "clickToDisconnect": "နှိပ်၍ ချိတ်ဆက်မှု ဖြတ်မည်",
+    "clickToConnect": "နှိပ်၍ ချိတ်ဆက်မည်",
+    "anonymous": "အမည်ဝှက်",
+    "disconnect": "ဖြတ်မည်",
+    "connect": "ချိတ်ဆက်မည်",
+    "panel": "ထိန်းချုပ်ခန်း",
+    "noNodeSelected": "ချိတ်ဆက်ရန် နိုဒ်ကို အရင်ရွေးပါ"
+  },
+  "appBarMembership": {
+    "trial": "စမ်းသုံး",
+    "standard": "စံ",
+    "expired": "သက်တမ်းကုန်",
+    "proTrial": "Pro စမ်းသုံး",
+    "recharge": "ငွေဖြည့်မည်",
+    "firstOrderPending": "ပထမအော်ဒါ စောင့်ဆိုင်းဆဲ",
+    "unlimitedTrial": "အကန့်အသတ်မဲ့ စမ်းသုံး",
+    "completePurchase": "ဝယ်ယူမှု ပြီးမြောက်စေမည်"
+  },
+  "layout": {
+    "deviceInstall": "အခြားစက်များတွင် ထည့်သွင်းမည်",
+    "troubleshooting": "ပြဿနာရှာဖွေဖြေရှင်းခြင်း",
+    "accountAndSettings": "အကောင့်နှင့် ဆက်တင်"
+  }
+}

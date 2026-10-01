@@ -1,0 +1,79 @@
+{
+  "startup": {
+    "activeUsers": "활성 사용자",
+    "certified": "ISO 27001 인증",
+    "uptime": "가동 시간",
+    "authSuccess": "인증 성공. 사용자 로그인 상태가 업데이트되었습니다",
+    "deviceCanDirectLogin": "기기가 직접 로그인할 수 있습니다",
+    "deviceCannotDirectLogin": "기기가 직접 로그인할 수 없습니다",
+    "checkDeviceLoginFailed": "기기 로그인 상태 확인 실패",
+    "deviceLoginFailed": "기기 로그인 실패",
+    "deviceLoginFailedRetry": "기기 로그인 실패. 다시 시도해 주세요",
+    "deviceLoginSuccess": "기기 로그인 성공",
+    "pleaseEnterInviteCode": "초대 코드를 입력해 주세요",
+    "registrationFailed": "가입 실패",
+    "registrationFailedRetry": "가입 실패. 다시 시도해 주세요",
+    "newDevice": "신규 기기",
+    "freeDeviceRegistrationFailed": "무료 기기 등록 실패",
+    "inviteCodeIncorrect": "초대 코드가 올바르지 않습니다",
+    "inviteCodeInvalidOrExpired": "초대 코드가 유효하지 않거나 만료되었습니다",
+    "getInviteCodeInfoFailed": "초대 코드 정보를 가져올 수 없습니다",
+    "haveProAccount": "이미 Pro 계정이 있으신가요?",
+    "loginProAccountDesc": "Pro 계정으로 로그인하여 모든 기능을 즐기세요",
+    "deviceAlreadyRegistered": "이 기기가 등록된 계정을 감지했습니다",
+    "deviceReady": "기기가 로그인 준비 완료",
+    "deviceReadyDesc": "기기가 등록되었으며 사용할 준비가 되었습니다",
+    "orEmailLogin": "또는 이메일로 로그인",
+    "experienceProFeatures": "Pro 기능 경험하기",
+    "enterInviteCodeDesc": "초대 코드를 입력하여 즉시 Pro 기능을 경험해 보세요",
+    "inviteCode": "초대 코드",
+    "enterInviteCodePlaceholder": "초대 코드를 입력해 주세요 (선택사항)",
+    "youHaveGoodFriend": "🎁 좋은 친구가 있으시네요😼",
+    "enjoyNow": "지금 즐기기",
+    "days": "일",
+    "pro": "Pro",
+    "extraBonus": "추가 보너스!",
+    "experience": "{{days}}일 경험",
+    "purchaseBonus": "구매하면 {{purchaseDays}}+{{downloadDays}}일 받기",
+    "buyNowExtraBonus": "지금 구매하면 {{days}}일 추가",
+    "buyNowEnjoyAllPro": "지금 구매하여 모든 Pro 혜택 누리기",
+    "experienceOnly": "{{days}}일만 경험",
+    "experienceNow": "지금 경험하기",
+    "or": "또는",
+    "noAccountNoInviteCode": "계정이나 초대 코드가 없으신가요?",
+    "processing": "처리 중...",
+    "registerNewAccount": "새 계정 등록"
+  },
+  "serviceStatus": {
+    "disconnected": "서비스 연결 해제됨. 재연결 중..."
+  },
+  "upgradeRequired": {
+    "title": "앱 업데이트 필요",
+    "description": "현재 버전이 오래되었습니다. 최신 버전을 다운로드하여 계속 진행해 주세요.",
+    "downloadButton": "다운로드 페이지로 이동"
+  },
+  "forceUpgrade": {
+    "title": "버전이 너무 오래되어 업데이트 필요",
+    "description": "현재 앱 버전({{currentVersion}})은 더 이상 지원되지 않습니다. 버전 {{minVersion}} 이상으로 업데이트하여 계속 진행해 주세요.",
+    "downloadButton": "지금 업데이트"
+  },
+  "app": {
+    "slogan": "안전하고 편리한 네트워크 프록시 서비스",
+    "error": "오류",
+    "updateNow": "지금 업데이트",
+    "readyToInstall": "설치할 준비가 됨",
+    "hoverForDetails": "자세한 내용은 마우스를 가져가세요",
+    "releaseNotes": "릴리스 노트",
+    "newVersionAvailable": "새 버전 {{version}}을 사용할 수 있습니다!",
+    "updating": "업데이트 중",
+    "downloadingUpdate": "업데이트를 다운로드하고 설치 중... {{progress}}%",
+    "errorBoundary": {
+      "title": "응용 프로그램 오류",
+      "description": "오류가 자동으로 보고되었습니다. 곧 해결하겠습니다.",
+      "details": "오류 세부정보",
+      "retry": "다시 시도"
+    },
+    "installing": "설치 중...",
+    "beingInstalled": "설치 중입니다..."
+  }
+}

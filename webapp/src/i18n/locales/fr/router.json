@@ -1,0 +1,61 @@
+{
+  "router": {
+    "title": "Routeur",
+    "connected": "Connecté",
+    "disconnected": "Déconnecté",
+    "connect": "Connecter",
+    "disconnect": "Déconnecter",
+    "offline": "Impossible de joindre le routeur {{name}}. Vérifiez qu'il est en ligne.",
+    "retry": "Réessayer"
+  },
+  "setup": {
+    "title": "Configurer {{name}}",
+    "intro": "Appuyez sur le bouton ci-dessous pour terminer la première configuration du routeur en une étape.",
+    "submit": "Démarrer la configuration",
+    "error": {
+      "mint_failed": "Échec de l'obtention d'une identité de connexion. Vérifiez votre réseau et réessayez.",
+      "key_failed": "Échec de l'obtention d'une clé de contrôle. Vérifiez votre réseau et réessayez.",
+      "push_failed": "Échec de l'envoi de la configuration au routeur. Vérifiez qu'il est en ligne."
+    }
+  },
+  "settings": {
+    "title": "Paramètres du routeur",
+    "version": "Version du firmware : {{version}}",
+    "unbind": "Désapparier",
+    "unbindConfirmTitle": "Désapparier ce routeur ?",
+    "unbindConfirmBody": "Après désappairage, cette application ne pourra plus contrôler le routeur. Vous devrez le reconfigurer pour l'utiliser.",
+    "unbindCancel": "Annuler",
+    "unbindConfirm": "Désapparier"
+  },
+  "exclusion": {
+    "title": "Connecter les deux tunnels ?",
+    "bodyRouter": "Le VPN de votre appareil est déjà connecté. Continuer acheminera le trafic par les deux tunnels à la fois — nous vous recommandons de d'abord déconnecter le VPN local.",
+    "bodyDashboard": "Le routeur sur ce réseau protège déjà votre trafic. Continuer acheminera le trafic par les deux tunnels à la fois — nous vous recommandons de d'abord déconnecter le routeur.",
+    "keep": "Conserver les deux",
+    "proceedRouter": "Déconnecter le VPN local et continuer",
+    "proceedDashboard": "Déconnecter le routeur et continuer"
+  },
+  "takeover": {
+    "banner": "Le routeur sur ce réseau protège votre trafic"
+  },
+  "legacy": {
+    "upgradeHint": "Le firmware du routeur détecté est obsolète. Veuillez mettre à jour k2r sur le routeur avant de le gérer depuis l'application."
+  },
+  "slots": {
+    "title": "Lignes",
+    "customName": "Nom personnalisé",
+    "unbound": "Non apparié",
+    "failClosed": "Ligne hors ligne — trafic bloqué",
+    "downFor": "Hors ligne depuis {{duration}}",
+    "rename": "Renommer le Wi-Fi",
+    "renameHint": "1-32 caractères",
+    "password": "Modifier le mot de passe Wi-Fi",
+    "passwordHint": "8-63 caractères",
+    "confirm": "Appliquer",
+    "cancel": "Annuler",
+    "applyFailed": "Échec de l'application, veuillez réessayer",
+    "managedByAccount": "Ce routeur est géré par son compte associé",
+    "unbindEnterpriseBody": "Le désappairage mettra TOUTES les lignes hors ligne. La récupération nécessite l'assistance d'un opérateur. Continuer ?",
+    "managementGroup": "Réseau de gestion"
+  }
+}

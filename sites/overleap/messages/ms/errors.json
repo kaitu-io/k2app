@@ -1,0 +1,13 @@
+{
+  "network": "Kami tidak dapat menghubungi Overleap. Semak sambungan anda dan cuba lagi.",
+  "generic": "Sesuatu telah berlaku. Sila cuba lagi.",
+  "unauthorized": "Sila log masuk dahulu.",
+  "invalidArgument": "Sebahagian maklumat tidak sah.",
+  "invalidVerificationCode": "Kod itu salah. Semak dan cuba lagi.",
+  "verificationCodeExpired": "Kod itu telah tamat tempoh. Minta kod baharu.",
+  "invalidCredentials": "E-mel atau kata laluan salah.",
+  "tooManyRequests": "Terlalu banyak percubaan. Sila tunggu seminit dan cuba lagi.",
+  "serviceUnavailable": "Perkhidmatan ini tidak tersedia buat masa ini. Sila cuba sebentar lagi.",
+  "passwordTooShort": "Kata laluan terlalu pendek.",
+  "passwordTooWeak": "Kata laluan terlalu lemah. Gunakan gabungan yang lebih panjang atau lebih rawak."
+}

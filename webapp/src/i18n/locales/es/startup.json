@@ -1,0 +1,79 @@
+{
+  "startup": {
+    "activeUsers": "Usuarios Activos",
+    "certified": "Certificado ISO 27001",
+    "uptime": "Tiempo de Actividad",
+    "authSuccess": "Autenticación exitosa, estado de inicio de sesión actualizado",
+    "deviceCanDirectLogin": "El dispositivo puede iniciar sesión directamente",
+    "deviceCannotDirectLogin": "El dispositivo no puede iniciar sesión directamente",
+    "checkDeviceLoginFailed": "Error al verificar estado de inicio de sesión del dispositivo",
+    "deviceLoginFailed": "Error al iniciar sesión en el dispositivo",
+    "deviceLoginFailedRetry": "Error al iniciar sesión en el dispositivo, por favor intenta de nuevo",
+    "deviceLoginSuccess": "Inicio de sesión en el dispositivo exitoso",
+    "pleaseEnterInviteCode": "Por favor, ingresa el código de invitación",
+    "registrationFailed": "Error de Registro",
+    "registrationFailedRetry": "Error de registro, por favor intenta de nuevo",
+    "newDevice": "Dispositivo Nuevo",
+    "freeDeviceRegistrationFailed": "Error al registrar dispositivo gratuito",
+    "inviteCodeIncorrect": "Código de invitación incorrecto",
+    "inviteCodeInvalidOrExpired": "Código de invitación inválido o expirado",
+    "getInviteCodeInfoFailed": "Error al obtener información del código de invitación",
+    "haveProAccount": "¿Ya tienes una cuenta Pro?",
+    "loginProAccountDesc": "Inicia sesión en tu cuenta Pro y disfruta de todas las funciones",
+    "deviceAlreadyRegistered": "Se detectó que este dispositivo tiene una cuenta registrada",
+    "deviceReady": "Dispositivo listo para iniciar sesión",
+    "deviceReadyDesc": "Tu dispositivo está registrado y listo para usar",
+    "orEmailLogin": "O inicia sesión con correo",
+    "experienceProFeatures": "Experimenta Funciones Pro",
+    "enterInviteCodeDesc": "Ingresa código de invitación para experimentar funciones Pro al instante",
+    "inviteCode": "Código de Invitación",
+    "enterInviteCodePlaceholder": "Por favor, ingresa código de invitación (opcional)",
+    "youHaveGoodFriend": "🎁 Tienes un amigo increíble😼",
+    "enjoyNow": "Disfruta ahora",
+    "days": "días",
+    "pro": "Pro",
+    "extraBonus": "¡Bonus Extra!",
+    "experience": "Experimenta {{days}} días",
+    "purchaseBonus": "La compra obtiene {{purchaseDays}}+{{downloadDays}} días",
+    "buyNowExtraBonus": "Compra ahora, obtén {{days}} días extra",
+    "buyNowEnjoyAllPro": "Compra ahora para todos los beneficios Pro",
+    "experienceOnly": "Experimenta {{days}} días solamente",
+    "experienceNow": "Experimentar Ahora",
+    "or": "o",
+    "noAccountNoInviteCode": "¿Sin cuenta o código de invitación?",
+    "processing": "Procesando...",
+    "registerNewAccount": "Registra una nueva cuenta directamente"
+  },
+  "serviceStatus": {
+    "disconnected": "Servicio desconectado, reconectando..."
+  },
+  "upgradeRequired": {
+    "title": "Por favor, Actualiza la Aplicación",
+    "description": "La versión actual está desactualizada, por favor descarga la versión más reciente para continuar.",
+    "downloadButton": "Ir a Descargar"
+  },
+  "forceUpgrade": {
+    "title": "Versión Muy Antigua, Actualización Requerida",
+    "description": "Tu versión actual de la aplicación ({{currentVersion}}) ya no es compatible. Por favor, actualiza a la versión {{minVersion}} o superior para continuar.",
+    "downloadButton": "Actualizar Ahora"
+  },
+  "app": {
+    "slogan": "Servicio de proxy de red seguro y conveniente",
+    "error": "Error",
+    "updateNow": "Actualizar Ahora",
+    "readyToInstall": "está listo para instalar",
+    "hoverForDetails": "pasa el ratón para ver detalles",
+    "releaseNotes": "Notas de Lanzamiento",
+    "newVersionAvailable": "¡Nueva versión {{version}} disponible!",
+    "updating": "Actualizando",
+    "downloadingUpdate": "Descargando e instalando actualización... {{progress}}%",
+    "errorBoundary": {
+      "title": "Error de Aplicación",
+      "description": "El error ha sido reportado automáticamente, lo solucionaremos pronto.",
+      "details": "Detalles del Error",
+      "retry": "Reintentar"
+    },
+    "installing": "Instalando...",
+    "beingInstalled": "se está instalando..."
+  }
+}

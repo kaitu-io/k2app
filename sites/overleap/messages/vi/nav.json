@@ -1,0 +1,17 @@
+{
+  "primary": "Điều hướng chính",
+  "account": "Tài khoản",
+  "login": "Đăng nhập",
+  "language": "Ngôn ngữ",
+  "searchLanguage": "Tìm ngôn ngữ",
+  "noLanguageFound": "Không có ngôn ngữ phù hợp",
+  "footer": {
+    "tagline": "VPN riêng tư. Không lưu nhật ký, nhanh trên mọi mạng.",
+    "company": "Công ty",
+    "privacy": "Chính sách quyền riêng tư",
+    "terms": "Điều khoản dịch vụ",
+    "deleteAccount": "Xóa tài khoản",
+    "contact": "Liên hệ với chúng tôi",
+    "copyright": "© {year} {legalName}. Bảo lưu mọi quyền."
+  }
+}

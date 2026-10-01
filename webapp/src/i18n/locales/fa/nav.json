@@ -1,0 +1,50 @@
+{
+  "appBar": {
+    "refreshAuth": "تازه‌سازی احراز هویت"
+  },
+  "navigation": {
+    "dashboard": "داشبورد",
+    "discover": "کاوش",
+    "account": "حساب",
+    "router": "روتر",
+    "devices": "دستگاه‌ها",
+    "faq": "بازخورد",
+    "purchase": "خریداری",
+    "activate": "فعال‌سازی",
+    "invite": "دعوت",
+    "retailer": "فروشنده‌ی دوم",
+    "proHistory": "سابقه احراز هویت",
+    "help": "راهنما"
+  },
+  "appBarConnector": {
+    "disconnecting": "درحال قطع اتصال",
+    "connecting": "درحال اتصال",
+    "antiClickProtection": "محافظت ضد اسپم: عملیات بیش از حد مکرر",
+    "refreshDataFailed": "تازه‌سازی داده‌ها پس از عملیات ناموفق بود:",
+    "connectionOperationFailed": "عملیات اتصال ناموفق بود:",
+    "disconnectingTooltip": "درحال قطع اتصال...",
+    "connectingTooltip": "درحال اتصال...",
+    "clickToDisconnect": "برای قطع اتصال کلیک کنید",
+    "clickToConnect": "برای اتصال کلیک کنید",
+    "anonymous": "ناشناس",
+    "disconnect": "قطع اتصال",
+    "connect": "اتصال",
+    "panel": "پنل",
+    "noNodeSelected": "لطفا قبل از اتصال یک گره را انتخاب کنید"
+  },
+  "appBarMembership": {
+    "trial": "محاولهٌ رایگان",
+    "standard": "استاندارد",
+    "expired": "منقضی شد",
+    "proTrial": "محاولهٌ پرو",
+    "recharge": "شارژ",
+    "firstOrderPending": "اول سفارش در انتظار",
+    "unlimitedTrial": "محاولهٌ نامحدود",
+    "completePurchase": "تکمیل خریداری"
+  },
+  "layout": {
+    "deviceInstall": "نصب در دستگاه‌های دیگر",
+    "troubleshooting": "عیب‌یابی",
+    "accountAndSettings": "حساب و تنظیمات"
+  }
+}

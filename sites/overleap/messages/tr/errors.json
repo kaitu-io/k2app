@@ -1,0 +1,13 @@
+{
+  "network": "Overleap'e ulaşamadık. Bağlantınızı kontrol edip tekrar deneyin.",
+  "generic": "Bir şeyler ters gitti. Lütfen tekrar deneyin.",
+  "unauthorized": "Lütfen önce giriş yapın.",
+  "invalidArgument": "Girilen bilgilerin bir kısmı geçerli değil.",
+  "invalidVerificationCode": "Kod doğru değil. Kontrol edip tekrar deneyin.",
+  "verificationCodeExpired": "Kodun süresi doldu. Yeni bir kod isteyin.",
+  "invalidCredentials": "E-posta veya parola doğru değil.",
+  "tooManyRequests": "Çok fazla deneme yaptınız. Lütfen bir dakika bekleyip tekrar deneyin.",
+  "serviceUnavailable": "Bu özellik şu anda kullanılamıyor. Lütfen birazdan tekrar deneyin.",
+  "passwordTooShort": "Parola çok kısa.",
+  "passwordTooWeak": "Parola çok zayıf. Daha uzun veya daha rastgele bir kombinasyon kullanın."
+}
