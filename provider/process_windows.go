@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -162,6 +163,11 @@ type WindowsProcessSearcher struct {
 	udp6Fetcher udp6TableFetcher
 	procNamer   processNamer
 	selfPID     uint32
+
+	// System-resolver attribution (dnsclient_etw_windows.go). nil while off.
+	dnsMu    sync.Mutex
+	dnsWatch *dnsClientWatch
+	dnsHolds int
 }
 
 func NewWindowsProcessSearcher() *WindowsProcessSearcher {

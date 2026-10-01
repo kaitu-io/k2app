@@ -49,11 +49,22 @@ type dnsHandler struct {
 	// SAME gated searcher the tunnel gets (engine.go gateProcessSearcher):
 	// nil whenever no loaded rule has process criteria, so the 99% of users
 	// without an App Bypass list pay zero attribution cost per DNS query.
-	// Platform reality check: attribution only identifies apps that resolve
-	// from their own process (Chromium/Electron async resolvers, most Linux
-	// apps). System-resolver queries attribute to svchost/mDNSResponder,
-	// match no app rule, and fall through unchanged — fail-open by design.
+	// Platform reality check: the socket owner is the app only when the app
+	// resolves from its own process (Chromium/Electron async resolvers, most
+	// Linux apps). Lookups handed to a system resolver are covered per
+	// platform: macOS reports the delegating app on the socket itself;
+	// Windows needs the separate dnsClient lookup below; elsewhere they
+	// attribute to the resolver, match no app rule, and fall through
+	// unchanged — fail-open by design.
 	searcher provider.ProcessSearcher
+
+	// dnsClient, when non-nil, names the app BEHIND a system-resolver query
+	// — the Windows answer to the reality check above, where every native
+	// app's lookup leaves from svchost.exe (Dnscache) and the socket owner
+	// says nothing. Set by startDNSClientWatch only when the platform
+	// searcher offers it and the watch actually started; nil everywhere else,
+	// and then nothing below changes.
+	dnsClient provider.DNSClientSearcher
 
 	consecutiveFails atomic.Int32
 }
@@ -99,6 +110,82 @@ func (h *dnsHandler) queryMeta(network string, src *net.UDPAddr, dest string) *r
 		return nil
 	}
 	return &rule.ConnMeta{ProcessName: name, PackageName: pkg, InstallerPackage: installer}
+}
+
+// startDNSClientWatch turns on system-resolver attribution when the gated
+// searcher supports it (Windows), for as long as ctx — the engine context —
+// lives. Binding the release to ctx rather than to a call in Stop() covers
+// every teardown path (Stop, fail, the Start failure branches) with one
+// line; the searcher counts holders, so a new engine starting while the old
+// one's release is still in flight keeps its watch.
+//
+// A refusal (daemon not elevated) is logged and leaves attribution
+// socket-only — the pre-existing behavior.
+func (h *dnsHandler) startDNSClientWatch(ctx context.Context) {
+	cs, ok := h.searcher.(provider.DNSClientSearcher)
+	if !ok {
+		return
+	}
+	release, err := cs.StartDNSClientWatch()
+	if err != nil {
+		slog.Warn("DIAG: dns-client-watch", "state", "unavailable", "err", err.Error())
+		return
+	}
+	h.dnsClient = cs
+	slog.Info("DIAG: dns-client-watch", "state", "started")
+	go func() {
+		<-ctx.Done()
+		release()
+	}()
+}
+
+// metaForQuery refines the flow's attribution for one query: when the flow
+// belongs to the system resolver, ask who the resolver is asking for. flow
+// is returned unchanged whenever that does not apply or is not known —
+// including for every query on platforms without a DNSClientSearcher.
+//
+// This is per QUERY, not per flow like queryMeta: the resolver service is
+// one process fronting every app on the machine, so the answer depends on
+// the name being asked.
+func (h *dnsHandler) metaForQuery(query []byte, flow *rule.ConnMeta) *rule.ConnMeta {
+	if h.dnsClient == nil || flow == nil {
+		return flow
+	}
+	qname := dnsQuestionName(query)
+	if qname == "" {
+		return flow
+	}
+	name, path, ok := h.dnsClient.FindDNSClient(flow.ProcessName, qname)
+	if !ok {
+		return flow
+	}
+	return &rule.ConnMeta{ProcessName: name, ProcessPath: path}
+}
+
+// dnsQuestionName reads the first question's name out of a raw DNS query,
+// dotted and without a trailing dot. Returns "" for anything it cannot walk
+// (short packet, compression pointer, no question) — the caller then keeps
+// the flow attribution, and the middleware's own parser reports the error.
+func dnsQuestionName(query []byte) string {
+	if len(query) < 13 || binary.BigEndian.Uint16(query[4:6]) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i := 12; i < len(query); {
+		l := int(query[i])
+		if l == 0 {
+			return b.String()
+		}
+		if l > 63 || i+1+l > len(query) {
+			return ""
+		}
+		if b.Len() > 0 {
+			b.WriteByte('.')
+		}
+		b.Write(query[i+1 : i+1+l])
+		i += 1 + l
+	}
+	return ""
 }
 
 const dnsWireErrorThreshold int32 = 30
@@ -172,7 +259,7 @@ func (h *dnsHandler) processOneUDPQuery(conn net.PacketConn, query []byte, addr 
 		}
 	}()
 	ctx, cancel := h.queryCtx()
-	resp, err := h.dns.HandleQueryMeta(ctx, query, meta)
+	resp, err := h.dns.HandleQueryMeta(ctx, query, h.metaForQuery(query, meta))
 	cancel()
 	if err != nil {
 		if !isDNSParseError(err) {
@@ -247,7 +334,7 @@ func (h *dnsHandler) processOneTCPQuery(conn net.Conn, query []byte, meta *rule.
 		}
 	}()
 	ctx, cancel := h.queryCtx()
-	resp, err := h.dns.HandleQueryMeta(ctx, query, meta)
+	resp, err := h.dns.HandleQueryMeta(ctx, query, h.metaForQuery(query, meta))
 	cancel()
 	if err != nil {
 		if !isDNSParseError(err) {

@@ -173,6 +173,52 @@ connection). Misses inside the throttle window return `""` — fail-open, the
 known blind spot above, acceptable only because this path now serves exotic
 environments where the sysctl path failed.
 
+### Windows: who is the system resolver asking for (`dnsclient_etw*.go`)
+
+A native Windows app never sends its own DNS packet — getaddrinfo / DnsQuery
+hand the lookup to the Dnscache service, so the query that reaches the tunnel
+is svchost.exe's, and the socket table has no "on behalf of" field (macOS's
+`so_e_pid` has no Windows counterpart). The requesting process is visible in
+exactly one place: the DNS client's ETW provider
+(`Microsoft-Windows-DNS-Client`), event **3006**, logged by dnsapi.dll
+*inside the calling process* — header pid = the app, payload leads with the
+query name. Event 3009 (query on the wire) is logged by svchost and is no use.
+
+`WindowsProcessSearcher` implements `DNSClientSearcher`: a private real-time
+trace session (`k2-dns-client`) feeds a 3-second `qname → pid` table, and
+`engine/dns_handler.go metaForQuery` consults it per query — only when the
+flow's socket owner is `svchost.exe`. Things that are not obvious:
+
+- **The event arrives AFTER the query.** Measured on Win11 25H2: the wire
+  query is ~1 ms behind the event at the source, but ETW delivers to a
+  real-time consumer in batches — a steady **26–30 ms** (max seen 42) with
+  the millisecond flush timer (`EVENT_TRACE_USE_MS_FLUSH_TIMER`; flush
+  periods of 1 ms and 10 ms measure the same, 100 ms measures ~213 ms, and
+  without the flag the unit is seconds). So `FindDNSClient` **waits** — up to
+  `dnsClientWait` (60 ms) for a record made after the query arrived, falling
+  back to an older live record only for retransmissions. That is ~27 ms added
+  to every system-resolver lookup that misses Dnscache's cache, paid only
+  while a process rule is loaded. Flows owned by anything other than svchost
+  (Chromium's own resolver) return at once.
+- **Needs administrator** (creating a session). The desktop daemon is SYSTEM.
+  Refused → `DIAG: dns-client-watch state=unavailable`, attribution stays
+  socket-only.
+- **Sessions outlive their process.** The name is fixed so the next start
+  stops an orphan left by a crashed daemon (`ERROR_ALREADY_EXISTS` → stop →
+  retry). Check with `logman query -ets`.
+- **Holds are counted** (`StartDNSClientWatch` returns a release func): the
+  engine releases through its context, and an engine starting while the old
+  one's release is in flight must not lose the watch.
+- **What it cannot fix**: a lookup Dnscache answers from its cache sends no
+  wire query, so the app gets whatever view the earlier asker got (same as
+  mDNSResponder on macOS); two processes asking for one name inside the
+  window are indistinguishable (latest wins); a name the resolver rewrites
+  (suffix search list) does not join.
+- Struct layouts are hand-mirrored 64-bit SDK layouts handed to the kernel as
+  raw memory — `TestETWLayouts` pins them on every OS;
+  `TestRealKernelDNSClientWatch` (Windows, elevated; skips otherwise) proves
+  pid, payload and delivery delay against the live provider.
+
 ### proc_name / lsof COMMAND is not `ps`'s comm
 
 Verified on production macOS: Claude Code reports as `claude` under
