@@ -100,11 +100,51 @@ function withQueueLock<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/** Server-side limit: one request may carry at most this many items in total. */
+const MAX_BATCH = 100;
+/** Stored-queue cap (all three arrays together). Oldest items are dropped beyond it. */
+const MAX_QUEUE = 500;
+
+type QueueKey = keyof StatsQueue;
+/** Fixed batching order; within an array, oldest first. */
+const QUEUE_KEYS: readonly QueueKey[] = ['app_opens', 'connections', 'funnel'];
+
+function queueSize(queue: StatsQueue): number {
+  return queue.app_opens.length + queue.connections.length + queue.funnel.length;
+}
+
+/**
+ * Per-array count of items of the request currently in flight that are still at
+ * the head of the stored queue. The post-flush trim drops exactly these. The
+ * cap below evicts from the head too, so it decrements the count — otherwise
+ * the trim would also drop items that were never sent.
+ */
+let _inFlight: Record<QueueKey, number> | null = null;
+
+/** Drops the globally oldest items until the queue fits MAX_QUEUE. */
+function enforceCap(queue: StatsQueue): void {
+  let over = queueSize(queue) - MAX_QUEUE;
+  while (over > 0) {
+    let oldest: QueueKey | null = null;
+    for (const key of QUEUE_KEYS) {
+      const head = queue[key][0];
+      if (!head) continue;
+      // ISO-8601 UTC timestamps order lexicographically.
+      if (oldest === null || head.created_at < queue[oldest][0].created_at) oldest = key;
+    }
+    if (oldest === null) return;
+    queue[oldest].shift();
+    if (_inFlight && _inFlight[oldest] > 0) _inFlight[oldest]--;
+    over--;
+  }
+}
+
 /** Serialized read-modify-write append. Resolves true iff the queue was persisted. */
 function updateQueue(mutate: (queue: StatsQueue) => void): Promise<boolean> {
   return withQueueLock(async () => {
     const queue = await getQueue();
     mutate(queue);
+    enforceCap(queue);
     return saveQueue(queue);
   });
 }
@@ -134,48 +174,95 @@ async function getDeviceHash(): Promise<string> {
 // ========================= Flush =========================
 
 let _flushing = false;
+let _flushRequested = false;
+
+/** A full queue (MAX_QUEUE) drains in MAX_QUEUE / MAX_BATCH requests; leave headroom. */
+const MAX_BATCHES_PER_FLUSH = 10;
+
+/**
+ * Sends one batch of at most MAX_BATCH items and trims exactly what was sent.
+ * Resolves true iff a batch was sent successfully AND items remain.
+ */
+async function flushBatch(): Promise<boolean> {
+  // Snapshot what we send. Events appended while the request is in flight
+  // are not in the snapshot and must survive a successful flush.
+  const queue = await withQueueLock(getQueue);
+  let budget = MAX_BATCH;
+  const take = (key: QueueKey): number => {
+    const n = Math.min(queue[key].length, budget);
+    budget -= n;
+    return n;
+  };
+  const sent: Record<QueueKey, number> = {
+    app_opens: take('app_opens'),
+    connections: take('connections'),
+    funnel: take('funnel'),
+  };
+  const total = MAX_BATCH - budget;
+  if (total === 0) return false;
+
+  _inFlight = sent;
+  try {
+    // The lock is NOT held across the network call.
+    const resp = await cloudApi.request('POST', '/api/stats/events', {
+      app_opens: queue.app_opens.slice(0, sent.app_opens),
+      connections: queue.connections.slice(0, sent.connections),
+      funnel: queue.funnel.slice(0, sent.funnel),
+    });
+
+    if (resp.code !== 0) {
+      console.warn('[Stats] Flush failed, will retry:', resp.code);
+      return false;
+    }
+
+    // Re-read under the lock: drop only the sent prefix of each array
+    // (`sent` is live — the cap may have evicted part of that prefix already).
+    const remaining = await withQueueLock(async () => {
+      const latest = await getQueue();
+      const rest: StatsQueue = {
+        app_opens: latest.app_opens.slice(sent.app_opens),
+        connections: latest.connections.slice(sent.connections),
+        funnel: latest.funnel.slice(sent.funnel),
+      };
+      _inFlight = null;
+      const left = queueSize(rest);
+      if (left > 0) {
+        await saveQueue(rest);
+      } else {
+        await clearQueue();
+      }
+      return left;
+    });
+    console.debug(`[Stats] Flushed ${total} events`);
+    return remaining > 0;
+  } finally {
+    _inFlight = null;
+  }
+}
 
 async function flush(): Promise<void> {
-  if (_flushing) return;
+  if (_flushing) {
+    // Don't drop the request: an event queued right before the app hands off
+    // to an external browser must not wait for the next trigger.
+    _flushRequested = true;
+    return;
+  }
   _flushing = true;
 
   try {
-    // Snapshot what we send. Events appended while the request is in flight
-    // are not in the snapshot and must survive a successful flush.
-    const queue = await withQueueLock(getQueue);
-    const nOpens = queue.app_opens.length;
-    const nConns = queue.connections.length;
-    const nFunnel = queue.funnel.length;
-    const total = nOpens + nConns + nFunnel;
-    if (total === 0) return;
-
-    const resp = await cloudApi.request('POST', '/api/stats/events', {
-      app_opens: queue.app_opens.slice(0, nOpens),
-      connections: queue.connections.slice(0, nConns),
-      funnel: queue.funnel.slice(0, nFunnel),
-    });
-
-    if (resp.code === 0) {
-      // Re-read under the lock: drop only the sent prefix of each array.
-      await withQueueLock(async () => {
-        const latest = await getQueue();
-        const rest: StatsQueue = {
-          app_opens: latest.app_opens.slice(nOpens),
-          connections: latest.connections.slice(nConns),
-          funnel: latest.funnel.slice(nFunnel),
-        };
-        if (rest.app_opens.length + rest.connections.length + rest.funnel.length > 0) {
-          await saveQueue(rest);
-        } else {
-          await clearQueue();
+    // A flush requested while one was in flight gets exactly one follow-up
+    // pass (which is a no-op request-wise when the queue is already empty).
+    do {
+      _flushRequested = false;
+      try {
+        // Drain in batches; stop on the first failure or when empty.
+        for (let i = 0; i < MAX_BATCHES_PER_FLUSH; i++) {
+          if (!(await flushBatch())) break;
         }
-      });
-      console.debug(`[Stats] Flushed ${total} events`);
-    } else {
-      console.warn('[Stats] Flush failed, will retry:', resp.code);
-    }
-  } catch (err) {
-    console.warn('[Stats] Flush error, will retry:', err);
+      } catch (err) {
+        console.warn('[Stats] Flush error, will retry:', err);
+      }
+    } while (_flushRequested);
   } finally {
     _flushing = false;
   }

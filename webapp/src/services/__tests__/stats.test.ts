@@ -185,15 +185,17 @@ describe('statsService', () => {
       resolveFirst({ code: 0 });
       await flushWait();
 
-      const remaining = mockStorage.get('stats_queue');
-      expect(remaining.funnel).toHaveLength(1);
-      expect(remaining.funnel[0].event).toBe('paywall_view');
+      // The flush requested while the first was in flight runs as a follow-up:
+      // it sends the survivor, never the already-sent first event.
+      expect(mockRequest).toHaveBeenCalledTimes(2);
+      const followUp = (mockRequest.mock.calls[1][2] as any).funnel.map((e: any) => e.event);
+      expect(followUp).toEqual(['paywall_view']);
+      expect(mockStorage.get('stats_queue')).toBeUndefined();
 
       await statsService.trackFunnel('plan_select');
       await flushWait();
-      // Next flush sends the survivor (+ the new one), never the already-sent first event
-      const events = (mockRequest.mock.calls[1][2] as any).funnel.map((e: any) => e.event);
-      expect(events).toEqual(['paywall_view', 'plan_select']);
+      const events = (mockRequest.mock.calls[2][2] as any).funnel.map((e: any) => e.event);
+      expect(events).toEqual(['plan_select']);
     });
 
     it('legacy persisted queue without funnel field works', async () => {
@@ -448,6 +450,198 @@ describe('statsService', () => {
       } finally {
         platform.storage = saved;
       }
+    });
+  });
+
+  describe('batching, cap and follow-up flush', () => {
+    const flushWait = () => new Promise(r => setTimeout(r, 50));
+    const sizeOf = (body: any) =>
+      body.app_opens.length + body.connections.length + body.funnel.length;
+    const ts = (i: number) => new Date(Date.UTC(2026, 8, 1, 0, 0, i)).toISOString();
+    const funnelItem = (i: number) => ({
+      eid: `eid-${i}`, device_hash: 'test-udid-123', os: 'macos', app_version: '0.4.0',
+      event: 'paywall_view', created_at: ts(i),
+    });
+    const openItem = (i: number) => ({
+      device_hash: 'test-udid-123', os: 'macos', app_version: '0.4.0', locale: 'en', created_at: ts(i),
+    });
+    const connItem = (i: number) => ({
+      device_hash: 'test-udid-123', os: 'macos', app_version: '0.4.0', event: 'connect',
+      node_type: 'cloud', node_ipv4: '', node_region: '', rule_mode: 'global',
+      duration_sec: 0, disconnect_reason: '', created_at: ts(i),
+    });
+
+    /** 149 stored (mixed arrays) + the one trackFunnel() enqueues = 150. */
+    const seed149 = () => {
+      mockStorage.set('stats_queue', {
+        app_opens: Array.from({ length: 30 }, (_, i) => openItem(i)),
+        connections: Array.from({ length: 40 }, (_, i) => connItem(30 + i)),
+        funnel: Array.from({ length: 79 }, (_, i) => funnelItem(70 + i)),
+      });
+    };
+
+    it('150 queued events go out as two requests of 100 and 50, queue empty', async () => {
+      seed149();
+      await statsService.trackFunnel('login_view');
+      await vi.waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(2));
+      await flushWait();
+
+      expect(mockRequest).toHaveBeenCalledTimes(2);
+      const [first, second] = mockRequest.mock.calls.map(c => c[2] as any);
+      expect(sizeOf(first)).toBe(100);
+      expect(sizeOf(second)).toBe(50);
+      // Fixed order, oldest first: opens, then connections, then funnel.
+      expect(first.app_opens).toHaveLength(30);
+      expect(first.connections).toHaveLength(40);
+      expect(first.funnel.map((e: any) => e.eid)).toEqual(
+        Array.from({ length: 30 }, (_, i) => `eid-${70 + i}`),
+      );
+      expect(second.app_opens).toHaveLength(0);
+      expect(second.connections).toHaveLength(0);
+      expect(second.funnel[0].eid).toBe('eid-100');
+      expect(second.funnel[49].event).toBe('login_view');
+      expect(mockStorage.get('stats_queue')).toBeUndefined();
+    });
+
+    it('a failing second batch keeps exactly the unsent 50', async () => {
+      seed149();
+      mockRequest.mockResolvedValueOnce({ code: 0 }).mockResolvedValueOnce({ code: 500 });
+      await statsService.trackFunnel('login_view');
+      await vi.waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(2));
+      await flushWait();
+
+      expect(mockRequest).toHaveBeenCalledTimes(2); // stopped on the first failure
+      const left = mockStorage.get('stats_queue');
+      expect(left.app_opens).toHaveLength(0);
+      expect(left.connections).toHaveLength(0);
+      expect(left.funnel).toHaveLength(50);
+      expect(left.funnel[0].eid).toBe('eid-100');
+      expect(left.funnel.map((e: any) => e.eid)).toEqual(
+        (mockRequest.mock.calls[1][2] as any).funnel.map((e: any) => e.eid),
+      );
+    });
+
+    it('a throwing request also stops the drain and keeps the queue', async () => {
+      seed149();
+      mockRequest.mockRejectedValueOnce(new Error('offline'));
+      await statsService.trackFunnel('login_view');
+      await flushWait();
+      expect(mockRequest).toHaveBeenCalledTimes(1);
+      const left = mockStorage.get('stats_queue');
+      expect(left.app_opens.length + left.connections.length + left.funnel.length).toBe(150);
+    });
+
+    it('caps the stored queue at 500, dropping the oldest across arrays', async () => {
+      mockRequest.mockResolvedValue({ code: 500 }); // nothing leaves the queue
+      mockStorage.set('stats_queue', {
+        // globally oldest two items are app_opens[0] (t=0) and funnel[0] (t=1)
+        app_opens: [openItem(0), openItem(5)],
+        connections: Array.from({ length: 198 }, (_, i) => connItem(10 + i)),
+        funnel: [funnelItem(1), ...Array.from({ length: 299 }, (_, i) => funnelItem(300 + i))],
+      });
+
+      await statsService.trackFunnel('login_view');   // 501 → drops app_opens[0]
+      await statsService.trackFunnel('plan_select');  // 501 → drops funnel[0]
+      await flushWait();
+
+      const q = mockStorage.get('stats_queue');
+      expect(q.app_opens.length + q.connections.length + q.funnel.length).toBe(500);
+      expect(q.app_opens.map((e: any) => e.created_at)).toEqual([ts(5)]);
+      expect(q.connections).toHaveLength(198);
+      expect(q.funnel[0].eid).toBe('eid-300');
+      expect(q.funnel.slice(-2).map((e: any) => e.event)).toEqual(['login_view', 'plan_select']);
+    });
+
+    it('an already oversized stored queue is cut back to 500 on the next enqueue', async () => {
+      mockRequest.mockResolvedValue({ code: 500 });
+      mockStorage.set('stats_queue', {
+        app_opens: [], connections: [],
+        funnel: Array.from({ length: 800 }, (_, i) => funnelItem(i)),
+      });
+      await statsService.trackFunnel('login_view');
+      await flushWait();
+      const q = mockStorage.get('stats_queue');
+      expect(q.funnel).toHaveLength(500);
+      expect(q.funnel[0].eid).toBe('eid-301');
+      expect(q.funnel[499].event).toBe('login_view');
+    });
+
+    it('cap eviction during an in-flight flush never trims unsent items', async () => {
+      mockStorage.set('stats_queue', {
+        app_opens: [], connections: [],
+        funnel: Array.from({ length: 499 }, (_, i) => funnelItem(i)),
+      });
+      let resolveFirst!: (v: any) => void;
+      mockRequest.mockImplementationOnce(() => new Promise(res => { resolveFirst = res; }));
+      mockRequest.mockResolvedValue({ code: 500 }); // later batches fail → queue stays inspectable
+
+      await statsService.trackFunnel('login_view'); // 500 stored; batch eid-0..eid-99 in flight
+      await vi.waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
+      // 3 more while in flight: the cap evicts eid-0..eid-2 (already in the in-flight batch)
+      await statsService.trackFunnel('plan_select');
+      await statsService.trackFunnel('plan_select');
+      await statsService.trackFunnel('plan_select');
+      expect(mockStorage.get('stats_queue').funnel).toHaveLength(500);
+
+      resolveFirst({ code: 0 });
+      await flushWait();
+
+      const q = mockStorage.get('stats_queue');
+      // 100 were sent; 3 of them were already evicted → only 97 more leave the queue.
+      expect(q.funnel).toHaveLength(403);
+      expect(q.funnel[0].eid).toBe('eid-100');
+    });
+
+    it('a flush requested during a flight triggers a follow-up for the new event', async () => {
+      let resolveFirst!: (v: any) => void;
+      mockRequest.mockImplementationOnce(() => new Promise(res => { resolveFirst = res; }));
+
+      await statsService.trackFunnel('paywall_view');
+      await vi.waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
+      // e.g. checkout_start right before the external browser opens
+      await statsService.trackFunnel('checkout_start', { plan: 'pro' });
+      expect(mockRequest).toHaveBeenCalledTimes(1);
+
+      resolveFirst({ code: 0 });
+      await vi.waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(2));
+      await flushWait();
+
+      expect((mockRequest.mock.calls[1][2] as any).funnel.map((e: any) => e.event)).toEqual(['checkout_start']);
+      expect(mockRequest).toHaveBeenCalledTimes(2);
+      expect(mockStorage.get('stats_queue')).toBeUndefined();
+    });
+
+    // The successful case above is also covered by the drain loop (items remain →
+    // next batch). This is the case only the "requested during flight" flag covers:
+    // the in-flight request FAILS, so the drain stops — the follow-up still runs once.
+    it('a flush requested during a flight that fails still gets one follow-up', async () => {
+      let resolveFirst!: (v: any) => void;
+      mockRequest.mockImplementationOnce(() => new Promise(res => { resolveFirst = res; }));
+
+      await statsService.trackFunnel('paywall_view');
+      await vi.waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
+      await statsService.trackFunnel('checkout_start', { plan: 'pro' });
+
+      resolveFirst({ code: 500 });
+      await flushWait();
+
+      expect(mockRequest).toHaveBeenCalledTimes(2);
+      expect((mockRequest.mock.calls[1][2] as any).funnel.map((e: any) => e.event))
+        .toEqual(['paywall_view', 'checkout_start']);
+      expect(mockStorage.get('stats_queue')).toBeUndefined();
+    });
+
+    it('a failed flush with nothing requested meanwhile is not retried on its own', async () => {
+      mockRequest.mockResolvedValue({ code: 500 });
+      await statsService.trackFunnel('paywall_view');
+      await flushWait();
+      expect(mockRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('no follow-up request when nothing was queued during the flight', async () => {
+      await statsService.trackFunnel('paywall_view');
+      await flushWait();
+      expect(mockRequest).toHaveBeenCalledTimes(1);
     });
   });
 });
