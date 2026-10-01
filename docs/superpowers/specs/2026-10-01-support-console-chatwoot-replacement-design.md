@@ -35,8 +35,8 @@ Chatwoot 现状的三个问题：
 
 **身份按"账号是否成立"分：**
 
-- **guest**：没有通过过验证码、也没有买过。官网未登录访客、App 已装未登录的人都是 guest。
-- **user**：验证码通过或已购买。注册未付费的人是 user，阶段标为"未付费"。
+- **guest**：还没有账号的人。数据上只来自官网挂件（App 内不做即时沟通，见 §2.3 与 §9.2）。
+- **user**：有账号的人（`users` 表有行）。注册未付费的人是 user，阶段标为"未付费"。
 
 身份只决定客服能看到什么（guest 只有轨迹，user 有完整资料），不决定走哪条通道。
 复购的 user 在购买页发起的是会话，不是工单。
@@ -109,9 +109,9 @@ guest 留的邮箱按定义永远未验证（验证过就是 user 了），任�
 |---|---|
 | `guest_id` | 指向**原始** guest，合并时不改写 |
 | `brand` | |
-| `kind` | `cid`（聊天 cookie）、`sid`（漏斗 cookie）、`did`（设备哈希）、`email` |
+| `kind` | `cid`（聊天 cookie）、`sid`（漏斗 cookie）、`email` |
 | `value` | |
-| `strength` | `verified`（服务端从 cookie 或设备读到）或 `claimed`（对方自报） |
+| `strength` | `verified`（服务端从 cookie 读到）或 `claimed`（对方自报） |
 | `first_seen_at`、`last_seen_at` | |
 
 唯一索引 `(guest_id, kind, value)`；查找索引 `(brand, kind, value)`。
@@ -157,7 +157,7 @@ guest 留的邮箱按定义永远未验证（验证过就是 user 了），任�
 |---|---|---|
 | 建会话时请求已带登录态 | 强 | 写 `guest_user_links`，`session_login` |
 | 挂件内完成验证码登录 | 强 | 写 `guest_user_links`，`widget_verify` |
-| guest 的 `sid` / `did` 在 `funnel_identities` 里关联到了 user | 强 | **不复制**，读取时联查，单一事实源 |
+| guest 的 `sid` 在 `funnel_identities` 里关联到了 user | 强 | **不复制**，读取时联查，单一事实源 |
 | guest 自报邮箱等于某 user 的邮箱 | 弱 | 不存，读取时计算，面板标"访客自报，未验证" |
 | 客服手动关联 | 强 | 写 `guest_user_links`，`manual` |
 
@@ -177,7 +177,6 @@ guest 留的邮箱按定义永远未验证（验证过就是 user 了），任�
 | `ticket_id` | 转成工单后填写 |
 | `last_message_at`、`last_message_by` | |
 | `staff_unread`、`visitor_unread` | |
-| `slack_notified_at` | Slack 去抖 |
 | `closed_at` | |
 
 一个主体在一个品牌下最多一个 `open` 会话。客服手动关闭，或 72 小时无消息自动关闭；
@@ -214,7 +213,6 @@ guest 在会话中途通过验证码成为 user 时，会话主体不改写，�
 ### 4.4 对现有表的改动
 
 - `funnel_events` 增加索引 `(anon_id, occurred_at)`。
-- `feedback_tickets` 增加可空列 `guest_id`（见 §9.2）。
 
 ## 5. 访客侧
 
@@ -376,8 +374,9 @@ WebSocket 地址来自 Center 配置 `chat.ws_hosts.<brand>`，由 `session` 接
 触发：
 
 - 会话转人工时。
-- 人工会话有访客新消息，**且没有客服正连着这个会话**时。
-- 同一会话 5 分钟内不重复发，除非优先级升高。
+- 人工处理中的会话，访客每发一条消息就发一条。不做去抖，不做合并，Slack 里看到的就是真实的会话节奏。
+
+AI 处理中的会话不发 Slack。
 
 内容：品牌、系统阶段、入口页面、首句摘要、直达链接 `{manager.base_url}/manager/inbox?c=<uuid>`。
 
@@ -404,18 +403,15 @@ WebSocket 地址来自 Center 配置 `chat.ws_hosts.<brand>`，由 `session` 接
 `support` 权限组新增 `chat`、`contacts`。单人时间线对 `support` 开放；
 聚合漏斗看板仍只对 `marketing` 开放。用户写操作（加时长、改邮箱、封禁）仍归超管。
 
-### 9.2 未登录提交工单不再生成 user
+### 9.2 App 内未登录提交工单：保持现状
 
-现状：`api/api_ticket.go:69` 对未登录提交调用 `FindOrCreateUserByEmail`，
-填一个邮箱就凭空生成一个 user，与本设计的 user 定义冲突。
+已核对：`webapp/src/pages/SubmitTicket.tsx:158-168` 未登录提交时邮箱必填并校验格式，
+后端 `api/api_ticket.go:69` 按该邮箱找到或创建 user。
 
-改为：记成 guest（标识为 `did` 与自报邮箱），工单写 `guest_id`，`user_id` 留空。
+这与现有账号模型一致：发送验证码时（`api/api_auth.go:119`）就已经按邮箱建 user 行，
+并不等到验证通过。所以"留了邮箱的工单提交者是 user"不是特例，本设计不改它。
 
-用户的工单列表查询改为：`user_id` 是自己，**或** 工单邮箱等于自己已验证的邮箱且同品牌。
-这样该邮箱日后注册，仍能看到之前的工单。这是安全的：工单回复本来就发往那个邮箱。
-
-**风险：**这是给工单增加了一种"无 user"的状态。实现前必须审计 `FeedbackTicket.UserID`
-的全部读取点，以及 `FindOrCreateUserByEmail` 的其他调用方。
+结论：App 内不产生 guest 记录。guest 只来自官网挂件。
 
 ### 9.3 隐私
 
@@ -447,7 +443,7 @@ WebSocket 地址来自 Center 配置 `chat.ws_hosts.<brand>`，由 `session` 接
 |---|---|---|
 | 1 | 身份与会话表、访客与客服接口、实时通道、AI 迁移、收件箱、Slack、开途官网挂件 | 开途官网新旧并行可用 |
 | 2 | 切换并清理 Chatwoot | 仓库零引用；容器停止；ALB 规则与 DNS 清除；旧令牌作废 |
-| 3 | 右侧面板全量、系统阶段、备注标签、跟进提醒、用户页补块、工单修正（§9.2）、隐私条款 | 客服能在一处看全一个人 |
+| 3 | 右侧面板全量、系统阶段、备注标签、跟进提醒、用户页补块、隐私条款 | 客服能在一处看全一个人 |
 | 4 | overleap 官网挂件与隐私条款 | 两个品牌都上线 |
 
 第 2 期不等第 4 期：overleap 现在本来就没有即时沟通。
@@ -486,27 +482,36 @@ WebSocket 地址来自 Center 配置 `chat.ws_hosts.<brand>`，由 `session` 接
 - **断线补齐**：广播丢失时，按游标拉取能取回全部消息。
 - **品牌隔离**：令牌里的品牌决定连接归属，子域名不影响；一个品牌的令牌读不到另一品牌的会话。
 - **转工单**：已登录与挂件内验证两条路径；转后消息进入工单回复。
-- **工单修正**：未登录提交不生成 user；该邮箱日后注册能看到工单。
 - **两份挂件的接口契约一致。**
 - **留存与删除**：到期清理与账号删除都覆盖新表。
 
 api 测试注意：新 worktree 里先确认 `-v` 下 0 SKIP；handler 测试单跑与全量各跑一次。
 
-## 12. 运维前置与待验证项
+## 12. 运维前置与已核实项
 
-需要运维操作：
+### 12.1 已核实（2026-10-01）
 
-1. 每个品牌一个指向 Center 的子域名，挂到 Center 的 CloudFront 上，ALB 加按域名转发到
-   `tokyo-alb-tg-kaitu` 的规则。在此之前挂件靠 HTTP 拉取运行。
+- **CloudFront → ALB 的 WebSocket 可用。** 对 `chat.anc.52j.me/cable` 发握手请求，经 CloudFront 返回
+  `101 Switching Protocols`。Chatwoot 的分发（`E27IOJJHN8ZT8C`）与 Center 的分发（`E3R9YV4KNF3Q5D`）
+  转发配置完全一致：同一 ALB 源站、回源 `http-only`、透传 `Host` / `Authorization` / `Accept`、
+  cookie 与查询串全透传、读超时 60 秒。新通道照这个配置建即可。
+- **Redis 支持订阅**（ElastiCache Redis 7.1）。
+- **长连接可用性**：Chatwoot 现在就是经这条链路用 WebSocket 服务同一批访客，不另做验证。
+  HTTP 游标拉取仍保留，用于断线重连补齐。
+
+由配置得出的两条约束：
+
+- 分发**不透传 `Origin` 头**，Center 不能靠 `Origin` 校验 WebSocket 来源。连接合法性只靠令牌（§6.1）。
+- 分发**透传 `Host`**，所以 Center 会看到新子域名；品牌以令牌为准这条规则是必需的。
+
+### 12.2 需要运维操作
+
+1. 每个品牌一个子域名：新建 CloudFront 分发（配置照抄 `E3R9YV4KNF3Q5D`），us-east-1 的 ACM 证书，
+   Route 53 记录，ALB 增加按该域名转发到 `tokyo-alb-tg-kaitu` 的规则。
+   在此之前挂件靠 HTTP 拉取运行。
 2. 线上配置：`chat.ws_hosts.<brand>`、`manager.base_url`。
 
-写实现计划前需验证：
-
-1. Center 的 CloudFront 分发是否透传 WebSocket 握手头。仓库里看不到其源请求策略，需在 AWS 控制台核对。
-2. `qtoolkit/redis` 是否暴露订阅接口；没有则直接使用底层客户端。
-3. 大陆访客到品牌子域名的长连接稳定性。没有数据，HTTP 拉取是兜底。
-
-需要产品或法务确认：
+### 12.3 需要产品或法务确认
 
 1. "与客服视频"不再提供（§5.3）。
 2. 未关联 guest 的 180 天留存期（§9.4）。
