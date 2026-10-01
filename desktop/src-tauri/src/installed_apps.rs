@@ -614,7 +614,16 @@ mod windows {
                 id,
                 label: name,
                 process_names,
-                paths: Vec::new(),
+                // The install directory identifies the app the same way a
+                // macOS bundle does: the engine matches any process whose
+                // image lives under it (match.app_paths), so exes deeper than
+                // collect_exes' depth bound — or installed after this scan —
+                // are covered. install_dir already passed
+                // is_unsafe_install_dir, which is what keeps a shared parent
+                // (Program Files, a drive root) from becoming a prefix. Names
+                // stay: they carry the out-of-tree supplements and match on
+                // engines that predate app_paths.
+                paths: install_dir.iter().cloned().collect(),
                 icon_url,
                 installer_package_name: None,
             });
@@ -738,6 +747,14 @@ mod windows {
                 !app.process_names.iter().any(|n| n.starts_with("unins")),
                 "uninstaller leaked into process_names: {:?}",
                 app.process_names
+            );
+            // The install directory is the app's identity for the engine
+            // (match.app_paths) — exactly the directory, nothing broader.
+            assert_eq!(app.paths, vec![app.id.clone()], "install dir not emitted as the app path");
+            assert_eq!(
+                app.id.trim_end_matches('\\').to_ascii_lowercase(),
+                f.dir_str().trim_end_matches('\\').to_ascii_lowercase(),
+                "the app path must be the install directory itself"
             );
         }
 

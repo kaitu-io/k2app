@@ -27,6 +27,12 @@ export interface AppOverride {
 interface AppRoutesStorageShape {
   v: 2;
   apps: Record<string, AppOverride>;
+  /**
+   * Set once the stored overrides have been reconciled against an app list
+   * that carries directories (see syncOverridePaths). Absent = overrides may
+   * predate `paths` and a boot-time reconcile is still owed.
+   */
+  pathsSynced?: boolean;
 }
 
 /** Minimal app shape required by setOverride — both InstalledApp and RunningApp satisfy it. */
@@ -50,6 +56,12 @@ interface AppRoutesState {
   classifyInstalled: (region: string, installed: InstalledApp[]) => Promise<void>;
   setOverride: (app: OverrideApp, mode: 'direct' | 'proxy' | 'default') => Promise<void>;
   refreshOverrideNames: (apps: OverrideApp[]) => Promise<void>;
+  /**
+   * Boot-time reconcile: give overrides saved before directories existed
+   * their app's directory, without the user having to open the App Bypass
+   * page. Runs at most until it succeeds once against a path-capable shell.
+   */
+  syncOverridePaths: () => Promise<void>;
   resetOverrides: () => Promise<void>;
 }
 
@@ -72,9 +84,16 @@ function derive(overrides: Record<string, AppOverride>): Derived {
   };
 }
 
+// Whether the stored overrides are known to be reconciled with a
+// path-capable app list. Module state (not store state): it only decides what
+// persist() writes and whether the boot reconcile runs.
+let pathsSynced = false;
+
 async function persist(overrides: Record<string, AppOverride>): Promise<void> {
   if (!window._platform?.storage) return;
-  await window._platform.storage.set<AppRoutesStorageShape>(STORAGE_KEY, { v: 2, apps: overrides });
+  const shape: AppRoutesStorageShape = { v: 2, apps: overrides };
+  if (pathsSynced) shape.pathsSynced = true;
+  await window._platform.storage.set<AppRoutesStorageShape>(STORAGE_KEY, shape);
 }
 
 /**
@@ -105,10 +124,33 @@ export const useAppRoutesStore = create<AppRoutesState>((set, get) => ({
     // v1 ({v:1, forceProxy, forceDirect} flat name lists) is discarded, not
     // migrated: it carried no app identity, so any conversion would guess.
     // Overrides are one tap to re-set.
+    pathsSynced = stored?.v === 2 && stored.pathsSynced === true;
     if (stored && stored.v === 2 && stored.apps) {
       set({ overrides: stored.apps, ...derive(stored.apps), loaded: true });
     } else {
       set({ loaded: true });
+    }
+    // Not awaited: boot must not wait on an app-list enumeration. A connect
+    // that races it simply uses the names the override already has.
+    void get().syncOverridePaths();
+  },
+  syncOverridePaths: async () => {
+    if (pathsSynced || Object.keys(get().overrides).length === 0) return;
+    const appList = window._platform?.appList;
+    if (!appList?.listInstalled) return;
+    try {
+      const installed = (await appList.listInstalled()) ?? [];
+      // A shell that predates `paths` reports none. Leave the flag unset so
+      // the reconcile runs again after the shell is upgraded — the webapp can
+      // arrive (OTA) before the shell that knows directories.
+      if (!installed.some((a) => (a.paths?.length ?? 0) > 0)) return;
+      // Overrides made from the "running" section are keyed by running ids.
+      const running = appList.listRunning ? ((await appList.listRunning()) ?? []) : [];
+      await get().refreshOverrideNames([...installed, ...running]);
+      pathsSynced = true;
+      await persist(get().overrides);
+    } catch (e) {
+      console.warn('[AppRoutes] syncOverridePaths failed, will retry next launch:', e);
     }
   },
   classifyInstalled: async (region, installed) => {
@@ -158,6 +200,9 @@ export const useAppRoutesStore = create<AppRoutesState>((set, get) => ({
   },
   resetOverrides: async () => {
     set({ overrides: {}, ...derive({}) });
+    // Nothing left to reconcile; overrides made from here on carry their
+    // directory from the start.
+    pathsSynced = true;
     await persist({});
   },
 }));
