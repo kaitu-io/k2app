@@ -18,11 +18,6 @@ import {
   Card,
   CardContent,
   Stack,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogContentText,
-  DialogActions,
   useTheme as useMuiTheme,
 } from "@mui/material";
 import {
@@ -58,6 +53,7 @@ import type { DataUser } from "../services/api-types";
 import { getThemeColors } from '../theme/colors';
 import { useAppLinks } from "../hooks/useAppLinks";
 import VersionItem from "../components/VersionItem";
+import DeleteAccountDialog from "../components/DeleteAccountDialog";
 import BetaChannelToggle from "../components/BetaChannelToggle";
 import PasswordDialog from "../components/PasswordDialog";
 import { useSubscriptionAffordance } from '../hooks/useSubscriptionAffordance';
@@ -911,44 +907,18 @@ export default function Account() {
         </Box>
       )}
 
-      {/* 注销账号确认对话框 */}
-      <Dialog
+      {/* 注销账号确认对话框：三步确认 + 资产损失高亮，见 DeleteAccountDialog */}
+      <DeleteAccountDialog
         open={deleteDialogOpen}
+        user={user}
+        loading={deleteLoading}
+        error={deleteError}
         onClose={() => {
           setDeleteDialogOpen(false);
           setDeleteError(null);
         }}
-      >
-        <DialogTitle>{t('account:account.deleteAccountTitle')}</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            {t('account:account.deleteAccountWarning')}
-          </DialogContentText>
-          {deleteError && (
-            <Alert severity="error" sx={{ mt: 2 }}>
-              {deleteError}
-            </Alert>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button
-            onClick={() => {
-              setDeleteDialogOpen(false);
-              setDeleteError(null);
-            }}
-            disabled={deleteLoading}
-          >
-            {t('common:common.cancel')}
-          </Button>
-          <Button
-            onClick={handleDeleteAccount}
-            color="error"
-            disabled={deleteLoading}
-          >
-            {deleteLoading ? <CircularProgress size={20} /> : t('common:common.confirm')}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onConfirm={handleDeleteAccount}
+      />
 
       <PasswordDialog
         open={showPasswordDialog}
