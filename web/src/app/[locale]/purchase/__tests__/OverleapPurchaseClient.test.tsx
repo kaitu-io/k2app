@@ -161,3 +161,33 @@ describe('OverleapPurchaseClient — display currency by locale (currencyPrices 
     expect(screen.getByText(/stripe\.currencyNote:.*"currency":"USD"/)).toBeInTheDocument();
   });
 });
+
+describe('OverleapPurchaseClient — funnel', () => {
+  it('sends checkout_start (with the plan) right before creating the Stripe checkout', async () => {
+    vi.clearAllMocks();
+    mockGetPlans.mockResolvedValue(PLANS);
+    mockGetUserProfile.mockResolvedValue({ subscriptions: [] });
+    mockCreateStripeCheckout.mockResolvedValue({ url: 'https://checkout.stripe.com/c/x' });
+    mockAuth = { isAuthenticated: true, isAuthLoading: false };
+    mockSearch = '';
+    Object.defineProperty(window, 'location', {
+      value: { assign: vi.fn(), href: 'http://localhost/en-US/purchase', pathname: '/en-US/purchase', search: '' },
+      writable: true,
+    });
+    const srcs: string[] = [];
+    vi.stubGlobal('Image', function (this: object) {
+      Object.defineProperty(this, 'src', { set: (v: string) => srcs.push(v) });
+    } as unknown as typeof Image);
+    try {
+      render(<OverleapPurchaseClient />);
+      await waitFor(() => screen.getByTestId('subscribe-btn'));
+      fireEvent.click(screen.getByTestId('subscribe-btn'));
+      await waitFor(() => expect(mockCreateStripeCheckout).toHaveBeenCalled());
+      const starts = srcs.map((s) => new URL(s, 'http://x').searchParams).filter((p) => p.get('e') === 'checkout_start');
+      expect(starts).toHaveLength(1);
+      expect(starts[0].get('p')).toBe('overleap-basic-1y');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

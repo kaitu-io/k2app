@@ -19,6 +19,7 @@ import { Suspense } from 'react';
 import { Inter, JetBrains_Mono } from "next/font/google";
 import Script from 'next/script';
 import ChatwootWidget from '@/components/ChatwootWidget';
+import FunnelPageView from '@/components/FunnelPageView';
 import "../globals.css";
 
 // Inline polyfill for Array.prototype.at — Sentry web-vitals (INP) and Next.js
@@ -119,6 +120,7 @@ export default async function LocaleLayout({
                     <BrowserWarningBar brandDomain={new URL(brand.baseUrl).hostname} />
                     <LanguageDetectionBanner />
                     {children}
+                    <FunnelPageView />
                     <Toaster />
                     <CookieConsent />
                     <ChatwootWidget />

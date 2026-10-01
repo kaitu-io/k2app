@@ -23,6 +23,7 @@ function getCookie(name: string): string | null {
 
 export interface PurchaseStep1Props {
   onLoginSuccess?: () => void;
+  onCodeSent?: () => void;
 }
 
 /**
@@ -34,7 +35,8 @@ export interface PurchaseStep1Props {
  * and the entire card is hidden.
  */
 export default function PurchaseStep1({
-  onLoginSuccess
+  onLoginSuccess,
+  onCodeSent
 }: PurchaseStep1Props = {}) {
   const { appConfig } = useAppConfig();
   const t = useTranslations();
@@ -87,7 +89,7 @@ export default function PurchaseStep1({
             </div>
           </div>
         )}
-        <EmailLogin onLoginSuccess={onLoginSuccess} mode="bind" />
+        <EmailLogin onLoginSuccess={onLoginSuccess} onCodeSent={onCodeSent} mode="bind" />
       </CardContent>
     </Card>
   );

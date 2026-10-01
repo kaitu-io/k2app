@@ -77,6 +77,7 @@ export const KAITU_SITE: SiteConfig = {
         { labelKey: 'discovery.privacy.title', href: '/privacy' },
         { labelKey: 'discovery.terms.title', href: '/terms' },
         { labelKey: 'discovery.deleteAccount.title', href: '/delete-account' },
+        { labelKey: 'nav.footer.optOut', href: '/api/px/optout', external: true },
       ],
     },
   ],

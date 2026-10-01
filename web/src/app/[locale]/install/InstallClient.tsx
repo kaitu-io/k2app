@@ -17,6 +17,7 @@ import { PlatformIcon, PLATFORM_COLORS, PLATFORM_IDS, type PlatformId } from './
 import { WindowsPanel, MacOSPanel, LinuxPanel, IOSPanel, AndroidPanel } from './platform-panels';
 import { ArrowRight } from 'lucide-react';
 import { Link, useRouter } from '@/i18n/routing';
+import { track } from '@/lib/funnel';
 
 const AUTO_DOWNLOAD_SECONDS = 5;
 
@@ -182,6 +183,7 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
 
   // Device detection -> auto-select tab + auto-download for desktop/android
   useEffect(() => {
+    track('install_view');
     const params = new URLSearchParams(window.location.search);
     const platformParam = params.get('platform');
     const noAutoDownload = params.get('nodownload') !== null;

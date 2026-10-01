@@ -25,6 +25,7 @@ import SubscriptionStatusCard, { resolveSubscriptionState } from "@/components/S
 import PurchaseStep1 from "@/components/PurchaseStep1";
 import PurchaseStep2 from "@/components/PurchaseStep2";
 import PurchaseStep3 from "@/components/PurchaseStep3";
+import { track } from "@/lib/funnel";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import {
@@ -171,6 +172,13 @@ export default function PurchaseClient() {
   // Check if user is expired
   const isExpired = userProfile ? (userProfile.expiredAt > 0 && userProfile.expiredAt < Date.now() / 1000) : false;
 
+  // Funnel: pricing_view once per page load; plan_select de-duplicated against the current pick.
+  const pricingViewTrackedRef = useRef(false);
+  const selectedPlanRef = useRef("");
+  useEffect(() => {
+    selectedPlanRef.current = selectedPlan;
+  }, [selectedPlan]);
+
   // Fetch plans
   useEffect(() => {
     const fetchPlans = async () => {
@@ -190,6 +198,10 @@ export default function PurchaseClient() {
             setSelectedPlan("");
           } else {
             setPlans(planItems);
+            if (!pricingViewTrackedRef.current) {
+              pricingViewTrackedRef.current = true;
+              track('pricing_view');
+            }
             // Initial pick is best-effort against the full list; once filteredPlans
             // resolves below it may be re-snapped to a tier-valid choice.
             const highlightPlan = planItems.find((p: Plan) => p.highlight);
@@ -302,6 +314,7 @@ export default function PurchaseClient() {
     const payWindow = window.open('', '_blank');
 
     try {
+      track('checkout_start', { plan: selectedPlan, source: 'self' });
       console.info('[Purchase] Creating order request:', { selectedPlan, campaignCode });
 
       const request: CreateOrderRequest = {
@@ -389,10 +402,20 @@ export default function PurchaseClient() {
 
   const handleLoginSuccess = useCallback(() => {
     // Login succeeded - no need to navigate steps since all are shown
+    track('auth_done');
+  }, []);
+
+  const handleCodeSent = useCallback(() => {
+    track('auth_code_sent');
   }, []);
 
   // Handle plan change
   const handlePlanChange = useCallback((planId: string) => {
+    // Radio group and card both fire for one click; only a real change is a selection.
+    if (planId !== selectedPlanRef.current) {
+      track('plan_select', { plan: planId });
+    }
+    selectedPlanRef.current = planId;
     setSelectedPlan(planId);
   }, []);
 
@@ -438,6 +461,7 @@ export default function PurchaseClient() {
     if (!delegate) return;
     setIsLoading(true);
     try {
+      track('checkout_start', { plan: selectedPlan, source: 'delegate' });
       const request: CreateOrderRequest = {
         preview: false,
         plan: selectedPlan,
@@ -466,6 +490,7 @@ export default function PurchaseClient() {
       if (!trimmed) return;
       setIsLoading(true);
       try {
+        track('checkout_start', { plan: selectedPlan, source: 'delegate' });
         const newDelegate = await api.setDelegate(trimmed, { autoRedirectToAuth: false });
         setDelegate(newDelegate);
         const request: CreateOrderRequest = {
@@ -646,6 +671,7 @@ export default function PurchaseClient() {
             {/* Step 1: Email Binding (login form for unauthenticated users) */}
             <PurchaseStep1
               onLoginSuccess={handleLoginSuccess}
+              onCodeSent={handleCodeSent}
             />
 
             {/* Step 2: Plan Selection — feed the tier-filtered list. */}

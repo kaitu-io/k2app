@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import MembershipBenefits from '@/components/MembershipBenefits';
 import { displayCurrency, formatMinor, pickAmount } from '@/lib/pricing';
+import { track } from '@/lib/funnel';
 
 /** 套餐在当前 locale 的展示价：优先 API 下发的 currencyPrices（Stripe 真相），缺席回落 price（USD 分）。 */
 function planAmount(p: Plan, currency: ReturnType<typeof displayCurrency>): { amount: number; currency: string } {
@@ -102,6 +103,7 @@ export default function OverleapPurchaseClient() {
     setSubmitting(true);
     setError(null);
     try {
+      track('checkout_start', { plan: selectedPid, source: 'self' });
       const { url } = await api.createStripeCheckout(selectedPid, { autoRedirectToAuth: false });
       window.location.assign(url);
     } catch (err) {

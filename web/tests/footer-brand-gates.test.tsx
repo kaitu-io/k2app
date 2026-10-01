@@ -60,6 +60,8 @@ const KAITU_ONLY_HREFS = ['href="/routers"', 'href="/releases"', 'href="/retaile
 const KAITU_FOOTER = [...KAITU_ONLY_HREFS, 'href="/install"', 'href="/pricing"', 'href="/k2"', 'href="/k2/quickstart"', 'href="/support"', 'href="/support#faq"', 'href="/support#contact"', 'href="/privacy"', 'href="/terms"'];
 const OVERLEAP_FOOTER = ['href="/install"', 'href="/pricing"', 'href="/support"', 'href="/privacy"', 'href="/terms"', 'href="mailto:support@overleap.io"'];
 // overleap is a closed, self-contained product (2026-09-30): no protocol docs, self-hosting or source links.
+// 退出统计是同站 API 路径，必须是原生 <a>（next-intl 的 Link 会补 locale 前缀，打到不存在的路由）。
+const OPT_OUT = 'href="/api/px/optout"';
 const OVERLEAP_NEVER = ['href="/k2"', 'href="/k2/quickstart"', 'github.com'];
 
 describe('footer links only this brand\'s pages', () => {
@@ -67,6 +69,7 @@ describe('footer links only this brand\'s pages', () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
     const html = await renderChrome('Footer', 'en-GB');
     for (const href of OVERLEAP_FOOTER) expect(html, href).toContain(href);
+    expect(html).toContain(OPT_OUT);
     for (const href of OVERLEAP_NEVER) expect(html, href).not.toContain(href);
     for (const href of KAITU_ONLY_HREFS) expect(html, href).not.toContain(href);
     expect(html).not.toContain('href="/purchase"');
@@ -76,6 +79,7 @@ describe('footer links only this brand\'s pages', () => {
     vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
     const html = await renderChrome('Footer', 'zh-CN');
     for (const href of KAITU_FOOTER) expect(html, href).toContain(href);
+    expect(html).toContain(OPT_OUT);
     expect(html).not.toContain('href="/routers/diy"');
     expect(html).not.toContain('href="/changelog"');
     expect(html).not.toContain('mailto:');
