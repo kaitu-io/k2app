@@ -1,0 +1,407 @@
+package center
+
+import (
+	"context"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	db "github.com/wordgate/qtoolkit/db"
+)
+
+var chatSubjectSeq atomic.Uint64
+
+// newChatSubject 返回一个全新的 guest 主体（ID 唯一），测试结束时清掉它名下的会话与消息。
+func newChatSubject(t *testing.T) chatSubject {
+	t.Helper()
+	require.NoError(t, Migrate())
+	id := uint64(time.Now().UnixNano())%1_000_000_000_000 + chatSubjectSeq.Add(1)
+	s := chatSubject{Brand: BrandKaitu, Kind: SubjectGuest, ID: id}
+	t.Cleanup(func() {
+		d := db.Get()
+		var ids []uint64
+		d.Model(&Conversation{}).Where("brand = ? AND subject_kind = ? AND subject_id = ?", string(s.Brand), s.Kind, s.ID).Pluck("id", &ids)
+		if len(ids) > 0 {
+			d.Where("conversation_id IN ?", ids).Delete(&ConversationMessage{})
+			d.Where("id IN ?", ids).Delete(&Conversation{})
+		}
+	})
+	return s
+}
+
+// withAppendHook 注册一个计数钩子，测试结束恢复原切片。
+func withAppendHook(t *testing.T) *atomic.Int32 {
+	t.Helper()
+	orig := chatAfterAppend
+	var n atomic.Int32
+	chatAfterAppend = append(append([]func(*Conversation, *ConversationMessage){}, orig...),
+		func(*Conversation, *ConversationMessage) { n.Add(1) })
+	t.Cleanup(func() { chatAfterAppend = orig })
+	return &n
+}
+
+func withStateHook(t *testing.T) *[]string {
+	t.Helper()
+	orig := chatAfterStateChange
+	var mu sync.Mutex
+	var seen []string
+	chatAfterStateChange = append(append([]func(*Conversation){}, orig...), func(c *Conversation) {
+		mu.Lock()
+		defer mu.Unlock()
+		seen = append(seen, c.UUID+":"+c.Status+":"+c.Handler)
+	})
+	t.Cleanup(func() { chatAfterStateChange = orig })
+	return &seen
+}
+
+func TestChatSubject_Channel(t *testing.T) {
+	assert.Equal(t, "s:kaitu:guest:42", chatSubject{Brand: BrandKaitu, Kind: SubjectGuest, ID: 42}.Channel())
+}
+
+func TestChatEventMeta(t *testing.T) {
+	assert.JSONEq(t, `{"event":"closed"}`, chatEventMeta(ChatEventClosed))
+}
+
+func TestEnsureConversation_OnePerSubject(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	s := newChatSubject(t)
+
+	got, err := openConversationFor(ctx, s)
+	require.NoError(t, err)
+	assert.Nil(t, got)
+
+	c1, created, err := ensureConversation(ctx, s, "/support")
+	require.NoError(t, err)
+	assert.True(t, created)
+	assert.Equal(t, ConvOpen, c1.Status)
+	assert.Equal(t, HandlerAI, c1.Handler)
+	assert.Equal(t, "/support", c1.EntryPath)
+	assert.Len(t, c1.UUID, 36)
+
+	c2, created, err := ensureConversation(ctx, s, "/other")
+	require.NoError(t, err)
+	assert.False(t, created)
+	assert.Equal(t, c1.UUID, c2.UUID)
+
+	open, err := openConversationFor(ctx, s)
+	require.NoError(t, err)
+	require.NotNil(t, open)
+	assert.Equal(t, c1.ID, open.ID)
+
+	require.NoError(t, closeConversation(ctx, c1))
+	c3, created, err := ensureConversation(ctx, s, "")
+	require.NoError(t, err)
+	assert.True(t, created)
+	assert.NotEqual(t, c1.UUID, c3.UUID)
+}
+
+func TestEnsureConversation_ConcurrentCreatesOne(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	s := newChatSubject(t)
+
+	const n = 10
+	var wg sync.WaitGroup
+	var createdCount atomic.Int32
+	uuids := make([]string, n)
+	errs := make([]error, n)
+	start := make(chan struct{})
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			c, created, err := ensureConversation(ctx, s, "")
+			errs[i] = err
+			if err == nil {
+				uuids[i] = c.UUID
+			}
+			if created {
+				createdCount.Add(1)
+			}
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	for _, err := range errs {
+		require.NoError(t, err)
+	}
+	assert.EqualValues(t, 1, createdCount.Load())
+	for _, u := range uuids {
+		assert.Equal(t, uuids[0], u)
+	}
+	var cnt int64
+	db.Get().Model(&Conversation{}).Where("brand = ? AND subject_kind = ? AND subject_id = ? AND status = ?",
+		string(s.Brand), s.Kind, s.ID, ConvOpen).Count(&cnt)
+	assert.EqualValues(t, 1, cnt)
+}
+
+func strp(s string) *string { return &s }
+
+func TestAppendMessage_ClientIDIdempotent(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	conv, _, err := ensureConversation(ctx, newChatSubject(t), "")
+	require.NoError(t, err)
+	hook := withAppendHook(t)
+
+	in := appendMessageInput{SenderType: SenderVisitor, Kind: MsgText, Content: "hi", ClientID: strp(generateId("cm"))}
+	m1, dup, err := appendMessage(ctx, conv, in)
+	require.NoError(t, err)
+	assert.False(t, dup)
+	m2, dup, err := appendMessage(ctx, conv, in)
+	require.NoError(t, err)
+	assert.True(t, dup)
+	assert.Equal(t, m1.ID, m2.ID)
+
+	var cnt int64
+	db.Get().Model(&ConversationMessage{}).Where("conversation_id = ?", conv.ID).Count(&cnt)
+	assert.EqualValues(t, 1, cnt)
+	assert.EqualValues(t, 1, hook.Load())
+}
+
+func TestAppendMessage_ClientIDIdempotentConcurrent(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	conv, _, err := ensureConversation(ctx, newChatSubject(t), "")
+	require.NoError(t, err)
+	hook := withAppendHook(t)
+
+	in := appendMessageInput{SenderType: SenderVisitor, Kind: MsgText, Content: "hi", ClientID: strp(generateId("cm"))}
+	const n = 8
+	var wg sync.WaitGroup
+	var dups atomic.Int32
+	start := make(chan struct{})
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			c := *conv
+			_, dup, err := appendMessage(ctx, &c, in)
+			assert.NoError(t, err)
+			if dup {
+				dups.Add(1)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	var cnt int64
+	db.Get().Model(&ConversationMessage{}).Where("conversation_id = ?", conv.ID).Count(&cnt)
+	assert.EqualValues(t, 1, cnt)
+	assert.EqualValues(t, n-1, dups.Load())
+	assert.EqualValues(t, 1, hook.Load())
+}
+
+func TestAppendMessage_SlackTSIdempotent(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	conv, _, err := ensureConversation(ctx, newChatSubject(t), "")
+	require.NoError(t, err)
+	hook := withAppendHook(t)
+
+	in := appendMessageInput{SenderType: SenderStaff, Kind: MsgText, Content: "reply", SlackTS: strp(generateId("ts"))}
+	m1, dup, err := appendMessage(ctx, conv, in)
+	require.NoError(t, err)
+	assert.False(t, dup)
+	m2, dup, err := appendMessage(ctx, conv, in)
+	require.NoError(t, err)
+	assert.True(t, dup)
+	assert.Equal(t, m1.ID, m2.ID)
+
+	var cnt int64
+	db.Get().Model(&ConversationMessage{}).Where("conversation_id = ?", conv.ID).Count(&cnt)
+	assert.EqualValues(t, 1, cnt)
+	assert.EqualValues(t, 1, hook.Load())
+}
+
+func TestAppendMessage_UpdatesLastMessage(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	conv, _, err := ensureConversation(ctx, newChatSubject(t), "")
+	require.NoError(t, err)
+	require.NoError(t, db.Get().Model(&Conversation{}).Where("id = ?", conv.ID).
+		Update("last_message_at", time.Now().Add(-time.Hour)).Error)
+	conv.LastMessageAt = time.Now().Add(-time.Hour)
+
+	msg, _, err := appendMessage(ctx, conv, appendMessageInput{SenderType: SenderAI, Kind: MsgText, Content: "x"})
+	require.NoError(t, err)
+	assert.Equal(t, SenderAI, conv.LastMessageBy)
+	assert.WithinDuration(t, msg.CreatedAt, conv.LastMessageAt, time.Second)
+
+	var fresh Conversation
+	require.NoError(t, db.Get().First(&fresh, conv.ID).Error)
+	assert.Equal(t, SenderAI, fresh.LastMessageBy)
+	assert.WithinDuration(t, time.Now(), fresh.LastMessageAt, 5*time.Second)
+}
+
+func TestAppendMessage_NoteDoesNotChangeLastMessageBy(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	conv, _, err := ensureConversation(ctx, newChatSubject(t), "")
+	require.NoError(t, err)
+
+	_, _, err = appendMessage(ctx, conv, appendMessageInput{SenderType: SenderVisitor, Kind: MsgText, Content: "hello"})
+	require.NoError(t, err)
+	_, _, err = appendMessage(ctx, conv, appendMessageInput{SenderType: SenderStaff, Kind: MsgNote, Content: "internal"})
+	require.NoError(t, err)
+	assert.Equal(t, SenderVisitor, conv.LastMessageBy)
+	_, _, err = appendMessage(ctx, conv, appendMessageInput{SenderType: SenderSystem, Kind: MsgEvent, Meta: chatEventMeta(ChatEventTransferHuman)})
+	require.NoError(t, err)
+	assert.Equal(t, SenderVisitor, conv.LastMessageBy)
+
+	var fresh Conversation
+	require.NoError(t, db.Get().First(&fresh, conv.ID).Error)
+	assert.Equal(t, SenderVisitor, fresh.LastMessageBy)
+}
+
+func TestAppendMessage_AllowedOnClosedConversation(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	conv, _, err := ensureConversation(ctx, newChatSubject(t), "")
+	require.NoError(t, err)
+	require.NoError(t, closeConversation(ctx, conv))
+
+	msg, dup, err := appendMessage(ctx, conv, appendMessageInput{SenderType: SenderSystem, Kind: MsgEvent, Meta: chatEventMeta(ChatEventClosed)})
+	require.NoError(t, err)
+	assert.False(t, dup)
+	assert.NotZero(t, msg.ID)
+}
+
+func TestMessagesAfter_HidesNotesFromVisitor(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	conv, _, err := ensureConversation(ctx, newChatSubject(t), "")
+	require.NoError(t, err)
+
+	m1, _, err := appendMessage(ctx, conv, appendMessageInput{SenderType: SenderVisitor, Kind: MsgText, Content: "a"})
+	require.NoError(t, err)
+	_, _, err = appendMessage(ctx, conv, appendMessageInput{SenderType: SenderStaff, Kind: MsgNote, Content: "n"})
+	require.NoError(t, err)
+	_, _, err = appendMessage(ctx, conv, appendMessageInput{SenderType: SenderStaff, Kind: MsgText, Content: "b"})
+	require.NoError(t, err)
+
+	v, err := messagesAfter(ctx, conv.ID, 0, true)
+	require.NoError(t, err)
+	assert.Len(t, v, 2)
+	all, err := messagesAfter(ctx, conv.ID, 0, false)
+	require.NoError(t, err)
+	assert.Len(t, all, 3)
+	assert.Less(t, all[0].ID, all[1].ID)
+	assert.Less(t, all[1].ID, all[2].ID)
+
+	v, err = messagesAfter(ctx, conv.ID, m1.ID, true)
+	require.NoError(t, err)
+	assert.Len(t, v, 1)
+	all, err = messagesAfter(ctx, conv.ID, m1.ID, false)
+	require.NoError(t, err)
+	assert.Len(t, all, 2)
+}
+
+func TestMessagesAfter_CapsAt200(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	conv, _, err := ensureConversation(ctx, newChatSubject(t), "")
+	require.NoError(t, err)
+	rows := make([]ConversationMessage, 205)
+	for i := range rows {
+		rows[i] = ConversationMessage{ConversationID: conv.ID, SenderType: SenderVisitor, Kind: MsgText, Content: "x", CreatedAt: time.Now()}
+	}
+	require.NoError(t, db.Get().CreateInBatches(&rows, 100).Error)
+	got, err := messagesAfter(ctx, conv.ID, 0, false)
+	require.NoError(t, err)
+	assert.Len(t, got, 200)
+	assert.Equal(t, rows[0].ID, got[0].ID)
+}
+
+func TestSetHandler_NotifiesStateChange(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	conv, _, err := ensureConversation(ctx, newChatSubject(t), "")
+	require.NoError(t, err)
+	seen := withStateHook(t)
+
+	require.NoError(t, setHandler(ctx, conv, HandlerHuman))
+	assert.Equal(t, HandlerHuman, conv.Handler)
+	assert.Equal(t, []string{conv.UUID + ":open:human"}, *seen)
+	var fresh Conversation
+	require.NoError(t, db.Get().First(&fresh, conv.ID).Error)
+	assert.Equal(t, HandlerHuman, fresh.Handler)
+
+	// 无变化不通知
+	require.NoError(t, setHandler(ctx, conv, HandlerHuman))
+	assert.Len(t, *seen, 1)
+	assert.Error(t, setHandler(ctx, conv, "bogus"))
+}
+
+func TestCloseConversation_SetsClosedAtAndNotifiesOnce(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	conv, _, err := ensureConversation(ctx, newChatSubject(t), "")
+	require.NoError(t, err)
+	seen := withStateHook(t)
+
+	require.NoError(t, closeConversation(ctx, conv))
+	assert.Equal(t, ConvClosed, conv.Status)
+	require.NotNil(t, conv.ClosedAt)
+	var fresh Conversation
+	require.NoError(t, db.Get().First(&fresh, conv.ID).Error)
+	assert.Equal(t, ConvClosed, fresh.Status)
+	assert.NotNil(t, fresh.ClosedAt)
+	assert.Len(t, *seen, 1)
+
+	require.NoError(t, closeConversation(ctx, conv))
+	assert.Len(t, *seen, 1)
+}
+
+func TestCloseIdleConversations(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	specs := []struct {
+		handler string
+		ago     time.Duration
+		closed  bool
+	}{
+		{HandlerAI, 25 * time.Hour, true},
+		{HandlerAI, time.Hour, false},
+		{HandlerHuman, 25 * time.Hour, false},
+		{HandlerHuman, 73 * time.Hour, true},
+	}
+	convs := make([]*Conversation, len(specs))
+	for i, sp := range specs {
+		c, _, err := ensureConversation(ctx, newChatSubject(t), "")
+		require.NoError(t, err)
+		require.NoError(t, db.Get().Model(&Conversation{}).Where("id = ?", c.ID).
+			Updates(map[string]any{"handler": sp.handler, "last_message_at": time.Now().Add(-sp.ago)}).Error)
+		convs[i] = c
+	}
+	seen := withStateHook(t)
+
+	closed, err := closeIdleConversations(ctx, 24*time.Hour, 72*time.Hour)
+	require.NoError(t, err)
+	got := map[uint64]Conversation{}
+	for _, c := range closed {
+		got[c.ID] = c
+	}
+	notified := map[string]bool{}
+	for _, s := range *seen {
+		notified[s[:36]] = true
+	}
+	for i, sp := range specs {
+		var fresh Conversation
+		require.NoError(t, db.Get().First(&fresh, convs[i].ID).Error)
+		_, inResult := got[convs[i].ID]
+		assert.Equal(t, sp.closed, inResult, "spec %d returned", i)
+		assert.Equal(t, sp.closed, fresh.Status == ConvClosed, "spec %d status", i)
+		assert.Equal(t, sp.closed, notified[convs[i].UUID], "spec %d notified", i)
+		if sp.closed {
+			assert.NotNil(t, fresh.ClosedAt)
+			assert.Equal(t, ConvClosed, got[convs[i].ID].Status)
+		}
+	}
+}
