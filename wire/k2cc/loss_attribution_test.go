@@ -37,11 +37,13 @@ import (
 // × 5/10/20 % loss; median detection delay 1.00×RTT, median MI 2.0×RTT.
 // Mutation (remove the early return) → ratio 1.00 in every scenario.
 //
-// Second finding: the shared harness relay (newUDPRelay, one goroutine+timer
-// per packet) reorders packets, and QUIC's packet-threshold detection turns
-// that into ~45 % SPURIOUS loss even at 0 % configured loss. Every benchmark
-// built on runBulkTransfer therefore runs at far more declared loss than its
-// nominal lossRate. The reorder_* scenarios below keep that visible.
+// Second finding: the per-packet relay (newUDPRelay, one goroutine+timer per
+// packet) reorders packets, and QUIC's packet-threshold detection turns that
+// into ~45 % SPURIOUS loss even at 0 % configured loss. Until 2026-10-01 it
+// was the shared harness relay, so every benchmark built on runBulkTransfer
+// ran at far more declared loss than its nominal lossRate; the harness now
+// uses the FIFO relay. The reorder_* scenarios below keep the artifact
+// visible and deliberately stay on the per-packet relay.
 
 // lossProbeCC wraps the real sender and records every loss QUIC declares,
 // independently of K2CC's own attribution. Embedding promotes all methods
@@ -121,6 +123,7 @@ func (c *lossProbeCC) OnCongestionEvent(pn congestion.PacketNumber, lostBytes co
 type lossAttrResult struct {
 	relayS2CDropped, relayS2CForwarded uint64
 	relayC2SDropped, relayC2SForwarded uint64
+	relayOutOfOrder, relayHeld         [2]uint64 // [dirS2C, dirC2S]
 
 	probeSentPkts, probeSentBytes uint64
 	declaredPkts, declaredBytes   uint64
@@ -263,6 +266,10 @@ func runLossAttributionTransfer(t *testing.T, delay delayFunc, lossRate float64,
 		records:           env.getRecords(),
 		totalRead:         totalRead,
 	}
+	for dir := range res.relayOutOfOrder {
+		res.relayOutOfOrder[dir] = relay.outOfOrder[dir].Load()
+		res.relayHeld[dir] = relay.held[dir].Load()
+	}
 	probe.mu.Lock()
 	res.probeSentPkts, res.probeSentBytes = probe.sentPkts, probe.sentBytes
 	res.declaredPkts, res.declaredBytes = probe.declaredPkts, probe.declaredBytes
@@ -306,8 +313,8 @@ func TestIntegration_LossAttributionAccuracy(t *testing.T) {
 		sendFor   = 8 * time.Second
 	)
 	// fifo=true: order-preserving relay — relay drops are the only loss, so
-	// the ratio isolates the MI filter. fifo=false: the shared harness's
-	// per-packet-goroutine relay, which reorders and makes QUIC declare
+	// the ratio isolates the MI filter. fifo=false: the per-packet-goroutine
+	// relay (the harness default until 2026-10-01), which reorders and makes QUIC declare
 	// spurious loss; logged (not asserted) so the harness artifact stays
 	// visible next to the real measurement.
 	scenarios := []struct {
