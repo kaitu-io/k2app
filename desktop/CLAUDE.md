@@ -50,6 +50,7 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
   派生副本——仅当 `BRAND=overleap` 才生成，gitignored，永不手改。
 - 签名主体（Developer ID / SimplySign / notarize 账号）与 updater minisign 密钥两品牌
   共用——已拍板的品牌泄漏点，不再讨论。
+- kaitu 图标由 `webapp/brand-assets/kaitu/generate.sh` 从 `logo.svg`（≤32px 用 `logo-small.svg`）生成进 `icons/`；`.icns` 用带透明边距的 824/1024 版，其余为满幅圆角块。
 - overleap 图标由 `webapp/brand-assets/overleap/generate.sh` 从 `logo.svg` 生成进 `icons-overleap/`
   （不要用 `yarn tauri icon`，它只认 PNG 源且会覆盖 `.icns/.ico` 的生成方式）；NSIS 语言 overleap 仅 English。
 - 图像资产（logo PNG 等二进制）不在桌面纯度守卫覆盖范围内——`strings`/`grep` 抓不到位图里的文字；
