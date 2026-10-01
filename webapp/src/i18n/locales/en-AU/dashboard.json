@@ -172,7 +172,9 @@
     "summaryGlobal": "Global Proxy",
     "summaryBypass": "{{country}} Direct",
     "summaryHome": "{{country}} Home",
-    "summaryHomeProxy": "{{country}} Home+Proxy"
+    "summaryHomeProxy": "{{country}} Home+Proxy",
+    "searchCountry": "Search country",
+    "noCountryMatch": "No matching country"
   },
   "tunnels": {
     "title": "Node Management",

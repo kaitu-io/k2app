@@ -172,7 +172,9 @@
     "summaryGlobal": "全局代理",
     "summaryBypass": "{{country}}直连",
     "summaryHome": "{{country}}回国",
-    "summaryHomeProxy": "{{country}}回国+代理"
+    "summaryHomeProxy": "{{country}}回国+代理",
+    "searchCountry": "搜索国家",
+    "noCountryMatch": "没有匹配的国家"
   },
   "troubleshooting": {
     "title": "问题排查",

@@ -172,7 +172,9 @@
     "summaryGlobal": "グローバルプロキシ",
     "summaryBypass": "{{country}}直接",
     "summaryHome": "{{country}}帰国",
-    "summaryHomeProxy": "{{country}}帰国+プロキシ"
+    "summaryHomeProxy": "{{country}}帰国+プロキシ",
+    "searchCountry": "国を検索",
+    "noCountryMatch": "一致する国がありません"
   },
   "tunnels": {
     "title": "ノード管理",

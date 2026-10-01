@@ -32,6 +32,7 @@
  */
 
 import type { PresetName, RouteConfig } from '../types/client-config';
+import { brandConfig } from '../brands';
 
 /**
  * Canonical profile → preset mapping.
@@ -132,10 +133,26 @@ export function countryToProfile(cc: string | null | undefined): string {
   return COUNTRY_TO_PROFILE[cc.toLowerCase()] ?? 'global';
 }
 
-/** Whether this country has a dedicated `{cc}route` profile (rule bundles exist). */
+/**
+ * Countries that ship a `<cc>.krs` region bundle but have NO `{cc}-access`
+ * preset in `k2/rule/target.go`. Bypass mode only needs the bundle
+ * (`match.region`), so they are routable there; the preset-based home modes
+ * resolve them to `global` via `countryToProfile`.
+ */
+const REGION_ONLY_COUNTRIES: ReadonlySet<string> = new Set(['gb']);
+
+/** Whether `match.region: cc` is safe to emit (a `<cc>.krs` bundle is published). */
 export function isRoutableCountry(cc: string | null | undefined): boolean {
-  return !!cc && COUNTRY_TO_PROFILE[cc.toLowerCase()] !== undefined;
+  if (!cc) return false;
+  const lower = cc.toLowerCase();
+  return COUNTRY_TO_PROFILE[lower] !== undefined || REGION_ONLY_COUNTRIES.has(lower);
 }
+
+/** Every country `isRoutableCountry` accepts — the picker's option list. */
+export const ROUTABLE_COUNTRY_CODES: readonly string[] = Object.freeze([
+  ...Object.keys(COUNTRY_TO_PROFILE),
+  ...REGION_ONLY_COUNTRIES,
+]);
 
 /**
  * Clamp a detected country to one that is safe to feed into `routes[]`.
@@ -147,10 +164,13 @@ export function isRoutableCountry(cc: string | null | undefined): boolean {
  * geo hotfix papered over); newer engines silently substitute cn.krs data
  * for the missing region, so routing behaves as cn while the UI claims the
  * other country. Clamping here keeps old engines connectable and new ones
- * honest. `'cn'` is the fallback: its bundles ship embedded in the binary
- * (never missing), and "CN direct + rest through tunnel" is the
- * pre-detection behaviour every released client already has.
+ * honest. The fallback is the brand's `defaultRoutingCountry`: `'cn'` for the
+ * China-market brand (its bundles ship embedded in the binary, never missing;
+ * "CN direct + rest through tunnel" is what every released client already
+ * does), `'gb'` for the international one. Every engine that brand has ever
+ * shipped has `fallbackRegion`, so a not-yet-downloaded gb.krs degrades to cn
+ * data (≈ all-proxy for a non-CN user) rather than a 504.
  */
 export function routableCountry(cc: string | null | undefined): string {
-  return isRoutableCountry(cc) ? (cc as string).toLowerCase() : 'cn';
+  return isRoutableCountry(cc) ? (cc as string).toLowerCase() : brandConfig.defaultRoutingCountry;
 }

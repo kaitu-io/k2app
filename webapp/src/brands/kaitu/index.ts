@@ -45,6 +45,7 @@ export const KAITU_BRAND: WebappBrandConfig = {
     'https://cdn.statically.io/gh/kaitu-io/ui-theme@dist/ui.js',
   ],
   storeUrls: { ios: 'https://apps.apple.com/app/id6448744655', android: '' },
+  defaultRoutingCountry: 'cn',
   theme: KAITU_THEME,
   features: {
     invite: true,

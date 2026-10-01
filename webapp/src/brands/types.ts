@@ -165,6 +165,12 @@ export interface WebappBrandConfig {
    *  the website /install page). Play URLs are fixed by package name and can
    *  be filled before the listing is live; App Store URLs only after. */
   storeUrls: { ios: string; android: string };
+  /**
+   * 分流国家的默认值与兜底（小写 ISO alpha-2）：全新安装的初始国家，以及检测
+   * 不到 / 检测到的国家没有规则包时落到的国家。必须是 utils/routes.ts 里
+   * 可分流的国家（routes.test.ts 守卫）。
+   */
+  defaultRoutingCountry: string;
   theme: BrandThemeTokens;
   features: BrandFeatures;
 }
