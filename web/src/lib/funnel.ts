@@ -21,8 +21,29 @@ export interface PixelOpts {
   loc?: string;
 }
 
+/**
+ * What may leave the browser as the page location: the path plus `utm_*`
+ * campaign tags, nothing else. Query strings on this site carry sign-in tokens,
+ * payment session ids and invite codes; the pixel URL lands in access logs, so
+ * every other parameter (and the fragment) is dropped here, before the request
+ * exists, rather than trusted to the server to discard.
+ */
+export function pixelLocation(loc: string): string {
+  const noHash = loc.split('#', 1)[0];
+  const at = noHash.indexOf('?');
+  if (at === -1) return noHash;
+  const kept = new URLSearchParams();
+  for (const [key, value] of new URLSearchParams(noHash.slice(at + 1))) {
+    if (key.startsWith('utm_')) kept.append(key, value);
+  }
+  const query = kept.toString();
+  return query ? `${noHash.slice(0, at)}?${query}` : noHash.slice(0, at);
+}
+
 export function pxUrl(event: WebFunnelEvent, opts: PixelOpts = {}): string {
-  const loc = opts.loc ?? (typeof window !== 'undefined' ? window.location.pathname + window.location.search : '');
+  const loc = pixelLocation(
+    opts.loc ?? (typeof window !== 'undefined' ? window.location.pathname + window.location.search : ''),
+  );
   const params = new URLSearchParams();
   params.set('e', event);
   if (loc) params.set('u', loc);
@@ -39,6 +60,15 @@ export function track(event: WebFunnelEvent, opts?: { plan?: string; source?: st
   } catch {
     // analytics must never break a product path
   }
+}
+
+/**
+ * The apps load site pages in an iframe with `?embed=true` (or `#embed`) — the
+ * same test `useEmbedMode` applies. Those are app screens, not site visits.
+ */
+export function isEmbeddedPage(): boolean {
+  if (typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location.search).get('embed') === 'true' || window.location.hash === '#embed';
 }
 
 export function externalReferrerHost(): string | undefined {

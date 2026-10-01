@@ -23,9 +23,24 @@ describe('pxUrl', () => {
     );
   });
 
-  it('defaults loc to the current pathname + search', () => {
-    window.history.pushState({}, '', '/zh-CN/purchase?plan=1');
-    expect(pxUrl('page_view')).toBe('/api/px?e=page_view&u=%2Fzh-CN%2Fpurchase%3Fplan%3D1');
+  it('defaults loc to the current pathname, keeping only utm_* query params', () => {
+    window.history.pushState({}, '', '/zh-CN/purchase?plan=1&utm_source=x&auth_token=SECRET&utm_campaign=c%20d&code=abc#frag');
+    const url = pxUrl('page_view');
+    expect(url).toBe('/api/px?e=page_view&u=%2Fzh-CN%2Fpurchase%3Futm_source%3Dx%26utm_campaign%3Dc%2Bd');
+    expect(url).not.toContain('SECRET');
+    expect(url).not.toContain('abc');
+    expect(url).not.toContain('plan');
+  });
+
+  it('defaults loc to the bare pathname when no utm_* param is present', () => {
+    window.history.pushState({}, '', '/zh-CN/purchase?plan=1&token=SECRET');
+    expect(pxUrl('page_view')).toBe('/api/px?e=page_view&u=%2Fzh-CN%2Fpurchase');
+  });
+
+  it('strips non-utm params from an explicit loc too', () => {
+    const url = pxUrl('page_view', { loc: '/en-GB/pay-result?session_id=cs_SECRET&utm_medium=email#x' });
+    expect(url).toBe('/api/px?e=page_view&u=%2Fen-GB%2Fpay-result%3Futm_medium%3Demail');
+    expect(pxUrl('page_view', { loc: '/a?utm=1&xutm_source=2&UTM_SOURCE=3' })).toBe('/api/px?e=page_view&u=%2Fa');
   });
 });
 
