@@ -41,7 +41,11 @@ func api_funnel_px(c *gin.Context) {
 	}
 	anon := ensureFunnelSid(c)
 	brand := ReqBrand(c)
-	uid := funnelSilentUserID(c)
+	// GPC = 完全不归因：anon 已为空（ensureFunnelSid），登录用户也不记，连凭据都不解析。
+	var uid uint64
+	if !funnelGPC(c) {
+		uid = funnelSilentUserID(c)
+	}
 	if uid != 0 && anon != "" {
 		linkFunnelIdentity(c, "sid", anon, uid, brand)
 	}

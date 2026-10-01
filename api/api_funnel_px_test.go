@@ -243,9 +243,26 @@ func TestPx_GPC_IgnoresExistingSid(t *testing.T) {
 	rows := pxRows(t, m)
 	require.Len(t, rows, 1)
 	assert.Equal(t, "", rows[0].AnonID)
+	// GPC = 完全不归因：登录态也不记用户，事件只作无主计数。
+	assert.Equal(t, uint64(0), rows[0].UserID)
 	var n int64
-	require.NoError(t, db.Get().Model(&FunnelIdentity{}).Where("anon_id = ?", sid).Count(&n).Error)
+	require.NoError(t, db.Get().Model(&FunnelIdentity{}).Where("anon_id = ? OR user_id = ?", sid, user.ID).Count(&n).Error)
 	assert.Equal(t, int64(0), n)
+}
+
+// GPC + 登录（无 sid cookie，Bearer 凭据）：同样不记用户。
+func TestPx_GPC_LoggedIn_NoUserAttribution(t *testing.T) {
+	skipIfNoConfig(t)
+	m := pxMarker(t)
+	user := CreateTestUser(t)
+	tok := GenerateTestToken(user.ID, "", time.Hour)
+	w := pxReq(m, "pricing_view").WithHeader("Sec-GPC", "1").WithBearerToken(tok).Execute(pxRouter())
+	assertGIF(t, w)
+	assert.Empty(t, w.Header().Values("Set-Cookie"))
+	rows := pxRows(t, m)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "", rows[0].AnonID)
+	assert.Equal(t, uint64(0), rows[0].UserID)
 }
 
 func TestPx_NearExpiryToken_NoAuthSideEffects(t *testing.T) {
