@@ -285,6 +285,18 @@ func executeApprovalUserHardDelete(ctx context.Context, params json.RawMessage) 
 		return fmt.Errorf("delete email send logs: %w", err)
 	}
 
+	// 12.1 删除转化漏斗的身份关联
+	if err := tx.Where("user_id IN ?", userIDs).Delete(&FunnelIdentity{}).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("delete funnel identities: %w", err)
+	}
+
+	// 12.2 删除转化漏斗的行为事件
+	if err := tx.Where("user_id IN ?", userIDs).Delete(&FunnelEvent{}).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("delete funnel events: %w", err)
+	}
+
 	// 13. 最后删除用户本身
 	if err := tx.Where("id IN ?", userIDs).Delete(&User{}).Error; err != nil {
 		tx.Rollback()
