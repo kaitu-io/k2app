@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"regexp"
 	"time"
 
@@ -68,10 +69,15 @@ type StatsK2sDownloadRequest struct {
 
 // ========================= Handlers =========================
 
-const maxEventsPerRequest = 100
+const (
+	maxEventsPerRequest = 100
+	statsIngestMaxBody  = 1 << 20 // 1 MiB
+)
 
 // api_stats_ingest handles POST /api/stats/events
 func api_stats_ingest(c *gin.Context) {
+	// 未认证端点：请求体封顶，超限时解码失败 → 走下面同一个参数错误。
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, statsIngestMaxBody)
 	var req StatsEventRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		Error(c, ErrorInvalidArgument, "invalid request body")

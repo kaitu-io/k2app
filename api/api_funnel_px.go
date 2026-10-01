@@ -28,8 +28,11 @@ func api_funnel_px(c *gin.Context) {
 	if !funnelEnabled() || !funnelPxAllow(c.ClientIP()) {
 		return
 	}
-	device, osName, isBot := classifyUserAgent(c.GetHeader("User-Agent"))
-	event := c.Query("e")
+	// 原始输入先按字节封顶，再做任何解析/清洗（未认证端点的处理量有界）。
+	q := func(key string) string { return funnelCapRaw(c.Query(key), funnelRawParamMax) }
+	referer := funnelCapRaw(c.GetHeader("Referer"), funnelRawURLMax)
+	device, osName, isBot := classifyUserAgent(funnelCapRaw(c.GetHeader("User-Agent"), funnelRawURLMax))
+	event := q("e")
 	if isBot || !funnelEventAllowed(event, FunnelSurfaceWeb) {
 		return
 	}
@@ -43,10 +46,10 @@ func api_funnel_px(c *gin.Context) {
 		linkFunnelIdentity(c, "sid", anon, uid, brand)
 	}
 	refHostForMatch := c.Request.Host
-	if h, ok := funnelRefererSameSite(c, c.GetHeader("Referer")); ok {
+	if h, ok := funnelRefererSameSite(c, referer); ok {
 		refHostForMatch = h
 	}
-	path, us, um, uc := parseFunnelLocation(c.Query("u"), c.GetHeader("Referer"), refHostForMatch)
+	path, us, um, uc := parseFunnelLocation(funnelCapRaw(c.Query("u"), funnelRawURLMax), referer, refHostForMatch)
 	funnelEnqueue(FunnelEvent{
 		OccurredAt:  time.Now(),
 		Brand:       string(brand),
@@ -54,10 +57,10 @@ func api_funnel_px(c *gin.Context) {
 		Event:       event,
 		AnonID:      anon,
 		UserID:      uid,
-		Plan:        funnelTruncate(c.Query("p"), 64),
-		Source:      funnelTruncate(c.Query("s"), 32),
+		Plan:        funnelTruncate(q("p"), 64),
+		Source:      funnelTruncate(q("s"), 32),
 		Path:        path,
-		RefHost:     sanitizeRefHost(c.Query("r")),
+		RefHost:     sanitizeRefHost(q("r")),
 		UtmSource:   us,
 		UtmMedium:   um,
 		UtmCampaign: uc,

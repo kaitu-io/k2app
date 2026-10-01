@@ -3,6 +3,7 @@ package center
 import (
 	"fmt"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -316,4 +317,16 @@ func TestStatsIngest_AppOpenStampsBrand(t *testing.T) {
 	require.Len(t, rows, 2)
 	assert.Equal(t, "overleap", rows[0].Brand)
 	assert.Equal(t, "kaitu", rows[1].Brand, "no header / unknown host resolves to the default brand")
+}
+
+// 请求体上限 1 MiB：超限按现有的参数错误返回，不 panic、不落库。
+func TestStatsIngest_OverLimitBodyRejected(t *testing.T) {
+	testInitConfig()
+	body := map[string]any{"pad": strings.Repeat("x", 2<<20)}
+	w := NewTestRequest("POST", "/api/stats/events").WithBody(body).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorInvalidArgument, sfCode(t, w))
+	// 上限以内的同形请求照常成功
+	ok := map[string]any{"pad": strings.Repeat("x", 512<<10)}
+	w = NewTestRequest("POST", "/api/stats/events").WithBody(ok).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorNone, sfCode(t, w))
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -23,6 +24,10 @@ const (
 	funnelPxPerMin   = 120
 	funnelPathMaxLen = 255
 	funnelUtmMaxLen  = 64
+
+	// 像素原始参数的字节上限：在任何解析/清洗之前先截断，未认证请求的处理量因此有界。
+	funnelRawURLMax   = 2048
+	funnelRawParamMax = 256
 )
 
 var (
@@ -153,16 +158,28 @@ func funnelRefererSameSite(c *gin.Context, referer string) (string, bool) {
 	return "", false
 }
 
+// funnelCapRaw 按字节截到 n（不管字符边界；下游的 funnelTruncate / 解析负责合法性）。
+func funnelCapRaw(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
+}
+
 func funnelTruncate(s string, n int) string {
 	s = strings.ToValidUTF8(s, "")
 	if len(s) <= n {
 		return s
 	}
-	r := []rune(s)
-	for len(string(r)) > n {
-		r = r[:len(r)-1]
+	if n <= 0 {
+		return ""
 	}
-	return string(r)
+	// s 此时是合法 UTF-8：在字节 n 处切，再回退到字符起点（最多退 3 字节）。线性时间。
+	cut := n
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }
 
 func stripFunnelLocale(p string) string {

@@ -3,6 +3,8 @@ package center
 import (
 	"strings"
 	"testing"
+	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -86,4 +88,61 @@ func TestSanitizeRefHost(t *testing.T) {
 	assert.Equal(t, "", sanitizeRefHost(""))
 	assert.Equal(t, "", sanitizeRefHost("not a host"))
 	assert.Len(t, sanitizeRefHost(strings.Repeat("a", 300)+".com"), 128)
+}
+
+// funnelTruncate 必须线性：1 MB 多字节输入在未认证端点上不能耗秒级 CPU。
+func TestFunnelTruncate_LinearOnHugeInput(t *testing.T) {
+	huge := strings.Repeat("é", 512*1024) // 1 MiB，全是 2 字节字符
+	done := make(chan string, 1)
+	start := time.Now()
+	go func() { done <- funnelTruncate(huge, 63) }()
+	select {
+	case got := <-done:
+		assert.Less(t, time.Since(start), 100*time.Millisecond)
+		assert.True(t, utf8.ValidString(got))
+		assert.Equal(t, strings.Repeat("é", 31), got) // 63 落在字符中间 → 回退到 62
+	case <-time.After(5 * time.Second):
+		t.Fatal("funnelTruncate did not finish a 1 MiB input within 5s (quadratic?)")
+	}
+}
+
+func TestFunnelTruncate_Boundaries(t *testing.T) {
+	cases := []struct {
+		name, in string
+		n        int
+		want     string
+	}{
+		{"shorter than n", "abc", 10, "abc"},
+		{"exactly n", "abc", 3, "abc"},
+		{"ascii cut", "abcdef", 4, "abcd"},
+		{"2-byte on boundary", "aé", 3, "aé"},
+		{"2-byte split", "aé", 2, "a"},
+		{"3-byte split after 1", "a开", 2, "a"},
+		{"3-byte split after 2", "a开", 3, "a"},
+		{"3-byte fits", "a开", 4, "a开"},
+		{"4-byte split", "😀😀", 7, "😀"},
+		{"4-byte nothing fits", "😀", 3, ""},
+		{"n zero", "abc", 0, ""},
+		{"invalid bytes scrubbed before cut", "a\xff\xfeb开", 4, "ab"},
+		{"only invalid", "\xff\xff\xff", 2, ""},
+		{"truncated rune at end scrubbed", "ab\xe5\xbc", 10, "ab"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := funnelTruncate(c.in, c.n)
+			assert.Equal(t, c.want, got)
+			assert.True(t, utf8.ValidString(got))
+			assert.LessOrEqual(t, len(got), c.n)
+		})
+	}
+}
+
+func TestFunnelCapRaw(t *testing.T) {
+	assert.Equal(t, "abc", funnelCapRaw("abc", 3))
+	assert.Equal(t, "abc", funnelCapRaw("abcdef", 3))
+	assert.Equal(t, "", funnelCapRaw("", 3))
+	// 超长原始参数先被截到上限，后续解析只看到上限内的字节
+	p, s, _, _ := parseFunnelLocation(funnelCapRaw("/pricing?utm_source=x&pad="+strings.Repeat("z", 1<<20), funnelRawURLMax), "", "h")
+	assert.Equal(t, "/pricing", p)
+	assert.Equal(t, "x", s)
 }
