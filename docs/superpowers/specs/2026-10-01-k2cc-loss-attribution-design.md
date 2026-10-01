@@ -155,3 +155,26 @@ MI 停止发送后进入「待决」队列，直到其所有包都有结果（�
 3. **吞吐**：各臂差异全部落在 run 间波动内，实验室分辨不出 α=4/3/1.5，也**不能**声称有速度收益。α 的选择只能靠车队 A/B。
 4. **bgLoss 仍被拥塞丢包污染**：cap20 loss0 的真实背景丢包是 0，control 报 20%，fix 报 8–12%——改善但未归零。
 5. **与本修复无关的策略健康问题**：policer（20 ms burst）链路上所有臂真实丢包 32–40%，bwEst 高于 cap（23–29 对 20）。可能是 policer 模型过苛（无队列）；车队里用 `declLoss` / `lossCruise` 判断真实线路是否如此。
+
+## 9. 上线前验证（2026-10-01）
+
+**control ≡ 线上（实证，不是推理）。** 临时差分夹具（未入库）：把 origin/master 与本分支的 `wire/k2cc` 各拷一份，`time.Now` 换成同一个假时钟，同一个模拟网络（RTT 20–300 ms 且会跳变、背景丢包 0–30%、policer 0/5/20/100 Mbps、app-limited、乱序、ECN 事件、非 ack-eliciting 包）驱动两者，**每次回调后**比对 cwnd / Snapshot / HasPacingBudget / CanSend / TimeUntilSend / 每个完成 MI 的全部字段。
+
+| 对比 | 结果 |
+|---|---|
+| master vs master（夹具确定性） | 30 seeds 无分歧 |
+| master vs `control` | **300 seeds × 30 s：1.05 亿个包、40 522 个 MI 全部逐位一致** |
+| master vs 未知臂名 / 空名 | 60 seeds 无分歧 |
+| master vs fix-a4 / a3 / a15 / lab-resolved-only / lab-align-only（判别式） | 58 / 58 / 58 / 54 / 50 of 60 seeds 出现分歧 |
+
+车队 k2（b18bee3）到 origin/master 之间 `k2cc.go` / `summary.go` / `cc_summary.go` 无改动，所以结论对车队版本同样成立。
+
+**独立审查的发现与处置：**
+- ECN 事件（`lostBytes==0`）的提前返回原先在 `ensureCurrentMI` 之前，首个回调恰为 ECN 时 MI #0 晚建几微秒 → 已挪到之后（654034d），差分夹具含 ECN 事件。
+- `lab-*` 臂可被 `K2_CC_VARIANTS` 选中 → `ParseVariants` 拒绝（654034d）。
+- **fix 臂有第三处行为差异（此前未声明）**：resolved 模式下 `OnCongestionEventEx` 不做 stale 过滤，全部丢包计入 ackRate，而 ackRate 经 `rateToCwnd` 放大 cwnd。保留（时间窗量没有 MI 归属，过滤无意义），但车队 A/B 评估的是「分母 + 对齐 + ackRate 全量」这一整体；`lab-align-only` 不含此项。
+- aligned 模式下 app-limited 且 throughput==0 的 MI 之后，下一 MI 标为 None 而速率未变 → 偶尔少一个评估样本，保守方向，不处理。
+
+**全量测试（PVE ubuntu VM，load <0.3）**：`wire/k2cc` 完整套件含三个基准门槛 PASS（HK 96.9% / JP 54.6% / US 41.5% / overall 76.6%）。
+
+**试点**：`canary/k2cc-lossattr-on-fleet`（33edd87）= 车队 k2 b18bee3 + 仅本改动的生产文件。节点 jp-tokyo.aws.wm04，不推镜像：`/apps/k2s/docker-compose.override.yml` 把 `/apps/k2s/canary/k2s` 挂到 `/app/k2s` 并设 `K2_CC_VARIANTS`。阶段 1 `control:100`（2026-10-01 08:54:32Z 起）；阶段 2 `control:50,fix-a4:50`。回退：删 override + `sudo docker compose up -d`。
