@@ -47,6 +47,7 @@ func registerChatRoutes(api *gin.RouterGroup) {
 		g.POST("/messages", api_chat_messages_send)
 		g.POST("/email", api_chat_email)
 		g.GET("/ws-token", api_chat_ws_token)
+		g.GET("/ws", api_chat_ws) // 品牌取自令牌，不依赖 ReqBrand
 	}
 }
 
@@ -116,28 +117,14 @@ func chatConversationDTO(conv *Conversation) *ChatConvDTO {
 	return &ChatConvDTO{UUID: conv.UUID, Status: conv.Status, Handler: conv.Handler}
 }
 
-// chatWelcome 静态欢迎语（不落库，前端渲染）。品牌无关；按 Accept-Language 选中/英。
-func chatWelcome(locale string) *ChatWelcome {
-	if strings.HasPrefix(strings.ToLower(locale), "zh") {
-		return &ChatWelcome{
-			Text: "你好，有什么可以帮你？",
-			Options: []ChatWelcomeOption{
-				{Label: "连接问题", Value: "connection"},
-				{Label: "购买与套餐", Value: "billing"},
-				{Label: "账号问题", Value: "account"},
-				{Label: "其他", Value: "other"},
-			},
-		}
+// chatWelcomeDTO 欢迎语取固定文案 chatAIWelcome()（不落库，前端渲染）；品牌与语言无关。
+func chatWelcomeDTO() *ChatWelcome {
+	text, opts := chatAIWelcome()
+	w := &ChatWelcome{Text: text, Options: make([]ChatWelcomeOption, 0, len(opts))}
+	for _, o := range opts {
+		w.Options = append(w.Options, ChatWelcomeOption{Label: o.Label, Value: o.Value})
 	}
-	return &ChatWelcome{
-		Text: "Hi, how can we help?",
-		Options: []ChatWelcomeOption{
-			{Label: "Connection issue", Value: "connection"},
-			{Label: "Plans and billing", Value: "billing"},
-			{Label: "Account", Value: "account"},
-			{Label: "Something else", Value: "other"},
-		},
-	}
+	return w
 }
 
 // ---- 会话查找（簇感知） ----
@@ -288,7 +275,7 @@ func api_chat_session(c *gin.Context) {
 		Enabled:      true,
 		Conversation: chatConversationDTO(conv),
 		Messages:     msgs,
-		Welcome:      chatWelcome(c.GetHeader("Accept-Language")),
+		Welcome:      chatWelcomeDTO(),
 	}
 	if u := chatWSURL(subj.Brand); u != "" {
 		if tok := signChatWSToken(subj, chatWSTokenTTL); tok != "" {
