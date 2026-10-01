@@ -172,7 +172,9 @@
     "summaryGlobal": "전역 프록시",
     "summaryBypass": "{{country}} 직접",
     "summaryHome": "{{country}} 홈",
-    "summaryHomeProxy": "{{country}} 홈+프록시"
+    "summaryHomeProxy": "{{country}} 홈+프록시",
+    "searchCountry": "국가 검색",
+    "noCountryMatch": "일치하는 국가가 없습니다"
   },
   "tunnels": {
     "title": "노드 관리",

@@ -42,6 +42,11 @@ type BrandConfig struct {
 	SupportEmail       string
 	EDMFromName        string
 	PaymentChannels    []string
+	// 分流国家（/api/geo）。GeoDetect=false：恒返回 GeoDefaultCountry，不看请求 IP
+	// （开途面向中国市场，恒 cn——见 api_geo.go 的 2026-06-14 hotfix 说明）。
+	// GeoDetect=true：按请求 IP 判定，判定不出或该国没有规则包时落到 GeoDefaultCountry。
+	GeoDetect         bool
+	GeoDefaultCountry string
 }
 
 func (bc *BrandConfig) AllowsPayment(channel string) bool {
@@ -66,7 +71,9 @@ var brandRegistry = map[Brand]*BrandConfig{
 		// 2026-09-22 起 nextpay 是 kaitu 网页/app 下单渠道；wordgate 过渡期保留——
 		// 在途 WordGate 订单的 webhook 哨兵检查 AllowsPayment(wordgate)，拿掉会拒掉在途付款。
 		// Phase B 清理时移除 wordgate。
-		PaymentChannels: []string{PayChannelNextpay, PayChannelWordgate, PayChannelAppleIAP},
+		PaymentChannels:   []string{PayChannelNextpay, PayChannelWordgate, PayChannelAppleIAP},
+		GeoDetect:         false,
+		GeoDefaultCountry: "cn",
 	},
 	BrandOverleap: {
 		ID:                 BrandOverleap,
@@ -79,7 +86,9 @@ var brandRegistry = map[Brand]*BrandConfig{
 		EDMFromName:        "Overleap Team",
 		// Phase A：Stripe（官网 Checkout）+ Apple IAP（io.overleap 独立 bundle，
 		// appstore.bundleIds.overleap 配置后 verify 生效）；google_play 随 App 上架再填
-		PaymentChannels: []string{PayChannelStripe, PayChannelAppleIAP},
+		PaymentChannels:   []string{PayChannelStripe, PayChannelAppleIAP},
+		GeoDetect:         true,
+		GeoDefaultCountry: "gb",
 	},
 }
 

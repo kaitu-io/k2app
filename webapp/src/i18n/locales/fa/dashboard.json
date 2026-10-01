@@ -172,7 +172,9 @@
     "summaryGlobal": "پروکسی جهانی",
     "summaryBypass": "{{country}} مستقیم",
     "summaryHome": "{{country}} خانگی",
-    "summaryHomeProxy": "{{country}} خانگی+پروکسی"
+    "summaryHomeProxy": "{{country}} خانگی+پروکسی",
+    "searchCountry": "جستجوی کشور",
+    "noCountryMatch": "کشوری مطابق یافت نشد"
   },
   "tunnels": {
     "title": "مدیریت گره‌ها",

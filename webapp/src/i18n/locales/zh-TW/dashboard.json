@@ -172,7 +172,9 @@
     "summaryGlobal": "全域代理",
     "summaryBypass": "{{country}}直連",
     "summaryHome": "{{country}}回國",
-    "summaryHomeProxy": "{{country}}回國+代理"
+    "summaryHomeProxy": "{{country}}回國+代理",
+    "searchCountry": "搜尋國家",
+    "noCountryMatch": "沒有符合的國家"
   },
   "tunnels": {
     "title": "節點管理",

@@ -26,6 +26,13 @@ export const OVERLEAP_THEME: BrandThemeTokens = {
     textPrimary: '#E6E8F0',
     textSecondary: '#9AA0B4',
     radius: 12,
+    // 与 paper (#141926) 同色相的蓝灰：页面底比导航栏/卡片略深，不再是中性灰配蓝导航
+    neutral: { 700: '#2A3145', 800: '#1C2233', 900: '#0F131C' },
+    // 品牌紫，不沿用另一套靛蓝横幅——靛蓝压在蓝灰底上发闷且与主色打架
+    banner: {
+      dark: 'linear-gradient(135deg, #3A2A8C 0%, #5B3FE0 100%)',
+      light: 'linear-gradient(135deg, #5B3FE0 0%, #7C5CFF 100%)',
+    },
   },
   semantic: {
     success: { main: '#34D399', light: '#6EE7B7', dark: '#059669' },

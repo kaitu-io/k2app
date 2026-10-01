@@ -172,7 +172,9 @@
     "summaryGlobal": "ប្រូកស៊ីសកល",
     "summaryBypass": "{{country}} ដោយផ្ទាល់",
     "summaryHome": "{{country}} ពីផ្ទះ",
-    "summaryHomeProxy": "{{country}} ផ្ទះ+ប្រូកស៊ី"
+    "summaryHomeProxy": "{{country}} ផ្ទះ+ប្រូកស៊ី",
+    "searchCountry": "ស្វែងរកប្រទេស",
+    "noCountryMatch": "រកមិនឃើញប្រទេសដែលត្រូវគ្នា"
   },
   "tunnels": {
     "title": "ការគ្រប់គ្រងណូត",

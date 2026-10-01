@@ -172,7 +172,9 @@
     "summaryGlobal": "Proxy global",
     "summaryBypass": "{{country}} direct",
     "summaryHome": "{{country}} domicile",
-    "summaryHomeProxy": "{{country}} domicile+proxy"
+    "summaryHomeProxy": "{{country}} domicile+proxy",
+    "searchCountry": "Rechercher un pays",
+    "noCountryMatch": "Aucun pays correspondant"
   },
   "tunnels": {
     "title": "Gestion des nœuds",

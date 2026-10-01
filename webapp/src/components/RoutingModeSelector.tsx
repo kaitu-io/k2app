@@ -11,16 +11,17 @@
  * All controls disabled when VPN is connected/connecting (isInteractive).
  */
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import {
+  Autocomplete,
   Box,
   Checkbox,
   FormControlLabel,
-  MenuItem,
+  InputAdornment,
   Radio,
   RadioGroup,
-  Select,
   Stack,
+  TextField,
   Typography,
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
@@ -33,6 +34,7 @@ import {
   countryName,
 } from '../utils/countries';
 import { getCurrentAppConfig } from '../config/apps';
+import { brandConfig } from '../brands';
 
 // ---- Preset definitions ----
 
@@ -113,10 +115,32 @@ export default function RoutingModeSelector() {
   );
 
   const handleCountryChange = useCallback(
-    (e: { target: { value: string } }) => {
-      setCountry(e.target.value);
+    (_: unknown, cc: string | null) => {
+      if (cc) setCountry(cc);
     },
     [setCountry],
+  );
+
+  // 品牌默认国家置顶，其余按当前语言的名称排序。
+  const countryOptions = useMemo(() => {
+    const top = brandConfig.defaultRoutingCountry;
+    return [...SUPPORTED_COUNTRY_CODES].sort((a, b) => {
+      if (a === top) return -1;
+      if (b === top) return 1;
+      return countryName(a, i18n.language).localeCompare(countryName(b, i18n.language), i18n.language);
+    });
+  }, [i18n.language]);
+
+  const filterCountries = useCallback(
+    (options: string[], state: { inputValue: string }) => {
+      const q = state.inputValue.trim().toLowerCase();
+      if (!q) return options;
+      return options.filter((cc) =>
+        cc === q
+        || countryName(cc, i18n.language).toLowerCase().includes(q)
+        || countryName(cc, 'en').toLowerCase().includes(q));
+    },
+    [i18n.language],
   );
 
   const handleAutoDetectToggle = useCallback(
@@ -187,41 +211,50 @@ export default function RoutingModeSelector() {
             {t('smartMode.countryLabel')}
           </Typography>
 
-          <Select
-            value={displayCountry}
+          {/* 可搜索：国家会越加越多，下拉长列表在手机上翻不动。按当前语言名、
+              英文名、两位代码都能搜到；品牌默认国家置顶。 */}
+          <Autocomplete
+            value={(displayCountry || null) as string}
             onChange={handleCountryChange}
+            options={countryOptions}
+            getOptionLabel={(cc) => countryName(cc, i18n.language)}
+            filterOptions={filterCountries}
             disabled={isInteractive}
+            disableClearable
+            autoHighlight
+            openOnFocus
+            selectOnFocus
             size="small"
             fullWidth
-            displayEmpty
+            noOptionsText={t('smartMode.noCountryMatch')}
             data-testid="country-select"
-            renderValue={(value) => {
-              if (!value) {
-                return (
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.85rem' }}>
-                    {autoDetect
-                      ? t('smartMode.autoDetecting')
-                      : t('smartMode.selectCountry')}
-                  </Typography>
-                );
-              }
-              const flag = countryFlagEmoji(value);
-              const name = countryName(value, i18n.language);
-              return (
-                <Typography variant="body2" sx={{ fontSize: '0.85rem' }}>
-                  {flag} {name}
-                </Typography>
-              );
-            }}
-          >
-            {SUPPORTED_COUNTRY_CODES.map((cc) => (
-              <MenuItem key={cc} value={cc} data-testid={`country-option-${cc}`}>
+            renderOption={(props, cc) => (
+              <li {...props} key={cc} data-testid={`country-option-${cc}`}>
                 <Typography variant="body2" sx={{ fontSize: '0.85rem' }}>
                   {countryFlagEmoji(cc)} {countryName(cc, i18n.language)}
                 </Typography>
-              </MenuItem>
-            ))}
-          </Select>
+              </li>
+            )}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder={autoDetect ? t('smartMode.autoDetecting') : t('smartMode.searchCountry')}
+                InputProps={{
+                  ...params.InputProps,
+                  startAdornment: displayCountry ? (
+                    <InputAdornment position="start" sx={{ ml: 0.5, mr: 0 }}>
+                      {countryFlagEmoji(displayCountry)}
+                    </InputAdornment>
+                  ) : undefined,
+                }}
+                inputProps={{
+                  ...params.inputProps,
+                  'aria-label': t('smartMode.countryLabel'),
+                  style: { fontSize: '0.85rem' },
+                }}
+              />
+            )}
+          />
 
           <FormControlLabel
             control={

@@ -172,7 +172,9 @@
     "summaryGlobal": "Proxy Globale",
     "summaryBypass": "{{country}} Diretto",
     "summaryHome": "{{country}} Casa",
-    "summaryHomeProxy": "{{country}} Casa+Proxy"
+    "summaryHomeProxy": "{{country}} Casa+Proxy",
+    "searchCountry": "Cerca paese",
+    "noCountryMatch": "Nessun paese corrispondente"
   },
   "tunnels": {
     "title": "Gestione Nodi",

@@ -87,7 +87,9 @@ const mockRun = vi.fn();
 
 const createMockUser = (overrides = {}) => ({
   id: 1,
-  expiredAt: '2027-01-01T00:00:00Z',
+  // unix 秒，取远未来：注销弹窗据此判断「还有付费时长」。
+  expiredAt: 4102444800,
+  deviceCount: 2,
   loginIdentifies: [{ type: 'email', value: 'test@example.com' }],
   ...overrides,
 });
@@ -95,13 +97,29 @@ const createMockUser = (overrides = {}) => ({
 // i18n loads real zh-CN translations, use actual Chinese text
 const TEXT = {
   deleteAccount: '注销账号',
-  deleteAccountWarning: '注销后账号数据将被删除，此操作不可撤销。确认要注销吗？',
+  deleteAccountWarning: '账号一旦注销，立即永久删除，无法撤销、无法恢复。即使用同一个邮箱重新注册，下面这些也不会回来：',
+  deleteKeep: '保留账号',
+  deleteContinue: '我已了解，仍要注销',
+  deleteConfirmWord: '注销',
+  deleteFinalButton: '永久注销账号',
+  deleteAckIntro: '请逐条确认，全部勾选后才能继续：',
   deleteAccountFailed: '注销失败，请重试',
   renewNow: '立即续费',
   proPlan: '开通服务',
   switchAccount: '切换账号',
   cancel: '取消',
   confirm: '确认',
+};
+
+// 走完注销三步：继续 → 逐条勾选 → 输入确认词。停在最终按钮可点的状态。
+const walkToFinalStep = () => {
+  fireEvent.click(screen.getByText(TEXT.deleteAccount));
+  fireEvent.click(screen.getByText(TEXT.deleteContinue));
+  screen.getAllByRole('checkbox').forEach((cb) => fireEvent.click(cb));
+  fireEvent.click(screen.getByText(TEXT.deleteContinue));
+  fireEvent.change(screen.getByLabelText(TEXT.deleteConfirmWord), {
+    target: { value: TEXT.deleteConfirmWord },
+  });
 };
 
 describe('Account', () => {
@@ -184,7 +202,7 @@ describe('Account', () => {
       fireEvent.click(screen.getByText(TEXT.deleteAccount));
       expect(screen.getByText(TEXT.deleteAccountWarning)).toBeTruthy();
 
-      fireEvent.click(screen.getByText(TEXT.cancel));
+      fireEvent.click(screen.getByText(TEXT.deleteKeep));
 
       // MUI Dialog uses fade animation, wait for unmount
       await waitFor(() => {
@@ -204,8 +222,8 @@ describe('Account', () => {
 
       render(<Account />);
 
-      fireEvent.click(screen.getByText(TEXT.deleteAccount));
-      fireEvent.click(screen.getByText(TEXT.confirm));
+      walkToFinalStep();
+      fireEvent.click(screen.getByText(TEXT.deleteFinalButton));
 
       await waitFor(() => {
         expect(cloudApi.request).toHaveBeenCalledWith('DELETE', '/api/user/delete-account');
@@ -215,6 +233,53 @@ describe('Account', () => {
         expect(mockRun).toHaveBeenCalledWith('down');
         expect(mockSetIsAuthenticated).toHaveBeenCalledWith(false);
       });
+    });
+
+    // 防误删的核心：任何一步都不能被跳过。单击一次「继续」到不了删除，
+    // 没勾完不能进第三步，确认词不对最终按钮不可点。
+    it('不走完三步确认不会调用 DELETE API', () => {
+      render(<Account />);
+
+      fireEvent.click(screen.getByText(TEXT.deleteAccount));
+      // 第 1 步：付费时长损失必须高亮可见
+      expect(screen.getByTestId('delete-lose-membership').textContent).toContain('剩余');
+      expect(screen.queryByText(TEXT.deleteFinalButton)).toBeNull();
+
+      fireEvent.click(screen.getByText(TEXT.deleteContinue));
+      // 第 2 步：未勾选时「继续」禁用
+      expect(screen.getByText(TEXT.deleteAckIntro)).toBeTruthy();
+      const next = screen.getByText(TEXT.deleteContinue).closest('button')!;
+      expect(next.disabled).toBe(true);
+      const boxes = screen.getAllByRole('checkbox');
+      expect(boxes.length).toBeGreaterThanOrEqual(2);
+      fireEvent.click(boxes[0]!);
+      expect(next.disabled).toBe(true);
+      boxes.slice(1).forEach((cb) => fireEvent.click(cb));
+      expect(next.disabled).toBe(false);
+
+      fireEvent.click(next);
+      // 第 3 步：确认词不对时最终按钮禁用
+      const finalBtn = screen.getByText(TEXT.deleteFinalButton).closest('button')!;
+      expect(finalBtn.disabled).toBe(true);
+      fireEvent.change(screen.getByLabelText(TEXT.deleteConfirmWord), { target: { value: '注' } });
+      expect(finalBtn.disabled).toBe(true);
+      fireEvent.click(finalBtn);
+
+      expect(cloudApi.request).not.toHaveBeenCalled();
+    });
+
+    it('重新打开弹窗要从第 1 步重来，不继承上次的勾选', async () => {
+      render(<Account />);
+
+      walkToFinalStep();
+      fireEvent.click(screen.getByText(TEXT.deleteKeep));
+      await waitFor(() => {
+        expect(screen.queryByText(TEXT.deleteFinalButton)).toBeNull();
+      });
+
+      fireEvent.click(screen.getByText(TEXT.deleteAccount));
+      expect(screen.getByText(TEXT.deleteAccountWarning)).toBeTruthy();
+      expect(screen.queryByText(TEXT.deleteFinalButton)).toBeNull();
     });
 
     // Was asserting window.alert. jsdom implements alert, so that test stayed
@@ -228,15 +293,15 @@ describe('Account', () => {
 
       render(<Account />);
 
-      fireEvent.click(screen.getByText(TEXT.deleteAccount));
-      fireEvent.click(screen.getByText(TEXT.confirm));
+      walkToFinalStep();
+      fireEvent.click(screen.getByText(TEXT.deleteFinalButton));
 
       await waitFor(() => {
         expect(screen.getByText(TEXT.deleteAccountFailed)).toBeInTheDocument();
       });
 
       // The dialog stays open so the message has somewhere to live.
-      expect(screen.getByText(TEXT.deleteAccountWarning)).toBeInTheDocument();
+      expect(screen.getByText(TEXT.deleteFinalButton)).toBeInTheDocument();
       expect(alertSpy).not.toHaveBeenCalled();
 
       alertSpy.mockRestore();

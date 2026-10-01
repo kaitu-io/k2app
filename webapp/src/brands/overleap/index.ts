@@ -49,6 +49,7 @@ export const OVERLEAP_BRAND: WebappBrandConfig = {
   // Play URL is determined by the package name; the App Store URL is filled
   // in once the listing is live (spec 2026-09-06 §1.6 backfill commit).
   storeUrls: { ios: '', android: 'https://play.google.com/store/apps/details?id=io.overleap' },
+  defaultRoutingCountry: 'gb',
   theme: OVERLEAP_THEME,
   features: {
     invite: false,

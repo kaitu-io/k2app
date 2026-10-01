@@ -172,7 +172,9 @@
     "summaryGlobal": "Globaler Proxy",
     "summaryBypass": "{{country}} Direkt",
     "summaryHome": "{{country}} Heim",
-    "summaryHomeProxy": "{{country}} Heim+Proxy"
+    "summaryHomeProxy": "{{country}} Heim+Proxy",
+    "searchCountry": "Land suchen",
+    "noCountryMatch": "Kein passendes Land gefunden"
   },
   "tunnels": {
     "title": "Knotenverwaltung",

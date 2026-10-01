@@ -172,7 +172,9 @@
     "summaryGlobal": "Proxy Global",
     "summaryBypass": "{{country}} Langsung",
     "summaryHome": "{{country}} Rumah",
-    "summaryHomeProxy": "{{country}} Rumah+Proxy"
+    "summaryHomeProxy": "{{country}} Rumah+Proxy",
+    "searchCountry": "Cari negara",
+    "noCountryMatch": "Tidak ada negara yang cocok"
   },
   "tunnels": {
     "title": "Manajemen Node",

@@ -98,6 +98,12 @@ export interface BrandSurfaceTokens {
   textSecondary: string;
   /** 全局圆角基数，px（对应官网 --radius） */
   radius: number;
+  /** 深色模式的中性灰阶（注入 MUI palette.grey）。页面主体底色用的是 grey[900]，
+   *  不是 background —— 它若是纯中性灰而 paper 带色相，导航栏与页面就会撞色。
+   *  必填：隐式落到 MUI 默认灰会让带色相的品牌静默撞色。 */
+  neutral: { 700: string; 800: string; 900: string };
+  /** Account 页顶部品牌横幅的底色（CSS background 值），按明暗模式各一份。 */
+  banner: { dark: string; light: string };
 }
 
 /** 语义色 —— 成功 / 警告 / 错误。品牌化是因为官网有自己的一套取值，
@@ -159,6 +165,12 @@ export interface WebappBrandConfig {
    *  the website /install page). Play URLs are fixed by package name and can
    *  be filled before the listing is live; App Store URLs only after. */
   storeUrls: { ios: string; android: string };
+  /**
+   * 分流国家的默认值与兜底（小写 ISO alpha-2）：全新安装的初始国家，以及检测
+   * 不到 / 检测到的国家没有规则包时落到的国家。必须是 utils/routes.ts 里
+   * 可分流的国家（routes.test.ts 守卫）。
+   */
+  defaultRoutingCountry: string;
   theme: BrandThemeTokens;
   features: BrandFeatures;
 }

@@ -172,7 +172,9 @@
     "summaryGlobal": "Proxy Global",
     "summaryBypass": "Direto de {{country}}",
     "summaryHome": "Casa de {{country}}",
-    "summaryHomeProxy": "Casa+Proxy de {{country}}"
+    "summaryHomeProxy": "Casa+Proxy de {{country}}",
+    "searchCountry": "Buscar país",
+    "noCountryMatch": "Nenhum país correspondente"
   },
   "tunnels": {
     "title": "Gerenciamento de Nós",

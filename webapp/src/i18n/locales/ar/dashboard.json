@@ -172,7 +172,9 @@
     "summaryGlobal": "وكيل عام",
     "summaryBypass": "{{country}} مباشر",
     "summaryHome": "{{country}} المنزل",
-    "summaryHomeProxy": "{{country}} المنزل+الوكيل"
+    "summaryHomeProxy": "{{country}} المنزل+الوكيل",
+    "searchCountry": "ابحث عن دولة",
+    "noCountryMatch": "لا توجد دولة مطابقة"
   },
   "tunnels": {
     "title": "إدارة العقد",

@@ -139,6 +139,8 @@ export const darkTheme = createTheme({
       secondary: brandTheme.surface.textSecondary,
     },
     divider: brandTheme.surface.border,
+    // 只覆盖深色模式实际用到的三档，其余沿用 MUI 默认
+    grey: { ...brandTheme.surface.neutral },
   },
   shape: {
     borderRadius: brandTheme.surface.radius,

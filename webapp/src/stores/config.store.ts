@@ -22,6 +22,7 @@ import { CLIENT_CONFIG_DEFAULTS } from '../types/client-config';
 import { countryToProfile, isRoutableCountry, routableCountry, PROFILE_TO_PRESET } from '../utils/routes';
 import { detectCountry } from '../utils/geo-detect';
 import { getCurrentAppConfig } from '../config/apps';
+import { brandConfig } from '../brands';
 /** Build-time log level from K2_BUILD_LOG_LEVEL env var (default: 'debug'). Injected by Vite define. */
 declare const __K2_BUILD_LOG_LEVEL__: string;
 
@@ -245,8 +246,9 @@ interface ParsedConfig {
 
 function parseStored(stored: StoredConfig | null | undefined): ParsedConfig {
   if (!stored) {
-    // Fresh install — default to CN, geo detection will override if user is elsewhere
-    return { defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: true, alwaysOn: false, needsMigration: false };
+    // Fresh install — start on the brand default; geo detection overrides it
+    // when the user turns out to be in another routable country.
+    return { defaultVia: 'proxy', countryVia: 'direct', country: brandConfig.defaultRoutingCountry, autoDetect: true, alwaysOn: false, needsMigration: false };
   }
 
   // v3 shape: has defaultVia field
@@ -368,7 +370,7 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       }
     } catch (error) {
       console.warn('[ConfigStore] Failed to load config from storage:', error);
-      set({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: true, alwaysOn: false, loaded: true });
+      set({ defaultVia: 'proxy', countryVia: 'direct', country: brandConfig.defaultRoutingCountry, autoDetect: true, alwaysOn: false, loaded: true });
     }
   },
 
@@ -437,7 +439,7 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     // by a server-side hotfix (always `cn`) for released clients, and with
     // the tunnel up it would see the exit node's country anyway.
     const detected = detectCountry();       // raw cc for display, or null
-    const cc = routableCountry(detected);   // clamped for routing ('cn' fallback)
+    const cc = routableCountry(detected);   // clamped for routing (brand-default fallback)
 
     const { autoDetect, detectedCountry } = get();
 

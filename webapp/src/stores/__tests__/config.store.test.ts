@@ -16,6 +16,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { getCurrentAppConfig } from '../../config/apps';
+import { brandConfig } from '../../brands';
 
 declare const __K2_BUILD_LOG_LEVEL__: string;
 
@@ -65,7 +66,7 @@ describe('Config Store', () => {
   // ==================== loadConfig ====================
 
   describe('loadConfig', () => {
-    it('fresh install defaults to proxy + direct bypass + CN + autoDetect', async () => {
+    it('fresh install defaults to proxy + direct bypass + brand default country + autoDetect', async () => {
       mockStorage.get.mockResolvedValue(null);
 
       const useConfigStore = await getStore();
@@ -75,7 +76,8 @@ describe('Config Store', () => {
       expect(state.defaultVia).toBe('proxy');
       expect(state.countryVia).toBe('direct');
       expect(state.autoDetect).toBe(true);
-      expect(state.country).toBe('cn');
+      // 开途恒为 cn；多国品牌取品牌默认（geo-detect.test.ts 用字面量钉死两边）
+      expect(state.country).toBe(MULTI_COUNTRY ? brandConfig.defaultRoutingCountry : 'cn');
       expect(state.loaded).toBe(true);
     });
 

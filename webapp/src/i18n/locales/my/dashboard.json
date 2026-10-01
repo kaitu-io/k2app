@@ -172,7 +172,9 @@
     "summaryGlobal": "အားလုံး ပရောက်စီ",
     "summaryBypass": "{{country}} တိုက်ရိုက်",
     "summaryHome": "{{country}} အိမ်",
-    "summaryHomeProxy": "{{country}} အိမ်+ပရောက်စီ"
+    "summaryHomeProxy": "{{country}} အိမ်+ပရောက်စီ",
+    "searchCountry": "နိုင်ငံ ရှာရန်",
+    "noCountryMatch": "ကိုက်ညီသော နိုင်ငံ မရှိပါ"
   },
   "tunnels": {
     "title": "နိုဒ် စီမံခန့်ခွဲမှု",

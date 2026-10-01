@@ -172,7 +172,9 @@
     "summaryGlobal": "Global Proxy",
     "summaryBypass": "{{country}} Doğrudan",
     "summaryHome": "{{country}} Ev",
-    "summaryHomeProxy": "{{country}} Ev+Proxy"
+    "summaryHomeProxy": "{{country}} Ev+Proxy",
+    "searchCountry": "Ülke ara",
+    "noCountryMatch": "Eşleşen ülke yok"
   },
   "tunnels": {
     "title": "Düğüm Yönetimi",

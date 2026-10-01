@@ -39,6 +39,13 @@ describe('MUI theme derives from brand tokens', () => {
       expect(darkTheme.palette.warning.main).toBe('#ebc247');       // --warning
       expect(darkTheme.palette.error.main).toBe('#df3a3a');         // --destructive
       expect(darkTheme.shape.borderRadius).toBe(10);                // --radius .625rem
+      // 中性灰阶 = MUI 默认原值（页面主体底色 grey[900]）；改动即改变开途观感
+      expect(darkTheme.palette.grey[900]).toBe('#212121');
+      expect(darkTheme.palette.grey[800]).toBe('#424242');
+      expect(darkTheme.palette.grey[700]).toBe('#616161');
+      // Account 顶部横幅 = 迁移前写死在页面里的原值
+      expect(KAITU_BRAND.theme.surface.banner.dark).toBe('linear-gradient(135deg, #1a237e 0%, #283593 100%)');
+      expect(KAITU_BRAND.theme.surface.banner.light).toBe('linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)');
       // light 保持迁移前取值（dark-only，light 仅为将来重启切换器保留）
       expect(lightTheme.palette.primary.main).toBe('#1565C0');
     });
@@ -78,6 +85,13 @@ describe('MUI theme derives from brand tokens', () => {
       expect(darkTheme.palette.warning.main).toBe('#FBBF24');
       expect(darkTheme.palette.error.main).toBe('#F87171');
       expect(darkTheme.shape.borderRadius).toBe(12);
+      // 页面主体底色（grey[900]）与导航栏（paper）同色相，且页面更深
+      expect(darkTheme.palette.grey[900]).toBe('#0F131C');
+      expect(darkTheme.palette.grey[800]).toBe('#1C2233');
+      expect(darkTheme.palette.grey[700]).toBe('#2A3145');
+      // Account 顶部横幅走品牌紫，不与另一品牌的靛蓝相同
+      expect(OVERLEAP_BRAND.theme.surface.banner.dark).toBe('linear-gradient(135deg, #3A2A8C 0%, #5B3FE0 100%)');
+      expect(OVERLEAP_BRAND.theme.surface.banner.dark).not.toBe(KAITU_BRAND.theme.surface.banner.dark);
 
       const status = OVERLEAP_BRAND.theme.status;
       // 已连接 = 薄荷青，待命 = 品牌紫：与开途「绿=通了 / 青=待命」错开

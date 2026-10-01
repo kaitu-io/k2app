@@ -172,7 +172,9 @@
     "summaryGlobal": "Proxy toàn cầu",
     "summaryBypass": "Trực tiếp {{country}}",
     "summaryHome": "Nhà {{country}}",
-    "summaryHomeProxy": "Nhà {{country}}+Proxy"
+    "summaryHomeProxy": "Nhà {{country}}+Proxy",
+    "searchCountry": "Tìm quốc gia",
+    "noCountryMatch": "Không có quốc gia phù hợp"
   },
   "tunnels": {
     "title": "Quản lý nút",

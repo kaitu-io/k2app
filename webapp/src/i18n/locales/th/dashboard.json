@@ -172,7 +172,9 @@
     "summaryGlobal": "พร็อกซีทั้งหมด",
     "summaryBypass": "{{country}} ตรง",
     "summaryHome": "{{country}} บ้าน",
-    "summaryHomeProxy": "{{country}} บ้าน+พร็อกซี"
+    "summaryHomeProxy": "{{country}} บ้าน+พร็อกซี",
+    "searchCountry": "ค้นหาประเทศ",
+    "noCountryMatch": "ไม่พบประเทศที่ตรงกัน"
   },
   "tunnels": {
     "title": "การจัดการโหนด",

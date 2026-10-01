@@ -39,6 +39,7 @@ describe('countryFlagEmoji', () => {
     tm: '\u{1F1F9}\u{1F1F2}',
     kz: '\u{1F1F0}\u{1F1FF}',
     uz: '\u{1F1FA}\u{1F1FF}',
+    gb: '\u{1F1EC}\u{1F1E7}',
   };
 
   it('produces the correct flag emoji for all supported country codes', () => {
@@ -143,7 +144,9 @@ describe('isSupportedCountry', () => {
   it('returns false for countries outside the supported-profile list', () => {
     expect(isSupportedCountry('jp')).toBe(false);
     expect(isSupportedCountry('us')).toBe(false);
-    expect(isSupportedCountry('gb')).toBe(false);
+    expect(isSupportedCountry('de')).toBe(false);
+    // gb 有区域规则包（无 {cc}route 档位），可作为分流国家
+    expect(isSupportedCountry('gb')).toBe(true);
   });
 
   it('returns false for null / undefined / empty input', () => {

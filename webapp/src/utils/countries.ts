@@ -16,6 +16,8 @@
 export const SUPPORTED_COUNTRY_CODES = [
   'cn', 'ir', 'ru', 'tr', 'pk', 'vn', 'mm', 'eg', 'id',
   'sa', 'ae', 'th', 'bd', 'by', 'tm', 'kz', 'uz',
+  // Region-bundle only (no `{cc}route` profile) — see routes.ts REGION_ONLY_COUNTRIES.
+  'gb',
 ] as const;
 
 export type SupportedCountryCode = typeof SUPPORTED_COUNTRY_CODES[number];

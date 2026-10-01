@@ -172,7 +172,9 @@
     "summaryGlobal": "Proksi Global",
     "summaryBypass": "{{country}} Langsung",
     "summaryHome": "{{country}} Rumah",
-    "summaryHomeProxy": "{{country}} Rumah+Proksi"
+    "summaryHomeProxy": "{{country}} Rumah+Proksi",
+    "searchCountry": "Cari negara",
+    "noCountryMatch": "Tiada negara yang sepadan"
   },
   "tunnels": {
     "title": "Pengurusan Nod",

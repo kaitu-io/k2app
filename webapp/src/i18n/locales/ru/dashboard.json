@@ -172,7 +172,9 @@
     "summaryGlobal": "Глобальный прокси",
     "summaryBypass": "{{country}} напрямую",
     "summaryHome": "{{country}} дома",
-    "summaryHomeProxy": "{{country}} дома+прокси"
+    "summaryHomeProxy": "{{country}} дома+прокси",
+    "searchCountry": "Поиск страны",
+    "noCountryMatch": "Подходящих стран не найдено"
   },
   "tunnels": {
     "title": "Управление узлами",

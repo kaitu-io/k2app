@@ -40,6 +40,12 @@ export const KAITU_THEME: BrandThemeTokens = {
     textPrimary: '#e0e0e0',
     textSecondary: '#9ca3af',
     radius: 10,
+    // MUI 默认灰阶原值 —— 引入该 token 时开途零视觉变化
+    neutral: { 700: '#616161', 800: '#424242', 900: '#212121' },
+    banner: {
+      dark: 'linear-gradient(135deg, #1a237e 0%, #283593 100%)',
+      light: 'linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)',
+    },
   },
   semantic: {
     success: { main: '#47d17a', light: '#6fdd96', dark: '#2fa85c' },
