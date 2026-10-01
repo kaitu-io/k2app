@@ -3,6 +3,11 @@ import { render, screen, fireEvent } from '@testing-library/react';
 
 // ---- Mocks ----------------------------------------------------------------
 
+// The panel reports funnel events; the real statsService pulls in cloud-api →
+// i18n init, which the react-i18next mock below cannot satisfy (unhandled rejection).
+vi.mock('../../../services/stats', () => ({
+  statsService: { trackFunnel: vi.fn(), trackFunnelOnce: vi.fn(), trackFunnelDaily: vi.fn() },
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, fallback?: string) => fallback ?? key,
