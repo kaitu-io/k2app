@@ -77,8 +77,16 @@ func chatOptionQuestion(value string) string {
 	return value
 }
 
+// chatAIHookEnabled 为 false 时追加钩子直接返回。测试默认关闭（chat_testmain_test.go），
+// 否则任何测试追加访客消息都会多出一条 AI 回复，污染按条数断言的其它测试；
+// 要测 AI 的用例用 enableChatAI(t) 开启。
+var chatAIHookEnabled = true
+
 func init() {
 	chatAfterAppend = append(chatAfterAppend, func(conv *Conversation, msg *ConversationMessage) {
+		if !chatAIHookEnabled {
+			return
+		}
 		if msg.SenderType != SenderVisitor || conv.Handler != HandlerAI || conv.Status != ConvOpen {
 			return
 		}

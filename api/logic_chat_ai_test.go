@@ -34,8 +34,18 @@ func aiReplyText(s string) aiAskFn {
 	return func(context.Context, string, []filesearch.Message) (string, error) { return s, nil }
 }
 
+// enableChatAI 开启 AI 追加钩子，测试结束恢复。
+func enableChatAI(t *testing.T) {
+	t.Helper()
+	orig := chatAIHookEnabled
+	chatAIHookEnabled = true
+	t.Cleanup(func() { chatAIHookEnabled = orig })
+}
+
+// newAIConv 建一个 AI 处理中的会话，并开启 AI 钩子（所有 TestChatAI_* 都经由它）。
 func newAIConv(t *testing.T) *Conversation {
 	t.Helper()
+	enableChatAI(t)
 	skipIfNoConfig(t)
 	conv, _, err := ensureConversation(context.Background(), newChatSubject(t), "/test")
 	require.NoError(t, err)
