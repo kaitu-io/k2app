@@ -73,6 +73,11 @@ func api_order_pay_redirect(c *gin.Context) {
 		return
 	}
 
+	// 漏斗：把匿名 sid 关联到订单用户（非阻塞；optout / 未启用时 sid 为空）。
+	if sid := ensureFunnelSid(c); sid != "" {
+		linkFunnelIdentity(c, "sid", sid, order.User.ID, Brand(order.User.Brand))
+	}
+
 	if order.IsPaid != nil && *order.IsPaid {
 		funnel("already_paid")
 		c.Redirect(http.StatusFound, payResultURL(locale, order.UUID))
