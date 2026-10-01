@@ -1,6 +1,8 @@
 package center
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"net/http/httptest"
 	"strings"
@@ -32,6 +34,12 @@ func sfMarker(t *testing.T) string {
 	return m
 }
 
+// sfHash：由标记派生的合法设备哈希（32 位小写十六进制，与客户端 UDID 同形）。
+func sfHash(m string) string {
+	sum := md5.Sum([]byte(m))
+	return hex.EncodeToString(sum[:])
+}
+
 func sfItem(m, hash, event string) map[string]any {
 	return map[string]any{
 		"eid": uuid.NewString(), "device_hash": hash, "os": "macos", "app_version": "0.4.0",
@@ -61,7 +69,7 @@ func sfCode(t *testing.T, w *httptest.ResponseRecorder) int {
 func TestStatsIngest_FunnelRecorded(t *testing.T) {
 	skipIfNoConfig(t)
 	m := sfMarker(t)
-	it := sfItem(m, "sfdev-"+m, "paywall_view")
+	it := sfItem(m, sfHash(m), "paywall_view")
 	it["source"] = "account"
 	w := sfPost(it).Execute(statsFunnelRouter())
 	assert.EqualValues(t, ErrorNone, sfCode(t, w))
@@ -73,7 +81,7 @@ func TestStatsIngest_FunnelRecorded(t *testing.T) {
 	assert.Equal(t, "desktop", r.Device)
 	assert.Equal(t, "macos", r.OS)
 	assert.Equal(t, "paywall_view", r.Event)
-	assert.Equal(t, "sfdev-"+m, r.AnonID)
+	assert.Equal(t, sfHash(m), r.AnonID)
 	assert.Equal(t, "kaitu", r.Brand)
 	assert.Equal(t, "0.4.0", r.AppVersion)
 	assert.Equal(t, uint64(0), r.UserID)
@@ -84,9 +92,9 @@ func TestStatsIngest_FunnelRecorded(t *testing.T) {
 func TestStatsIngest_FunnelMobileDeviceAndOSNormalize(t *testing.T) {
 	skipIfNoConfig(t)
 	m := sfMarker(t)
-	a := sfItem(m, "sfdev-"+m, "paywall_view")
+	a := sfItem(m, sfHash(m), "paywall_view")
 	a["os"] = "ios"
-	b := sfItem(m, "sfdev-"+m, "login_view")
+	b := sfItem(m, sfHash(m), "login_view")
 	b["os"] = "web"
 	sfPost(a, b).Execute(statsFunnelRouter())
 	rows := sfRows(t, m)
@@ -105,7 +113,7 @@ func TestStatsIngest_FunnelMobileDeviceAndOSNormalize(t *testing.T) {
 func TestStatsIngest_FunnelSameEidTwice(t *testing.T) {
 	skipIfNoConfig(t)
 	m := sfMarker(t)
-	it := sfItem(m, "sfdev-"+m, "paywall_view")
+	it := sfItem(m, sfHash(m), "paywall_view")
 	r := statsFunnelRouter()
 	assert.EqualValues(t, ErrorNone, sfCode(t, sfPost(it).Execute(r)))
 	assert.EqualValues(t, ErrorNone, sfCode(t, sfPost(it).Execute(r)))
@@ -115,14 +123,14 @@ func TestStatsIngest_FunnelSameEidTwice(t *testing.T) {
 func TestStatsIngest_FunnelRejectsFactAndWebOnly(t *testing.T) {
 	skipIfNoConfig(t)
 	m := sfMarker(t)
-	bad := sfItem(m, "sfdev-"+m, "x")
+	bad := sfItem(m, sfHash(m), "x")
 	bad["eid"] = "not-a-uuid"
 	w := sfPost(
-		sfItem(m, "sfdev-"+m, "purchase"),
-		sfItem(m, "sfdev-"+m, "page_view"),
-		sfItem(m, "sfdev-"+m, "nope"),
+		sfItem(m, sfHash(m), "purchase"),
+		sfItem(m, sfHash(m), "page_view"),
+		sfItem(m, sfHash(m), "nope"),
 		bad,
-		sfItem(m, "sfdev-"+m, "login_view"),
+		sfItem(m, sfHash(m), "login_view"),
 	).Execute(statsFunnelRouter())
 	assert.EqualValues(t, ErrorNone, sfCode(t, w))
 	rows := sfRows(t, m)
@@ -133,7 +141,7 @@ func TestStatsIngest_FunnelRejectsFactAndWebOnly(t *testing.T) {
 func TestStatsIngest_FunnelIgnoresClientUser(t *testing.T) {
 	skipIfNoConfig(t)
 	m := sfMarker(t)
-	it := sfItem(m, "sfdev-"+m, "paywall_view")
+	it := sfItem(m, sfHash(m), "paywall_view")
 	it["user_id"] = 999
 	sfPost(it).Execute(statsFunnelRouter())
 	rows := sfRows(t, m)
@@ -147,7 +155,7 @@ func TestStatsIngest_FunnelBearerLinksDevice(t *testing.T) {
 	user := CreateTestUser(t)
 	udid := "sf-udid-" + m
 	CreateTestDevice(t, user.ID, udid)
-	hash := "sfdev-" + m
+	hash := sfHash(m)
 	t.Cleanup(func() { db.Get().Where("user_id = ?", user.ID).Delete(&FunnelIdentity{}) })
 	tok := GenerateTestToken(user.ID, udid, time.Hour)
 	w := sfPost(sfItem(m, hash, "paywall_view"), sfItem(m, hash, "login_view")).
@@ -167,7 +175,7 @@ func TestStatsIngest_FunnelBearerLinksDevice(t *testing.T) {
 func TestStatsIngest_FunnelOnlyAndTruncation(t *testing.T) {
 	skipIfNoConfig(t)
 	m := sfMarker(t)
-	it := sfItem(m, "sfdev-"+m, "plan_select")
+	it := sfItem(m, sfHash(m), "plan_select")
 	it["source"] = "ssssssssssssssssssssssssssssssssssssssssssssssss" // 48 > 32
 	it["channel"] = "cccccccccccccccccccccc"                          // 22 > 16
 	it["app_version"] = "9.9.9-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -243,9 +251,9 @@ func TestStatsIngest_BadFunnelItemDoesNotDropLegacy(t *testing.T) {
 func TestStatsIngest_WrongTypedFieldSkipsOnlyThatItem(t *testing.T) {
 	skipIfNoConfig(t)
 	m := sfMarker(t)
-	bad := sfItem(m, "sfdev-"+m, "paywall_view")
+	bad := sfItem(m, sfHash(m), "paywall_view")
 	bad["event"] = 5
-	good := sfItem(m, "sfdev-"+m, "login_view")
+	good := sfItem(m, sfHash(m), "login_view")
 	w := sfPost(bad, good).Execute(statsFunnelRouter())
 	assert.EqualValues(t, ErrorNone, sfCode(t, w))
 	rows := sfRows(t, m)
@@ -268,11 +276,11 @@ func TestStatsIngest_FunnelItemMissingFieldsSkipped(t *testing.T) {
 	skipIfNoConfig(t)
 	m := sfMarker(t)
 	noHash := sfItem(m, "", "paywall_view")
-	noOS := sfItem(m, "sfdev-"+m, "paywall_view")
+	noOS := sfItem(m, sfHash(m), "paywall_view")
 	noOS["os"] = ""
-	noVer := sfItem(m, "sfdev-"+m, "paywall_view")
+	noVer := sfItem(m, sfHash(m), "paywall_view")
 	noVer["app_version"] = ""
-	noTime := sfItem(m, "sfdev-"+m, "login_view")
+	noTime := sfItem(m, sfHash(m), "login_view")
 	delete(noTime, "created_at")
 	w := sfPost(noHash, noOS, noVer, noTime).Execute(statsFunnelRouter())
 	assert.EqualValues(t, ErrorNone, sfCode(t, w))
@@ -287,7 +295,7 @@ func TestStatsIngest_FunnelCountsTowardLimit(t *testing.T) {
 	m := sfMarker(t)
 	items := make([]map[string]any, 101)
 	for i := range items {
-		items[i] = sfItem(m, "sfdev-"+m, "paywall_view")
+		items[i] = sfItem(m, sfHash(m), "paywall_view")
 	}
 	w := sfPost(items...).Execute(statsFunnelRouter())
 	assert.EqualValues(t, ErrorInvalidArgument, sfCode(t, w))
@@ -329,4 +337,60 @@ func TestStatsIngest_OverLimitBodyRejected(t *testing.T) {
 	ok := map[string]any{"pad": strings.Repeat("x", 512<<10)}
 	w = NewTestRequest("POST", "/api/stats/events").WithBody(ok).Execute(statsFunnelRouter())
 	assert.EqualValues(t, ErrorNone, sfCode(t, w))
+}
+
+// 设备哈希必须是 32–64 位小写十六进制：客户端取不到 UDID 时的兜底值 "unknown" 等
+// 一律跳过——否则所有取不到 UDID 的设备会并成同一个"人"，登录后还会被关联到某个用户。
+func TestStatsIngest_FunnelRejectsBadDeviceHash(t *testing.T) {
+	skipIfNoConfig(t)
+	m := sfMarker(t)
+	user := CreateTestUser(t)
+	udid := "sf-udid-" + m
+	CreateTestDevice(t, user.ID, udid)
+	good32 := sfHash(m)
+	good64 := good32 + sfHash(m+"x")
+	bad := []string{
+		"unknown",
+		strings.ToUpper(good32),          // 大写
+		good32[:31],                      // 太短
+		good64 + "a",                     // 太长
+		good32[:31] + "g",                // 非十六进制
+		good32 + "\n",                    // 尾随换行
+		"sfdev-" + m,                     // 任意字符串
+		strings.Repeat("a", 31) + "\xff", // 清洗后才变短的非法 UTF-8
+	}
+	t.Cleanup(func() {
+		db.Get().Where("user_id = ?", user.ID).Delete(&FunnelIdentity{})
+	})
+	items := []map[string]any{sfItem(m, good32, "paywall_view"), sfItem(m, good64, "login_view")}
+	for _, h := range bad {
+		items = append(items, sfItem(m, h, "paywall_view"))
+	}
+	w := sfPost(items...).WithBearerToken(GenerateTestToken(user.ID, udid, time.Hour)).Execute(statsFunnelRouter())
+	assert.EqualValues(t, ErrorNone, sfCode(t, w))
+
+	rows := sfRows(t, m)
+	var got []string
+	for _, r := range rows {
+		got = append(got, r.AnonID)
+	}
+	assert.ElementsMatch(t, []string{good32, good64}, got)
+
+	var ids []FunnelIdentity
+	require.NoError(t, db.Get().Where("user_id = ?", user.ID).Find(&ids).Error)
+	var linked []string
+	for _, id := range ids {
+		linked = append(linked, id.AnonID)
+	}
+	assert.ElementsMatch(t, []string{good32, good64}, linked, "only well-formed hashes are ever linked")
+}
+
+func TestValidFunnelDeviceHash(t *testing.T) {
+	h := strings.Repeat("0123456789abcdef", 4)
+	assert.True(t, validFunnelDeviceHash(h[:32]))
+	assert.True(t, validFunnelDeviceHash(h[:40]))
+	assert.True(t, validFunnelDeviceHash(h))
+	for _, bad := range []string{"", "unknown", h[:31], h + "0", strings.ToUpper(h[:32]), h[:31] + "g", h[:32] + "\n", " " + h[:32]} {
+		assert.False(t, validFunnelDeviceHash(bad), "%q", bad)
+	}
 }

@@ -217,6 +217,12 @@ var funnelEidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 
 func validEid(s string) bool { return funnelEidRe.MatchString(s) }
 
+// funnelDeviceHashRe：客户端 UDID 是 SHA-256 的小写十六进制前缀（现为 32 位）。
+// 客户端取不到 UDID 时发的兜底值 "unknown" 不匹配。
+var funnelDeviceHashRe = regexp.MustCompile(`^[0-9a-f]{32,64}$`)
+
+func validFunnelDeviceHash(s string) bool { return funnelDeviceHashRe.MatchString(s) }
+
 func normalizeFunnelOS(os string) string {
 	switch os {
 	case "windows", "macos", "ios", "android", "linux":
@@ -253,11 +259,12 @@ func ingestStatsFunnel(c *gin.Context, raws []json.RawMessage) {
 		if json.Unmarshal(raw, &e) != nil {
 			continue
 		}
+		// 设备哈希不合形（含兜底值 "unknown"）整条跳过：既不记事件，也绝不拿去关联用户。
 		if !funnelEventAllowed(e.Event, FunnelSurfaceApp) || !validEid(e.Eid) ||
-			e.DeviceHash == "" || e.OS == "" || e.AppVersion == "" {
+			!validFunnelDeviceHash(e.DeviceHash) || e.OS == "" || e.AppVersion == "" {
 			continue
 		}
-		hash := funnelTruncate(e.DeviceHash, 64)
+		hash := e.DeviceHash
 		occurred := now
 		if !e.CreatedAt.IsZero() {
 			occurred = clampOccurredAt(e.CreatedAt, now)
@@ -282,7 +289,7 @@ func ingestStatsFunnel(c *gin.Context, raws []json.RawMessage) {
 			OS:         normalizeFunnelOS(e.OS),
 			AppVersion: funnelTruncate(e.AppVersion, 32),
 		})
-		if uid != 0 && hash != "" {
+		if uid != 0 {
 			if _, done := linked[hash]; !done {
 				linked[hash] = struct{}{}
 				linkFunnelIdentity(c, "did", hash, uid, brand)
