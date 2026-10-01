@@ -16,6 +16,12 @@ export interface AppOverride {
    * (crashpad_handler.exe & co) or when an app's known name set later grew.
    */
   names: string[];
+  /**
+   * Directories whose every executable belongs to the app — the engine
+   * `match.app_paths` values (macOS: the .app bundle). Absent on overrides
+   * saved before paths existed, and for apps identified by name only.
+   */
+  paths?: string[];
 }
 
 interface AppRoutesStorageShape {
@@ -24,7 +30,7 @@ interface AppRoutesStorageShape {
 }
 
 /** Minimal app shape required by setOverride — both InstalledApp and RunningApp satisfy it. */
-type OverrideApp = Pick<InstalledApp, 'id' | 'processNames'>;
+type OverrideApp = Pick<InstalledApp, 'id' | 'processNames' | 'paths'>;
 
 interface AppRoutesState {
   /** Per-app overrides keyed by app id (install dir / bundle path / exe path). */
@@ -33,6 +39,10 @@ interface AppRoutesState {
   forceDirect: string[];
   /** Derived: union of overridden-proxy apps' process names. */
   forceProxy: string[];
+  /** Derived: union of overridden-direct apps' directories (feeds match.app_paths). */
+  forceDirectPaths: string[];
+  /** Derived: union of overridden-proxy apps' directories. */
+  forceProxyPaths: string[];
   /** Cached classify-apps result (keyed by app id). */
   classifications: Map<string, RouteDefault>;
   loaded: boolean;
@@ -43,13 +53,23 @@ interface AppRoutesState {
   resetOverrides: () => Promise<void>;
 }
 
-function derive(overrides: Record<string, AppOverride>): { forceDirect: string[]; forceProxy: string[] } {
+type Derived = Pick<AppRoutesState, 'forceDirect' | 'forceProxy' | 'forceDirectPaths' | 'forceProxyPaths'>;
+
+function derive(overrides: Record<string, AppOverride>): Derived {
   const direct = new Set<string>();
   const proxy = new Set<string>();
+  const directPaths = new Set<string>();
+  const proxyPaths = new Set<string>();
   for (const o of Object.values(overrides)) {
     for (const n of o.names) (o.mode === 'direct' ? direct : proxy).add(n);
+    for (const p of o.paths ?? []) (o.mode === 'direct' ? directPaths : proxyPaths).add(p);
   }
-  return { forceDirect: [...direct], forceProxy: [...proxy] };
+  return {
+    forceDirect: [...direct],
+    forceProxy: [...proxy],
+    forceDirectPaths: [...directPaths],
+    forceProxyPaths: [...proxyPaths],
+  };
 }
 
 async function persist(overrides: Record<string, AppOverride>): Promise<void> {
@@ -75,6 +95,8 @@ export const useAppRoutesStore = create<AppRoutesState>((set, get) => ({
   overrides: {},
   forceDirect: [],
   forceProxy: [],
+  forceDirectPaths: [],
+  forceProxyPaths: [],
   classifications: new Map(),
   loaded: false,
   load: async () => {
@@ -96,10 +118,11 @@ export const useAppRoutesStore = create<AppRoutesState>((set, get) => ({
   setOverride: async (app, mode) => {
     const overrides = { ...get().overrides };
     const names = [...new Set(app.processNames ?? [])];
-    if (mode === 'default' || names.length === 0) {
+    const paths = [...new Set(app.paths ?? [])];
+    if (mode === 'default' || (names.length === 0 && paths.length === 0)) {
       delete overrides[app.id];
     } else {
-      overrides[app.id] = { mode, names };
+      overrides[app.id] = paths.length > 0 ? { mode, names, paths } : { mode, names };
     }
     set({ overrides, ...derive(overrides) });
     await persist(overrides);
@@ -112,6 +135,8 @@ export const useAppRoutesStore = create<AppRoutesState>((set, get) => ({
   // running right now), and dropping those names would silently unroute them
   // next time they run. Names only shrink via an explicit re-toggle
   // (setOverride) or reset.
+  // Paths follow the same rule — this is also how an override saved before
+  // paths existed picks up its app's directory.
   refreshOverrideNames: async (apps) => {
     const overrides = { ...get().overrides };
     let changed = false;
@@ -119,8 +144,12 @@ export const useAppRoutesStore = create<AppRoutesState>((set, get) => ({
       const o = overrides[app.id];
       if (!o) continue;
       const extra = (app.processNames ?? []).filter((n) => !o.names.includes(n));
-      if (extra.length === 0) continue;
-      overrides[app.id] = { ...o, names: [...o.names, ...extra] };
+      const known = o.paths ?? [];
+      const extraPaths = (app.paths ?? []).filter((p) => !known.includes(p));
+      if (extra.length === 0 && extraPaths.length === 0) continue;
+      const next: AppOverride = { ...o, names: [...o.names, ...extra] };
+      if (known.length + extraPaths.length > 0) next.paths = [...known, ...extraPaths];
+      overrides[app.id] = next;
       changed = true;
     }
     if (!changed) return;
@@ -128,7 +157,7 @@ export const useAppRoutesStore = create<AppRoutesState>((set, get) => ({
     await persist(overrides);
   },
   resetOverrides: async () => {
-    set({ overrides: {}, forceDirect: [], forceProxy: [] });
+    set({ overrides: {}, ...derive({}) });
     await persist({});
   },
 }));

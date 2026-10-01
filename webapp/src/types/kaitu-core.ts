@@ -283,6 +283,8 @@ export interface RunningApp {
   label: string;
   /** Names to write into config.process_name — macOS: bundle's full helper set; Win/Linux: [exe basename] */
   processNames: string[];
+  /** Directories whose every executable belongs to this app (macOS GUI app: its .app bundle). Absent for standalone binaries. */
+  paths?: string[];
   /** Custom-scheme URL or undefined; webapp renders <img src={iconUrl}> */
   iconUrl?: string;
 }
@@ -296,8 +298,15 @@ export interface InstalledApp {
   iconUrl?: string;
   /** Android only: installing package (PackageManager.getInstallSourceInfo). undefined elsewhere. Feeds classify-apps installer match. */
   installerPackageName?: string | null;
-  /** Names matched by classify-apps. Desktop: exe/helper basenames · Android: [packageName] */
+  /** Names matched by classify-apps. macOS: [main executable] · Windows: exe basenames · Android: [packageName] */
   processNames: string[];
+  /**
+   * Directories whose every executable belongs to this app — macOS: the .app
+   * bundle. The engine matches a process by where its executable lives
+   * (`match.app_paths`), so helpers need not be enumerated. Absent on
+   * platforms / shell versions that identify apps by name only.
+   */
+  paths?: string[];
 }
 
 export interface IAppListProvider {

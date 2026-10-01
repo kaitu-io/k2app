@@ -129,7 +129,7 @@ export default function Dashboard() {
   const proxyRuleConfig = appConfig.features.proxyRule || { visible: true, defaultValue: 'lightweight' };
 
   // App Bypass override count for Dashboard entry secondary text
-  const bypassOverrideCount = useAppRoutesStore((s) => s.forceDirect.length + s.forceProxy.length);
+  const bypassOverrideCount = useAppRoutesStore((s) => Object.keys(s.overrides).length);
 
   // Theme
   const theme = useTheme();

@@ -395,8 +395,12 @@ webapp/scripts/check-brand-purity.sh <brand> dist   # artifact purity after any 
   sourced from `config.store.country`; `buildRoutes()` emits `match.region` on the
   direct branch. Per-app force overrides (`forceProxy` / `forceDirect`) live in
   `app-routes.store` (`_platform.storage` key `k2.routes.overrides`).
-  `buildConnectConfig()` prepends them as Tier-1 `{match:{apps:[...]}}` routes
-  before the region route (forceDirect → `direct`, forceProxy → server URL).
+  `buildConnectConfig()` prepends them as Tier-1 `{match:{apps:[...], app_paths:[...]}}`
+  routes before the region route (forceDirect → `direct`, forceProxy → server URL).
+  `app_paths` are the overridden apps' directories (`InstalledApp.paths`, macOS: the
+  `.app` bundle; stored per override, derived as `forceDirectPaths`/`forceProxyPaths`);
+  the engine ORs them with the names. An override saved before paths existed gains
+  its directory on the next `refreshOverrideNames` (opening the App Bypass page).
   `AppBypass.tsx` (`appBypass.v2.*` i18n) has **two data sources**: `listInstalled`
   is primary, `listRunning` only becomes primary when it is the sole provider (iOS has
   neither). When both exist (desktop bridge — `installed_apps.rs` / `app_list.rs`, see

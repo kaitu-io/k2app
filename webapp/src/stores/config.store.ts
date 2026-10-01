@@ -52,6 +52,8 @@ export interface ConnectConfigParams {
   serverUrl?: string;
   forceDirect?: string[];   // Plan C: process names → Tier-1 direct route
   forceProxy?: string[];    // Plan C: process names → Tier-1 proxy route
+  forceDirectPaths?: string[];  // app directories → same Tier-1 direct route (match.app_paths)
+  forceProxyPaths?: string[];   // app directories → same Tier-1 proxy route
   /**
    * 504 fallback: emit global-shape routes (everything through the tunnel,
    * zero rule-bundle dependency) regardless of the stored country split.
@@ -478,11 +480,22 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       : buildRoutes(defaultVia, countryVia, country, serverUrl);
 
     // Plan C: Tier-1 per-app override routes — prepended before the region route
-    const fd = opts.forceDirect ?? [];
-    const fp = opts.forceProxy ?? [];
+    // Names and directories of one mode share ONE route: the engine ORs
+    // `apps` with `app_paths`, so a process matches by living inside an
+    // overridden app's bundle or by name. An engine that predates app_paths
+    // ignores the field and keeps matching by name.
+    const overrideMatch = (names: string[] = [], paths: string[] = []): RouteConfig['match'] | null => {
+      if (names.length === 0 && paths.length === 0) return null;
+      const m: RouteConfig['match'] = {};
+      if (names.length > 0) m.apps = [...names];
+      if (paths.length > 0) m.app_paths = [...paths];
+      return m;
+    };
     const overrideRoutes: RouteConfig[] = [];
-    if (fd.length > 0) overrideRoutes.push({ match: { apps: [...fd] }, via: 'direct' });
-    if (fp.length > 0) overrideRoutes.push({ match: { apps: [...fp] }, via: serverUrl as string });
+    const directMatch = overrideMatch(opts.forceDirect, opts.forceDirectPaths);
+    const proxyMatch = overrideMatch(opts.forceProxy, opts.forceProxyPaths);
+    if (directMatch) overrideRoutes.push({ match: directMatch, via: 'direct' });
+    if (proxyMatch) overrideRoutes.push({ match: proxyMatch, via: serverUrl as string });
     const routes = [...overrideRoutes, ...baseRoutes];
 
     const result: ClientConfig = {

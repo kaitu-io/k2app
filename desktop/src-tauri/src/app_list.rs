@@ -18,6 +18,11 @@ pub struct RunningApp {
     pub id: String,
     pub label: String,
     pub process_names: Vec<String>,
+    /// Directories whose every executable belongs to this app (macOS GUI
+    /// apps: the `.app` bundle) — see `InstalledApp::paths`. Empty for
+    /// standalone binaries, which are identified by name.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub paths: Vec<String>,
     pub icon_url: Option<String>,
 }
 
@@ -186,11 +191,12 @@ mod macos {
             );
 
             raw.push((
-                bundle_path,
+                bundle_path.clone(),
                 RunningApp {
                     id: bundle_id,
                     label,
                     process_names: helpers,
+                    paths: vec![bundle_path],
                     icon_url: Some(icon_url),
                 },
             ));
@@ -241,6 +247,7 @@ mod macos {
                 id: path.to_string(),
                 label,
                 process_names: vec![basename.to_string()],
+                paths: Vec::new(),
                 icon_url: Some(icon_url),
             });
         }
@@ -294,6 +301,7 @@ mod windows {
                     id: exe_path.to_string(),
                     label,
                     process_names: vec![basename],
+                    paths: Vec::new(),
                     icon_url: Some(icon_url),
                 },
             );
