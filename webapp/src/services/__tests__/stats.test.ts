@@ -222,5 +222,80 @@ describe('statsService', () => {
         platform.storage = saved;
       }
     });
+
+    it('two concurrent trackFunnel calls both end up sent exactly once', async () => {
+      await Promise.all([
+        statsService.trackFunnel('login_view'),
+        statsService.trackFunnel('paywall_view'),
+      ]);
+      await flushWait();
+      await statsService.trackFunnel('plan_select'); // trigger a flush for any survivor
+      await flushWait();
+
+      const names = sentFunnel().map((e: any) => e.event).sort();
+      expect(names).toEqual(['login_view', 'paywall_view', 'plan_select']);
+    });
+
+    it('an enqueue racing the post-flush trim loses nothing and resends nothing', async () => {
+      const delay = () => new Promise(r => setTimeout(r, 10));
+      (window._platform!.storage.get as any).mockImplementation(async (key: string) => {
+        const v = mockStorage.get(key) ?? null; // value is read at call time, delivered late
+        await delay();
+        return v === null ? null : structuredClone(v);
+      });
+      (window._platform!.storage.remove as any).mockImplementation(async (key: string) => {
+        await delay();
+        mockStorage.delete(key);
+      });
+      (window._platform!.storage.set as any).mockImplementation(async (key: string, value: any) => {
+        await delay();
+        mockStorage.set(key, structuredClone(value));
+      });
+
+      let resolveFirst!: (v: any) => void;
+      mockRequest.mockImplementationOnce(() => new Promise(res => { resolveFirst = res; }));
+
+      await statsService.trackFunnel('login_view');
+      await vi.waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
+
+      resolveFirst({ code: 0 });
+      // Enqueue while the trim is reading/writing
+      const racing = statsService.trackFunnel('paywall_view');
+      await racing;
+      await new Promise(r => setTimeout(r, 300));
+      await statsService.trackFunnel('plan_select');
+      await new Promise(r => setTimeout(r, 300));
+
+      const names = sentFunnel().map((e: any) => e.event).sort();
+      expect(names).toEqual(['login_view', 'paywall_view', 'plan_select']);
+    });
+
+    it('trackFunnelOnce does not set the flag when the queue write failed', async () => {
+      (window._platform!.storage.set as any).mockImplementation(async (key: string, value: any) => {
+        if (key === 'stats_queue') throw new Error('disk full');
+        mockStorage.set(key, value);
+      });
+      await statsService.trackFunnelOnce('app_first_open');
+      await flushWait();
+      expect(mockStorage.get('funnel_once:app_first_open')).toBeUndefined();
+      expect(sentFunnel()).toHaveLength(0);
+
+      (window._platform!.storage.set as any).mockImplementation(
+        async (key: string, value: any) => { mockStorage.set(key, value); }
+      );
+      await statsService.trackFunnelOnce('app_first_open');
+      await flushWait();
+      expect(sentFunnel().map((e: any) => e.event)).toEqual(['app_first_open']);
+      expect(mockStorage.get('funnel_once:app_first_open')).toBeTruthy();
+    });
+
+    it('concurrent trackFunnelOnce calls for one event enqueue once', async () => {
+      await Promise.all([
+        statsService.trackFunnelOnce('app_first_open'),
+        statsService.trackFunnelOnce('app_first_open'),
+      ]);
+      await flushWait();
+      expect(sentFunnel().filter((e: any) => e.event === 'app_first_open')).toHaveLength(1);
+    });
   });
 });

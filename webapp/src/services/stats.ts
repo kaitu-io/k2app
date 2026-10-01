@@ -76,12 +76,37 @@ async function getQueue(): Promise<StatsQueue> {
   return { app_opens: [], connections: [], funnel: [] };
 }
 
-async function saveQueue(queue: StatsQueue): Promise<void> {
+/** Returns true only if the queue was actually persisted. */
+async function saveQueue(queue: StatsQueue): Promise<boolean> {
+  const storage = window._platform?.storage;
+  if (!storage) return false;
   try {
-    await window._platform?.storage?.set(STORAGE_KEY, queue);
+    await storage.set(STORAGE_KEY, queue);
+    return true;
   } catch (err) {
     console.warn('[Stats] Failed to save queue:', err);
+    return false;
   }
+}
+
+// Storage calls are async, so every read-modify-write of the stored queue
+// (enqueue from any track* method, and the post-flush trim) goes through this
+// promise-chain mutex. Never held across the network call.
+let _queueLock: Promise<unknown> = Promise.resolve();
+
+function withQueueLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = _queueLock.then(fn);
+  _queueLock = run.catch(() => undefined);
+  return run;
+}
+
+/** Serialized read-modify-write append. Resolves true iff the queue was persisted. */
+function updateQueue(mutate: (queue: StatsQueue) => void): Promise<boolean> {
+  return withQueueLock(async () => {
+    const queue = await getQueue();
+    mutate(queue);
+    return saveQueue(queue);
+  });
 }
 
 async function clearQueue(): Promise<void> {
@@ -117,7 +142,7 @@ async function flush(): Promise<void> {
   try {
     // Snapshot what we send. Events appended while the request is in flight
     // are not in the snapshot and must survive a successful flush.
-    const queue = await getQueue();
+    const queue = await withQueueLock(getQueue);
     const nOpens = queue.app_opens.length;
     const nConns = queue.connections.length;
     const nFunnel = queue.funnel.length;
@@ -131,18 +156,20 @@ async function flush(): Promise<void> {
     });
 
     if (resp.code === 0) {
-      // Re-read: drop only the sent prefix of each array.
-      const latest = await getQueue();
-      const rest: StatsQueue = {
-        app_opens: latest.app_opens.slice(nOpens),
-        connections: latest.connections.slice(nConns),
-        funnel: latest.funnel.slice(nFunnel),
-      };
-      if (rest.app_opens.length + rest.connections.length + rest.funnel.length > 0) {
-        await saveQueue(rest);
-      } else {
-        await clearQueue();
-      }
+      // Re-read under the lock: drop only the sent prefix of each array.
+      await withQueueLock(async () => {
+        const latest = await getQueue();
+        const rest: StatsQueue = {
+          app_opens: latest.app_opens.slice(nOpens),
+          connections: latest.connections.slice(nConns),
+          funnel: latest.funnel.slice(nFunnel),
+        };
+        if (rest.app_opens.length + rest.connections.length + rest.funnel.length > 0) {
+          await saveQueue(rest);
+        } else {
+          await clearQueue();
+        }
+      });
       console.debug(`[Stats] Flushed ${total} events`);
     } else {
       console.warn('[Stats] Flush failed, will retry:', resp.code);
@@ -172,15 +199,15 @@ export const statsService = {
       const { os, app_version } = getPlatformInfo();
       const locale = document.documentElement.lang || 'unknown';
 
-      const queue = await getQueue();
-      queue.app_opens.push({
-        device_hash: deviceHash,
-        os,
-        app_version,
-        locale,
-        created_at: new Date().toISOString(),
+      await updateQueue((queue) => {
+        queue.app_opens.push({
+          device_hash: deviceHash,
+          os,
+          app_version,
+          locale,
+          created_at: new Date().toISOString(),
+        });
       });
-      await saveQueue(queue);
       flush(); // fire-and-forget
     } catch (err) {
       console.warn('[Stats] trackAppOpen failed:', err);
@@ -198,21 +225,21 @@ export const statsService = {
       const deviceHash = await getDeviceHash();
       const { os, app_version } = getPlatformInfo();
 
-      const queue = await getQueue();
-      queue.connections.push({
-        device_hash: deviceHash,
-        os,
-        app_version,
-        event: 'connect',
-        node_type: params.nodeType,
-        node_ipv4: params.nodeType === 'cloud' ? params.nodeIpv4 : '',
-        node_region: params.nodeType === 'cloud' ? params.nodeRegion : '',
-        rule_mode: params.ruleMode,
-        duration_sec: 0,
-        disconnect_reason: '',
-        created_at: new Date().toISOString(),
+      await updateQueue((queue) => {
+        queue.connections.push({
+          device_hash: deviceHash,
+          os,
+          app_version,
+          event: 'connect',
+          node_type: params.nodeType,
+          node_ipv4: params.nodeType === 'cloud' ? params.nodeIpv4 : '',
+          node_region: params.nodeType === 'cloud' ? params.nodeRegion : '',
+          rule_mode: params.ruleMode,
+          duration_sec: 0,
+          disconnect_reason: '',
+          created_at: new Date().toISOString(),
+        });
       });
-      await saveQueue(queue);
       flush(); // fire-and-forget
     } catch (err) {
       console.warn('[Stats] trackConnect failed:', err);
@@ -232,21 +259,21 @@ export const statsService = {
       const deviceHash = await getDeviceHash();
       const { os, app_version } = getPlatformInfo();
 
-      const queue = await getQueue();
-      queue.connections.push({
-        device_hash: deviceHash,
-        os,
-        app_version,
-        event: 'disconnect',
-        node_type: params.nodeType,
-        node_ipv4: params.nodeType === 'cloud' ? params.nodeIpv4 : '',
-        node_region: params.nodeType === 'cloud' ? params.nodeRegion : '',
-        rule_mode: params.ruleMode,
-        duration_sec: params.durationSec,
-        disconnect_reason: params.reason,
-        created_at: new Date().toISOString(),
+      await updateQueue((queue) => {
+        queue.connections.push({
+          device_hash: deviceHash,
+          os,
+          app_version,
+          event: 'disconnect',
+          node_type: params.nodeType,
+          node_ipv4: params.nodeType === 'cloud' ? params.nodeIpv4 : '',
+          node_region: params.nodeType === 'cloud' ? params.nodeRegion : '',
+          rule_mode: params.ruleMode,
+          duration_sec: params.durationSec,
+          disconnect_reason: params.reason,
+          created_at: new Date().toISOString(),
+        });
       });
-      await saveQueue(queue);
       flush(); // fire-and-forget
     } catch (err) {
       console.warn('[Stats] trackDisconnect failed:', err);
@@ -262,20 +289,28 @@ export const statsService = {
     }
   },
 
-  /** Like trackFunnel, but at most once per install (flag set after enqueue succeeds). */
+  /** Like trackFunnel, but at most once per install (flag set only after the queue write succeeded). */
   async trackFunnelOnce(event: AppFunnelEvent, props?: FunnelProps): Promise<void> {
+    if (_onceInProgress.has(event)) return;
+    _onceInProgress.add(event);
     try {
       const key = `funnel_once:${event}`;
       if (await window._platform?.storage?.get(key)) return;
-      await enqueueFunnel(event, props);
-      await window._platform?.storage?.set(key, true);
+      if (await enqueueFunnel(event, props)) {
+        await window._platform?.storage?.set(key, true);
+      }
     } catch (err) {
       console.warn('[Stats] trackFunnelOnce failed:', err);
+    } finally {
+      _onceInProgress.delete(event);
     }
   },
 };
 
-async function enqueueFunnel(event: AppFunnelEvent, props?: FunnelProps): Promise<void> {
+const _onceInProgress = new Set<string>();
+
+/** Resolves true iff the event was persisted to the queue. */
+async function enqueueFunnel(event: AppFunnelEvent, props?: FunnelProps): Promise<boolean> {
   const deviceHash = await getDeviceHash();
   const { os, app_version } = getPlatformInfo();
   const item: FunnelQueued = {
@@ -290,8 +325,9 @@ async function enqueueFunnel(event: AppFunnelEvent, props?: FunnelProps): Promis
   if (props?.source) item.source = props.source;
   if (props?.channel) item.channel = props.channel;
 
-  const queue = await getQueue();
-  queue.funnel.push(item);
-  await saveQueue(queue);
+  const ok = await updateQueue((queue) => {
+    queue.funnel.push(item);
+  });
   flush(); // fire-and-forget
+  return ok;
 }
