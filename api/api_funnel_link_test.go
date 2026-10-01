@@ -110,12 +110,16 @@ func TestWebLogin_LinksSid(t *testing.T) {
 	viper.Set("mail.dev_mode", true)
 	t.Cleanup(func() { viper.Set("mail.dev_mode", prev) })
 
+	gpc := false
 	post := func(r *gin.Engine, path string, body map[string]string, cookie string) *httptest.ResponseRecorder {
 		b, _ := json.Marshal(body)
 		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(b))
 		req.Header.Set("Content-Type", "application/json")
 		if cookie != "" {
 			req.Header.Set("Cookie", cookie)
+		}
+		if gpc {
+			req.Header.Set("Sec-GPC", "1")
 		}
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
@@ -186,4 +190,64 @@ func TestWebLogin_LinksSid(t *testing.T) {
 		require.Len(t, rows, 1)
 		assert.Equal(t, user.ID, rows[0].UserID)
 	})
+
+	t.Run("GPC code login with valid sid links nothing", func(t *testing.T) {
+		gpc = true
+		t.Cleanup(func() { gpc = false })
+		user, email := seedBlockedLoginUser(t, false, "")
+		sid := newFunnelSid()
+		cleanupFunnelIdentity(t, sid)
+		w := post(r, "/code", map[string]string{"email": email, "verificationCode": MockVerificationCode}, "sid="+sid)
+		assertOK(w)
+		assert.False(t, hasSidCookie(w))
+		assert.Empty(t, funnelIdentityRows(t, sid))
+		var n int64
+		require.NoError(t, db.Get().Model(&FunnelIdentity{}).Where("user_id = ?", user.ID).Count(&n).Error)
+		assert.Zero(t, n)
+	})
+
+	t.Run("GPC password login with valid sid links nothing", func(t *testing.T) {
+		gpc = true
+		t.Cleanup(func() { gpc = false })
+		const pw = "k7N#mq2P!xT9"
+		_, email := seedBlockedLoginUser(t, false, pw)
+		sid := newFunnelSid()
+		cleanupFunnelIdentity(t, sid)
+		w := post(r, "/pwd", map[string]string{"email": email, "password": pw}, "sid="+sid)
+		assertOK(w)
+		assert.Empty(t, funnelIdentityRows(t, sid))
+	})
+}
+
+func payRedirectGPC(t *testing.T, o *Order, cookie string) *httptest.ResponseRecorder {
+	t.Helper()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/orders/"+o.UUID+"/pay", nil)
+	req.Header.Set("Sec-GPC", "1")
+	if cookie != "" {
+		req.Header.Set("Cookie", cookie)
+	}
+	payRedirectRouter().ServeHTTP(w, req)
+	require.Equal(t, http.StatusFound, w.Code, w.Body.String())
+	return w
+}
+
+func TestPayRedirect_GPC_NoCookie_NoSidNoLink(t *testing.T) {
+	o := payRedirectFixture(t)
+	w := payRedirectGPC(t, o, "")
+	for _, ck := range w.Result().Cookies() {
+		assert.NotEqual(t, CookieFunnelSid, ck.Name)
+	}
+	funnelFlushForTest()
+	var n int64
+	require.NoError(t, db.Get().Model(&FunnelIdentity{}).Where("user_id = ?", o.UserID).Count(&n).Error)
+	assert.Zero(t, n)
+}
+
+func TestPayRedirect_GPC_ExistingSid_NoLink(t *testing.T) {
+	o := payRedirectFixture(t)
+	sid := newFunnelSid()
+	cleanupFunnelIdentity(t, sid)
+	payRedirectGPC(t, o, "sid="+sid)
+	assert.Empty(t, funnelIdentityRows(t, sid))
 }

@@ -660,7 +660,7 @@ func api_web_auth(c *gin.Context) {
 	// 设置 HttpOnly Cookie（Web 端安全认证，sliding expiration）
 	setAuthCookies(c, authResult)
 	// 漏斗：把匿名 sid 关联到该用户（只读不种；非阻塞，失败不影响登录）。
-	if sid, optedOut := readFunnelSid(c); !optedOut && sid != "" {
+	if sid, optedOut := readFunnelSid(c); !optedOut && !funnelGPC(c) && sid != "" {
 		linkFunnelIdentity(c, "sid", sid, identify.UserID, ReqBrand(c))
 	}
 
@@ -1090,7 +1090,7 @@ func api_web_password_login(c *gin.Context) {
 
 	setAuthCookies(c, authResult)
 	// 漏斗：把匿名 sid 关联到该用户（只读不种；非阻塞，失败不影响登录）。
-	if sid, optedOut := readFunnelSid(c); !optedOut && sid != "" {
+	if sid, optedOut := readFunnelSid(c); !optedOut && !funnelGPC(c) && sid != "" {
 		linkFunnelIdentity(c, "sid", sid, identify.UserID, ReqBrand(c))
 	}
 
