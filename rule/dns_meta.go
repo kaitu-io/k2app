@@ -25,7 +25,7 @@ package rule
 // The boolean reports whether any route matched; the Target is only
 // meaningful when it is true.
 func (e *Engine) MatchDNSMeta(meta ConnMeta) (Target, bool) {
-	if meta.ProcessName == "" && meta.PackageName == "" && len(meta.PackageNames) == 0 && meta.InstallerPackage == "" {
+	if meta.ProcessName == "" && meta.ProcessPath == "" && meta.PackageName == "" && len(meta.PackageNames) == 0 && meta.InstallerPackage == "" {
 		return 0, false
 	}
 	e.mu.RLock()

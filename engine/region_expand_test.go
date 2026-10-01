@@ -219,7 +219,7 @@ func TestExpandAppsRoute_LinuxBuildsProcessNames(t *testing.T) {
 		t.Skip("Linux-only — match.apps expansion on linux desktop")
 	}
 	target := rule.Target(2)
-	entry := expandAppsRoute([]string{"curl", "Chrome*"}, target)
+	entry := expandAppsRoute([]string{"curl", "Chrome*"}, nil, target)
 	if entry == nil {
 		t.Fatal("expandAppsRoute must build a meta entry on linux (regression: was nil)")
 	}
@@ -296,7 +296,7 @@ func TestExpandAppsRoute_DarwinPlatformDispatch(t *testing.T) {
 		t.Skip("Darwin-only")
 	}
 	globs := []string{"Firefox", "Chrome*"}
-	entry := expandAppsRoute(globs, rule.Target(3))
+	entry := expandAppsRoute(globs, nil, rule.Target(3))
 	if entry == nil {
 		t.Fatal("expected meta entry on Darwin")
 	}
@@ -312,10 +312,10 @@ func TestExpandAppsRoute_DarwinPlatformDispatch(t *testing.T) {
 }
 
 func TestExpandAppsRoute_EmptyReturnsNil(t *testing.T) {
-	if entry := expandAppsRoute(nil, rule.Target(3)); entry != nil {
+	if entry := expandAppsRoute(nil, nil, rule.Target(3)); entry != nil {
 		t.Errorf("nil globs → nil entry; got %+v", entry)
 	}
-	if entry := expandAppsRoute([]string{}, rule.Target(3)); entry != nil {
+	if entry := expandAppsRoute([]string{}, nil, rule.Target(3)); entry != nil {
 		t.Errorf("empty globs → nil entry; got %+v", entry)
 	}
 }
@@ -530,5 +530,56 @@ func TestHeapRegionExpander_CNFallbackForMissingRegion(t *testing.T) {
 func TestHeapRegionExpander_NoCNNoFallback(t *testing.T) {
 	if entries := heapRegionExpander(map[string]*krs.Bundle{})("my", rule.Target(2)); entries != nil {
 		t.Errorf("no cn fallback available must yield nil; got %+v", entries)
+	}
+}
+
+// match.app_paths compiles into the SAME entry as match.apps, so "inside the
+// bundle" and "named X" are OR'd — one logical application criterion.
+func TestExpandAppsRouteFor_PathsAndNamesShareOneEntry(t *testing.T) {
+	e := expandAppsRouteFor("darwin", []string{"OutsideHelper"}, []string{"/Applications/Doubao.app"}, rule.Target(0))
+	if e == nil {
+		t.Fatal("expected an entry")
+	}
+	if !slices.Equal(e.ProcessNames, []string{"OutsideHelper"}) {
+		t.Errorf("ProcessNames = %v", e.ProcessNames)
+	}
+	if !slices.Equal(e.ProcessPathPrefixes, []string{"/Applications/Doubao.app/"}) {
+		t.Errorf("ProcessPathPrefixes = %v, want the dir with one trailing slash", e.ProcessPathPrefixes)
+	}
+}
+
+func TestExpandAppsRouteFor_PathsOnly(t *testing.T) {
+	for goos, c := range map[string]struct{ in, want string }{
+		"darwin":  {"/Applications/Doubao.app/", "/Applications/Doubao.app/"},
+		"linux":   {"/opt/doubao", "/opt/doubao/"},
+		"windows": {`C:\Program Files\Doubao`, `c:\program files\doubao\`},
+	} {
+		e := expandAppsRouteFor(goos, nil, []string{c.in}, rule.Target(0))
+		if e == nil || !slices.Equal(e.ProcessPathPrefixes, []string{c.want}) {
+			t.Errorf("%s: entry = %+v, want prefixes [%q]", goos, e, c.want)
+		}
+	}
+	// Mobile searchers report no executable path: a paths-only route there
+	// contributes nothing rather than an entry that can never match.
+	for _, goos := range []string{"android", "ios"} {
+		if e := expandAppsRouteFor(goos, nil, []string{"/Applications/Doubao.app"}, rule.Target(0)); e != nil {
+			t.Errorf("%s: paths-only route produced %+v, want nil", goos, e)
+		}
+	}
+}
+
+// A root or relative "directory" would turn into a prefix every process
+// matches — the whole machine forced direct. It must be dropped, and a route
+// left with nothing must produce no entry at all.
+func TestExpandAppsRouteFor_DropsUnusablePaths(t *testing.T) {
+	if e := expandAppsRouteFor("darwin", nil, []string{"/", "", "relative/dir"}, rule.Target(0)); e != nil {
+		t.Errorf("unusable paths produced %+v, want nil", e)
+	}
+	if e := expandAppsRouteFor("windows", nil, []string{`C:\`}, rule.Target(0)); e != nil {
+		t.Errorf("drive root produced %+v, want nil", e)
+	}
+	e := expandAppsRouteFor("darwin", nil, []string{"/", "/Applications/A.app"}, rule.Target(0))
+	if e == nil || !slices.Equal(e.ProcessPathPrefixes, []string{"/Applications/A.app/"}) {
+		t.Errorf("entry = %+v, want only the usable dir", e)
 	}
 }

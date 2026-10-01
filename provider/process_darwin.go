@@ -154,8 +154,16 @@ func (s *DarwinProcessSearcher) pcbEnabled() bool {
 // FindProcess returns (processName, "", "") — Darwin has no packageName /
 // installerPackage; those are Android-only.
 func (s *DarwinProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string, string) {
+	name, _ := s.FindProcessPath(network, srcIP, srcPort)
+	return name, "", ""
+}
+
+// FindProcessPath implements ProcessPathSearcher. The path comes from
+// proc_pidpath on the PCB backend; the legacy lsof snapshot only knows the
+// COMMAND column, so it reports "" there and matching falls back to names.
+func (s *DarwinProcessSearcher) FindProcessPath(network string, srcIP netip.Addr, srcPort uint16) (string, string) {
 	if !srcIP.IsValid() {
-		return "", "", ""
+		return "", ""
 	}
 	// Canonicalize locally instead of trusting every caller to have done it
 	// (core/tunnel.go routeConn does): the index is keyed on the unmapped
@@ -164,14 +172,14 @@ func (s *DarwinProcessSearcher) FindProcess(network string, srcIP netip.Addr, sr
 	s.ensureInit()
 
 	key := cacheKey(network, srcIP, srcPort)
-	if name, pkg, installer, ok := s.cache.get(key); ok {
-		return name, pkg, installer
+	if name, path, ok := s.cache.getIdent(key); ok {
+		return name, path
 	}
 
 	start := time.Now()
-	var name string
+	var name, path string
 	if s.pcbEnabled() {
-		name = pcbFindProcess(network, srcIP, srcPort)
+		name, path = pcbFindProcess(network, srcIP, srcPort)
 	} else {
 		name = s.lookupIndexed(key)
 	}
@@ -186,8 +194,8 @@ func (s *DarwinProcessSearcher) FindProcess(network string, srcIP netip.Addr, sr
 	// Negative results are cached too: a socket lsof cannot see (already
 	// closed, or opened after the sweep) must not re-trigger a sweep on every
 	// packet for the same 4-tuple.
-	s.cache.set(key, name, "", "")
-	return name, "", ""
+	s.cache.setIdent(key, name, path)
+	return name, path
 }
 
 // lookupIndexed answers from the snapshot, rebuilding when the snapshot is

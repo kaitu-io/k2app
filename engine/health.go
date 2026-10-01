@@ -26,6 +26,10 @@ const (
 )
 
 // HealthSnapshot is a 1-second sample of wire and tunnel metrics.
+// appRoutesLogMax caps the rows in one "DIAG: app-routes" line (busiest
+// first); the rest are summarized as "+N more".
+const appRoutesLogMax = 12
+
 type HealthSnapshot struct {
 	Timestamp      time.Time `json:"ts"`
 	Transport      string    `json:"transport"`
@@ -364,6 +368,7 @@ func (hm *healthMonitor) sample() {
 	var ms runtime.MemStats
 	var diagTCP, diagUDP int64
 	var dialTotal core.DialOutcomes
+	var appRoutes []core.AppRouteStat
 	emitHeartbeat := hm.diagCounter >= 30
 	if emitHeartbeat {
 		hm.diagCounter = 0
@@ -371,6 +376,7 @@ func (hm *healthMonitor) sample() {
 		runtime.ReadMemStats(&ms)
 		diagTCP, diagUDP = hm.tunnel.ActiveConns()
 		dialTotal = hm.tunnel.DialOutcomes()
+		appRoutes = hm.tunnel.TakeAppRouteStats()
 		hm.mu.Lock()
 	}
 	if emitHeartbeat {
@@ -420,6 +426,17 @@ func (hm *healthMonitor) sample() {
 			"ccBgLoss", fmt.Sprintf("%.1f", cc.BGLoss*100),
 			"ccMode", cc.Mode.String(),
 		)
+		// Per-app routing outcomes for the same window. Silent unless a rule
+		// asked for process attribution AND something was attributed, so
+		// plain global/smart sessions pay nothing. This is the info-level
+		// answer to "the app I set to direct still doesn't work": which
+		// process went where, and whether its dials succeeded.
+		if len(appRoutes) > 0 {
+			slog.Info("DIAG: app-routes",
+				"processes", len(appRoutes),
+				"apps", core.FormatAppRouteStats(appRoutes, appRoutesLogMax),
+			)
+		}
 	}
 
 	onSnapshot := hm.onSnapshot

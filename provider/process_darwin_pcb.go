@@ -271,22 +271,33 @@ func pcbProcName(pid int32) string {
 	return string(path)
 }
 
-// pcbFindProcess is the per-lookup pipeline: fetch the live table, find the
-// socket, name its owner.
-func pcbFindProcess(network string, srcIP netip.Addr, srcPort uint16) string {
-	name := pcbSysctlName(network)
-	if name == "" {
+// pcbProcPath returns the full path of pid's executable (proc_pidpath), or
+// "" when the process is gone or the caller may not read it.
+func pcbProcPath(pid int32) string {
+	var pathBuf [4096]byte
+	n := C.proc_pidpath(C.int(pid), unsafe.Pointer(&pathBuf[0]), C.uint32_t(len(pathBuf)))
+	if n <= 0 {
 		return ""
 	}
-	buf, err := unix.SysctlRaw(name)
+	return string(pathBuf[:n])
+}
+
+// pcbFindProcess is the per-lookup pipeline: fetch the live table, find the
+// socket, name its owner and say where its executable lives.
+func pcbFindProcess(network string, srcIP netip.Addr, srcPort uint16) (name, path string) {
+	sysctlName := pcbSysctlName(network)
+	if sysctlName == "" {
+		return "", ""
+	}
+	buf, err := unix.SysctlRaw(sysctlName)
 	if err != nil {
-		return "" // fail-open, same directional choice as every miss path
+		return "", "" // fail-open, same directional choice as every miss path
 	}
 	o, ok := pcbLookupPid(buf, srcIP, srcPort)
 	if !ok {
-		return ""
+		return "", ""
 	}
-	return pcbOwnerName(o, int32(os.Getpid()))
+	return pcbOwnerIdent(o, int32(os.Getpid()))
 }
 
 // pcbOwnerName names the app a socket's traffic belongs to: the delegating
@@ -297,15 +308,24 @@ func pcbFindProcess(network string, srcIP netip.Addr, srcPort uint16) string {
 // A delegator that already exited has no name; the socket's own process is
 // still a truthful answer, so fall back to it rather than to "".
 func pcbOwnerName(o pcbOwner, self int32) string {
+	name, _ := pcbOwnerIdent(o, self)
+	return name
+}
+
+// pcbOwnerIdent is pcbOwnerName plus the executable path of that same
+// process. Name and path always describe ONE pid: mixing the delegator's
+// name with the socket owner's path would let a path rule and a name rule
+// disagree about whose traffic this is.
+func pcbOwnerIdent(o pcbOwner, self int32) (name, path string) {
 	if o.pid == self || o.ePid == self {
-		return ""
+		return "", ""
 	}
 	if o.ePid > 0 {
 		if name := pcbProcName(o.ePid); name != "" {
-			return name
+			return name, pcbProcPath(o.ePid)
 		}
 	}
-	return pcbProcName(o.pid)
+	return pcbProcName(o.pid), pcbProcPath(o.pid)
 }
 
 // pcbSelfCheck proves the whole pipeline on a real socket: dial our own

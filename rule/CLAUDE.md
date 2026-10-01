@@ -78,6 +78,7 @@ which predicate sees it.
 | `ip_is_private` | `IPIsPrivate` | host | DNS + conn |
 | `region` | expands to one host entry + one meta entry | both | DNS + conn |
 | `apps` | expands to a meta entry (process/package globs) | meta | conn |
+| `app_paths` | `ProcessPathPrefixes` in the SAME entry as `apps` (OR'd with the names — one "these applications" criterion). Desktop only: a process matches when its executable lives under the directory (macOS `.app` bundle, Windows install dir). Entries go through `NormalizeProcessDir` — trailing separator (component match, not string prefix), Windows lowercased, roots/relative dirs dropped. Compared against `ConnMeta.ProcessPath` (`provider.ProcessPathSearcher`) | meta (process) | conn |
 | `process_name` / `process_name_prefix` | `ProcessNames` / `ProcessNamePrefixes` | meta (process) | conn |
 | `package_name` / `package_name_prefix` / `installer_package` | `PackageNames` / `PackageNamePrefixes` / `InstallerPackages` | meta (process) | conn |
 | `network` | `NetworkMatch` | meta | conn |

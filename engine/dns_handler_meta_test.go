@@ -184,3 +184,39 @@ func TestQueryMeta_NilPaths(t *testing.T) {
 		t.Error("empty attribution must yield nil meta")
 	}
 }
+
+// pathRecordingSearcher is a desktop searcher: name + executable path.
+type pathRecordingSearcher struct {
+	recordingSearcher
+	path string
+}
+
+func (r *pathRecordingSearcher) FindProcessPath(string, netip.Addr, uint16) (string, string) {
+	return r.name, r.path
+}
+
+// The DNS flow's meta must carry the executable path too — otherwise an app
+// routed by match.app_paths gets its connections forced direct while its
+// domains still resolve through the other view (the App Bypass DNS half).
+func TestQueryMeta_PathSearcherFillsProcessPath(t *testing.T) {
+	h := &dnsHandler{searcher: &pathRecordingSearcher{
+		recordingSearcher: recordingSearcher{name: "Doubao Browser Helper"},
+		path:              "/Applications/Doubao.app/Contents/Helpers/x/Doubao Browser Helper",
+	}}
+	m := h.queryMeta("udp", &net.UDPAddr{IP: net.ParseIP("172.19.0.2"), Port: 51234}, "198.18.0.2:53")
+	if m == nil {
+		t.Fatal("nil meta for an attributed query")
+	}
+	if m.ProcessName != "Doubao Browser Helper" || m.ProcessPath != "/Applications/Doubao.app/Contents/Helpers/x/Doubao Browser Helper" {
+		t.Errorf("meta = (%q, %q)", m.ProcessName, m.ProcessPath)
+	}
+	// Identity only: every other dimension stays zero (rule.MatchDNSMeta's contract).
+	if m.Network != "" || m.Port != 0 || m.SrcIP.IsValid() {
+		t.Errorf("meta carries non-identity fields: %+v", m)
+	}
+
+	h.searcher = &pathRecordingSearcher{}
+	if m := h.queryMeta("udp", &net.UDPAddr{IP: net.ParseIP("172.19.0.2"), Port: 51234}, "198.18.0.2:53"); m != nil {
+		t.Errorf("empty attribution must yield nil meta, got %+v", m)
+	}
+}

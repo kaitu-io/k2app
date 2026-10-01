@@ -473,3 +473,53 @@ func TestWindowsFindProcess_UDPNoMatch_SpecificLocalAddrMismatch(t *testing.T) {
 		t.Errorf("got %q, want empty (specific LocalAddr 192.168.1.5 must NOT match 10.0.0.1)", name)
 	}
 }
+
+// identNamer is a namer that also knows image paths (processIdenter), like
+// the real one.
+type identNamer struct {
+	mockProcNamer
+	paths map[uint32]string
+}
+
+func (m *identNamer) IdentForPID(pid uint32) (string, string) {
+	return m.names[pid], m.paths[pid]
+}
+
+// FindProcessPath reports the owning process's image path alongside its
+// name, and the cache keeps both.
+func TestFindProcessPath_ReportsImagePath(t *testing.T) {
+	row := chromeRow // 192.168.1.5:54321
+	row.OwningPID = 4242
+	tcp := &mockTCPFetcher{rows: []tcpRowOwnerPID{row}}
+	namer := &identNamer{
+		mockProcNamer: mockProcNamer{names: map[uint32]string{4242: "wechatappex.exe"}},
+		paths:         map[uint32]string{4242: `c:\program files\tencent\wechat\[4.0]\wechatappex.exe`},
+	}
+	s := newTestSearcher(tcp, &mockUDPFetcher{}, &namer.mockProcNamer)
+	s.procNamer = namer
+
+	for i := 0; i < 2; i++ { // second pass is the cache hit
+		name, path := s.FindProcessPath("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+		if name != "wechatappex.exe" || path != namer.paths[4242] {
+			t.Fatalf("pass %d: (%q, %q), want name + image path", i, name, path)
+		}
+	}
+	if got := tcp.calls.Load(); got != 1 {
+		t.Errorf("table fetched %d times, want 1 (second lookup cached)", got)
+	}
+	if name, pkg, inst := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321); name != "wechatappex.exe" || pkg != "" || inst != "" {
+		t.Errorf("FindProcess = (%q, %q, %q)", name, pkg, inst)
+	}
+}
+
+// A namer without paths (or a protected process) still attributes by name.
+func TestFindProcessPath_NameOnlyNamer(t *testing.T) {
+	row := chromeRow // 192.168.1.5:54321
+	row.OwningPID = 7
+	tcp := &mockTCPFetcher{rows: []tcpRowOwnerPID{row}}
+	s := newTestSearcher(tcp, &mockUDPFetcher{}, &mockProcNamer{names: map[uint32]string{7: "curl.exe"}})
+	name, path := s.FindProcessPath("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
+	if name != "curl.exe" || path != "" {
+		t.Fatalf("(%q, %q), want name with empty path", name, path)
+	}
+}

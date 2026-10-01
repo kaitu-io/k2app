@@ -83,6 +83,7 @@ Reserved event names:
 | `DIAG: channel-review` | INFO | on each rollback-review evaluation while tcpws is active, rate-limited to at most once per review window (plus one unconditional log the moment the decision is the actual rollback) | activeChannel, scoreQuic, scoreTcpws, flapCount, failedTrials (consecutive rollbacks that failed within `rollbackTrialWindow`; 1 = review already escalated to 600s, ≥2 = sticky 1h), nextReviewInS, decision (`stay` \| `switch-to-quic` — this event is emitted only from the rollback branch, so there is no `switch-to-tcpws` value; a switch-away shows up as `DIAG: transport-switch` instead) |
 | `DIAG: udp-relay-timeout` | WARN | consecutive > 2 | consecutiveCount, threshold |
 | `DIAG: conn-highwater` | INFO | active > 100 | tcpCount, udpCount |
+| `DIAG: app-routes` | INFO | with each heartbeat, only when a loaded rule asked for process attribution AND at least one connection was attributed in the window | processes (distinct count), apps — per process, busiest first, max 12 then `+N more`: `"<name>" direct=N proxy=N [reject=N] fail=N [lastFail="direct\|proxy <dest>"]`. Window counts, not totals. This is the info-level answer to "the app I set to direct still doesn't work" (`core/app_stats.go`) |
 | `DIAG: wire-handshake` | INFO | handshake probe ok | handshakeMs, transport |
 | `DIAG: wire-handshake-fail` | WARN | handshake probe failed | handshakeMs, err |
 | `DIAG: connected` | INFO | engine connected | server, mode, dialMs |

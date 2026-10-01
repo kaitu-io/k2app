@@ -36,6 +36,14 @@ type MatchConfig struct {
 	// webapp app-routes.store.
 	Apps []string `yaml:"apps,omitempty" json:"apps,omitempty"`
 
+	// AppPaths lists directories (macOS .app bundle, Windows install dir);
+	// a process whose executable lives anywhere under one of them matches.
+	// Desktop only. OR'd with Apps within the same route — one logical
+	// "these applications" criterion — so a route may carry both: paths for
+	// everything inside the bundle, names for what runs outside it.
+	// Emitted by webapp app-routes.store.
+	AppPaths []string `yaml:"app_paths,omitempty" json:"app_paths,omitempty"`
+
 	// Connection metadata matching.
 	ProcessName []string `yaml:"process_name,omitempty" json:"process_name,omitempty"`
 	PackageName []string `yaml:"package_name,omitempty" json:"package_name,omitempty"`
@@ -72,7 +80,7 @@ type MatchConfig struct {
 // HasCriteria reports whether any matching criterion is set.
 func (m MatchConfig) HasCriteria() bool {
 	return m.Preset != "" || len(m.Names) > 0 || len(m.Exclude) > 0 || m.All ||
-		m.Region != "" || len(m.Apps) > 0 ||
+		m.Region != "" || len(m.Apps) > 0 || len(m.AppPaths) > 0 ||
 		len(m.DomainSuffix) > 0 || len(m.IPCIDR) > 0 ||
 		len(m.ProcessName) > 0 || len(m.PackageName) > 0 ||
 		len(m.ProcessNamePrefix) > 0 || len(m.PackageNamePrefix) > 0 ||

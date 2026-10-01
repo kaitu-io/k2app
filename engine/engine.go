@@ -1468,8 +1468,8 @@ func buildRouteEntries(routes []config.RouteConfig, idx map[string]krs.Matcher, 
 			}
 			entries = append(entries, regionEntries...)
 		}
-		if len(route.Match.Apps) > 0 {
-			if meta := expandAppsRoute(route.Match.Apps, target); meta != nil {
+		if len(route.Match.Apps) > 0 || len(route.Match.AppPaths) > 0 {
+			if meta := expandAppsRoute(route.Match.Apps, route.Match.AppPaths, target); meta != nil {
 				entries = append(entries, *meta)
 			}
 		}
@@ -1482,7 +1482,7 @@ func buildRouteEntries(routes []config.RouteConfig, idx map[string]krs.Matcher, 
 		hasAnyCriteria := len(entry.Sets) > 0 ||
 			len(entry.ProcessNames) > 0 || len(entry.PackageNames) > 0 ||
 			len(entry.ProcessNamePrefixes) > 0 || len(entry.PackageNamePrefixes) > 0 ||
-			len(entry.InstallerPackages) > 0 ||
+			len(entry.InstallerPackages) > 0 || len(entry.ProcessPathPrefixes) > 0 ||
 			entry.NetworkMatch != "" || entry.IPIsPrivate || len(entry.SrcCIDRs) > 0 ||
 			len(entry.PortRanges) > 0 || len(entry.Protocols) > 0
 		if hasAnyCriteria {
@@ -1814,7 +1814,7 @@ func logRuleEngineState(cacheDir string, hasBundles bool, entries []rule.RouteEn
 		}
 		if len(e.ProcessNames) > 0 || len(e.PackageNames) > 0 ||
 			len(e.ProcessNamePrefixes) > 0 || len(e.PackageNamePrefixes) > 0 ||
-			len(e.InstallerPackages) > 0 {
+			len(e.InstallerPackages) > 0 || len(e.ProcessPathPrefixes) > 0 {
 			hasRules = true
 			break
 		}
