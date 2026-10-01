@@ -102,6 +102,8 @@ export interface BrandSurfaceTokens {
    *  不是 background —— 它若是纯中性灰而 paper 带色相，导航栏与页面就会撞色。
    *  必填：隐式落到 MUI 默认灰会让带色相的品牌静默撞色。 */
   neutral: { 700: string; 800: string; 900: string };
+  /** Account 页顶部品牌横幅的底色（CSS background 值），按明暗模式各一份。 */
+  banner: { dark: string; light: string };
 }
 
 /** 语义色 —— 成功 / 警告 / 错误。品牌化是因为官网有自己的一套取值，

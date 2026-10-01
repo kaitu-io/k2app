@@ -234,9 +234,7 @@ export default function Account() {
       <Card
         sx={{
           mb: 2,
-          background: (theme) => theme.palette.mode === 'dark'
-            ? `linear-gradient(135deg, #1a237e 0%, #283593 100%)`
-            : `linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)`,
+          background: (theme) => brandConfig.theme.surface.banner[theme.palette.mode],
           border: 'none',
           ...(window._platform?.os !== 'ios' && {
             cursor: 'pointer',
