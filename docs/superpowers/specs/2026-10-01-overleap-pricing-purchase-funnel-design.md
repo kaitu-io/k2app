@@ -97,9 +97,9 @@ type FunnelIdentity struct {
 **`GET /api/px`**（匿名，品牌走既有 BrandResolver）：
 
 - 参数：`e` 事件名（白名单）、`p` 套餐 pid、`s` 来源标签、`r` 外部来源 host（仅访客首个事件，由前端从 `document.referrer` 取 host，丢弃路径）。
-- 路径与 `utm_*` 从 `Referer` 头解析（同源才记 path；去掉 locale 前缀归一化，如 `/en-GB/pricing` → `/pricing`）。
+- 路径与 `utm_*` 由客户端显式参数 `u`（仅 pathname + `utm_*`，其余查询参数在浏览器侧就丢弃）传入，`Referer` 仅作回退；「同站」= Referer 的 host 等于请求 Host **或**属于请求品牌的域名（生产流量经 Next rewrite 到达，Host 是 API 域名）。去掉 locale 前缀归一化（`/en-GB/pricing` → `/pricing`）；带兑换码 / 邀请码 / 订单号的路径段折叠成 `*`（`/g/*`、`/s/*`、`/pay-result/*`）。
 - 响应 43 字节透明 GIF + `no-store`；无 `sid` 时 `Set-Cookie`。
-- 不记：`sid == optout`、爬虫 UA、超限流（每 IP 120 次/分钟，静默返回 GIF）。`Sec-GPC: 1`：不下发 `sid`，事件照记但 `AnonID` 为空。
+- 不记：`sid == optout`、爬虫 UA、超限流（每 IP 120 次/分钟，静默返回 GIF）。`Sec-GPC: 1`：不下发 `sid`，即使已有 `sid` 也不使用；事件照记但 `AnonID` 为空、`UserID` 为 0，不做任何身份关联（像素、登录、支付跳转三处一致）。按 IP 限流之外另有进程级上限 6000 次/分钟（客户端 IP 取自可伪造的转发头，可信代理配置本期不动）。
 - `GET /api/px/optout`：下发 `sid=optout`，302 回同源 Referer（否则 `/`）。
 - 前端两种形态都只是图片请求：SSR 内嵌 `<img src="/api/px?e=…" width="1" height="1" alt="" aria-hidden>`；交互 `new Image().src = …`。
 
@@ -134,11 +134,11 @@ type FunnelIdentity struct {
 |---|---|---|
 | `page_view` · `pricing_view` · `checkout_view` · `install_view` · `welcome_view` | web | view |
 | `install_click`（`p` = 平台）· `checkout_cancelled` · `refund_click` · `cancel_click` | web | action |
-| `app_first_open` · `first_connect_attempt` · `first_connect_ok` · `manage_click` | app | action |
+| `app_first_open` · `first_connect_attempt` · `first_connect_ok` · `connect_ok`（每安装每 UTC 日至多一次）· `manage_click` | app | action |
 | `login_view` · `paywall_view`（`source` = 入口） | app | view |
 | `plan_select` · `auth_code_sent` · `auth_done` · `checkout_start`（`channel`） | web, app | action |
 
-`paywall_view.source` 取值（对应 webapp 现有全部购买入口）：`tunnel_locked`（`CloudTunnelList`）· `membership_guard` · `login_dialog` · `account` · `account_expired` · `direct`。
+`paywall_view.source` 取值（对应 webapp 现有全部购买入口）：`tunnel_locked`（`CloudTunnelList`）· `membership_guard` · `login_dialog` · `account` · `account_expired` · `nav`（导航栏）· `direct`。`paywall_view` 只在真正渲染购买界面时上报（会员进管理面板不算）。
 
 ### 2.6 转化路径（命名漏斗）
 
@@ -146,17 +146,19 @@ type FunnelIdentity struct {
 
 **路径用品牌无关的语义步骤定义，品牌只是查询时的筛选条件**——没有按品牌命名的路径，也没有"适用品牌"字段；某品牌不产生某条路径的事件（如开途没有 iOS 试用），看板显示为空即可。主路径只放**每个人都必须经过**的步骤；条件性步骤（登录：已登录的人不会再触发）单列为诊断路径，否则回头客会被算成流失。
 
-| key | 回答的问题 | 步骤 | 窗口 |
-|---|---|---|---|
-| `web_purchase` | 官网访客变付费 | `page_view`(首访) → `pricing_view` → `plan_select` → `checkout_start` → `purchase` | 14 天 |
-| `web_checkout_auth` | 结账里的登录卡不卡人 | `auth_code_sent`(surface=web) → `auth_done`(surface=web) → `checkout_start` | 1 天 |
-| `web_install` | 官网访客去下载 | `page_view` → `install_view` → `install_click` | 7 天 |
-| `app_activation` | 装了的人连上没有 | `app_first_open` → `auth_done`(surface=app) → `first_connect_attempt` → `first_connect_ok` | 7 天 |
-| `app_purchase` | App 内付费墙变付费 | `paywall_view` → `plan_select`(surface=app) → `checkout_start` → `purchase` | 7 天 |
-| `trial` | 试用变付费 | `paywall_view` → `checkout_start`(channel=apple) → `trial_start` → `purchase` | 14 天 |
-| `post_purchase_activation` | 付了钱的人用上没有 | `purchase` → `first_connect_ok` | 7 天 |
-| `email_return` | 生命周期邮件拉回 | `email_sent` → `page_view`(utm_source=email) → `checkout_start` → `purchase`/`renewal` | 14 天 |
-| `cancel_save` | 取消的人回来没有 | `cancel_request` → `resume` | 至账期末（上限 370 天） |
+| key | 回答的问题 | 步骤 | 窗口 | 落地期 |
+|---|---|---|---|---|
+| `web_purchase` | 官网访客变付费 | 任一 web 浏览 → `pricing_view` → `checkout_start` → `purchase`/`renewal` | 14 天 | ⓪ |
+| `web_checkout_auth` | 购买页**内联**登录卡不卡人 | `auth_code_sent`(web) → `auth_done`(web) → `checkout_start`(web) | 1 天 | ⓪ |
+| `web_install` | 官网访客去下载 | 任一 web 浏览 → `install_view` → `install_click` | 7 天 | ⓪ |
+| `app_activation` | 装了的人连上没有 | `app_first_open` → `auth_done`(app) → `first_connect_attempt` → `first_connect_ok` | 7 天 | ⓪ |
+| `app_purchase` | App 内付费墙变付费 | `paywall_view` → `checkout_start` → `purchase`/`renewal` | 7 天 | ⓪ |
+| `post_purchase_activation` | 付了钱的人用上没有 | `purchase` → `first_connect_ok`/`connect_ok` | 7 天 | ⓪ |
+| `trial` | 试用变付费 | `paywall_view` → `checkout_start`(channel=apple) → `trial_start` → `purchase` | 14 天 | ③ |
+| `email_return` | 生命周期邮件拉回 | `email_sent` → 浏览(utm_source=email) → `checkout_start` → `purchase`/`renewal` | 14 天 | ② |
+| `cancel_save` | 取消的人回来没有 | `cancel_request` → `resume` | 至账期末（上限 370 天） | ① |
+
+**「选套餐」不是必经步骤**（默认套餐是预选的，直接买默认套餐的人从不触发 `plan_select`；iOS 只有一个商品）——它仍被记录、可按 `plan` 分组，但不进主路径。两条购买路径的末步同时接受首购与续费：路径衡量的是「购买流程走完」，回头客回来买也算。
 
 `pricing_view` 在两站各指本品牌的选套餐页（Overleap `/pricing`，开途 `/purchase`）；`checkout_view` / `welcome_view` / `login_view` 仍作为页面浏览记录、可在明细里看，但不进任何路径的必经步骤。
 
@@ -164,8 +166,8 @@ type FunnelIdentity struct {
 
 - **人**的归并（查询时，不回写）：记录带 `UserID` → 人 = 该用户；否则查 `FunnelIdentity(kind, AnonID)`，有关联取最早关联的用户，无则人 = 匿名身份本身。所以登录前的浏览、登录后的点击、事实表里的付款算同一个人。
 - 输入 = 区间内的行为事件 ∪ 同区间（加窗口）的事实投影；计算是一个不碰数据库的纯函数。
-- 进入路径 = 在所选时间段内发生步骤 1；后续步骤须按顺序、时间不早于前一步、且在窗口内。每步去重计人。
-- 输出：每步人数、相邻步转化率、总转化率、相邻步耗时中位数。
+- **进入（最佳进入）**：一个人在所选时间段内每一次满足步骤 1 的记录都是候选进入点；从每个候选按顺序推进（后一步时间不早于前一步、且不晚于该候选 + 窗口，同一条记录可连续满足多步），取**走得最远**的那次，平手取最早。这样第 0 天来过、第 20 天再来并付款的人算转化，而不是因第 0 天的窗口过期被算成流失。每步去重计人。后续步骤只受窗口约束、不受时间段右端约束（查询要多取一个窗口的数据）。
+- 输出：每步人数、相邻步转化率、总转化率、相邻步耗时中位数、按进入日的每日进入 / 完成人数。分组超过 50 个时其余并入 `(other)`（各组之和恒等于各步总数）；空值记为 `unknown`。
 - 分组维度：`source`（首触 `RefHost` / `utm_source`）· `utm_campaign` · `country` · `os` · `device` · `app_version` · `paywall_source` · `plan` · `channel`。维度取自该人在步骤 1 的事件（`plan` / `channel` 取自末步）。
 - `web → app` 的跨端（官网点下载 → App 首开）**不强行拼接**：安装包带不了 `sid`，两端只在同一用户两边都登录后才连通。`web_install` 与 `app_activation` 因此是两条独立路径，看板并排显示而不伪造一条连续漏斗。
 
@@ -173,7 +175,7 @@ type FunnelIdentity struct {
 
 不走事件表，直接读事实表（行为事件只留 120 天，事实表永久）：
 
-- **付费留存**：按首次付费月份分群，M1 / M3 / M6 / M12 仍有有效权益（`users.expired_at` 未过期且非退款）的比例；按品牌 / 首购套餐 / 渠道切分。
+- **付费留存**：按首次付费月份分群；**从付款记录推算**——每笔付款提供一段覆盖期（订单按套餐月数、订阅入账按入账秒数），按时间顺序叠加（`start = max(until, 付款时间)`）；检查点 = 首付满 N 个月（按月末截断）**再加 7 天宽限**；到检查点时覆盖期严格晚于检查点才算留存。已退款的订单与已退款的 Apple 交易不提供覆盖；赠送、试用、邀请奖励的时长不计（所以不读 `users.expired_at`）。群组里所有人的检查点都过了才出数，否则为空。Stripe 退款在 ① 期（保障退款表）之前不反映。
 - **30 天退款率**：`GuaranteeRefund` 与开途退款单 / 首购数。
 - **活跃留存**：既有 `StatAppOpen`，按 `device_hash` 首次出现日分群的 D1 / D7 / D30。
 - **取消原因分布**：`SubscriptionIntent`（§4.3）。
@@ -380,3 +382,36 @@ type FunnelIdentity struct {
 - Android 购买入口（Play 版维持无购买）。
 - 第三方统计、A/B 测试框架（有了漏斗数据后另议）。
 - 可在后台自定义的漏斗编辑器（路径在代码注册表里）；官网 → App 的跨端强行拼接；按渠道定制的落地页。
+
+## 13. ⓪ 期实现记录（2026-10-01）
+
+分支 `feat/funnel-platform`。计划：`docs/superpowers/plans/2026-10-01-funnel-platform.md`（本地，未入库）。
+
+### 13.1 与原设计的偏差（均已回写上文）
+
+| 项 | 原设计 | 实现 | 原因 |
+|---|---|---|---|
+| 进入规则 | 时间段内最早一次步骤 1 | 最佳进入（§2.6） | 最早进入会把回头再买的访客算成流失，时间段越长偏差越大 |
+| 购买路径步骤 | 含「选套餐」 | 去掉；末步接受首购 + 续费 | 默认套餐预选、iOS 单商品，必经步骤里不能有可选动作 |
+| 付费留存 | `expired_at` 未过期 | 付款覆盖期推算 + 7 天宽限（§2.7） | `expired_at` 含赠送 / 试用且只反映现在；整点检查会漏掉按时续费 |
+| 页面路径来源 | `Referer` | 显式参数 `u`，`Referer` 回退 | 不依赖站点的 Referrer-Policy |
+| 事件保留 | 匿名 90 天 / 带用户 400 天 | 统一 120 天；身份关联保留到账户删除 | 事实从表投影后不需要长留事件；账户删除时一并清除 |
+| 事件 | — | 新增 `connect_ok`（每日一次）、付费墙来源 `nav` | 已连过再买的人要能走完「付款后激活」 |
+| 存量安装 | — | 首次启动时若已有设备标识则补「只发一次」标记、不上报 | 否则上线当天全部存量被算成新安装 |
+| Cookie 寿命 | 13 个月 | 400 天 | 同义，条款按精确值写 |
+
+### 13.2 已知限制
+
+- 客户端 IP 取自可伪造的转发头（未配置可信代理）：限流与国家字段可被绕过 / 伪造；有进程级上限兜底。
+- 官网 → App 的跨端不拼接；`web_checkout_auth` 只覆盖购买页内联登录（旧 Overleap 购买页跳 `/login`，① 期新站改为内联后才有数据）。
+- Stripe 退款在 ① 期之前不产生退款事实、不影响留存覆盖。
+- 通过 OTA 拿到本版 webapp 的「新装旧包」会被当作存量安装，新安装数在商店包更新前偏低。
+- 开途站仍加载第三方分析脚本；横幅与条款已按品牌如实披露，「拒绝」不影响该脚本——是否改为同意后加载或移除，待产品决定。
+- 无 cookie 横幅的同意口径（英国 DUAA / 欧盟）仍是上线前法务确认项（§10）。
+
+### 13.3 发布顺序
+
+1. `make deploy-api`：启动时迁移建 `funnel_events` / `funnel_identities`，`stat_app_opens` 加 `brand` 列与 `(brand, reported_at)` 索引（先查该表行数评估加列耗时）。账户删除事务已引用新表，必须先迁移后服务。
+2. 官网：`git push origin main:website`（隐私条款与横幅文案随之上线）。
+3. webapp：推 `webapp/x.y.z` tag。必须在 API 之后——旧 API 会对未知字段返回成功，客户端随即丢弃事件。
+4. 回滚：Center 配置 `funnel.enabled: false` 即停止全部采集与 cookie 下发，无需回滚代码。
