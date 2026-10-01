@@ -75,13 +75,12 @@ func TestPaidCohorts(t *testing.T) {
 	})
 
 	t.Run("checkpoint exactly equal to coverage end is not retained", func(t *testing.T) {
-		// 覆盖到 02-15 12:00，m1 检查点也是 02-15 12:00 → 严格大于才算。
-		retFrac(t, paidOne(t, now, month(first, 1)).Retained["m1"], 0, "m1")
+		// m1 检查点 = 02-15 12:00 + 7 天 = 02-22 12:00 = 首付 + 38 天。覆盖恰好到这一刻 → 严格大于才算。
+		row := paidOne(t, now, paidCoverage{At: first, Seconds: int64(38 * 24 * 3600)})
+		retFrac(t, row.Retained["m1"], 0, "m1 with coverage ending exactly at the checkpoint")
 		// 多一秒覆盖就算。
-		row := paidOne(t, now, paidCoverage{At: first, Seconds: int64(31*24*3600) + 1})
+		row = paidOne(t, now, paidCoverage{At: first, Seconds: int64(38*24*3600) + 1})
 		retFrac(t, row.Retained["m1"], 1, "m1")
-		row = paidOne(t, now, paidCoverage{At: first, Seconds: int64(31 * 24 * 3600)})
-		retFrac(t, row.Retained["m1"], 0, "m1 with exactly 31 days")
 	})
 
 	t.Run("1-month plan renewed monthly: retained while renewing", func(t *testing.T) {
@@ -107,9 +106,40 @@ func TestPaidCohorts(t *testing.T) {
 		row = paidOne(t, now, month(first, 12), month(retUTC(2027, 1, 10, 0), 12))
 		retFrac(t, row.Retained["m12"], 1, "m12 with renewal")
 
-		// 续费发生在 m12 检查点之后：检查点那一刻并没有覆盖。
-		row = paidOne(t, now, month(first, 12), month(retUTC(2027, 1, 16, 0), 12))
+		// 满一年后 7 天内续上（01-20）：算留存。
+		row = paidOne(t, now, month(first, 12), month(retUTC(2027, 1, 20, 0), 12))
+		retFrac(t, row.Retained["m12"], 1, "m12 renewed within the grace period")
+
+		// 续费发生在 m12 检查点（01-22 12:00）之后：检查点那一刻并没有覆盖。
+		row = paidOne(t, now, month(first, 12), month(retUTC(2027, 1, 23, 0), 12))
 		retFrac(t, row.Retained["m12"], 0, "renewal after the checkpoint")
+	})
+
+	t.Run("grace: on-time and slightly late renewals count, 8 days late does not", func(t *testing.T) {
+		end := addMonthsClamped(first, 1) // 首个周期结束：02-15 12:00；m1 检查点 02-22 12:00
+		retFrac(t, paidOne(t, now, month(first, 1), month(end, 1)).Retained["m1"], 1, "renewed exactly at period end")
+		// 订阅入账行晚几秒 / 几小时才写：没有宽限时这两个都会读成流失。
+		retFrac(t, paidOne(t, now, month(first, 1), month(end.Add(5*time.Second), 1)).Retained["m1"], 1, "seconds late")
+		retFrac(t, paidOne(t, now, month(first, 1), month(end.Add(3*time.Hour), 1)).Retained["m1"], 1, "hours late")
+		// 晚 6 天：覆盖从这笔晚到的付款重新起算（到 03-21 12:00）。
+		row := paidOne(t, now, month(first, 1), month(end.Add(6*24*time.Hour), 1))
+		retFrac(t, row.Retained["m1"], 1, "6 days late")
+		// 晚 8 天（02-23 12:00）买 3 个月：m1 检查点时没有覆盖，m3（04-22 12:00）时有（到 05-23）。
+		row = paidOne(t, now, month(first, 1), month(end.Add(8*24*time.Hour), 3))
+		retFrac(t, row.Retained["m1"], 0, "8 days late")
+		retFrac(t, row.Retained["m3"], 1, "m3 after an 8-day-late return")
+		retFrac(t, row.Retained["m6"], 0, "m6")
+	})
+
+	t.Run("grace: now inside the grace period of the latest member is null", func(t *testing.T) {
+		pays := map[uint64][]paidCoverage{1: {month(retUTC(2026, 8, 1, 0), 12)}, 2: {month(retUTC(2026, 8, 15, 0), 12)}}
+		// 最晚成员的 m1 检查点 = 09-15 + 7 天 = 09-22 00:00。
+		rows := computePaidCohorts(pays, nil, retUTC(2026, 9, 18, 0))
+		assert.Nil(t, rows[0].Retained["m1"], "past the month mark but still inside the grace period")
+		rows = computePaidCohorts(pays, nil, retUTC(2026, 9, 21, 23))
+		assert.Nil(t, rows[0].Retained["m1"])
+		rows = computePaidCohorts(pays, nil, retUTC(2026, 9, 22, 0))
+		retFrac(t, rows[0].Retained["m1"], 1, "m1 once the grace period has passed")
 	})
 
 	t.Run("lapse and return: gap at m3, back by m6", func(t *testing.T) {
@@ -127,11 +157,13 @@ func TestPaidCohorts(t *testing.T) {
 	})
 
 	t.Run("early renewal stacks from the previous expiry, not from the payment time", func(t *testing.T) {
-		// 首付 3 个月（到 04-15 12:00）；02-01 提前再买 3 个月 → 叠到 07-15 12:00。
-		// 若错误地从付款时刻起算只到 05-01，m6（07-15 12:00）与 m3 之后的检查都会变。
-		row := paidOne(t, now, month(first, 3), month(retUTC(2026, 2, 1, 0), 3), paidCoverage{At: retUTC(2026, 2, 2, 0), Seconds: 1})
+		// 首付 3 个月（到 04-15 12:00）；02-01 提前再买 3 个月 → 叠到 07-15 12:00；
+		// 02-02 再叠 7 天 + 1 秒 → 07-22 12:00:01，刚好越过 m6 检查点（07-22 12:00）。
+		// 若错误地从付款时刻起算，最后只覆盖到 02-09，m3 / m6 都会变。
+		row := paidOne(t, now, month(first, 3), month(retUTC(2026, 2, 1, 0), 3),
+			paidCoverage{At: retUTC(2026, 2, 2, 0), Seconds: 7*24*3600 + 1})
 		retFrac(t, row.Retained["m3"], 1, "m3")
-		retFrac(t, row.Retained["m6"], 1, "m6: 07-15 12:00:01 > 07-15 12:00")
+		retFrac(t, row.Retained["m6"], 1, "m6: 07-22 12:00:01 > 07-22 12:00")
 		retFrac(t, row.Retained["m12"], 0, "m12")
 	})
 
@@ -207,14 +239,14 @@ func TestPaidCohorts(t *testing.T) {
 	})
 
 	t.Run("checkpoints clamp to month end", func(t *testing.T) {
-		// 01-31 首付 1 个月 → 覆盖到 02-28，m1 检查点也是 02-28（不是 03-03）→ 相等，不留存；
+		// 01-31 首付 1 个月 → 覆盖到 02-28；m1 检查点 = 02-28 + 7 天 = 03-07（不是 03-03 + 7 天 = 03-10）。
 		// 02-27 续 1 个月 → 叠到 03-28，m1 留存。
 		jan31 := retUTC(2026, 1, 31, 0)
 		retFrac(t, paidOne(t, now, month(jan31, 1)).Retained["m1"], 0, "m1")
 		retFrac(t, paidOne(t, now, month(jan31, 1), month(retUTC(2026, 2, 27, 0), 1)).Retained["m1"], 1, "m1 renewed")
-		// 若检查点溢出到 03-03，下面这个 03-01 到期的用户会被误判为不留存。
-		row := paidOne(t, now, paidCoverage{At: jan31, Seconds: 29 * 24 * 3600}) // 到 03-01
-		retFrac(t, row.Retained["m1"], 1, "m1 at 02-28")
+		// 若检查点溢出到 03-10，下面这个 03-08 到期的用户会被误判为不留存。
+		row := paidOne(t, now, paidCoverage{At: jan31, Seconds: 36 * 24 * 3600}) // 到 03-08
+		retFrac(t, row.Retained["m1"], 1, "m1 at 03-07")
 	})
 
 	t.Run("cohort by UTC month of the first payment, ascending", func(t *testing.T) {
@@ -331,6 +363,18 @@ func TestLoadPaidCohortInputs(t *testing.T) {
 	noSnapshot := factsUser(t, BrandOverleap, from.Add(-time.Hour))
 	factsOrder(t, noSnapshot.ID, OrderChannelNextpay, factsPaid(from.Add(time.Hour))) // 快照里没有月数
 
+	// 应用商店订阅退款：退款订单的 apple_transaction_id == 入账行的 transaction_id → 那笔入账不提供覆盖。
+	apple := factsUser(t, BrandKaitu, from.Add(-time.Hour))
+	refundedCredit := factsCredit(t, apple.ID, SubscriptionProviderApple, "purchase", "", from.Add(time.Hour))
+	factsCredit(t, apple.ID, SubscriptionProviderApple, "renewal", "", from.Add(2*time.Hour)) // 没退的那笔不受影响
+	factsOrder(t, apple.ID, OrderChannelAppleIAP, factsPaid(from.Add(time.Hour)), factsRefunded(from.Add(90*time.Minute)),
+		func(o *Order) { o.AppleTransactionID = refundedCredit.TransactionID })
+	// 同一个交易号挂在别的渠道的退款订单上不算（只认 apple_iap 订单）。
+	stripeUser := factsUser(t, BrandKaitu, from.Add(-time.Hour))
+	stripeCredit := factsCredit(t, stripeUser.ID, SubscriptionProviderStripe, "purchase", "", from.Add(time.Hour))
+	factsOrder(t, stripeUser.ID, OrderChannelAppleIAP, factsPaid(from.Add(time.Hour)), factsRefunded(from.Add(90*time.Minute)),
+		func(o *Order) { o.AppleTransactionID = stripeCredit.TransactionID })
+
 	payments, refunded, err := loadPaidCohortInputs(ctx, BrandKaitu, false, from, to, now)
 	require.NoError(t, err)
 	got := payments[in.ID]
@@ -346,6 +390,19 @@ func TestLoadPaidCohortInputs(t *testing.T) {
 	assert.Equal(t, int64(3600), got[2].Seconds)
 	assert.True(t, refunded[in.ID])
 	assert.NotContains(t, payments, early.ID)
+
+	require.Len(t, payments[apple.ID], 2, "%+v", payments[apple.ID])
+	assert.Equal(t, paidCoverage{At: payments[apple.ID][0].At, Seconds: 3600, Refunded: true}, payments[apple.ID][0])
+	assert.Equal(t, paidCoverage{At: payments[apple.ID][1].At, Seconds: 3600}, payments[apple.ID][1])
+	assert.True(t, refunded[apple.ID])
+	// 纯函数接上：退款那笔不给覆盖，用户计入 refunded。
+	rows := computePaidCohorts(map[uint64][]paidCoverage{apple.ID: payments[apple.ID][:1]}, refunded, now.AddDate(5, 0, 0))
+	require.Len(t, rows, 1)
+	assert.Equal(t, 1, rows[0].Refunded)
+	retFrac(t, rows[0].Retained["m1"], 0, "m1")
+	require.Len(t, payments[stripeUser.ID], 1)
+	assert.False(t, payments[stripeUser.ID][0].Refunded, "only apple credits are matched against apple orders")
+
 	require.Len(t, payments[other.ID], 1)
 	assert.Equal(t, int64(3600), payments[other.ID][0].Seconds)
 	assert.False(t, refunded[other.ID])

@@ -22,6 +22,10 @@ const (
 	retentionMonthsDefault = 12
 )
 
+// paidRetentionGrace：检查点 = 首付满 N 个月 + 这段宽限。订阅在周期结束那一刻续费，入账行要等
+// webhook 处理完才写（晚几秒到几小时）；不留宽限的话，按时续费的人在整月检查点上都会读成流失。
+const paidRetentionGrace = 7 * 24 * time.Hour
+
 // paidCohortCheckpoints 的顺序即输出键的固定集合。
 var paidCohortCheckpoints = []struct {
 	Key    string
@@ -92,7 +96,7 @@ func paidCoveredUntil(pays []paidCoverage, checkpoint time.Time) time.Time {
 
 // computePaidCohorts：群组 = 首笔付款的月份（UTC），按 cohort 升序。
 // 留存按**付款记录**推算，不看 users.expired_at（那个字段还会被赠送 / 试用 / 邀请奖励 / 人工发放推动，
-// 而且只反映当下）：检查点 = 该用户首付时间 + N 个月（钳到月末）；
+// 而且只反映当下）：检查点 = 该用户首付时间 + N 个月（钳到月末）+ paidRetentionGrace；
 // 留存 ⇔ 走完检查点之前的付款后，覆盖到期时刻**严格晚于**检查点。
 // 分母恒为群组人数。群组里只要还有人的检查点没到，该检查点就是 nil——不拿半组人算一个偏低的比例。
 // refundedUsers 只用于 Refunded 计数（信息性）；退款订单不留存是因为它不提供覆盖。
@@ -121,7 +125,7 @@ func computePaidCohorts(payments map[uint64][]paidCoverage, refundedUsers map[ui
 			a.refunded++
 		}
 		for i, cp := range paidCohortCheckpoints {
-			at := addMonthsClamped(first, cp.Months)
+			at := addMonthsClamped(first, cp.Months).Add(paidRetentionGrace)
 			if at.After(now) {
 				a.pending[i] = true
 				continue
@@ -271,15 +275,33 @@ func loadPaidCohortInputs(ctx context.Context, brand Brand, hasBrand bool, from,
 
 		var credits []SubscriptionCredit
 		if err := db.Get().WithContext(ctx).Model(&SubscriptionCredit{}).
-			Select("id", "user_id", "created_at", "credited_seconds").
+			Select("id", "user_id", "created_at", "credited_seconds", "provider", "transaction_id").
 			Scopes(funnelPaymentCreditScope).
 			Where("user_id IN ? AND created_at <= ?", batch, now).
 			Order("created_at, id").Find(&credits).Error; err != nil {
 			return nil, nil, err
 		}
+		// 应用商店订阅的退款：入账行本身没有退款标记，但同一笔交易的订单有——
+		// 订单的 apple_transaction_id 与入账行的 transaction_id 都是该交易的 transactionId
+		// （createAppleIAPOrderInTx / creditAppleTransaction），退款时订单被标 is_refunded
+		// （revokeIAPOrderCashbackInTx）。没有建单的交易（沙盒、建单功能上线前）对不上，照常计覆盖。
+		var refundedTxns []string
+		if err := db.Get().WithContext(ctx).Model(&Order{}).
+			Where("is_refunded = ? AND channel = ? AND user_id IN ?", true, OrderChannelAppleIAP, batch).
+			Where("apple_transaction_id <> ?", "").
+			Pluck("apple_transaction_id", &refundedTxns).Error; err != nil {
+			return nil, nil, err
+		}
+		refundedTxn := make(map[string]bool, len(refundedTxns))
+		for _, id := range refundedTxns {
+			refundedTxn[id] = true
+		}
 		for i := range credits {
 			c := &credits[i]
-			payments[c.UserID] = append(payments[c.UserID], paidCoverage{At: c.CreatedAt, Seconds: c.CreditedSeconds})
+			payments[c.UserID] = append(payments[c.UserID], paidCoverage{
+				At: c.CreatedAt, Seconds: c.CreditedSeconds,
+				Refunded: c.Provider == SubscriptionProviderApple && refundedTxn[c.TransactionID],
+			})
 		}
 
 		// 任何一张退款订单都算（含不计入付款口径的渠道）：这一列只是信息性的。

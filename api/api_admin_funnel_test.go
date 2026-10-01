@@ -336,6 +336,7 @@ func TestAdminRetention_Paid(t *testing.T) {
 		assert.Nil(t, v, "%s checkpoint of a payment made just now is in the future", k)
 	}
 	assert.Contains(t, data.Note, "付款记录")
+	assert.Contains(t, data.Note, "7 天宽限")
 	assert.Contains(t, data.Note, "退款")
 	assert.Contains(t, data.Note, "订阅")
 }
