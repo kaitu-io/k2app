@@ -50,12 +50,14 @@ const mockRequest = cloudApi.request as ReturnType<typeof vi.fn>;
 describe('statsService', () => {
   // Re-import statsService fresh each test to reset module-level _deviceHash cache
   let statsService: typeof import('../stats').statsService;
+  let seedFunnelOnceFlagsForExistingInstall: typeof import('../stats').seedFunnelOnceFlagsForExistingInstall;
 
   beforeEach(async () => {
     vi.resetModules();
     // Re-import to get fresh module state (clears _deviceHash cache)
     const mod = await import('../stats');
     statsService = mod.statsService;
+    seedFunnelOnceFlagsForExistingInstall = mod.seedFunnelOnceFlagsForExistingInstall;
 
     mockStorage.clear();
     vi.clearAllMocks();
@@ -296,6 +298,76 @@ describe('statsService', () => {
       ]);
       await flushWait();
       expect(sentFunnel().filter((e: any) => e.event === 'app_first_open')).toHaveLength(1);
+    });
+  });
+
+  describe('existing-install seeding', () => {
+    const flushWait = () => new Promise(r => setTimeout(r, 50));
+    const sentFunnel = () =>
+      mockRequest.mock.calls.flatMap(c => (c[2] as any).funnel ?? []);
+    const ONCE = ['app_first_open', 'first_connect_attempt', 'first_connect_ok'] as const;
+
+    it('existing install: flags set, nothing queued, later once-events send nothing', async () => {
+      mockStorage.set('device-udid', 'raw-uuid-from-an-older-version');
+
+      await seedFunnelOnceFlagsForExistingInstall();
+      await flushWait();
+
+      for (const ev of ONCE) expect(mockStorage.get(`funnel_once:${ev}`)).toBeTruthy();
+      expect(mockStorage.get('stats_queue')).toBeUndefined();
+      expect(mockRequest).not.toHaveBeenCalled();
+
+      for (const ev of ONCE) await statsService.trackFunnelOnce(ev);
+      await flushWait();
+      expect(sentFunnel()).toHaveLength(0);
+      expect(mockRequest).not.toHaveBeenCalled();
+    });
+
+    it('fresh install: no flags seeded, app_first_open sent exactly once', async () => {
+      await seedFunnelOnceFlagsForExistingInstall();
+      for (const ev of ONCE) expect(mockStorage.get(`funnel_once:${ev}`)).toBeUndefined();
+
+      await statsService.trackFunnelOnce('app_first_open');
+      await statsService.trackFunnelOnce('app_first_open');
+      await flushWait();
+      expect(sentFunnel().map((e: any) => e.event)).toEqual(['app_first_open']);
+    });
+
+    it('fresh install whose first enqueue failed is not reclassified as existing next launch', async () => {
+      await seedFunnelOnceFlagsForExistingInstall(); // launch 1: no device-udid yet
+      mockStorage.set('device-udid', 'created-during-launch-1'); // getDeviceUdid() ran, enqueue failed
+
+      await seedFunnelOnceFlagsForExistingInstall(); // launch 2
+      expect(mockStorage.get('funnel_once:app_first_open')).toBeUndefined();
+
+      await statsService.trackFunnelOnce('app_first_open');
+      await flushWait();
+      expect(sentFunnel().map((e: any) => e.event)).toEqual(['app_first_open']);
+    });
+
+    it('install that already has the once flag is left alone', async () => {
+      mockStorage.set('device-udid', 'raw');
+      mockStorage.set('funnel_once:app_first_open', true);
+      await seedFunnelOnceFlagsForExistingInstall();
+      expect(mockStorage.get('funnel_once:first_connect_ok')).toBeUndefined();
+    });
+
+    it('storage unavailable: no throw, no flags', async () => {
+      const platform = window._platform as any;
+      const saved = platform.storage;
+      platform.storage = undefined;
+      try {
+        await expect(seedFunnelOnceFlagsForExistingInstall()).resolves.toBeUndefined();
+      } finally {
+        platform.storage = saved;
+      }
+      expect([...mockStorage.keys()]).toEqual([]);
+
+      (window._platform!.storage.get as any).mockImplementation(async () => {
+        throw new Error('storage broken');
+      });
+      await expect(seedFunnelOnceFlagsForExistingInstall()).resolves.toBeUndefined();
+      expect([...mockStorage.keys()]).toEqual([]);
     });
   });
 });

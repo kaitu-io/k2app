@@ -139,6 +139,13 @@ async function main() {
     }
   }
 
+  // Funnel: installs that predate the funnel must not report as new installs.
+  // Runs at the first point `_platform.storage` exists and BEFORE anything can
+  // call getDeviceUdid() (store init, stats, login) — that call creates the
+  // `device-udid` key this check reads. Never throws.
+  const { seedFunnelOnceFlagsForExistingInstall } = await import('./services/stats');
+  await seedFunnelOnceFlagsForExistingInstall();
+
   // One-time: remove orphaned encrypted storage from v0.4.0
   for (let i = localStorage.length - 1; i >= 0; i--) {
     const key = localStorage.key(i);

@@ -309,6 +309,52 @@ export const statsService = {
 
 const _onceInProgress = new Set<string>();
 
+// ========================= Existing-install seeding =========================
+
+/** Events reported at most once per install (storage flag `funnel_once:<event>`). */
+const ONCE_EVENTS: readonly AppFunnelEvent[] = [
+  'app_first_open',
+  'first_connect_attempt',
+  'first_connect_ok',
+];
+const DEVICE_UDID_KEY = 'device-udid'; // owned by services/device-udid.ts
+const SEED_CHECKED_KEY = 'funnel_once:_seed_checked';
+
+/**
+ * Installs that predate the funnel have no `funnel_once:*` flags, so without
+ * this they would all report `app_first_open` (and the first-connect pair) on
+ * the first launch after the web OTA and read as brand-new installs.
+ *
+ * An install is "existing" iff `device-udid` is already in storage — a fresh
+ * install only gets that key from the first getDeviceUdid() call, so this MUST
+ * run before anything can call it (main.tsx, right after bridge injection).
+ * For an existing install the once-flags are written WITHOUT enqueueing events.
+ *
+ * The decision is taken once per install (`_seed_checked` marker): a fresh
+ * install whose first `app_first_open` enqueue failed still has no once-flag on
+ * the next launch but does have a `device-udid` by then, and must not be
+ * mistaken for an existing install.
+ *
+ * Never throws; storage unavailable → no-op (retried next launch).
+ */
+export async function seedFunnelOnceFlagsForExistingInstall(): Promise<void> {
+  try {
+    const storage = window._platform?.storage;
+    if (!storage) return;
+    if (await storage.get(SEED_CHECKED_KEY)) return;
+    const existing = !!(await storage.get(DEVICE_UDID_KEY));
+    if (existing && !(await storage.get(`funnel_once:${ONCE_EVENTS[0]}`))) {
+      for (const event of ONCE_EVENTS) {
+        await storage.set(`funnel_once:${event}`, true);
+      }
+    }
+    // Written last: a failed flag write above is retried on the next launch.
+    await storage.set(SEED_CHECKED_KEY, true);
+  } catch (err) {
+    console.warn('[Stats] seedFunnelOnceFlags failed:', err);
+  }
+}
+
 /** Resolves true iff the event was persisted to the queue. */
 async function enqueueFunnel(event: AppFunnelEvent, props?: FunnelProps): Promise<boolean> {
   const deviceHash = await getDeviceHash();
