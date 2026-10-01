@@ -314,6 +314,9 @@ func SetupRouter() *gin.Engine {
 		api.GET("/px", api_funnel_px)
 		api.GET("/px/optout", api_funnel_px_optout)
 
+		// 访客聊天（官网挂件；无需登录，登录用户自动识别）
+		registerChatRoutes(api)
+
 		// 问卷调查
 		survey := api.Group("/survey")
 		{
