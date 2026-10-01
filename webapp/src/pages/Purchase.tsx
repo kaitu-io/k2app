@@ -563,18 +563,7 @@ export default function Purchase() {
   // page (incl. already-deployed old clients, which only ever call /api/plans).
   // Entry to the dedicated-line scope is the "buy a line" CTA on /private-node.
   const [searchParams] = useSearchParams();
-  // Funnel: paywall_view fires once per mount. The entry point passes its
-  // identity via router state; anything outside PAYWALL_SOURCES is 'direct'.
-  // Deliberately an empty-deps effect: do NOT merge it into the preview effect below.
   const location = useLocation();
-  useEffect(() => {
-    const from = (location.state as { from?: string } | null)?.from;
-    const source: PaywallSource = (PAYWALL_SOURCES as readonly string[]).includes(from ?? '')
-      ? (from as PaywallSource)
-      : 'direct';
-    void statsService.trackFunnel('paywall_view', { source });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per mount
-  }, []);
   const purchaseProduct = searchParams.get('product') === 'private_node' ? 'private_node' : 'app';
   // /api/plans is frozen as the app-only legacy endpoint; new product scopes use
   // the nested /api/products/:product/plans. Cache key is per product.
@@ -608,6 +597,41 @@ export default function Purchase() {
     stripeCheckout: brandConfig.features.stripeCheckout === true,
   });
   const affordance = useSubscriptionAffordance();
+
+  // Funnel: paywall_view — at most once per mount, and only when the branch
+  // rendered below is a PURCHASE surface. Members who open this page to manage
+  // a subscription (IosMembershipPanel, SubscriptionManagePanel, the Stripe
+  // panel's manage state) are not at a paywall.
+  //
+  // `paywallSurface` mirrors the early returns at the bottom of this component
+  // (iOS → Stripe brand → manage gate → channel gate → order UI); keep the two
+  // in step. For a signed-in user it is only trusted once the user record has
+  // loaded: before that the affordance defaults to 'subscribe' for everyone.
+  // A signed-out visitor is a prospect — resolved immediately.
+  //
+  // The entry point passes its identity via router state; anything outside
+  // PAYWALL_SOURCES is 'direct'. The dependency is one boolean input — do NOT
+  // merge this into the preview effect below or make it depend on a callback.
+  const subscribeMode = affordance.mode === 'subscribe';
+  const paywallSurface = iap
+    ? subscribeMode
+    : brandConfig.features.stripeCheckout
+      ? subscribeMode
+      : affordance.mode === 'manage' && purchaseProduct !== 'private_node'
+        ? false
+        : brandConfig.features.wordgatePurchase === true;
+  const paywallReady = paywallSurface && (!isAuthenticated || user !== null);
+  const paywallReported = useRef(false);
+  useEffect(() => {
+    if (!paywallReady || paywallReported.current) return;
+    paywallReported.current = true;
+    const from = (location.state as { from?: string } | null)?.from;
+    const source: PaywallSource = (PAYWALL_SOURCES as readonly string[]).includes(from ?? '')
+      ? (from as PaywallSource)
+      : 'direct';
+    void statsService.trackFunnel('paywall_view', { source });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the source is read once, at report time
+  }, [paywallReady]);
   // 本页只读 appConfig.inviteReward。曾经在下面自带一份复制自 useAppConfig 的取数
   // 逻辑（含 SWR + 缓存写入），但 TTL 写成 600 而 useAppConfig 是 3600，两边互相
   // 覆盖同一个 api:app_config 键，且 7 个 useAppConfig 实例对本页的写入一无所知。

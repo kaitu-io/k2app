@@ -182,7 +182,9 @@ function SideNavigation() {
   }, [t, appConfig.features]);
 
   const handleNavigation = (path: string) => {
-    navigate(path);
+    // Funnel: /purchase entries identify themselves (see Purchase paywall_view).
+    if (path === '/purchase') navigate(path, { state: { from: 'nav' } });
+    else navigate(path);
   };
 
   // Check if current path matches nav item

@@ -24,6 +24,7 @@ export const PAYWALL_SOURCES = [
   'login_dialog',
   'account',
   'account_expired',
+  'nav',
   'direct',
 ] as const;
 export type PaywallSource = typeof PAYWALL_SOURCES[number];

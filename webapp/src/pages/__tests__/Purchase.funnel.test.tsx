@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import { MemoryRouter } from 'react-router-dom';
@@ -29,10 +29,13 @@ vi.mock('../../services/cloud-api', () => ({
   cloudApi: { get: vi.fn(), post: vi.fn() },
 }));
 
+// Per-test login state (reset to signed-in in beforeEach).
+const auth = vi.hoisted(() => ({ isAuthenticated: true }));
+
 // useUser 直接 import 这两个 store（不经 stores/index）。
 vi.mock('../../stores/auth.store', () => ({
   useAuthStore: (selector: (s: { isAuthenticated: boolean }) => unknown) =>
-    selector({ isAuthenticated: true }),
+    selector({ isAuthenticated: auth.isAuthenticated }),
 }));
 vi.mock('../../stores/config.store', () => ({
   useConfigStore: { getState: () => ({ setDetectedProfile: vi.fn() }) },
@@ -41,8 +44,15 @@ vi.mock('../../stores/config.store', () => ({
 const showAlert = vi.fn();
 vi.mock('../../stores', () => ({
   useAlert: () => ({ showAlert }),
-  useAuthStore: (selector: (s: any) => any) => selector({ isAuthenticated: true }),
+  useAuthStore: (selector: (s: any) => any) => selector({ isAuthenticated: auth.isAuthenticated }),
 }));
+
+// iOS panels pull in StoreKit hooks; here only "which panel rendered" matters.
+vi.mock('../../components/ios', () => ({
+  IosSubscribePanel: () => <div data-testid="ios-subscribe-panel" />,
+  IosMembershipPanel: () => <div data-testid="ios-membership-panel" />,
+}));
+vi.mock('../../components/EmailLoginForm', () => ({ default: () => <div data-testid="email-login-form" /> }));
 // 这个 mock 的函数必须**引用稳定**：生产里 open 是 zustand 的 store action，
 // selector 每次取到同一个引用。若这里每次渲染现造一个 vi.fn()，handleOrder 的依赖
 // 就被 mock 自己搅动了，测出来的"循环"与被测缺陷无关（会掩盖修复是否生效）。
@@ -99,7 +109,34 @@ function renderPurchase(state?: unknown) {
   return { ...r, again: () => r.rerender(ui) };
 }
 
+const USER_PROSPECT = {
+  uuid: 'u-1', expiredAt: 1, isFirstOrderDone: false, loginIdentifies: [], deviceCount: 0, hasPassword: false,
+};
+const FAR_FUTURE = Math.floor(Date.now() / 1000) + 300 * 86400;
+/** Member with an active auto-renewing subscription → affordance 'manage'. */
+const USER_SUBSCRIBER = (provider: string) => ({
+  ...USER_PROSPECT,
+  expiredAt: FAR_FUTURE,
+  isFirstOrderDone: true,
+  subscriptions: [{
+    provider, tier: 'basic', currentPeriodEnd: FAR_FUTURE, autoRenew: true,
+    manage: { kind: 'url', url: 'https://example.test/manage' },
+  }],
+});
+
+function mockUser(user: unknown) {
+  (cloudApi.get as any).mockImplementation((path: string) => {
+    if (path === '/api/plans') return Promise.resolve({ code: 0, data: { items: [PLAN_1M, PLAN_12M] } });
+    if (path === '/api/user/info') return user instanceof Promise ? user : Promise.resolve({ code: 0, data: user });
+    return Promise.resolve({ code: 0, data: {} });
+  });
+}
+
+const savedPlatform = (window as any)._platform;
+afterEach(() => { (window as any)._platform = savedPlatform; });
+
 beforeEach(() => {
+  auth.isAuthenticated = true;
   vi.clearAllMocks();
   cacheStore.clear();
   localStorage.clear();
@@ -147,6 +184,81 @@ describe('Purchase funnel: paywall_view (both brands)', () => {
     again(); again(); again();
     await settle();
     expect(calls('paywall_view')).toHaveLength(1);
+  });
+});
+
+describe('Purchase funnel: paywall_view only on a purchase surface (both brands)', () => {
+  it('entry from the navigation tab -> nav', async () => {
+    renderPurchase({ from: 'nav' });
+    await settle();
+    expect(calls('paywall_view')).toEqual([['paywall_view', { source: 'nav' }]]);
+  });
+
+  it('a signed-out visitor is at the paywall: exactly one', async () => {
+    auth.isAuthenticated = false;
+    renderPurchase({ from: 'nav' });
+    await settle();
+    expect(calls('paywall_view')).toEqual([['paywall_view', { source: 'nav' }]]);
+  });
+
+  it('a member in manage mode is not at a paywall: no paywall_view', async () => {
+    mockUser(USER_SUBSCRIBER('stripe'));
+    const { again } = renderPurchase({ from: 'nav' });
+    await settle();
+    again();
+    await settle();
+    expect(cloudApi.get).toHaveBeenCalledWith('/api/user/info');
+    expect(calls('paywall_view')).toHaveLength(0);
+  });
+
+  it('nothing is reported while the user record is still loading; a member then stays silent', async () => {
+    let resolveUser!: (v: unknown) => void;
+    mockUser(new Promise((res) => { resolveUser = res; }));
+    renderPurchase({ from: 'account' });
+    await settle();
+    expect(calls('paywall_view')).toHaveLength(0);
+
+    await act(async () => { resolveUser({ code: 0, data: USER_SUBSCRIBER('stripe') }); });
+    await settle();
+    expect(calls('paywall_view')).toHaveLength(0);
+  });
+
+  it('…and a non-member is reported once the user record resolves', async () => {
+    let resolveUser!: (v: unknown) => void;
+    mockUser(new Promise((res) => { resolveUser = res; }));
+    renderPurchase({ from: 'account' });
+    await settle();
+    expect(calls('paywall_view')).toHaveLength(0);
+
+    await act(async () => { resolveUser({ code: 0, data: USER_PROSPECT }); });
+    await settle();
+    expect(calls('paywall_view')).toEqual([['paywall_view', { source: 'account' }]]);
+  });
+
+  it('iOS: subscribe panel -> one paywall_view', async () => {
+    (window as any)._platform = { os: 'ios', iap: {} };
+    renderPurchase({ from: 'tunnel_locked' });
+    expect(await screen.findByTestId('ios-subscribe-panel')).toBeTruthy();
+    await settle();
+    expect(calls('paywall_view')).toEqual([['paywall_view', { source: 'tunnel_locked' }]]);
+  });
+
+  it('iOS: membership panel (manage) -> no paywall_view', async () => {
+    (window as any)._platform = { os: 'ios', iap: {} };
+    mockUser(USER_SUBSCRIBER('apple'));
+    renderPurchase({ from: 'nav' });
+    expect(await screen.findByTestId('ios-membership-panel')).toBeTruthy();
+    await settle();
+    expect(calls('paywall_view')).toHaveLength(0);
+  });
+
+  it('iOS: membership panel (status, unexpired one-time member) -> no paywall_view', async () => {
+    (window as any)._platform = { os: 'ios', iap: {} };
+    mockUser({ ...USER_PROSPECT, expiredAt: FAR_FUTURE });
+    renderPurchase({ from: 'nav' });
+    expect(await screen.findByTestId('ios-membership-panel')).toBeTruthy();
+    await settle();
+    expect(calls('paywall_view')).toHaveLength(0);
   });
 });
 
