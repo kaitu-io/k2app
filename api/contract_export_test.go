@@ -72,11 +72,18 @@ type contractErrorCode struct {
 	Code int    `json:"code"`
 }
 
+type contractFunnelEvent struct {
+	Name     string   `json:"name"`
+	Surfaces []string `json:"surfaces"`
+	Kind     string   `json:"kind"`
+}
+
 type apiContract struct {
-	Generated  string                   `json:"_generated"`
-	Brands     map[string]contractBrand `json:"brands"`
-	CORS       contractCORS             `json:"cors"`
-	ErrorCodes []contractErrorCode      `json:"errorCodes"`
+	Generated    string                   `json:"_generated"`
+	Brands       map[string]contractBrand `json:"brands"`
+	CORS         contractCORS             `json:"cors"`
+	ErrorCodes   []contractErrorCode      `json:"errorCodes"`
+	FunnelEvents []contractFunnelEvent    `json:"funnelEvents"`
 }
 
 // ===================== brands：从 brandRegistry 活值取 =====================
@@ -290,6 +297,18 @@ func exportErrorCodes(t *testing.T) []contractErrorCode {
 	return out
 }
 
+// ===================== funnelEvents：从 funnelEventRegistry 活值取 =====================
+
+func exportFunnelEvents(t *testing.T) []contractFunnelEvent {
+	t.Helper()
+	out := make([]contractFunnelEvent, 0, len(funnelEventRegistry))
+	for _, d := range funnelEventRegistry {
+		surfaces := append([]string{}, d.Surfaces...)
+		out = append(out, contractFunnelEvent{Name: d.Name, Surfaces: surfaces, Kind: d.Kind})
+	}
+	return out
+}
+
 // ===================== golden 门 =====================
 
 // marshalContract 序列化契约。
@@ -354,7 +373,8 @@ func TestExportContract(t *testing.T) {
 			API: contractCORSGroup{AllowHeaders: exportAPIAllowHeaders(t)},
 			App: contractCORSGroup{AllowHeaders: exportAppAllowHeaders(t)},
 		},
-		ErrorCodes: exportErrorCodes(t),
+		ErrorCodes:   exportErrorCodes(t),
+		FunnelEvents: exportFunnelEvents(t),
 	}
 
 	live := marshalContract(t, contract)
