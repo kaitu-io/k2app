@@ -251,3 +251,31 @@ func TestPayRedirect_GPC_ExistingSid_NoLink(t *testing.T) {
 	payRedirectGPC(t, o, "sid="+sid)
 	assert.Empty(t, funnelIdentityRows(t, sid))
 }
+
+// 测试卫生：CreateTestUser 的清理必须把该用户异步写入的漏斗行一并删掉。
+// 支付跳转会给订单用户新建 sid 并异步写 funnel_identities；不清理的话每跑一次就在共享库里
+// 留下一行指向已（软）删用户的身份关联。
+func TestCreateTestUser_CleanupRemovesFunnelRows(t *testing.T) {
+	skipIfNoDB(t)
+	var userID uint64
+	t.Run("pay redirect with a CreateTestUser user", func(t *testing.T) {
+		o := payRedirectFixture(t)
+		userID = o.UserID
+		w := payRedirectWithCookie(t, o, "")
+		require.NotEmpty(t, sidFromSetCookie(w))
+		funnelFlushForTest()
+		var n int64
+		require.NoError(t, db.Get().Model(&FunnelIdentity{}).Where("user_id = ?", userID).Count(&n).Error)
+		require.Equal(t, int64(1), n, "the redirect links a fresh sid to the order user")
+		require.NoError(t, db.Get().Create(&FunnelEvent{
+			OccurredAt: time.Now(), Brand: string(BrandKaitu), Surface: FunnelSurfaceWeb, Event: "page_view", UserID: userID,
+		}).Error)
+	})
+	// 子测试结束 = 它的 t.Cleanup 全部跑完。
+	require.NotZero(t, userID)
+	var ids, evs int64
+	require.NoError(t, db.Get().Model(&FunnelIdentity{}).Where("user_id = ?", userID).Count(&ids).Error)
+	require.NoError(t, db.Get().Model(&FunnelEvent{}).Where("user_id = ?", userID).Count(&evs).Error)
+	assert.Zero(t, ids, "funnel_identities left behind for a deleted test user")
+	assert.Zero(t, evs, "funnel_events left behind for a deleted test user")
+}

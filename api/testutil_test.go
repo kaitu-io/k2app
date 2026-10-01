@@ -409,6 +409,11 @@ func CreateTestUser(t *testing.T) *User {
 	}
 
 	t.Cleanup(func() {
+		// 漏斗行是异步写的（支付跳转 / 登录 / 像素 / 上报都会给登录用户写身份关联与事件）：
+		// 先把队列写完，再按用户删，否则每跑一次就在共享库里留下指向已删用户的行。
+		funnelFlushForTest()
+		db.Get().Where("user_id = ?", user.ID).Delete(&FunnelIdentity{})
+		db.Get().Where("user_id = ?", user.ID).Delete(&FunnelEvent{})
 		db.Get().Delete(user)
 	})
 

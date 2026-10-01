@@ -269,6 +269,7 @@ func TestPx_NearExpiryToken_NoAuthSideEffects(t *testing.T) {
 	skipIfNoConfig(t)
 	m := pxMarker(t)
 	user := CreateTestUser(t)
+	t.Cleanup(func() { db.Get().Where("user_id = ?", user.ID).Delete(&FunnelIdentity{}) }) // 先于断言登记
 	tok := GenerateTestToken(user.ID, "", 24*time.Hour) // < 7d renewal threshold
 	w := pxReq(m, "pricing_view").WithCookie(CookieAccessToken, tok).Execute(pxRouter())
 	assertGIF(t, w)
@@ -279,7 +280,6 @@ func TestPx_NearExpiryToken_NoAuthSideEffects(t *testing.T) {
 	rows := pxRows(t, m)
 	require.Len(t, rows, 1)
 	assert.Equal(t, user.ID, rows[0].UserID)
-	t.Cleanup(func() { db.Get().Where("user_id = ?", user.ID).Delete(&FunnelIdentity{}) })
 }
 
 func TestPx_BadCredentials_Anonymous(t *testing.T) {
