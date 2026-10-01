@@ -41,6 +41,14 @@ func TestCCSummaryAttrs_FieldSetAndFormatting(t *testing.T) {
 	win.RTTHist[11] = 42 // all in the open bucket → ">1000"
 	win.RateHist[5] = 42 // 30 Mbps
 	win.TputHist[4] = 42 // 20 Mbps
+	// Appended 2026-10: event-time loss, stale share, resolved share, per-phase loss.
+	win.DeclaredLostBytes, win.EventAckedBytes = 3_000_000, 37_000_000 // 7.5 %
+	win.StaleLostBytes = 1_500_000                                      // 50 % of declared
+	win.ResolvedBytes = 22_000_000                                      // 55 % of sent
+	win.PhaseLostBytes[1], win.PhaseResolvedBytes[1] = 30_000, 1_000_000 // cruise 3.0 %
+	win.PhaseLostBytes[2], win.PhaseResolvedBytes[2] = 90_000, 1_000_000 // probe-up 9.0 %
+	// drain: nothing resolved → "-"
+	win.Variant = "fix-a3"
 	cur := win
 	cur.BWEst = 47_100_000
 	cur.BGLoss = 0.012
@@ -59,6 +67,8 @@ func TestCCSummaryAttrs_FieldSetAndFormatting(t *testing.T) {
 		"rttP50": ">1000", "rttP90": ">1000", "minRttMs": "41",
 		"rateP50": "30", "tputP50": "20", "tputMax": "48.7",
 		"bwEst": "47.1", "bgLoss": "1.2", "epsilon": "0.090", "mode": "decision",
+		"variant": "fix-a3", "declLoss": "7.5", "staleLoss": "50", "resolved": "55",
+		"lossCruise": "3.0", "lossProbe": "9.0", "lossDrain": "-",
 	}
 	for k, w := range want {
 		if g, ok := got[k]; !ok {
@@ -79,6 +89,10 @@ func TestCCSummaryAttrs_ZeroWindowDoesNotPanic(t *testing.T) {
 	got := attrPairs(t, ccSummaryAttrs(k2cc.CCSummary{SenderID: 1}, cur, 2, true, 0, 9, ""))
 	if got["mis"] != "0" || got["lossAgg"] != "0.0" || got["lossP50"] != "0" || got["final"] != "true" || got["udid"] != "" {
 		t.Fatalf("zero window rendering: %v", got)
+	}
+	// A sender with no arm name is the control arm; empty windows render zeros.
+	if got["variant"] != "control" || got["declLoss"] != "0.0" || got["staleLoss"] != "0" || got["resolved"] != "0" || got["lossDrain"] != "-" {
+		t.Fatalf("zero window rendering of appended keys: %v", got)
 	}
 }
 

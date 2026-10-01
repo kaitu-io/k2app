@@ -72,6 +72,28 @@ type CCSummary struct {
 	BytesAcked uint64
 	BytesLost  uint64
 
+	// Event-time totals, independent of MI attribution and of the A/B arm:
+	// DeclaredLostBytes / (DeclaredLostBytes + EventAckedBytes) is the loss
+	// QUIC actually declared (cc-summary declLoss).
+	DeclaredLostBytes uint64 // every loss event with bytes > 0
+	DeclaredLostPkts  uint64
+	StaleLostBytes    uint64 // of those, dropped by the stale filter (in no MI)
+	EventAckedBytes   uint64 // every acked byte
+	// ResolvedBytes sums, over completed MIs, the MI's own bytes whose fate
+	// was known when it completed. ResolvedBytes/BytesSent is how much of an
+	// MI the controller could judge at decision time.
+	ResolvedBytes uint64
+
+	// Per ran-phase accounting, indexed by miPhase (0 none/PCC, 1 cruise,
+	// 2 probe-up, 3 drain): the loss each BW-anchored gain produced on the
+	// MI's own resolved packets.
+	PhaseMIs           [4]uint64
+	PhaseLostBytes     [4]uint64
+	PhaseResolvedBytes [4]uint64
+
+	// Variant is the A/B arm name (Sub keeps the receiver's value).
+	Variant string
+
 	// Per-MI histograms (see the edge tables above).
 	LossHist [lossHistBuckets]uint64 // LossRate() in percent
 	RTTHist  [rttHistBuckets]uint64  // AvgRTT() in ms; MIs with no RTT sample are skipped
@@ -127,6 +149,14 @@ func (s CCSummary) Sub(prev CCSummary) CCSummary {
 	out.BytesSent = satSub(s.BytesSent, prev.BytesSent)
 	out.BytesAcked = satSub(s.BytesAcked, prev.BytesAcked)
 	out.BytesLost = satSub(s.BytesLost, prev.BytesLost)
+	out.DeclaredLostBytes = satSub(s.DeclaredLostBytes, prev.DeclaredLostBytes)
+	out.DeclaredLostPkts = satSub(s.DeclaredLostPkts, prev.DeclaredLostPkts)
+	out.StaleLostBytes = satSub(s.StaleLostBytes, prev.StaleLostBytes)
+	out.EventAckedBytes = satSub(s.EventAckedBytes, prev.EventAckedBytes)
+	out.ResolvedBytes = satSub(s.ResolvedBytes, prev.ResolvedBytes)
+	subHist(out.PhaseMIs[:], prev.PhaseMIs[:])
+	subHist(out.PhaseLostBytes[:], prev.PhaseLostBytes[:])
+	subHist(out.PhaseResolvedBytes[:], prev.PhaseResolvedBytes[:])
 	subHist(out.LossHist[:], prev.LossHist[:])
 	subHist(out.RTTHist[:], prev.RTTHist[:])
 	subHist(out.RateHist[:], prev.RateHist[:])
@@ -196,6 +226,25 @@ func (s CCSummary) RatePercentile(p float64) (float64, bool) {
 // p-quantile of per-MI acked throughput.
 func (s CCSummary) TputPercentile(p float64) (float64, bool) {
 	return histPercentile(s.TputHist[:], rateHistEdges[:], p)
+}
+
+// DeclaredLoss is the loss QUIC declared over the record: lost / (lost +
+// acked), event-time, unaffected by MI attribution. Fraction [0,1].
+func (s CCSummary) DeclaredLoss() float64 {
+	if t := s.DeclaredLostBytes + s.EventAckedBytes; t > 0 {
+		return float64(s.DeclaredLostBytes) / float64(t)
+	}
+	return 0
+}
+
+// PhaseLoss is the own-packet loss of MIs that ran at the given BW-anchored
+// phase (1 cruise, 2 probe-up, 3 drain; 0 = un-phased). ok=false when no
+// packet of that phase was resolved.
+func (s CCSummary) PhaseLoss(phase int) (loss float64, ok bool) {
+	if phase < 0 || phase >= len(s.PhaseResolvedBytes) || s.PhaseResolvedBytes[phase] == 0 {
+		return 0, false
+	}
+	return float64(s.PhaseLostBytes[phase]) / float64(s.PhaseResolvedBytes[phase]), true
 }
 
 // FormatBucket renders a percentile result for a log line: "10", "0.5", ">500".
