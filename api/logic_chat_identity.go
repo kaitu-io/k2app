@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/redis"
 	"gorm.io/gorm"
@@ -243,6 +244,10 @@ func resolveGuest(ctx context.Context, brand Brand, cid, sid, locale, country st
 		if _, err := mergeGuests(ctx, other, root, MergeSameSID, &hid, nil); err != nil {
 			return 0, err
 		}
+		// 合并后存活方可能是对方：刷新当前根，后续 holder 才对着真正的根判断
+		if root, err = guestRootID(ctx, root); err != nil {
+			return 0, err
+		}
 	}
 	return guestRootID(ctx, root)
 }
@@ -263,7 +268,8 @@ func mergeGuests(ctx context.Context, fromID, intoID uint64, reason string, evid
 
 // isDeadlock 识别 MySQL 死锁（1213）：锁顺序已尽量一致，仍撞上时整事务重试即可。
 func isDeadlock(err error) bool {
-	return err != nil && (strings.Contains(err.Error(), "Error 1213") || strings.Contains(err.Error(), "Deadlock"))
+	var me *mysql.MySQLError
+	return errors.As(err, &me) && me.Number == 1213
 }
 
 func mergeGuestsOnce(ctx context.Context, fromID, intoID uint64, reason string, evidenceIdentityID, actorID *uint64) (*GuestMerge, error) {
@@ -339,11 +345,20 @@ func mergeGuestsOnce(ctx context.Context, fromID, intoID uint64, reason string, 
 
 // guestMergeUndoneBetween 报告两个 guest 所在簇之间是否存在被撤销过的合并（任一方向）。
 func guestMergeUndoneBetween(ctx context.Context, a, b uint64) (bool, error) {
-	ca, err := guestClusterIDs(ctx, a)
+	// 先归根再取簇：传入非根时 guestClusterIDs 只会得到它自己，会漏掉簇间的撤销记录
+	ra, err := guestRootID(ctx, a)
 	if err != nil {
 		return false, err
 	}
-	cb, err := guestClusterIDs(ctx, b)
+	rb, err := guestRootID(ctx, b)
+	if err != nil {
+		return false, err
+	}
+	ca, err := guestClusterIDs(ctx, ra)
+	if err != nil {
+		return false, err
+	}
+	cb, err := guestClusterIDs(ctx, rb)
 	if err != nil {
 		return false, err
 	}

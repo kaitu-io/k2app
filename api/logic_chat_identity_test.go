@@ -413,8 +413,8 @@ func TestResolveGuest_UndoneSameSidNotRemerged(t *testing.T) {
 	assert.NotEqual(t, r1, r2, "撤销后根保持独立")
 
 	var n int64
-	db.Get().Model(&GuestMerge{}).Where("from_guest_id IN ? OR into_guest_id IN ?",
-		[]uint64{r1, r2}, []uint64{r1, r2}).Count(&n)
+	require.NoError(t, db.Get().Model(&GuestMerge{}).Where("from_guest_id IN ? OR into_guest_id IN ?",
+		[]uint64{r1, r2}, []uint64{r1, r2}).Count(&n).Error)
 	assert.EqualValues(t, 1, n, "不应产生新的合并记录")
 }
 
@@ -459,4 +459,34 @@ func TestMergeGuests_ConcurrentKeepsDepthOne(t *testing.T) {
 		}
 		assert.Nil(t, loadGuest(t, x).MergedIntoID)
 	}
+}
+
+// 撤销的合并不能绕道第三个 guest 被悄悄重做。
+func TestResolveGuest_UndoneMergeNotRedoneViaThirdGuest(t *testing.T) {
+	skipIfNoConfig(t)
+	v := chatTestValues(t, 4) // cid1 cid2 cid3 sid
+	ctx := context.Background()
+
+	g1, err := resolveGuest(ctx, BrandKaitu, v[0], v[3], "", "")
+	require.NoError(t, err)
+	// 钉住时间顺序，g1 最老
+	require.NoError(t, db.Get().Model(&Guest{}).Where("id = ?", g1).
+		Update("first_seen_at", time.Now().Add(-48*time.Hour)).Error)
+	g2, err := resolveGuest(ctx, BrandKaitu, v[1], v[3], "", "")
+	require.NoError(t, err)
+	require.Equal(t, g1, g2)
+	var m GuestMerge
+	require.NoError(t, db.Get().Where("into_guest_id = ? AND reason = ?", g1, MergeSameSID).First(&m).Error)
+	require.NoError(t, undoGuestMerge(ctx, m.ID, 9))
+	g2 = m.FromGuestID
+	require.NotEqual(t, g1, g2)
+
+	g3, err := resolveGuest(ctx, BrandKaitu, v[2], v[3], "", "")
+	require.NoError(t, err)
+	r1, err := guestRootID(ctx, g1)
+	require.NoError(t, err)
+	r2, err := guestRootID(ctx, g2)
+	require.NoError(t, err)
+	assert.NotEqual(t, r1, r2, "g1 与 g2 之间撤销过的合并不得被重做")
+	assert.Contains(t, []uint64{r1, r2}, g3, "g3 的根是二者之一")
 }
