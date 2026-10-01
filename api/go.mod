@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
-	github.com/alicebob/miniredis/v2 v2.36.0
+	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/aws/aws-sdk-go-v2 v1.41.1
 	github.com/aws/aws-sdk-go-v2/config v1.32.3
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.3
@@ -32,8 +32,8 @@ require (
 	github.com/wordgate/qtoolkit/mail v1.5.29
 	github.com/wordgate/qtoolkit/nextpay v1.5.38
 	github.com/wordgate/qtoolkit/openai/filesearch v1.5.25
-	github.com/wordgate/qtoolkit/redis v1.5.25
-	github.com/wordgate/qtoolkit/slack v1.5.25
+	github.com/wordgate/qtoolkit/redis v1.5.40
+	github.com/wordgate/qtoolkit/slack v1.5.40
 	github.com/wordgate/qtoolkit/unred v1.5.25
 	github.com/wordgate/qtoolkit/util v1.5.25
 	github.com/wordgate/wordgate-sdk v0.1.12
