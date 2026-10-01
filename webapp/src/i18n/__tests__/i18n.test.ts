@@ -1,5 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import i18n, { normalizeLanguageCode, changeLanguage, i18nPromise } from '../i18n';
+import i18n, {
+  normalizeLanguageCode,
+  changeLanguage,
+  i18nPromise,
+  detectInitialLanguage,
+  filterLanguages,
+  languageDirection,
+  languages,
+  type LanguageCode,
+} from '../i18n';
 import { brandConfig } from '../../brands';
 import { getBrandName } from '../../brands/i18n-vars';
 
@@ -90,10 +99,11 @@ describe('normalizeLanguageCode', () => {
 
   describe('unsupported languages', () => {
     it("should fallback to the brand's default locale for completely unsupported languages", () => {
-      expect(normalizeLanguageCode('fr-FR')).toBe(FALLBACK);
-      expect(normalizeLanguageCode('de-DE')).toBe(FALLBACK);
-      expect(normalizeLanguageCode('es-ES')).toBe(FALLBACK);
-      expect(normalizeLanguageCode('ko-KR')).toBe(FALLBACK);
+      // Languages no brand offers (fr/de/es/ko are offered by overleap).
+      expect(normalizeLanguageCode('sw-KE')).toBe(FALLBACK);
+      expect(normalizeLanguageCode('nl-NL')).toBe(FALLBACK);
+      expect(normalizeLanguageCode('he')).toBe(FALLBACK);
+      expect(normalizeLanguageCode('pl-PL')).toBe(FALLBACK);
     });
 
     it('resolves the brand default locale to the expected per-brand value', () => {
@@ -180,5 +190,63 @@ describe('brand interpolation follows languageChanged', () => {
       expect(i18n.t(KEY)).toContain('Overleap');
       expect(i18n.t(KEY)).not.toMatch(/开途|開途|Kaitu/);
     }
+  });
+});
+
+// ==================== boot language + picker filter ====================
+describe('detectInitialLanguage', () => {
+  const offered = brandConfig.locales;
+  const notOffered = brandConfig.id === 'overleap' ? 'nl' : 'fr';
+
+  it('an earlier explicit choice wins over the system language', () => {
+    expect(detectInitialLanguage('ja', ['en-US'])).toBe('ja');
+  });
+
+  it('ignores a stored value this brand does not offer and matches the system instead', () => {
+    expect(offered).not.toContain(notOffered);
+    expect(detectInitialLanguage(notOffered, ['en-GB'])).toBe('en-GB');
+    expect(detectInitialLanguage('garbage', ['ja-JP'])).toBe('ja');
+  });
+
+  it('walks the whole system preference list, not just its first entry', () => {
+    expect(detectInitialLanguage(null, [notOffered, 'ja-JP', 'en-US'])).toBe('ja');
+  });
+
+  it('falls back to the brand default when nothing matches', () => {
+    expect(detectInitialLanguage(null, [notOffered, 'sw-KE'])).toBe(FALLBACK);
+    expect(detectInitialLanguage(null, [])).toBe(FALLBACK);
+  });
+
+  it.runIf(brandConfig.id === 'overleap')('overleap: a system language it carries is used, else English', () => {
+    expect(detectInitialLanguage(null, ['fa-IR', 'en-US'])).toBe('fa');
+    expect(detectInitialLanguage(null, ['my-MM'])).toBe('my');
+    expect(detectInitialLanguage(null, ['pt-PT'])).toBe('pt-BR');
+    expect(detectInitialLanguage(null, ['nl-NL'])).toBe('en-US');
+  });
+});
+
+describe('filterLanguages', () => {
+  const all = Object.keys(languages) as LanguageCode[];
+
+  it('matches native name, English name and code, case-insensitively', () => {
+    expect(filterLanguages('korean', all)).toEqual(['ko']);
+    expect(filterLanguages('한국', all)).toEqual(['ko']);
+    expect(filterLanguages('PT-br', all)).toEqual(['pt-BR']);
+    expect(filterLanguages('فارسی', all)).toEqual(['fa']);
+    expect(filterLanguages('chinese', all).sort()).toEqual(['zh-CN', 'zh-HK', 'zh-TW']);
+  });
+
+  it('returns everything for a blank query and nothing for a miss', () => {
+    expect(filterLanguages('   ', all)).toEqual(all);
+    expect(filterLanguages('klingon', all)).toEqual([]);
+  });
+
+  it('defaults to the languages this brand offers', () => {
+    expect(filterLanguages('')).toEqual([...brandConfig.locales]);
+  });
+
+  it('every registered language declares a direction, and only ar/fa are right-to-left', () => {
+    expect(all.filter((l) => languageDirection(l) === 'rtl').sort()).toEqual(['ar', 'fa']);
+    expect(languageDirection('not-a-language')).toBe('ltr');
   });
 });

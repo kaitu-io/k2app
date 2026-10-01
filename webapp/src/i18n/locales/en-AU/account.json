@@ -23,6 +23,8 @@
     "quotaRouter": "Router proxy",
     "language": "Language",
     "selectLanguage": "Select language",
+    "searchLanguage": "Search languages",
+    "noLanguageFound": "No matching language",
     "wallet": "My wallet",
     "theme": "Theme",
     "delegate": "Delegate payer",

@@ -34,7 +34,15 @@ export const OVERLEAP_BRAND: WebappBrandConfig = {
     ja: '何を見るかは、あなたの自由。',
   },
   defaultLocale: 'en-US',
-  locales: ['zh-CN', 'en-US', 'ja', 'zh-TW', 'zh-HK', 'en-AU', 'en-GB'],
+  // Picker order. The 16 locales after the original 7 carry no copy for the
+  // namespaces of features this brand has off (they fall back per file).
+  locales: [
+    'en-US', 'en-GB', 'en-AU',
+    'es', 'pt-BR', 'fr', 'de', 'it', 'ru', 'tr',
+    'ar', 'fa',
+    'ja', 'ko', 'zh-CN', 'zh-TW', 'zh-HK',
+    'id', 'ms', 'vi', 'th', 'my', 'km',
+  ],
   iapProductIds: ['io.overleap.sub.basic.1y'],
   faqExtraKeys: [],
   antiblockCdnSources: [], // 非受限网络市场，无需入口伪装竞速

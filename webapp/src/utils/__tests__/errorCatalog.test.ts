@@ -17,7 +17,7 @@
  *
  * WHAT THIS GUARD CATCHES
  * -----------------------
- *  1. A catalog entry whose i18n key is absent from any of the 7 locales
+ *  1. A catalog entry whose i18n key is absent from any locale
  *     (checked against base locales merged with the ACTIVE brand's overlay).
  *  2. A code in ERROR_CODES with no API catalog entry, unless it is on the
  *     explicit LOG_ONLY_CODES allowlist.
@@ -59,7 +59,10 @@ import { brandConfig } from '../../brands';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const LOCALES = path.resolve(here, '../../i18n/locales');
 const OVERLAY = path.resolve(here, '../../brands', brandConfig.id, 'locales');
-const LANGS = ['en-AU', 'en-GB', 'en-US', 'ja', 'zh-CN', 'zh-HK', 'zh-TW'] as const;
+// Every locale dir on disk; locale-coverage.test.ts pins that set to the language registry.
+const LANGS = fs
+  .readdirSync(LOCALES)
+  .filter((d) => fs.statSync(path.join(LOCALES, d)).isDirectory());
 
 function deepMerge(a: any, b: any): any {
   const out = { ...a };
@@ -117,7 +120,7 @@ describe('error catalog — i18n key coverage', () => {
     expect(bad.map(([d, c, e]) => `${d}/${c} -> ${e.key}`)).toEqual([]);
   });
 
-  it('every catalog key resolves in all 7 locales', () => {
+  it('every catalog key resolves in every locale', () => {
     const missing: string[] = [];
     for (const [domain, code, entry] of ALL_ENTRIES) {
       for (const lang of LANGS) {

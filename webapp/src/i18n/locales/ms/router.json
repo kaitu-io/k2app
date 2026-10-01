@@ -1,0 +1,61 @@
+{
+  "router": {
+    "title": "Router",
+    "connected": "Berhubung",
+    "disconnected": "Terputus",
+    "connect": "Berhubung",
+    "disconnect": "Putuskan",
+    "offline": "Tidak dapat menjangkau router {{name}}. Semak bahawa ia dalam talian.",
+    "retry": "Cuba Lagi"
+  },
+  "setup": {
+    "title": "Sediakan {{name}}",
+    "intro": "Ketuk butang di bawah untuk menyelesaikan penyediaan pertama kali router dalam satu langkah.",
+    "submit": "Mulai penyediaan",
+    "error": {
+      "mint_failed": "Gagal mendapatkan kredensial sambungan. Semak rangkaian anda dan cuba lagi.",
+      "key_failed": "Gagal mendapatkan kunci kawalan. Semak rangkaian anda dan cuba lagi.",
+      "push_failed": "Gagal menolak konfigurasi ke router. Semak bahawa ia dalam talian."
+    }
+  },
+  "settings": {
+    "title": "Tetapan Router",
+    "version": "Versi perisian: {{version}}",
+    "unbind": "Nyahikat",
+    "unbindConfirmTitle": "Nyahikat router ini?",
+    "unbindConfirmBody": "Selepas nyahikat, apl ini tidak akan dapat mengawal router. Anda perlu menyediakannya semula untuk menggunakannya.",
+    "unbindCancel": "Batal",
+    "unbindConfirm": "Nyahikat"
+  },
+  "exclusion": {
+    "title": "Sambungkan kedua-dua terowong?",
+    "bodyRouter": "VPN peranti anda sudah berhubung. Meneruskan akan mengarahkan trafik melalui kedua-dua terowong sekaligus — kami mencadangkan memutuskan VPN tempatan terlebih dahulu.",
+    "bodyDashboard": "Router pada rangkaian ini sudah melindungi trafik anda. Meneruskan akan mengarahkan trafik melalui kedua-dua terowong sekaligus — kami mencadangkan memutuskan router terlebih dahulu.",
+    "keep": "Kekalkan kedua-duanya",
+    "proceedRouter": "Putuskan VPN tempatan & teruskan",
+    "proceedDashboard": "Putuskan router & teruskan"
+  },
+  "takeover": {
+    "banner": "Router pada rangkaian ini melindungi trafik anda"
+  },
+  "legacy": {
+    "upgradeHint": "Perisian router yang dikesan sudah ketinggalan zaman. Sila tingkatkan k2r pada router sebelum mengurusnya daripada apl."
+  },
+  "slots": {
+    "title": "Garisan",
+    "customName": "Nama tersuai",
+    "unbound": "Tidak Terikat",
+    "failClosed": "Garisan turun — trafik disekat",
+    "downFor": "Turun selama {{duration}}",
+    "rename": "Tukar Nama Wi-Fi",
+    "renameHint": "1-32 aksara",
+    "password": "Tukar Kata Laluan Wi-Fi",
+    "passwordHint": "8-63 aksara",
+    "confirm": "Gunakan",
+    "cancel": "Batal",
+    "applyFailed": "Gagal menggunakan, sila cuba lagi",
+    "managedByAccount": "Router ini diurus oleh akunnya yang terikat",
+    "unbindEnterpriseBody": "Nyahikat akan membawa SEMUA garisan dalam talian. Pemulihan memerlukan bantuan pengendali. Teruskan?",
+    "managementGroup": "Rangkaian pengurusan"
+  }
+}

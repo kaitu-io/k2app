@@ -1,0 +1,50 @@
+{
+  "privateNode": {
+    "title": "Nœud dédié",
+    "manage": "Gérer le nœud dédié",
+    "myRouter": "Mon routeur",
+    "buyLine": "Acheter une ligne dédiée",
+    "buy": "Obtenir un nœud dédié",
+    "region": "Région du nœud",
+    "selectRegion": "Sélectionner la région",
+    "ipTypeLabel": "Type d'adresse IP",
+    "ipType": {
+      "residential": "Adresse IP résidentielle",
+      "non_residential": "Adresse IP du centre de données"
+    },
+    "traffic": "Trafic",
+    "trafficUsed": "{{used}} / {{total}} utilisé",
+    "quota": "Quota de trafic",
+    "status": {
+      "title": "État",
+      "pending": "En attente",
+      "provisioning": "En cours de configuration",
+      "active": "Actif",
+      "grace": "Période de grâce",
+      "suspended": "Suspendu",
+      "deprovisioned": "Supprimé de la configuration",
+      "failed": "Échec de la configuration"
+    },
+    "expiresAt": "Expire",
+    "graceHint": "Votre nœud est en période de grâce. Veuillez le renouveler bientôt pour éviter une suspension.",
+    "suspendedHint": "Le nœud est suspendu mais son adresse IP est conservée. Il reprendra après le renouvellement.",
+    "nodeIp": "IP du nœud",
+    "provisioningHint": "Votre nœud est en cours de configuration. Cela prend généralement quelques minutes, veuillez patienter.",
+    "empty": "Vous n'avez pas encore de nœuds dédiés",
+    "renew": "Renouveler",
+    "renewOnWebsite": "Pour renouveler, visitez Mon routeur sur notre site",
+    "percentUsed": "{{percent}}% utilisé",
+    "quotaExhausted": {
+      "title": "Quota de trafic mensuel utilisé",
+      "resetHint": "Réinitialisation le {{date}}",
+      "resetUnknown": "Réinitialisation au début du cycle suivant",
+      "cta": "Renouveler / Augmenter le quota"
+    },
+    "router": {
+      "title": "Ajouter un routeur",
+      "intro": "Installez k2r sur votre routeur OpenWrt — l'application le découvrira automatiquement et l'affichera ci-dessous.",
+      "detected": "Routeurs détectés sur votre réseau local :",
+      "manage": "Gérer le routeur"
+    }
+  }
+}

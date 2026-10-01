@@ -1,0 +1,79 @@
+{
+  "startup": {
+    "activeUsers": "Usuários Ativos",
+    "certified": "Certificado ISO 27001",
+    "uptime": "Tempo de Funcionamento",
+    "authSuccess": "Autenticação bem-sucedida, status de login do usuário atualizado",
+    "deviceCanDirectLogin": "Dispositivo pode fazer login direto",
+    "deviceCannotDirectLogin": "Dispositivo não pode fazer login direto",
+    "checkDeviceLoginFailed": "Falha ao verificar status de login do dispositivo",
+    "deviceLoginFailed": "Falha no login do dispositivo",
+    "deviceLoginFailedRetry": "Falha no login do dispositivo, por favor tente novamente",
+    "deviceLoginSuccess": "Login do dispositivo bem-sucedido",
+    "pleaseEnterInviteCode": "Por favor, digite o código de convite",
+    "registrationFailed": "Falha no Registro",
+    "registrationFailedRetry": "Falha no registro, por favor tente novamente",
+    "newDevice": "Novo Dispositivo",
+    "freeDeviceRegistrationFailed": "Falha no registro de dispositivo gratuito",
+    "inviteCodeIncorrect": "Código de convite incorreto",
+    "inviteCodeInvalidOrExpired": "Código de convite inválido ou expirado",
+    "getInviteCodeInfoFailed": "Falha ao obter informações do código de convite",
+    "haveProAccount": "Já tem conta Pro?",
+    "loginProAccountDesc": "Conecte-se à sua conta Pro e aproveite todos os recursos",
+    "deviceAlreadyRegistered": "Detectado que este dispositivo tem uma conta registrada",
+    "deviceReady": "Dispositivo pronto para login",
+    "deviceReadyDesc": "Seu dispositivo está registrado e pronto para usar",
+    "orEmailLogin": "Ou conectar com email",
+    "experienceProFeatures": "Experimente Recursos Pro",
+    "enterInviteCodeDesc": "Digite o código de convite para experimentar recursos Pro instantaneamente",
+    "inviteCode": "Código de Convite",
+    "enterInviteCodePlaceholder": "Por favor, digite o código de convite (opcional)",
+    "youHaveGoodFriend": "🎁 Você tem um amigo incrível😼",
+    "enjoyNow": "Aproveite agora",
+    "days": "dias",
+    "pro": "Pro",
+    "extraBonus": "Bônus Extra!",
+    "experience": "Experimente {{days}} dias",
+    "purchaseBonus": "A compra recebe {{purchaseDays}}+{{downloadDays}} dias",
+    "buyNowExtraBonus": "Compre agora, obtenha {{days}} dias extras",
+    "buyNowEnjoyAllPro": "Compre agora para todos os benefícios Pro",
+    "experienceOnly": "Experimente {{days}} dias apenas",
+    "experienceNow": "Experimente Agora",
+    "or": "ou",
+    "noAccountNoInviteCode": "Sem conta ou código de convite?",
+    "processing": "Processando...",
+    "registerNewAccount": "Registre uma nova conta diretamente"
+  },
+  "serviceStatus": {
+    "disconnected": "Serviço desconectado, reconectando..."
+  },
+  "upgradeRequired": {
+    "title": "Por Favor, Atualize o App",
+    "description": "A versão atual está desatualizada, por favor baixe a versão mais recente para continuar.",
+    "downloadButton": "Ir para Download"
+  },
+  "forceUpgrade": {
+    "title": "Versão Muito Antiga, Atualização Necessária",
+    "description": "Sua versão atual do app ({{currentVersion}}) não é mais suportada. Por favor, atualize para a versão {{minVersion}} ou superior para continuar.",
+    "downloadButton": "Atualizar Agora"
+  },
+  "app": {
+    "slogan": "Serviço de proxy de rede seguro e conveniente",
+    "error": "Erro",
+    "updateNow": "Atualizar Agora",
+    "readyToInstall": "está pronto para instalar",
+    "hoverForDetails": "passe o mouse para detalhes",
+    "releaseNotes": "Notas de Lançamento",
+    "newVersionAvailable": "Nova versão {{version}} disponível!",
+    "updating": "Atualizando",
+    "downloadingUpdate": "Baixando e instalando atualização... {{progress}}%",
+    "errorBoundary": {
+      "title": "Erro do Aplicativo",
+      "description": "O erro foi automaticamente reportado, corrigiremos em breve.",
+      "details": "Detalhes do Erro",
+      "retry": "Tentar Novamente"
+    },
+    "installing": "Instalando...",
+    "beingInstalled": "está sendo instalado..."
+  }
+}

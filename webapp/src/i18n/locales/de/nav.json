@@ -1,0 +1,50 @@
+{
+  "appBar": {
+    "refreshAuth": "Autorisierung aktualisieren"
+  },
+  "navigation": {
+    "dashboard": "Dashboard",
+    "discover": "Entdecken",
+    "account": "Konto",
+    "router": "Router",
+    "devices": "Geräte",
+    "faq": "Feedback",
+    "purchase": "Kaufen",
+    "activate": "Aktivieren",
+    "invite": "Einladung",
+    "retailer": "Verkäufer",
+    "proHistory": "Autorisierungsverlauf",
+    "help": "Hilfe"
+  },
+  "appBarConnector": {
+    "disconnecting": "Wird getrennt",
+    "connecting": "Wird verbunden",
+    "antiClickProtection": "Anti-Spam-Schutz: Zu häufige Operationen",
+    "refreshDataFailed": "Fehler beim Aktualisieren der Daten nach Operation:",
+    "connectionOperationFailed": "Verbindungsoperation fehlgeschlagen:",
+    "disconnectingTooltip": "Wird getrennt...",
+    "connectingTooltip": "Wird verbunden...",
+    "clickToDisconnect": "Klicken Sie zum Trennen",
+    "clickToConnect": "Klicken Sie zum Verbinden",
+    "anonymous": "Anonym",
+    "disconnect": "Trennen",
+    "connect": "Verbinden",
+    "panel": "Panel",
+    "noNodeSelected": "Bitte wählen Sie einen Knoten aus, bevor Sie verbinden"
+  },
+  "appBarMembership": {
+    "trial": "Testversion",
+    "standard": "Standard",
+    "expired": "Abgelaufen",
+    "proTrial": "Pro-Testversion",
+    "recharge": "Aufladen",
+    "firstOrderPending": "Erste Bestellung ausstehend",
+    "unlimitedTrial": "Unbegrenzte Testversion",
+    "completePurchase": "Kauf abschließen"
+  },
+  "layout": {
+    "deviceInstall": "Auf anderen Geräten installieren",
+    "troubleshooting": "Fehlerbehebung",
+    "accountAndSettings": "Konto & Einstellungen"
+  }
+}

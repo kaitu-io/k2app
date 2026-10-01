@@ -1,0 +1,79 @@
+{
+  "startup": {
+    "activeUsers": "Aktif Kullanıcılar",
+    "certified": "ISO 27001 Sertifikalı",
+    "uptime": "Çalışma Süresi",
+    "authSuccess": "Kimlik doğrulama başarılı, kullanıcı giriş durumu güncellendi",
+    "deviceCanDirectLogin": "Cihaz doğrudan giriş yapabilir",
+    "deviceCannotDirectLogin": "Cihaz doğrudan giriş yapamaz",
+    "checkDeviceLoginFailed": "Cihaz giriş durumu kontrolü başarısız",
+    "deviceLoginFailed": "Cihaz girişi başarısız",
+    "deviceLoginFailedRetry": "Cihaz girişi başarısız, lütfen tekrar deneyin",
+    "deviceLoginSuccess": "Cihaz girişi başarılı",
+    "pleaseEnterInviteCode": "Lütfen davet kodunu gir",
+    "registrationFailed": "Kayıt Başarısız",
+    "registrationFailedRetry": "Kayıt başarısız, lütfen tekrar deneyin",
+    "newDevice": "Yeni Cihaz",
+    "freeDeviceRegistrationFailed": "Ücretsiz cihaz kaydı başarısız",
+    "inviteCodeIncorrect": "Davet kodu yanlış",
+    "inviteCodeInvalidOrExpired": "Davet kodu geçersiz veya süresi doldu",
+    "getInviteCodeInfoFailed": "Davet kodu bilgisi alınamadı",
+    "haveProAccount": "Zaten Pro hesabınız var mı?",
+    "loginProAccountDesc": "Pro hesabınıza giriş yapın ve tüm özelliklerden yararlanın",
+    "deviceAlreadyRegistered": "Bu cihazın kayıtlı bir hesabı olduğu tespit edildi",
+    "deviceReady": "Cihaz giriş yapmaya hazır",
+    "deviceReadyDesc": "Cihazınız kayıtlı ve kullanıma hazır",
+    "orEmailLogin": "Veya e-posta ile giriş yap",
+    "experienceProFeatures": "Pro Özelliklerini Deneyimle",
+    "enterInviteCodeDesc": "Pro özelliklerini hemen deneyimlemek için davet kodunu gir",
+    "inviteCode": "Davet Kodu",
+    "enterInviteCodePlaceholder": "Lütfen davet kodunu gir (isteğe bağlı)",
+    "youHaveGoodFriend": "🎁 Harika bir dostun var😼",
+    "enjoyNow": "Şimdi Keyfini Çıkar",
+    "days": "gün",
+    "pro": "Pro",
+    "extraBonus": "Ekstra Bonus!",
+    "experience": "{{days}} günü Deneyimle",
+    "purchaseBonus": "Satın alma {{purchaseDays}}+{{downloadDays}} gün alır",
+    "buyNowExtraBonus": "Şimdi satın al, {{days}} ekstra gün al",
+    "buyNowEnjoyAllPro": "Tüm Pro avantajları için şimdi satın al",
+    "experienceOnly": "Yalnızca {{days}} günü Deneyimle",
+    "experienceNow": "Şimdi Deneyimle",
+    "or": "veya",
+    "noAccountNoInviteCode": "Hesabınız veya davet kodunuz yok mu?",
+    "processing": "İşleniyor...",
+    "registerNewAccount": "Yeni bir hesabı doğrudan kaydedin"
+  },
+  "serviceStatus": {
+    "disconnected": "Hizmet kesildi, yeniden bağlanıyor..."
+  },
+  "upgradeRequired": {
+    "title": "Lütfen Uygulamayı Güncelleyin",
+    "description": "Geçerli sürüm eski, devam etmek için lütfen en son sürümü indirin.",
+    "downloadButton": "İndirmeye Git"
+  },
+  "forceUpgrade": {
+    "title": "Sürüm Çok Eski, Güncelleme Gerekli",
+    "description": "Geçerli uygulama sürümünüz ({{currentVersion}}) artık desteklenmiyor. Devam etmek için lütfen {{minVersion}} veya üstü sürüme güncelleyin.",
+    "downloadButton": "Şimdi Güncelle"
+  },
+  "app": {
+    "slogan": "Güvenli ve uygun ağ proxy hizmeti",
+    "error": "Hata",
+    "updateNow": "Şimdi Güncelle",
+    "readyToInstall": "yüklenmeye hazır",
+    "hoverForDetails": "ayrıntılar için üzerine gelin",
+    "releaseNotes": "Sürüm Notları",
+    "newVersionAvailable": "Yeni sürüm {{version}} mevcut!",
+    "updating": "Güncelleniyor",
+    "downloadingUpdate": "Güncelleme indiriliyor ve yükleniyor... {{progress}}%",
+    "errorBoundary": {
+      "title": "Uygulama Hatası",
+      "description": "Hata otomatik olarak bildirildi, yakında düzelteceğiz.",
+      "details": "Hata Ayrıntıları",
+      "retry": "Tekrar Dene"
+    },
+    "installing": "Yükleniyor...",
+    "beingInstalled": "yüklenmekte..."
+  }
+}

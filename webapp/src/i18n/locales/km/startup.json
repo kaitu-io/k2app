@@ -1,0 +1,79 @@
+{
+  "startup": {
+    "activeUsers": "អ្នកប្រើសកម្ម",
+    "certified": "បានទទួលវិញ្ញាបនបត្រ ISO 27001",
+    "uptime": "ពេលវេលាដំណើរការ",
+    "authSuccess": "ផ្ទៀងផ្ទាត់ជោគជ័យ ស្ថានភាពចូលគណនីត្រូវបានធ្វើបច្ចុប្បន្នភាព",
+    "deviceCanDirectLogin": "ឧបករណ៍អាចចូលគណនីដោយផ្ទាល់បាន",
+    "deviceCannotDirectLogin": "ឧបករណ៍មិនអាចចូលគណនីដោយផ្ទាល់បានទេ",
+    "checkDeviceLoginFailed": "ពិនិត្យស្ថានភាពចូលគណនីរបស់ឧបករណ៍មិនបានសម្រេច",
+    "deviceLoginFailed": "ចូលគណនីតាមឧបករណ៍មិនបានសម្រេច",
+    "deviceLoginFailedRetry": "ចូលគណនីតាមឧបករណ៍មិនបានសម្រេច សូមព្យាយាមម្តងទៀត",
+    "deviceLoginSuccess": "ចូលគណនីតាមឧបករណ៍ដោយជោគជ័យ",
+    "pleaseEnterInviteCode": "សូមបញ្ចូលកូដអញ្ជើញ",
+    "registrationFailed": "ការចុះឈ្មោះមិនបានសម្រេច",
+    "registrationFailedRetry": "ការចុះឈ្មោះមិនបានសម្រេច សូមព្យាយាមម្តងទៀត",
+    "newDevice": "ឧបករណ៍ថ្មី",
+    "freeDeviceRegistrationFailed": "ការចុះឈ្មោះឧបករណ៍ឥតគិតថ្លៃមិនបានសម្រេច",
+    "inviteCodeIncorrect": "កូដអញ្ជើញមិនត្រឹមត្រូវ",
+    "inviteCodeInvalidOrExpired": "កូដអញ្ជើញមិនត្រឹមត្រូវ ឬបានផុតកំណត់",
+    "getInviteCodeInfoFailed": "ទទួលព័ត៌មានកូដអញ្ជើញមិនបានសម្រេច",
+    "haveProAccount": "មានគណនី Pro រួចហើយឬ?",
+    "loginProAccountDesc": "ចូលគណនី Pro របស់អ្នក ហើយរីករាយជាមួយមុខងារពេញលេញ",
+    "deviceAlreadyRegistered": "រកឃើញថាឧបករណ៍នេះមានគណនីចុះឈ្មោះរួចហើយ",
+    "deviceReady": "ឧបករណ៍ត្រៀមខ្លួនចូលគណនី",
+    "deviceReadyDesc": "ឧបករណ៍របស់អ្នកបានចុះឈ្មោះ ហើយត្រៀមប្រើប្រាស់",
+    "orEmailLogin": "ឬចូលគណនីដោយអ៊ីមែល",
+    "experienceProFeatures": "សាកល្បងមុខងារ Pro",
+    "enterInviteCodeDesc": "បញ្ចូលកូដអញ្ជើញ ដើម្បីសាកល្បងមុខងារ Pro ភ្លាមៗ",
+    "inviteCode": "កូដអញ្ជើញ",
+    "enterInviteCodePlaceholder": "សូមបញ្ចូលកូដអញ្ជើញ (ស្រេចចិត្ត)",
+    "youHaveGoodFriend": "🎁 អ្នកមានមិត្តភក្តិដ៏អស្ចារ្យ😼",
+    "enjoyNow": "រីករាយឥឡូវនេះ",
+    "days": "ថ្ងៃ",
+    "pro": "Pro",
+    "extraBonus": "រង្វាន់បន្ថែម!",
+    "experience": "សាកល្បង {{days}} ថ្ងៃ",
+    "purchaseBonus": "ទិញទទួលបាន {{purchaseDays}}+{{downloadDays}} ថ្ងៃ",
+    "buyNowExtraBonus": "ទិញឥឡូវនេះ ទទួលបានថ្ងៃបន្ថែម {{days}} ថ្ងៃ",
+    "buyNowEnjoyAllPro": "ទិញឥឡូវនេះ ដើម្បីទទួលអត្ថប្រយោជន៍ Pro ទាំងអស់",
+    "experienceOnly": "សាកល្បងតែ {{days}} ថ្ងៃប៉ុណ្ណោះ",
+    "experienceNow": "សាកល្បងឥឡូវនេះ",
+    "or": "ឬ",
+    "noAccountNoInviteCode": "គ្មានគណនី ឬកូដអញ្ជើញឬ?",
+    "processing": "កំពុងដំណើរការ...",
+    "registerNewAccount": "ចុះឈ្មោះគណនីថ្មីដោយផ្ទាល់"
+  },
+  "serviceStatus": {
+    "disconnected": "សេវាកម្មត្រូវបានផ្តាច់ កំពុងតភ្ជាប់ឡើងវិញ..."
+  },
+  "upgradeRequired": {
+    "title": "សូមធ្វើបច្ចុប្បន្នភាពកម្មវិធី",
+    "description": "កំណែបច្ចុប្បន្នហួសសម័យហើយ សូមទាញយកកំណែចុងក្រោយបំផុត ដើម្បីបន្ត។",
+    "downloadButton": "ទៅកាន់ទំព័រទាញយក"
+  },
+  "forceUpgrade": {
+    "title": "កំណែចាស់ពេក ត្រូវតែធ្វើបច្ចុប្បន្នភាព",
+    "description": "កំណែកម្មវិធីបច្ចុប្បន្នរបស់អ្នក ({{currentVersion}}) លែងត្រូវបានគាំទ្រហើយ។ សូមធ្វើបច្ចុប្បន្នភាពទៅកំណែ {{minVersion}} ឬខ្ពស់ជាងនេះ ដើម្បីបន្ត។",
+    "downloadButton": "ធ្វើបច្ចុប្បន្នភាពឥឡូវនេះ"
+  },
+  "app": {
+    "slogan": "សេវាកម្មប្រូកស៊ីបណ្តាញដែលមានសុវត្ថិភាព និងងាយស្រួល",
+    "error": "កំហុស",
+    "updateNow": "ធ្វើបច្ចុប្បន្នភាពឥឡូវនេះ",
+    "readyToInstall": "ត្រៀមដំឡើងរួចរាល់",
+    "hoverForDetails": "ដាក់ទស្សន៍ទ្រនិចលើដើម្បីមើលលម្អិត",
+    "releaseNotes": "កំណត់ចំណាំនៃការចេញផ្សាយ",
+    "newVersionAvailable": "មានកំណែថ្មី {{version}}!",
+    "updating": "កំពុងធ្វើបច្ចុប្បន្នភាព",
+    "downloadingUpdate": "កំពុងទាញយក និងដំឡើងបច្ចុប្បន្នភាព... {{progress}}%",
+    "errorBoundary": {
+      "title": "កំហុសកម្មវិធី",
+      "description": "កំហុសត្រូវបានរាយការណ៍ដោយស្វ័យប្រវត្តិ យើងនឹងជួសជុលក្នុងពេលឆាប់ៗ។",
+      "details": "ព័ត៌មានលម្អិតនៃកំហុស",
+      "retry": "ព្យាយាមម្តងទៀត"
+    },
+    "installing": "កំពុងដំឡើង...",
+    "beingInstalled": "កំពុងត្រូវបានដំឡើង..."
+  }
+}

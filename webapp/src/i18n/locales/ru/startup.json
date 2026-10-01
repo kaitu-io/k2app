@@ -1,0 +1,79 @@
+{
+  "startup": {
+    "activeUsers": "Активные пользователи",
+    "certified": "Сертифицировано ISO 27001",
+    "uptime": "Время работы",
+    "authSuccess": "Успешная аутентификация, статус входа пользователя обновлён",
+    "deviceCanDirectLogin": "Устройство может войти напрямую",
+    "deviceCannotDirectLogin": "Устройство не может войти напрямую",
+    "checkDeviceLoginFailed": "Не удалось проверить статус входа на устройство",
+    "deviceLoginFailed": "Ошибка входа на устройство",
+    "deviceLoginFailedRetry": "Ошибка входа на устройство, пожалуйста попробуйте ещё раз",
+    "deviceLoginSuccess": "Успешный вход на устройство",
+    "pleaseEnterInviteCode": "Пожалуйста введите код приглашения",
+    "registrationFailed": "Ошибка регистрации",
+    "registrationFailedRetry": "Ошибка регистрации, пожалуйста попробуйте ещё раз",
+    "newDevice": "Новое устройство",
+    "freeDeviceRegistrationFailed": "Ошибка регистрации бесплатного устройства",
+    "inviteCodeIncorrect": "Неверный код приглашения",
+    "inviteCodeInvalidOrExpired": "Код приглашения неверный или истекший",
+    "getInviteCodeInfoFailed": "Не удалось получить информацию о коде приглашения",
+    "haveProAccount": "Уже есть Pro аккаунт?",
+    "loginProAccountDesc": "Войдите в свой Pro аккаунт и наслаждайтесь полными функциями",
+    "deviceAlreadyRegistered": "Обнаружено, что это устройство имеет зарегистрированный аккаунт",
+    "deviceReady": "Устройство готово к входу",
+    "deviceReadyDesc": "Ваше устройство зарегистрировано и готово к использованию",
+    "orEmailLogin": "Или войти с помощью email",
+    "experienceProFeatures": "Испытайте функции Pro",
+    "enterInviteCodeDesc": "Введите код приглашения для мгновенного испытания функций Pro",
+    "inviteCode": "Код приглашения",
+    "enterInviteCodePlaceholder": "Пожалуйста введите код приглашения (опционально)",
+    "youHaveGoodFriend": "🎁 У вас есть замечательный друг😼",
+    "enjoyNow": "Наслаждайтесь сейчас",
+    "days": "дней",
+    "pro": "Pro",
+    "extraBonus": "Дополнительный бонус!",
+    "experience": "Испытайте {{days}} дней",
+    "purchaseBonus": "Покупка получает {{purchaseDays}}+{{downloadDays}} дней",
+    "buyNowExtraBonus": "Купите сейчас, получите {{days}} дополнительных дней",
+    "buyNowEnjoyAllPro": "Купите сейчас для всех функций Pro",
+    "experienceOnly": "Испытайте только {{days}} дней",
+    "experienceNow": "Испытайте сейчас",
+    "or": "или",
+    "noAccountNoInviteCode": "Нет аккаунта или кода приглашения?",
+    "processing": "Обработка...",
+    "registerNewAccount": "Зарегистрировать новый аккаунт сразу"
+  },
+  "serviceStatus": {
+    "disconnected": "Сервис отключен, переподключение..."
+  },
+  "upgradeRequired": {
+    "title": "Пожалуйста обновитесь приложение",
+    "description": "Текущая версия устарела, пожалуйста загрузите последнюю версию для продолжения.",
+    "downloadButton": "Перейти к загрузке"
+  },
+  "forceUpgrade": {
+    "title": "Версия слишком старая, обновление требуется",
+    "description": "Ваша текущая версия приложения ({{currentVersion}}) больше не поддерживается. Пожалуйста обновитесь на версию {{minVersion}} или выше для продолжения.",
+    "downloadButton": "Обновить сейчас"
+  },
+  "app": {
+    "slogan": "Безопасный и удобный сервис прокси-сети",
+    "error": "Ошибка",
+    "updateNow": "Обновить сейчас",
+    "readyToInstall": "готов к установке",
+    "hoverForDetails": "наведите для деталей",
+    "releaseNotes": "Примечания к выпуску",
+    "newVersionAvailable": "Новая версия {{version}} доступна!",
+    "updating": "Обновление",
+    "downloadingUpdate": "Загрузка и установка обновления... {{progress}}%",
+    "errorBoundary": {
+      "title": "Ошибка приложения",
+      "description": "Ошибка была автоматически сообщена, мы исправим её в ближайшее время.",
+      "details": "Детали ошибки",
+      "retry": "Повторить"
+    },
+    "installing": "Установка...",
+    "beingInstalled": "устанавливается..."
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "router": {
+    "title": "Bộ Định Tuyến",
+    "connected": "Đã Kết Nối",
+    "disconnected": "Đã Ngắt Kết Nối",
+    "connect": "Kết Nối",
+    "disconnect": "Ngắt Kết Nối",
+    "offline": "Không thể kết nối bộ định tuyến {{name}}. Kiểm tra xem nó có hoạt động không.",
+    "retry": "Thử Lại"
+  },
+  "setup": {
+    "title": "Thiết Lập {{name}}",
+    "intro": "Nhấp nút dưới đây để hoàn thành thiết lập lần đầu của bộ định tuyến trong một bước.",
+    "submit": "Bắt Đầu Thiết Lập",
+    "error": {
+      "mint_failed": "Không thể lấy thông tin xác thực kết nối. Kiểm tra mạng của bạn và thử lại.",
+      "key_failed": "Không thể lấy khóa điều khiển. Kiểm tra mạng của bạn và thử lại.",
+      "push_failed": "Không thể đẩy cấu hình đến bộ định tuyến. Kiểm tra xem nó có hoạt động không."
+    }
+  },
+  "settings": {
+    "title": "Cài Đặt Bộ Định Tuyến",
+    "version": "Phiên bản Firmware: {{version}}",
+    "unbind": "Hủy Liên Kết",
+    "unbindConfirmTitle": "Hủy liên kết bộ định tuyến này?",
+    "unbindConfirmBody": "Sau khi hủy liên kết, ứng dụng này sẽ không còn có thể điều khiển bộ định tuyến. Bạn sẽ cần phải thiết lập lại nó để sử dụng.",
+    "unbindCancel": "Hủy",
+    "unbindConfirm": "Hủy Liên Kết"
+  },
+  "exclusion": {
+    "title": "Kết Nối cả hai đường hầm?",
+    "bodyRouter": "VPN của thiết bị của bạn đã được kết nối. Tiếp tục sẽ định tuyến lưu lượng truy cập qua cả hai đường hầm cùng một lúc — chúng tôi khuyên bạn nên ngắt kết nối VPN cục bộ trước.",
+    "bodyDashboard": "Bộ định tuyến trên mạng này đã được bảo vệ lưu lượng của bạn. Tiếp tục sẽ định tuyến lưu lượng truy cập qua cả hai đường hầm cùng một lúc — chúng tôi khuyên bạn nên ngắt kết nối bộ định tuyến trước.",
+    "keep": "Giữ Cả Hai",
+    "proceedRouter": "Ngắt Kết Nối VPN Cục Bộ & Tiếp Tục",
+    "proceedDashboard": "Ngắt Kết Nối Bộ Định Tuyến & Tiếp Tục"
+  },
+  "takeover": {
+    "banner": "Bộ định tuyến trên mạng này đang bảo vệ lưu lượng của bạn"
+  },
+  "legacy": {
+    "upgradeHint": "Phát hiện firmware bộ định tuyến đã lỗi thời. Vui lòng nâng cấp k2r trên bộ định tuyến trước khi quản lý nó từ ứng dụng."
+  },
+  "slots": {
+    "title": "Dòng",
+    "customName": "Tên Tùy Chỉnh",
+    "unbound": "Chưa Liên Kết",
+    "failClosed": "Dòng Bị Ngắt — Lưu Lượng Bị Chặn",
+    "downFor": "Ngắt trong {{duration}}",
+    "rename": "Đổi Tên Wi-Fi",
+    "renameHint": "1-32 ký tự",
+    "password": "Thay Đổi Mật Khẩu Wi-Fi",
+    "passwordHint": "8-63 ký tự",
+    "confirm": "Áp Dụng",
+    "cancel": "Hủy",
+    "applyFailed": "Không thể áp dụng, vui lòng thử lại",
+    "managedByAccount": "Bộ định tuyến này được quản lý bởi tài khoản liên kết của nó",
+    "unbindEnterpriseBody": "Hủy liên kết sẽ đưa TẤT CẢ các dòng ngoại tuyến. Phục hồi yêu cầu sự trợ giúp của nhà khai thác. Tiếp tục?",
+    "managementGroup": "Mạng Quản Lý"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "metaTitle": "Hesabınız",
+  "title": "Hesabınız",
+  "subtitle": "Aboneliğinizi ve oturum açma ayarlarınızı yönetin.",
+  "loading": "Yükleniyor",
+  "navSubscription": "Abonelik",
+  "navSecurity": "Güvenlik",
+  "signOut": "Çıkış yap",
+  "subscriptionTitle": "Aboneliğiniz",
+  "renewsOn": "Yenilenme tarihi: {date}",
+  "endsOn": "Bitiş tarihi: {date}",
+  "manage": "Aboneliği yönet",
+  "opening": "Açılıyor…",
+  "noSubscriptionTitle": "Etkin abonelik yok",
+  "noSubscription": "Overleap'i beş cihaza kadar kullanmaya başlamak için bir plan seçin.",
+  "seePlans": "Planları gör",
+  "activating": "Aboneliğiniz etkinleştiriliyor…",
+  "activationDelayed": "Ödemeniz alındı. Aboneliğiniz birkaç dakika içinde etkinleşecek; kontrol etmek için bu sayfayı yenileyin.",
+  "downloadTitle": "Her şey hazır, uygulamaları indirin",
+  "downloadBody": "Overleap'i yükleyin ve bu e-posta adresiyle giriş yapın.",
+  "downloadCta": "Overleap'i indir",
+  "cancel": "Vazgeç",
+  "confirm": "Kaydet",
+  "password": {
+    "setPassword": "Parola belirle",
+    "changePassword": "Parolayı değiştir",
+    "newPassword": "Yeni parola",
+    "confirmPassword": "Parolayı onayla",
+    "requirements": "En az {length} karakter olmalı. Yaygın sözcüklerden, klavye dizilimlerinden ve tekrarlanan karakterlerden kaçının.",
+    "mismatch": "Parolalar eşleşmiyor",
+    "setSuccess": "Parola kaydedildi",
+    "strength": {
+      "label": "Parola gücü",
+      "veryWeak": "Çok zayıf",
+      "weak": "Zayıf",
+      "fair": "Orta",
+      "good": "İyi",
+      "strong": "Güçlü"
+    }
+  },
+  "security": {
+    "passwordSet": "E-posta ve parolayla giriş yapmak için bir parola belirleyin. Tek kullanımlık kodu kullanmaya da devam edebilirsiniz.",
+    "passwordChange": "Bir parolanız var. Buradan değiştirebilirsiniz."
+  }
+}

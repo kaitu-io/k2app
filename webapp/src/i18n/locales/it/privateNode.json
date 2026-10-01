@@ -1,0 +1,50 @@
+{
+  "privateNode": {
+    "title": "Nodo Dedicato",
+    "manage": "Gestisci Nodo Dedicato",
+    "myRouter": "Il Mio Router",
+    "buyLine": "Acquista una Linea Dedicata",
+    "buy": "Ottieni un Nodo Dedicato",
+    "region": "Regione Nodo",
+    "selectRegion": "Seleziona Regione",
+    "ipTypeLabel": "Tipo di IP",
+    "ipType": {
+      "residential": "IP Residenziale",
+      "non_residential": "IP Data Center"
+    },
+    "traffic": "Traffico",
+    "trafficUsed": "{{used}} / {{total}} utilizzati",
+    "quota": "Quota di Traffico",
+    "status": {
+      "title": "Stato",
+      "pending": "In Sospeso",
+      "provisioning": "In Provisioning",
+      "active": "Attivo",
+      "grace": "Periodo di Grazia",
+      "suspended": "Sospeso",
+      "deprovisioned": "Deprovisioning",
+      "failed": "Provisioning Non Riuscito"
+    },
+    "expiresAt": "Scade",
+    "graceHint": "Il tuo nodo è in periodo di grazia. Rinnova presto per evitare la sospensione.",
+    "suspendedHint": "Il nodo è sospeso ma il suo IP è mantenuto. Riprenderà dopo il rinnovo.",
+    "nodeIp": "IP Nodo",
+    "provisioningHint": "Il tuo nodo è in fase di provisioning. Questo di solito richiede pochi minuti, attendi.",
+    "empty": "Non hai ancora nodi dedicati",
+    "renew": "Rinnova",
+    "renewOnWebsite": "Per rinnovare, visita Il Mio Router sul nostro sito web",
+    "percentUsed": "{{percent}}% utilizzato",
+    "quotaExhausted": {
+      "title": "Quota di traffico mensile esaurita",
+      "resetHint": "Reimposta il {{date}}",
+      "resetUnknown": "Reimposta all'inizio del ciclo successivo",
+      "cta": "Rinnova / Aggiorna quota"
+    },
+    "router": {
+      "title": "Aggiungi un Router",
+      "intro": "Installa k2r sul tuo router OpenWrt — l'app lo scoprirà automaticamente e lo mostrerà di seguito.",
+      "detected": "Router rilevati sulla tua rete locale:",
+      "manage": "Gestisci Router"
+    }
+  }
+}

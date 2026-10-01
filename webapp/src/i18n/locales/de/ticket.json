@@ -1,0 +1,108 @@
+{
+  "feedback": {
+    "newTicket": "Neues Ticket",
+    "viewTickets": "Tickets anzeigen",
+    "myTickets": "Meine Tickets",
+    "noTickets": "Noch keine Tickets",
+    "noTicketsHint": "Ein Problem? Erstellen Sie ein Ticket und wir kümmern uns darum",
+    "loadError": "Laden fehlgeschlagen. Bitte versuchen Sie es erneut",
+    "status": {
+      "open": "Offen",
+      "resolved": "Gelöst",
+      "closed": "Geschlossen"
+    },
+    "adminReplied": "Support hat geantwortet",
+    "replyPlaceholder": "Geben Sie Ihre Antwort ein...",
+    "closedNotice": "Dieses Ticket ist geschlossen",
+    "replyFailed": "Antwort konnte nicht gesendet werden",
+    "loginToView": "Melden Sie sich mit {{email}} an, um den Fortschritt und die Antworten anzuzeigen",
+    "time": {
+      "justNow": "Gerade eben",
+      "minutesAgo": "vor {{count}}m",
+      "hoursAgo": "vor {{count}}h",
+      "daysAgo": "vor {{count}}T"
+    },
+    "send": "Senden"
+  },
+  "faq": {
+    "title": "FAQ",
+    "subtitle": "Schauen Sie hier zuerst nach - die meisten Probleme lassen sich schnell lösen",
+    "stillNeedHelp": "Haben Sie Ihre Antwort nicht gefunden?",
+    "submitCta": "Ticket einreichen",
+    "entryTitle": "FAQ",
+    "entryHint": "Überprüfen Sie die FAQ vor der Einreichung - sie kann Ihr Problem schneller lösen",
+    "items": {
+      "connection": {
+        "question": "Was sollte ich bei instabiler Verbindung oder langsamer Geschwindigkeit tun?",
+        "answer": "Geschwindigkeitsprobleme hängen normalerweise mit Ihrem lokalen Netzwerk zusammen. Bitte beheben Sie in dieser Reihenfolge:\n\n1. Versuchen Sie zuerst verschiedene Tunnel-Leitungen. Wenn alle Leitungen langsam sind, ist es fast sicher ein lokales Netzwerkproblem.\n2. Starten Sie Ihren Router neu. Dies behebt die meisten vorübergehenden Routing-Cache- und Link-Probleme.\n3. Rufen Sie Ihren ISP an und fragen Sie, ob sie eine gezielte Drossel für Auslandsverkehr angewendet haben.\n4. Wenn der ISP anbietet, einen Techniker vor Ort zu schicken, lehnen Sie ab - ISPs haben oft \"Breitband-Verarbeitungs\"-KPIs und werden Sie dazu drängen, Ihren Plan durch falsche \"Leitungsfehler\" zu senken.\n5. Nur nachdem Sie das Obige ausgeschlossen haben, könnte es ein Knotenproblem sein. Reichen Sie Feedback mit Protokollen ein und wir untersuchen es."
+      },
+      "appNotWorking": {
+        "question": "Eine bestimmte App oder ein Spiel funktioniert nicht mehr, nachdem ich {{brand}} installiert habe - was nun?",
+        "answer": "Einige Apps (besonders Adobe Creative Cloud, bestimmte Spiele, Drittanbieter-Messenger und chinesische Bank- / Behörden- / Video-Apps) speichern Serveradressen oder benötigen eine inländische IP. Wenn {{brand}} an ist, werden diese Anfragen über den Proxy weitergeleitet und können abgelehnt oder abgelaufen sein. Versuchen Sie in dieser Reihenfolge:\n\n1. Starten Sie die App neu - in den meisten Fällen ermöglicht das Beenden und erneute Öffnen ein Aktualisieren des Server-Cache.\n2. Wechseln Sie zu Smart Bypass - erweitern Sie Erweiterte Einstellungen am unteren Ende des Dashboards, ändern Sie den Routing-Modus von Global Proxy zu Smart Bypass und wählen Sie ein Land (oder aktivieren Sie Auto-Erkennung). Der Inlandsverkehr geht direkt über Ihr lokales Netzwerk und nur der Auslandsverkehr nutzt den Proxy, was die meisten chinesischen Apps / Banken / Video-Seiten sofort wiederherstellt. Hinweis: Der Routing-Modus kann nur geändert werden, während {{brand}} getrennt ist. Smart Bypass erkennt automatisch häufige chinesische Apps (WeChat, Taobao, Douyin, 12306 usw.) und hält sie direkt.\n3. Fügen Sie die App zu \"Apps, die VPN umgehen\" hinzu - für hartnäckige Apps, die Smart Bypass nicht abdeckt (ältere Inlands-only-Spiele, interne Unternehmenstools), gehen Sie zu Erweiterte Einstellungen → Apps, die VPN umgehen und fügen Sie sie hinzu. Der Verkehr dieser App umgeht dann den Proxy vollständig. Auf dem Desktop zeigt die Liste nur derzeit laufende Apps - starten Sie zuerst die Ziel-App und kehren Sie dann zurück, um sie hinzuzufügen.\n4. Trennen Sie {{brand}} vorübergehend - in seltenen Fällen (z.B. Adobe Creative Cloud, das eine jetzt nicht existierende Legacy-IP speichert), trennen Sie {{brand}}, während Sie diese App verwenden und verbinden Sie sich danach erneut.\n5. Wenn keine der oben genannten Optionen hilft, reichen Sie ein Ticket mit Protokollen ein und unsere Ingenieure untersuchen es."
+      },
+      "nodeChoice": {
+        "question": "Es gibt so viele Knoten - welchen sollte ich wählen?",
+        "answer": "Einfachste Option: Verwenden Sie Auto Select. Tippen Sie auf \"Auto Select\" oben in der Knotenliste und {{brand}} wählt den besten Knoten basierend auf Echtzeit-Latenz und Last. Schalten Sie \"Auto Switch\" ein und es wechselt Sie zu einem besseren Knoten, wenn sich die Bedingungen ändern. Dies ist die beste Wahl für die meisten Benutzer.\n\nWenn Sie wirklich manuell auswählen möchten:\n\n• Tippen Sie nicht immer auf den ersten Knoten - die ersten Knoten (besonders AU / Australien) werden überfordert, weil die meisten Benutzer reflexartig auf den ersten tippen.\n• Versuchen Sie zuerst JP / SG / KR / US - normalerweise stabiler und schneller.\n• Wenn die Verbindung nicht hergestellt wird oder es sich langsam anfühlt, wechseln Sie zu einem anderen - der beste Knoten variiert je nach Region und Tageszeit.\n• Streaming und Browsing sind nicht empfindlich für die Knotenwahl; Gaming und Videoanrufe sind latenzempfindlich, daher versuchen Sie ein paar und bleiben Sie beim stabilsten."
+      },
+      "wifiSwitch": {
+        "question": "VPN wird nach dem Wechsel von WiFi oder Netzwerk getrennt?",
+        "answer": "{{brand}} unterstützt automatische Wiederverbindung nach Netzwerkänderungen, aber der Auslöser hat eine Verzögerung von mehreren Sekunden bis über ein Dutzend Sekunden. Wenn Sie nicht warten möchten, tippen Sie manuell auf Trennen und dann auf Verbinden, um sich sofort wiederherzustellen."
+      },
+      "deviceRemoved": {
+        "question": "Warum wird mein Gerät entfernt / hinausgeworfen?",
+        "answer": "Jedes Konto unterstützt bis zu 5 gleichzeitig angemeldete Geräte. Wenn Sie sich auf einem 6. Gerät anmelden, entfernt das System automatisch das am frühesten angemeldete Gerät.\n\nWenn Sie sicher sind, dass Sie nicht 5 Geräte überschritten haben, aber dennoch hinausgeworfen werden, reichen Sie bitte Feedback ein und wir helfen bei der Überprüfung der Gerätebindungen Ihres Kontos."
+      },
+      "updateIssue": {
+        "question": "App funktioniert nicht nach Update?",
+        "answer": "Update-Mechanismen unterscheiden sich je nach Plattform und Plugins werden manchmal nicht sofort neu geladen:\n\n• Windows / macOS: Starten Sie Ihren Computer neu, damit die neue Version vollständig funktioniert.\n• iOS: Wenn Sie nach dem Update Probleme sehen, löschen Sie die App und installieren Sie sie erneut aus dem App Store - dies behebt Probleme beim Neuladen von Network Extension-Plugins.\n• Android: Starten Sie Ihr Telefon neu oder erzwingen Sie das Beenden der App unter Einstellungen und öffnen Sie sie erneut."
+      },
+      "loginFailed": {
+        "question": "Anmeldung fehlgeschlagen / Bestätigungscode nicht erhalten?",
+        "answer": "Die häufigste Ursache ist ein Tippfehler in der E-Mail - etwa 30% der Benutzer in unserer Datenbank tippen ihre E-Mail beim ersten Versuch falsch ein. Bitte überprüfen Sie Buchstabe für Buchstabe:\n\n• Leerzeichen oder zusätzliche Zeichen um das @-Zeichen\n• Domain-Rechtschreibung (z.B. gmial → gmail, hotmial → hotmail)\n• Verwechslung zwischen 0 (Null) und O (Buchstabe)\n\nBestätigen Sie nach der Überprüfung Ihren Spam-Ordner. Wenn nichts ankommt, versuchen Sie eine andere E-Mail-Adresse."
+      }
+    }
+  },
+  "ticket": {
+    "title": "Ticket einreichen",
+    "description": "Beschreiben Sie Ihr Problem und wir antworten so bald wie möglich per E-Mail.",
+    "feedbackTitle": "Feedback",
+    "contentLabel": "Problembeschreibung",
+    "contentPlaceholder": "Bitte beschreiben Sie das Problem detailliert, einschließlich Operationsschritte, Fehlermeldungen usw., das wird uns helfen, das Problem schneller zu beheben.",
+    "submitButton": "Ticket einreichen",
+    "loginToSubmit": "Zum Einreichen anmelden",
+    "submitting": "Wird eingereicht...",
+    "submitSuccess": "Ticket erfolgreich eingereicht",
+    "submitSuccessTitle": "Ticket erfolgreich eingereicht!",
+    "submitFailed": "Ticket konnte nicht eingereicht werden. Bitte versuchen Sie es später erneut",
+    "nextStepHint": "Bitte überprüfen Sie Ihre E-Mail",
+    "emailReplyHint": "Unser Support-Team wird per E-Mail mit Ihnen kommunizieren. Bitte achten Sie auf Antworten in Ihrem Posteingang.",
+    "howItWorks": "So funktioniert es",
+    "dataCollectionHint": "App-Version, Systeminformation und Protokolle werden automatisch bei Einreichung gesammelt, um uns bei der schnelleren Diagnose zu helfen.",
+    "stepper": {
+      "step1": "Problem beschreiben",
+      "step2": "Protokolle hochladen",
+      "step3": "E-Mail-Antwort"
+    },
+    "entryTitle": "Support kontaktieren",
+    "entryDescription": "Problem getroffen? Reichen Sie ein Ticket ein, wir antworten bald",
+    "betaWarning": "Sie verwenden eine Beta-Version. Wenn Sie Probleme haben, können Sie in den Kontoeinstellungen zur stabilen Version wechseln.",
+    "switchToStable": "Zur stabilen Version wechseln",
+    "emailLabel": "Kontakt-E-Mail",
+    "emailPlaceholder": "Geben Sie Ihre E-Mail-Adresse ein, damit wir antworten können",
+    "anonymousHint": "Sie sind nicht angemeldet. Wir antworten Ihnen nach der Einreichung per E-Mail.",
+    "validation": {
+      "contentRequired": "Bitte geben Sie eine Problembeschreibung ein",
+      "contentTooLong": "Problembeschreibung darf 5000 Zeichen nicht überschreiten",
+      "emailRequired": "Bitte geben Sie Ihre E-Mail-Adresse ein",
+      "emailInvalid": "Bitte geben Sie eine gültige E-Mail-Adresse ein"
+    },
+    "quickIssue": {
+      "label": "Schnelle Auswahl",
+      "cannotConnect": "Kann nicht verbinden",
+      "unstable": "Instabile Verbindung",
+      "slow": "Langsam",
+      "crash": "App-Absturz",
+      "subscription": "Abonnementproblem"
+    }
+  }
+}

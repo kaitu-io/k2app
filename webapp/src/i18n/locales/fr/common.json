@@ -1,0 +1,184 @@
+{
+  "status": {
+    "stopped": "Arrêté",
+    "connecting": "Connexion en cours...",
+    "connected": "Connecté",
+    "reconnecting": "Reconnexion en cours...",
+    "disconnecting": "Déconnexion en cours...",
+    "disconnected": "Déconnecté",
+    "error": "Échec de la connexion",
+    "failed": "Échec de la connexion",
+    "offline": "Hors ligne",
+    "online": "En ligne",
+    "active": "Actif",
+    "inactive": "Inactif",
+    "enabled": "Activé",
+    "disabled": "Désactivé",
+    "clickToStop": "Cliquez pour déconnecter",
+    "reconnectingToServer": "Reconnexion au serveur...",
+    "waitingForNetwork": "En attente du réseau..."
+  },
+  "common": {
+    "justNow": "À l'instant",
+    "back": "Retour",
+    "cancel": "Annuler",
+    "confirm": "Confirmer",
+    "add": "Ajouter",
+    "adding": "Ajout en cours...",
+    "ok": "OK",
+    "save": "Enregistrer",
+    "delete": "Supprimer",
+    "clear": "Effacer",
+    "copy": "Copier",
+    "close": "Fermer",
+    "loading": "Chargement...",
+    "processing": "Traitement en cours...",
+    "retry": "Réessayer",
+    "download": "Télécharger",
+    "error": "Erreur",
+    "refresh": "Actualiser",
+    "and": "et",
+    "success": "Succès",
+    "loadFailed": "Échec du chargement",
+    "notFound": "Ressource non trouvée",
+    "serverError": "Erreur serveur",
+    "unknownError": "Erreur inconnue",
+    "later": "Plus tard",
+    "login": "Connexion",
+    "viewDetails": "Voir les détails",
+    "experimental": "Expérimental",
+    "edit": "Modifier",
+    "next": "Suivant",
+    "or": "OU",
+    "changelog": "Journal des modifications"
+  },
+  "errors": {
+    "service": {
+      "serviceNotFound": "Fichier de service non trouvé, veuillez réinstaller l'application",
+      "authRequired": "Privilèges d'administrateur requis pour installer le service",
+      "installFailed": "Échec de l'installation du service",
+      "connectionFailed": "Impossible de se connecter au service"
+    },
+    "config": {
+      "badConfig": "Erreur de configuration, veuillez vérifier l'adresse du serveur"
+    },
+    "network": {
+      "timeout": "Délai d'attente de connexion dépassé, veuillez vérifier le réseau",
+      "unreachable": "Serveur inaccessible, veuillez vérifier la connexion réseau",
+      "reset": "Connexion réseau interrompue, veuillez vérifier le statut du réseau",
+      "dns": "Échec de la résolution DNS, veuillez vérifier les paramètres réseau",
+      "tls": "Échec de la connexion sécurisée, veuillez vérifier l'environnement réseau",
+      "refused": "Impossible de se connecter au serveur, veuillez réessayer ultérieurement",
+      "repairFailed": "Échec de la réparation du réseau, veuillez vérifier les paramètres manuellement",
+      "repairDNS": "Échec de la réparation DNS",
+      "repairRoute": "Échec de la réparation de l'itinéraire",
+      "repairPreFailed": "Échec de la préparation de la réparation du réseau",
+      "unavailable": "Pas de connexion réseau. Vérifiez le réseau de votre appareil et réessayez."
+    },
+    "server": {
+      "unavailable": "Serveur indisponible, veuillez réessayer ultérieurement",
+      "overload": "Serveur occupé, veuillez réessayer ultérieurement",
+      "maintenance": "Serveur en maintenance, veuillez réessayer ultérieurement",
+      "internal": "Erreur interne du serveur, veuillez réessayer ultérieurement",
+      "notImplemented": "Fonctionnalité pas encore disponible"
+    },
+    "auth": {
+      "logoutFailed": "Échec de la déconnexion, veuillez réessayer",
+      "tokenRefreshFailed": "Échec du renouvellement de la session, veuillez vous reconnecter"
+    },
+    "client": {
+      "badRequest": "Erreur de paramètre de requête",
+      "unauthorized": "Veuillez d'abord vous connecter",
+      "forbidden": "Vous n'avez pas la permission d'effectuer cette opération",
+      "notFound": "Ressource demandée non trouvée",
+      "paymentRequired": "Adhésion expirée, veuillez renouveler",
+      "notSupported": "Fonctionnalité non prise en charge",
+      "upgradeRequired": "Veuillez mettre à jour vers la dernière version",
+      "conflict": "Conflit opérationnel, veuillez réessayer",
+      "invalidArgument": "Paramètres invalides",
+      "tooEarly": "Veuillez patienter et réessayer",
+      "tooManyRequests": "Trop de requêtes, veuillez réessayer plus tard",
+      "invalidClock": "L'horloge de l'appareil est incorrecte, veuillez ajuster",
+      "selfInvitation": "Impossible d'utiliser votre propre code d'invitation",
+      "licenseKeyNotFound": "Clé de licence non trouvée",
+      "licenseKeyUsed": "Clé de licence déjà utilisée",
+      "licenseKeyExpired": "Clé de licence expirée",
+      "licenseKeyNotMatch": "Vous n'êtes pas éligible pour cette clé de licence",
+      "licenseKeyAlreadyRedeemed": "Vous avez déjà échangé une clé de licence (une par compte)",
+      "tierMismatch": "Votre niveau actuel ne peut pas acheter ce forfait. Veuillez contacter le support pour changer de niveau.",
+      "proxyPurchaseDeprecated": "L'achat par proxy n'est plus pris en charge. Veuillez demander au destinataire d'acheter avec son propre compte.",
+      "proxyMembersDeprecated": "La gestion des membres proxy a été supprimée. Spécifiez le destinataire sur {{brandDomain}}/purchase lors du paiement."
+    },
+    "tunnel": {
+      "listFailed": "Échec du chargement de la liste des serveurs",
+      "connectFailed": "Échec de la connexion au serveur"
+    },
+    "vpn": {
+      "authFailed": "Échec de l'authentification, veuillez vous reconnecter",
+      "membershipExpired": "Adhésion expirée, veuillez renouveler",
+      "forbidden": "Échec de la vérification du certificat serveur",
+      "protocolError": "Échec de la négociation de protocole, veuillez essayer un autre nœud",
+      "connectionFatal": "Échec de la connexion, veuillez réessayer ou changer de nœud",
+      "permissionDenied": "Permission VPN refusée. Veuillez activer VPN dans les paramètres système.",
+      "environmentSetupFailed": "Échec de la configuration du réseau. Redémarrez votre appareil et réessayez.",
+      "startFailed": "Échec du démarrage du service, veuillez réessayer",
+      "reconnectFailed": "Échec de la reconnexion, veuillez réessayer",
+      "timeout": "Délai d'attente de l'opération dépassé, veuillez réessayer",
+      "allAddrsFailed": "Toutes les adresses serveur ont échoué, veuillez changer de nœud"
+    },
+    "action": {
+      "timeout": "Délai d'attente de l'opération dépassé, veuillez réessayer",
+      "parseFailed": "Échec de l'analyse de la requête"
+    },
+    "api": {
+      "requestFailed": "Échec de la requête, veuillez vérifier votre réseau",
+      "responseFailed": "Échec de l'analyse de la réponse"
+    },
+    "engine": {
+      "ruleBundlesUnavailable": "Échec du téléchargement des règles de routage. Vérifiez le réseau et réessayez."
+    },
+    "installCancelled": "Installation annulée",
+    "unknown": "Erreur inconnue",
+    "unknownError": "Erreur inconnue"
+  },
+  "features": {
+    "fastConnect": "Extrêmement rapide",
+    "fastConnectDesc": "Optimisation intelligente du routage, réduction de la latence de 80 %",
+    "security": "Chiffrement d'entreprise",
+    "securityDesc": "Chiffrement AES-256 de niveau militaire, protection de la sécurité des données",
+    "global": "Nœuds mondiaux",
+    "globalDesc": "50+ pays, 200+ nœuds premium",
+    "multiDevice": "Support multi-appareils",
+    "multiDeviceDesc": "Un compte, toutes les plateformes"
+  },
+  "messages": {
+    "sendVerificationSuccess": "E-mail de vérification envoyé avec succès",
+    "sendVerificationFailed": "Échec de l'envoi de l'e-mail de vérification",
+    "logoutSuccess": "Utilisateur déconnecté",
+    "logoutFailed": "Échec de la déconnexion",
+    "copySuccess": "Copié avec succès",
+    "copyFailed": "Échec de la copie",
+    "saveSuccess": "Enregistré avec succès",
+    "saveFailed": "Échec de l'enregistrement",
+    "deleteSuccess": "Supprimé avec succès",
+    "deleteFailed": "Échec de la suppression",
+    "serviceInstalling": "Installation silencieuse du service, veuillez patienter...",
+    "serviceInstallSuccess": "Service installé avec succès !",
+    "serviceInstallFailedAuth": "Privilèges d'administrateur requis pour installer le service, veuillez cliquer sur « Oui » dans la boîte de dialogue UAC",
+    "updateSuccess": "Mis à jour avec succès",
+    "updateFailed": "Échec de la mise à jour",
+    "networkError": "Erreur réseau",
+    "serverError": "Erreur serveur",
+    "unknownError": "Erreur inconnue"
+  },
+  "loadingAndEmpty": {
+    "noHistoryTitle": "Aucun historique",
+    "noHistoryDescription": "Vous n'avez pas encore d'historique de paiement et d'autorisation, allez découvrir les avantages de l'adhésion !",
+    "noPlansTitle": "Aucun forfait disponible",
+    "noPlansDescription": "Les forfaits sont en cours de chargement ou temporairement indisponibles, veuillez réessayer ultérieurement",
+    "noInviteCodesTitle": "Aucun code d'invitation",
+    "noInviteCodesDescription": "Vous n'avez pas encore créé de codes d'invitation, créez votre code d'invitation exclusif à partager avec vos amis !",
+    "noDevicesTitle": "Aucun appareil",
+    "noDevicesDescription": "Vous n'avez pas encore d'appareils connectés"
+  }
+}

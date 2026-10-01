@@ -1,0 +1,17 @@
+{
+  "primary": "التنقل الرئيسي",
+  "account": "الحساب",
+  "login": "تسجيل الدخول",
+  "language": "اللغة",
+  "searchLanguage": "البحث عن لغة",
+  "noLanguageFound": "لا توجد لغة مطابقة",
+  "footer": {
+    "tagline": "VPN خاص. بلا سجلات، وسريع على أي شبكة.",
+    "company": "الشركة",
+    "privacy": "سياسة الخصوصية",
+    "terms": "شروط الخدمة",
+    "deleteAccount": "حذف حسابك",
+    "contact": "تواصل معنا",
+    "copyright": "© {year} {legalName}. جميع الحقوق محفوظة."
+  }
+}

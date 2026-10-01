@@ -1,0 +1,45 @@
+{
+  "metaTitle": "Akaun anda",
+  "title": "Akaun anda",
+  "subtitle": "Urus langganan dan log masuk anda.",
+  "loading": "Memuatkan",
+  "navSubscription": "Langganan",
+  "navSecurity": "Keselamatan",
+  "signOut": "Log keluar",
+  "subscriptionTitle": "Langganan anda",
+  "renewsOn": "Diperbaharui pada {date}",
+  "endsOn": "Tamat pada {date}",
+  "manage": "Urus langganan",
+  "opening": "Membuka…",
+  "noSubscriptionTitle": "Tiada langganan aktif",
+  "noSubscription": "Pilih pelan untuk mula menggunakan Overleap pada sehingga lima peranti.",
+  "seePlans": "Lihat pelan",
+  "activating": "Mengaktifkan langganan anda…",
+  "activationDelayed": "Pembayaran diterima. Langganan anda akan aktif dalam beberapa minit — muat semula halaman ini untuk menyemak.",
+  "downloadTitle": "Semuanya siap — muat turun aplikasi",
+  "downloadBody": "Pasang Overleap dan log masuk menggunakan alamat e-mel ini.",
+  "downloadCta": "Muat turun Overleap",
+  "cancel": "Batal",
+  "confirm": "Simpan",
+  "password": {
+    "setPassword": "Tetapkan kata laluan",
+    "changePassword": "Tukar kata laluan",
+    "newPassword": "Kata laluan baharu",
+    "confirmPassword": "Sahkan kata laluan",
+    "requirements": "Sekurang-kurangnya {length} aksara. Elakkan perkataan lazim, corak papan kekunci dan aksara berulang.",
+    "mismatch": "Kata laluan tidak sepadan",
+    "setSuccess": "Kata laluan disimpan",
+    "strength": {
+      "label": "Kekuatan kata laluan",
+      "veryWeak": "Sangat lemah",
+      "weak": "Lemah",
+      "fair": "Sederhana",
+      "good": "Baik",
+      "strong": "Kuat"
+    }
+  },
+  "security": {
+    "passwordSet": "Tetapkan kata laluan untuk log masuk dengan e-mel dan kata laluan. Anda masih boleh menggunakan kod sekali guna.",
+    "passwordChange": "Anda sudah menetapkan kata laluan. Anda boleh menukarnya di sini."
+  }
+}

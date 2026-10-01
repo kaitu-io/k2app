@@ -1,0 +1,17 @@
+{
+  "primary": "Hauptnavigation",
+  "account": "Konto",
+  "login": "Anmelden",
+  "language": "Sprache",
+  "searchLanguage": "Sprachen durchsuchen",
+  "noLanguageFound": "Keine passende Sprache",
+  "footer": {
+    "tagline": "Ein privates VPN. Keine Logs, schnell in jedem Netzwerk.",
+    "company": "Unternehmen",
+    "privacy": "Datenschutzerklärung",
+    "terms": "Nutzungsbedingungen",
+    "deleteAccount": "Konto löschen",
+    "contact": "Kontakt",
+    "copyright": "© {year} {legalName}. Alle Rechte vorbehalten."
+  }
+}

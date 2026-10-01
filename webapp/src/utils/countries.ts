@@ -119,19 +119,32 @@ export function countryFlagEmoji(cc: string | null | undefined): string {
  * Localized country name for an ISO 3166-1 alpha-2 code.
  *
  * @param cc     Country code (case-insensitive)
- * @param locale i18next locale (e.g. `en-US`, `zh-CN`). Only the base
- *               language is consulted (`en` / `zh`); everything else falls
- *               back to English.
+ * @param locale i18next locale (e.g. `en-US`, `zh-CN`, `fr`). `en` / `zh` use
+ *               the curated tables below; any other language asks the
+ *               platform (`Intl.DisplayNames`) and falls back to English.
  *
- * If the code isn't in the hardcoded map, returns the uppercased code so
- * callers always get a non-empty, displayable string.
+ * If no source knows the code, returns the uppercased code so callers always
+ * get a non-empty, displayable string.
  */
 export function countryName(cc: string | null | undefined, locale: string): string {
   if (!cc) return '';
   const lower = cc.toLowerCase();
   const base = (locale || 'en').split('-')[0].toLowerCase();
-  const table = COUNTRY_NAMES[base] ?? COUNTRY_NAMES.en;
-  return table[lower] ?? cc.toUpperCase();
+  const curated = COUNTRY_NAMES[base];
+  if (curated) return curated[lower] ?? cc.toUpperCase();
+  return intlRegionName(cc, locale) ?? COUNTRY_NAMES.en[lower] ?? cc.toUpperCase();
+}
+
+/** Platform-localized region name, or undefined when the runtime has no
+ *  `Intl.DisplayNames` data for the locale or the code is not a region. */
+export function intlRegionName(cc: string, locale: string): string | undefined {
+  try {
+    const upper = cc.toUpperCase();
+    const name = new Intl.DisplayNames([locale], { type: 'region', fallback: 'none' }).of(upper);
+    return name && name !== upper ? name : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

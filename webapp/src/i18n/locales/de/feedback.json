@@ -1,0 +1,28 @@
+{
+  "feedback": {
+    "buttonLabel": "Problem melden",
+    "buttonTooltip": "Haben Sie Probleme? Klicken Sie hier, um ein Problem zu melden",
+    "dialogTitle": "Problem melden",
+    "dialogDescription": "Durch das Absenden werden App-Protokolle gesammelt, um uns bei der Identifizierung und Behebung von Problemen zu helfen. Protokolle enthalten keine sensiblen Informationen.",
+    "submitButton": "Feedback absenden",
+    "uploading": "Protokolle werden hochgeladen...",
+    "uploadSuccess": "Feedback eingereicht",
+    "uploadSuccessDescription": "Vielen Dank für Ihr Feedback! Wir werden uns bald darum kümmern.",
+    "uploadError": "Einreichung fehlgeschlagen",
+    "uploadFailed": "Protokolle konnten nicht hochgeladen werden. Bitte versuchen Sie es später erneut.",
+    "platformNotSupported": "Diese Funktion wird auf der aktuellen Plattform noch nicht unterstützt",
+    "disconnectFeedback": {
+      "title": "Wie war Ihre Verbindung?",
+      "thankYou": "Vielen Dank für Ihr Feedback",
+      "detailTitle": "Was ist schief gelaufen? (optional)",
+      "submit": "Absenden",
+      "tags": {
+        "slow": "Langsam",
+        "cantConnect": "Kann nicht verbinden",
+        "frequentDrops": "Häufige Abbrüche",
+        "contentBlocked": "Websites/Videos blockiert",
+        "other": "Sonstiges"
+      }
+    }
+  }
+}

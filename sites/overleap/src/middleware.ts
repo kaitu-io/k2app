@@ -7,7 +7,7 @@ const intlMiddleware = createMiddleware(routing);
 
 const NO_STORE = 'private, no-store, must-revalidate';
 
-// Locale-looking first segments we do not serve (zh-CN, en-IE, fr …) → 301 to
+// Locale-looking first segments we do not serve (zh-CN, en-IE, nl …) → 301 to
 // the same path under the default locale. Real routes never start with xx or xx-XX.
 const FOREIGN_LOCALE_RE = /^\/([a-z]{2}(?:-[A-Za-z]{2})?)(\/.*)?$/;
 
@@ -52,29 +52,36 @@ export default function middleware(request: NextRequest) {
   return intlMiddleware(request);
 }
 
-/** Pick a served locale from Accept-Language. Any English variant we do not
- *  serve (bare `en`, en-IE, en-NZ …) lands on the en-GB master. */
+// Legacy ISO 639 codes some Android clients still send.
+const TAG_ALIASES: Record<string, string> = { in: 'id' };
+
+/**
+ * Pick a served locale from Accept-Language. Per tag, in q order: the tag
+ * itself, then each parent (`fr-CA` → `fr`), then the first served locale of
+ * the same language (`pt-PT` → `pt-BR`; any English variant we do not serve —
+ * bare `en`, en-IE, en-NZ … — lands on the en-GB master because it is listed
+ * first). Only when no tag matches does the default apply.
+ */
 export function negotiateLocale(acceptLanguage: string | null): Locale {
   if (!acceptLanguage) return DEFAULT_LOCALE;
   const ranked = acceptLanguage
     .split(',')
     .map((part) => {
       const [tag, q] = part.trim().split(';q=');
-      return { tag: tag.toLowerCase(), q: q ? parseFloat(q) : 1 };
+      return { tag: tag.trim().toLowerCase(), q: q ? parseFloat(q) : 1 };
     })
-    .filter((l) => l.tag && !Number.isNaN(l.q))
+    .filter((l) => l.tag && l.tag !== '*' && l.q > 0)
     .sort((a, b) => b.q - a.q);
 
+  const byLower = new Map(LOCALES.map((l) => [l.toLowerCase(), l] as const));
   for (const { tag } of ranked) {
-    const exact = LOCALES.find((l) => l.toLowerCase() === tag);
-    if (exact) return exact;
-    const [lang, region] = tag.split('-');
-    if (lang === 'en') {
-      if (region === 'us') return 'en-US';
-      if (region === 'au') return 'en-AU';
-      return 'en-GB';
+    for (let t = tag; t; t = t.includes('-') ? t.slice(0, t.lastIndexOf('-')) : '') {
+      const hit = byLower.get(TAG_ALIASES[t] ?? t);
+      if (hit) return hit;
     }
-    if (lang === 'ja') return 'ja';
+    const primary = tag.split('-')[0];
+    const sameLanguage = LOCALES.find((l) => l.toLowerCase().split('-')[0] === primary);
+    if (sameLanguage) return sameLanguage;
   }
   return DEFAULT_LOCALE;
 }

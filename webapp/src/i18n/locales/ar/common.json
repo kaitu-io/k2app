@@ -1,0 +1,184 @@
+{
+  "status": {
+    "stopped": "متوقف",
+    "connecting": "جاري الاتصال...",
+    "connected": "متصل",
+    "reconnecting": "جاري إعادة الاتصال...",
+    "disconnecting": "جاري قطع الاتصال...",
+    "disconnected": "غير متصل",
+    "error": "فشل الاتصال",
+    "failed": "فشل الاتصال",
+    "offline": "غير متصل بالإنترنت",
+    "online": "متصل بالإنترنت",
+    "active": "نشط",
+    "inactive": "غير نشط",
+    "enabled": "مفعل",
+    "disabled": "معطل",
+    "clickToStop": "انقر لقطع الاتصال",
+    "reconnectingToServer": "جاري إعادة الاتصال بالخادم...",
+    "waitingForNetwork": "انتظار الشبكة..."
+  },
+  "common": {
+    "justNow": "للتو",
+    "back": "العودة",
+    "cancel": "إلغاء",
+    "confirm": "تأكيد",
+    "add": "إضافة",
+    "adding": "جاري الإضافة...",
+    "ok": "موافق",
+    "save": "حفظ",
+    "delete": "حذف",
+    "clear": "مسح",
+    "copy": "نسخ",
+    "close": "إغلاق",
+    "loading": "جاري التحميل...",
+    "processing": "جاري المعالجة...",
+    "retry": "إعادة المحاولة",
+    "download": "تنزيل",
+    "error": "خطأ",
+    "refresh": "تحديث",
+    "and": "و",
+    "success": "نجح",
+    "loadFailed": "فشل التحميل",
+    "notFound": "المورد غير موجود",
+    "serverError": "خطأ في الخادم",
+    "unknownError": "خطأ غير معروف",
+    "later": "لاحقاً",
+    "login": "دخول",
+    "viewDetails": "عرض التفاصيل",
+    "experimental": "تجريبي",
+    "edit": "تحرير",
+    "next": "التالي",
+    "or": "أو",
+    "changelog": "سجل التغييرات"
+  },
+  "errors": {
+    "service": {
+      "serviceNotFound": "ملف الخدمة غير موجود، يرجى إعادة تثبيت التطبيق",
+      "authRequired": "يتطلب امتيازات المسؤول لتثبيت الخدمة",
+      "installFailed": "فشل تثبيت الخدمة",
+      "connectionFailed": "تعذر الاتصال بالخدمة"
+    },
+    "config": {
+      "badConfig": "خطأ في الإعدادات، يرجى التحقق من عنوان الخادم"
+    },
+    "network": {
+      "timeout": "انتهت مهلة الاتصال، يرجى التحقق من الشبكة",
+      "unreachable": "الخادم غير قابل للوصول، يرجى التحقق من اتصال الشبكة",
+      "reset": "تم قطع اتصال الشبكة، يرجى التحقق من حالة الشبكة",
+      "dns": "فشل دقة DNS، يرجى التحقق من إعدادات الشبكة",
+      "tls": "فشل الاتصال الآمن، يرجى التحقق من بيئة الشبكة",
+      "refused": "تعذر الاتصال بالخادم، يرجى المحاولة لاحقاً",
+      "repairFailed": "فشل إصلاح الشبكة، يرجى التحقق من الإعدادات يدوياً",
+      "repairDNS": "فشل إصلاح DNS",
+      "repairRoute": "فشل إصلاح المسار",
+      "repairPreFailed": "فشل تحضير إصلاح الشبكة",
+      "unavailable": "لا توجد اتصال شبكة. تحقق من شبكة جهازك وحاول مرة أخرى."
+    },
+    "server": {
+      "unavailable": "الخادم غير متاح، يرجى المحاولة لاحقاً",
+      "overload": "الخادم مشغول، يرجى المحاولة لاحقاً",
+      "maintenance": "الخادم قيد الصيانة، يرجى المحاولة لاحقاً",
+      "internal": "خطأ داخلي في الخادم، يرجى المحاولة لاحقاً",
+      "notImplemented": "الميزة غير متاحة حالياً"
+    },
+    "auth": {
+      "logoutFailed": "فشل تسجيل الخروج، يرجى المحاولة",
+      "tokenRefreshFailed": "فشل تحديث الجلسة، يرجى تسجيل الدخول مرة أخرى"
+    },
+    "client": {
+      "badRequest": "خطأ في معامل الطلب",
+      "unauthorized": "يرجى تسجيل الدخول أولاً",
+      "forbidden": "لا توجد صلاحية لتنفيذ هذا الإجراء",
+      "notFound": "المورد المطلوب غير موجود",
+      "paymentRequired": "انتهت صلاحية العضوية، يرجى التجديد",
+      "notSupported": "الميزة غير مدعومة",
+      "upgradeRequired": "يرجى الترقية إلى الإصدار الأحدث",
+      "conflict": "نزاع العملية، يرجى المحاولة",
+      "invalidArgument": "معاملات غير صحيحة",
+      "tooEarly": "يرجى الانتظار قليلاً وإعادة المحاولة",
+      "tooManyRequests": "عدد كبير جداً من الطلبات، يرجى المحاولة لاحقاً",
+      "invalidClock": "ساعة الجهاز غير صحيحة، يرجى تعديلها",
+      "selfInvitation": "لا يمكنك استخدام رمز دعوتك الخاص",
+      "licenseKeyNotFound": "مفتاح الترخيص غير موجود",
+      "licenseKeyUsed": "تم استخدام مفتاح الترخيص بالفعل",
+      "licenseKeyExpired": "انتهت صلاحية مفتاح الترخيص",
+      "licenseKeyNotMatch": "أنت غير مؤهل لهذا مفتاح الترخيص",
+      "licenseKeyAlreadyRedeemed": "لقد قمت بالفعل باسترجاع مفتاح ترخيص (واحد لكل حساب)",
+      "tierMismatch": "طبقتك الحالية لا يمكنها شراء هذه الخطة. يرجى الاتصال بالدعم لتبديل الطبقات.",
+      "proxyPurchaseDeprecated": "لم يعد يتم دعم الشراء بالوكالة. يرجى من المتلقي الشراء من حسابه الخاص.",
+      "proxyMembersDeprecated": "تم إزالة إدارة أعضاء الوكالة. حدد المتلقي على {{brandDomain}}/purchase أثناء الدفع."
+    },
+    "tunnel": {
+      "listFailed": "فشل تحميل قائمة الخادم",
+      "connectFailed": "فشل الاتصال بالخادم"
+    },
+    "vpn": {
+      "authFailed": "فشل المصادقة، يرجى تسجيل الدخول مرة أخرى",
+      "membershipExpired": "انتهت صلاحية العضوية، يرجى التجديد",
+      "forbidden": "فشل التحقق من شهادة الخادم",
+      "protocolError": "فشل مصافحة البروتوكول، يرجى تجربة عقدة أخرى",
+      "connectionFatal": "فشل الاتصال، يرجى إعادة المحاولة أو تبديل العقدة",
+      "permissionDenied": "تم رفض إذن VPN. يرجى تفعيل VPN في إعدادات النظام.",
+      "environmentSetupFailed": "فشل إعداد الشبكة. أعد تشغيل جهازك وحاول مرة أخرى.",
+      "startFailed": "فشل بدء الخدمة، يرجى المحاولة",
+      "reconnectFailed": "فشل إعادة الاتصال، يرجى المحاولة",
+      "timeout": "انتهت مهلة العملية، يرجى المحاولة",
+      "allAddrsFailed": "فشل جميع عناوين الخادم، يرجى تبديل العقدة"
+    },
+    "action": {
+      "timeout": "انتهت مهلة العملية، يرجى المحاولة",
+      "parseFailed": "فشل تحليل الطلب"
+    },
+    "api": {
+      "requestFailed": "فشل الطلب، يرجى التحقق من شبكتك",
+      "responseFailed": "فشل تحليل الاستجابة"
+    },
+    "engine": {
+      "ruleBundlesUnavailable": "فشل تنزيل قوانين التوجيه. تحقق من الشبكة وأعد المحاولة."
+    },
+    "installCancelled": "تم إلغاء التثبيت",
+    "unknown": "خطأ غير معروف",
+    "unknownError": "خطأ غير معروف"
+  },
+  "features": {
+    "fastConnect": "بسرعة البرق",
+    "fastConnectDesc": "تحسين التوجيه الذكي، تقليل الكمون بنسبة 80٪",
+    "security": "تشفير عسكري",
+    "securityDesc": "تشفير AES-256 عسكري الجودة، حماية أمان البيانات",
+    "global": "عقد عالمية",
+    "globalDesc": "أكثر من 50 دولة، أكثر من 200 عقدة متميزة",
+    "multiDevice": "دعم متعدد الأجهزة",
+    "multiDeviceDesc": "حساب واحد، جميع المنصات"
+  },
+  "messages": {
+    "sendVerificationSuccess": "تم إرسال البريد الإلكتروني للتحقق بنجاح",
+    "sendVerificationFailed": "فشل إرسال البريد الإلكتروني للتحقق",
+    "logoutSuccess": "تم تسجيل خروج المستخدم",
+    "logoutFailed": "فشل تسجيل الخروج",
+    "copySuccess": "تم النسخ بنجاح",
+    "copyFailed": "فشل النسخ",
+    "saveSuccess": "تم الحفظ بنجاح",
+    "saveFailed": "فشل الحفظ",
+    "deleteSuccess": "تم الحذف بنجاح",
+    "deleteFailed": "فشل الحذف",
+    "serviceInstalling": "جاري تثبيت الخدمة بصمت، يرجى الانتظار...",
+    "serviceInstallSuccess": "تم تثبيت الخدمة بنجاح!",
+    "serviceInstallFailedAuth": "يتطلب امتيازات المسؤول لتثبيت الخدمة، يرجى النقر على \"نعم\" في حوار UAC",
+    "updateSuccess": "تم التحديث بنجاح",
+    "updateFailed": "فشل التحديث",
+    "networkError": "خطأ الشبكة",
+    "serverError": "خطأ الخادم",
+    "unknownError": "خطأ غير معروف"
+  },
+  "loadingAndEmpty": {
+    "noHistoryTitle": "لا توجد سجلات",
+    "noHistoryDescription": "ليس لديك أي سجل دفع وتفويض حتى الآن، انطلق وتجربة مزايا العضوية!",
+    "noPlansTitle": "لا توجد خطط متاحة",
+    "noPlansDescription": "جاري تحميل الخطط أو غير متاحة مؤقتاً، يرجى المحاولة لاحقاً",
+    "noInviteCodesTitle": "لا توجد رموز دعوة",
+    "noInviteCodesDescription": "لم تقم بإنشاء أي رموز دعوة حتى الآن، أنشئ رمز دعوتك الحصري لمشاركته مع الأصدقاء!",
+    "noDevicesTitle": "لا توجد أجهزة",
+    "noDevicesDescription": "ليس لديك أي أجهزة مسجلة دخول حتى الآن"
+  }
+}

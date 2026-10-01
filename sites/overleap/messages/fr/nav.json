@@ -1,0 +1,17 @@
+{
+  "primary": "Navigation principale",
+  "account": "Compte",
+  "login": "Connexion",
+  "language": "Langue",
+  "searchLanguage": "Rechercher une langue",
+  "noLanguageFound": "Aucune langue correspondante",
+  "footer": {
+    "tagline": "Un VPN privé. Sans journaux, rapide sur tous les réseaux.",
+    "company": "Société",
+    "privacy": "Politique de confidentialité",
+    "terms": "Conditions d'utilisation",
+    "deleteAccount": "Supprimer votre compte",
+    "contact": "Nous contacter",
+    "copyright": "© {year} {legalName}. Tous droits réservés."
+  }
+}

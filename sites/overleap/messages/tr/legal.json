@@ -1,0 +1,17 @@
+{
+  "privacy": {
+    "title": "Gizlilik Politikası",
+    "metaTitle": "Gizlilik Politikası | Overleap",
+    "subtitle": "Neleri, neden topladığımız ve asla kaydetmediklerimiz."
+  },
+  "terms": {
+    "title": "Hizmet Şartları",
+    "metaTitle": "Hizmet Şartları | Overleap",
+    "subtitle": "Sizinle Overleap LLC arasındaki sözleşme."
+  },
+  "deleteAccount": {
+    "title": "Hesabınızı silin",
+    "metaTitle": "Hesabınızı silin | Overleap",
+    "subtitle": "Overleap hesabınızı nasıl silebileceğiniz ve verilerinize ne olacağı."
+  }
+}

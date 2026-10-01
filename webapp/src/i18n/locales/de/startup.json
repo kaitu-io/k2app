@@ -1,0 +1,79 @@
+{
+  "startup": {
+    "activeUsers": "Aktive Benutzer",
+    "certified": "ISO 27001 zertifiziert",
+    "uptime": "Uptime",
+    "authSuccess": "Authentifizierung erfolgreich. Benutzeranmeldestatus aktualisiert",
+    "deviceCanDirectLogin": "Gerät kann sich direkt anmelden",
+    "deviceCannotDirectLogin": "Gerät kann sich nicht direkt anmelden",
+    "checkDeviceLoginFailed": "Fehler beim Überprüfen des Geräteanmeldestatus",
+    "deviceLoginFailed": "Geräteanmeldung fehlgeschlagen",
+    "deviceLoginFailedRetry": "Geräteanmeldung fehlgeschlagen. Bitte versuchen Sie es erneut",
+    "deviceLoginSuccess": "Geräteanmeldung erfolgreich",
+    "pleaseEnterInviteCode": "Bitte geben Sie einen Einladungscode ein",
+    "registrationFailed": "Registrierung fehlgeschlagen",
+    "registrationFailedRetry": "Registrierung fehlgeschlagen. Bitte versuchen Sie es erneut",
+    "newDevice": "Neues Gerät",
+    "freeDeviceRegistrationFailed": "Kostenlose Geräteregistrierung fehlgeschlagen",
+    "inviteCodeIncorrect": "Einladungscode ist falsch",
+    "inviteCodeInvalidOrExpired": "Einladungscode ist ungültig oder abgelaufen",
+    "getInviteCodeInfoFailed": "Einladungscode-Info konnte nicht abgerufen werden",
+    "haveProAccount": "Haben Sie bereits ein Pro-Konto?",
+    "loginProAccountDesc": "Melden Sie sich bei Ihrem Pro-Konto an und genießen Sie alle Funktionen",
+    "deviceAlreadyRegistered": "Erkannt, dass dieses Gerät ein registriertes Konto hat",
+    "deviceReady": "Gerät ist anmeldungsbereit",
+    "deviceReadyDesc": "Ihr Gerät ist registriert und einsatzbereit",
+    "orEmailLogin": "Oder mit E-Mail anmelden",
+    "experienceProFeatures": "Erleben Sie Pro-Funktionen",
+    "enterInviteCodeDesc": "Geben Sie einen Einladungscode ein, um Pro-Funktionen sofort zu erleben",
+    "inviteCode": "Einladungscode",
+    "enterInviteCodePlaceholder": "Bitte geben Sie einen Einladungscode ein (optional)",
+    "youHaveGoodFriend": "🎁 Sie haben einen tollen Freund😼",
+    "enjoyNow": "Jetzt genießen",
+    "days": "Tage",
+    "pro": "Pro",
+    "extraBonus": "Zusätzlicher Bonus!",
+    "experience": "Erleben Sie {{days}} Tage",
+    "purchaseBonus": "Kauf erhält {{purchaseDays}}+{{downloadDays}} Tage",
+    "buyNowExtraBonus": "Kaufen Sie jetzt und erhalten Sie {{days}} zusätzliche Tage",
+    "buyNowEnjoyAllPro": "Kaufen Sie jetzt für alle Pro-Vorteile",
+    "experienceOnly": "Erleben Sie {{days}} Tage nur",
+    "experienceNow": "Jetzt erleben",
+    "or": "oder",
+    "noAccountNoInviteCode": "Kein Konto oder Einladungscode?",
+    "processing": "Wird verarbeitet...",
+    "registerNewAccount": "Registrieren Sie direkt ein neues Konto"
+  },
+  "serviceStatus": {
+    "disconnected": "Service getrennt. Wird erneut verbunden..."
+  },
+  "upgradeRequired": {
+    "title": "Bitte aktualisieren Sie die App",
+    "description": "Die aktuelle Version ist veraltet. Bitte laden Sie die neueste Version herunter, um fortzufahren.",
+    "downloadButton": "Zum Download gehen"
+  },
+  "forceUpgrade": {
+    "title": "Version zu alt. Aktualisierung erforderlich",
+    "description": "Ihre aktuelle App-Version ({{currentVersion}}) wird nicht mehr unterstützt. Bitte aktualisieren Sie auf Version {{minVersion}} oder höher, um fortzufahren.",
+    "downloadButton": "Jetzt aktualisieren"
+  },
+  "app": {
+    "slogan": "Sicherer und bequemer Netzwerk-Proxy-Service",
+    "error": "Fehler",
+    "updateNow": "Jetzt aktualisieren",
+    "readyToInstall": "ist bereit zur Installation",
+    "hoverForDetails": "Hover für Details",
+    "releaseNotes": "Versionshinweise",
+    "newVersionAvailable": "Neue Version {{version}} verfügbar!",
+    "updating": "Wird aktualisiert",
+    "downloadingUpdate": "Wird heruntergeladen und installiert... {{progress}}%",
+    "errorBoundary": {
+      "title": "Anwendungsfehler",
+      "description": "Fehler wurde automatisch gemeldet. Wir werden ihn bald beheben.",
+      "details": "Fehlerdetails",
+      "retry": "Erneut versuchen"
+    },
+    "installing": "Wird installiert...",
+    "beingInstalled": "wird installiert..."
+  }
+}

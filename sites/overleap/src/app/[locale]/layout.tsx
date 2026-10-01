@@ -5,7 +5,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, setRequestLocale } from 'next-intl/server';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { Toaster } from '@/components/ui/sonner';
-import { LOCALES, SITE } from '@/lib/site';
+import { LOCALES, LOCALE_META, SITE } from '@/lib/site';
 import { ICONS } from '@/lib/metadata';
 import '../globals.css';
 
@@ -36,7 +36,7 @@ export default async function LocaleLayout({
   const messages = await getMessages();
 
   return (
-    <html lang={locale} className="dark" suppressHydrationWarning>
+    <html lang={locale} dir={LOCALE_META[locale].dir} className="dark" suppressHydrationWarning>
       <body className={`${inter.variable} ${mono.variable} font-sans`}>
         <NextIntlClientProvider messages={messages}>
           <AuthProvider>

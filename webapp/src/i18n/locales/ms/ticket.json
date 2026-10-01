@@ -1,0 +1,108 @@
+{
+  "feedback": {
+    "newTicket": "Tiket Baru",
+    "viewTickets": "Lihat Tiket",
+    "myTickets": "Tiket Saya",
+    "noTickets": "Tiada tiket lagi",
+    "noTicketsHint": "Menghadapi masalah? Hantar tiket dan kami akan menghubungi anda",
+    "loadError": "Gagal memuatkan, sila cuba semula",
+    "status": {
+      "open": "Buka",
+      "resolved": "Diselesaikan",
+      "closed": "Ditutup"
+    },
+    "adminReplied": "Sokongan telah membalas",
+    "replyPlaceholder": "Taip balasan anda...",
+    "closedNotice": "Tiket ini ditutup",
+    "replyFailed": "Gagal menghantar balasan",
+    "loginToView": "Log masuk dengan {{email}} untuk melihat kemajuan dan balasan",
+    "time": {
+      "justNow": "Baru-baru ini",
+      "minutesAgo": "{{count}}m yang lalu",
+      "hoursAgo": "{{count}}j yang lalu",
+      "daysAgo": "{{count}}h yang lalu"
+    },
+    "send": "Hantar"
+  },
+  "faq": {
+    "title": "FAQ",
+    "subtitle": "Semak di sini terlebih dahulu — kebanyakan isu diselesaikan dengan cepat",
+    "stillNeedHelp": "Tidak jumpa jawapan anda?",
+    "submitCta": "Hantar Tiket",
+    "entryTitle": "FAQ",
+    "entryHint": "Semak FAQ sebelum menghantar — ia mungkin menyelesaikan isu anda lebih cepat",
+    "items": {
+      "connection": {
+        "question": "Apa yang patut saya lakukan tentang sambungan yang tidak stabil atau kecepatan perlahan?",
+        "answer": "Isu kecepatan biasanya berkaitan dengan rangkaian tempatan anda. Sila selesaikan masalah dalam urutan ini:\n\n1. Cuba talian terowong yang berbeza terlebih dahulu. Jika semua talian perlahan, hampir pasti isu rangkaian tempatan.\n2. Mulai semula penolak anda. Ini menyelesaikan kebanyakan isu cache penolakan sementara dan pautan.\n3. Hubungi ISP anda dan tanya sama ada mereka telah menggunakan pengegelapan tersasaran untuk lalu lintas luar negara.\n4. Jika ISP menawarkan untuk menghantar ahli teknik ke tapak, tolak — ISP sering mempunyai KPI \"pemprosesan pita lebar\" dan akan mendorong anda untuk menurunkan pelan anda dengan memetik \"gangguan garisan\" palsu.\n5. Hanya selepas menghapuskan perkara di atas adalah kemungkinan isu nod. Hantar maklum balas dengan log dan kami akan menyiasat."
+      },
+      "appNotWorking": {
+        "question": "Apl atau permainan khusus berhenti berfungsi selepas saya memasang {{brand}} — apa sekarang?",
+        "answer": "Sesetengah apl (terutamanya Adobe Creative Cloud, permainan tertentu, utusan pihak ketiga, dan perbankan / kerajaan / apl video China) cache alamat pelayan mereka sendiri atau memerlukan IP domestik untuk berfungsi. Apabila {{brand}} hidup, permintaan tersebut dialihkan melalui proksi dan mungkin ditolak atau tamat tempoh. Cuba dalam urutan ini:\n\n1. Mulai semula apl — kebanyakan masa, berhenti dan membuka semula biarkan ia menyegarkan cache pelayarnya.\n2. Tukar ke Lintasan Pintar — perluas Tetapan Lanjutan di bahagian bawah Papan Pemuka, tukar Mod Penolakan daripada Proksi Global ke Lintasan Pintar, dan pilih negara (atau benarkan kesan automatik). Lalu lintas domestik kemudian pergi terus melalui rangkaian tempatan anda dan hanya lalu lintas luar negara menggunakan proksi, yang memulihkan kebanyakan apl China / bank / laman video segera. Nota: mod penolakan hanya boleh diubah apabila {{brand}} terputus. Lintasan Pintar juga mengesan automatik apl China biasa (WeChat, Taobao, Douyin, 12306, dll.) dan memastikan mereka langsung.\n3. Tambah apl ke \"Apl yang melintas VPN\" — untuk apl membandal Lintasan Pintar tidak meliputi (permainan domestik-sahaja lebih lama, alat korporat dalaman), pergi ke Tetapan Lanjutan → Apl yang melintas VPN dan tambahkan. Lalu lintas apl itu kemudian akan melangkau proksi sepenuhnya. Pada desktop senarai hanya menunjukkan apl yang sedang berjalan — lancarkan apl sasaran terlebih dahulu, kemudian kembali dan tambahkannya.\n4. Putuskan {{brand}} buat sementara waktu — dalam kes yang jarang terjadi (contohnya Adobe Creative Cloud caching IP warisan yang sudah tidak wujud), putuskan {{brand}} semasa menggunakan apl itu dan sambung semula selepas.\n5. Jika tiada di atas membantu, hantar tiket dengan log dan jurutera kami akan menyiasat."
+      },
+      "nodeChoice": {
+        "question": "Ada begitu banyak nod — yang mana satu patut saya pilih?",
+        "answer": "Pilihan paling mudah: gunakan Pilih Automatik. Ketik \"Pilih Automatik\" di bahagian atas senarai nod dan {{brand}} akan memilih nod terbaik berdasarkan kependaman masa nyata dan beban. Hidupkan \"Tukar Automatik\" dan ia akan memindahkan anda ke nod yang lebih baik apabila keadaan berubah. Ini adalah pilihan terbaik untuk kebanyakan pengguna.\n\nJika anda benar-benar ingin memilih secara manual:\n\n• Jangan selalu ketik nod pertama — beberapa nod pertama (terutamanya AU / Australia) mendapat kening kerana kebanyakan pengguna ketik nod pertama secara reflex.\n• Cuba JP / SG / KR / US terlebih dahulu — biasanya lebih stabil dan lebih cepat.\n• Jika ia tidak akan menyambung atau terasa perlahan, tukar ke nod yang berbeza — nod terbaik berbeza mengikut rantau dan waktu dalam sehari.\n• Penstriman dan penyemakan tidak sensitif terhadap pilihan nod; permainan dan panggilan video sensitif terhadap kependaman, jadi cuba beberapa dan pegang dengan yang paling stabil."
+      },
+      "wifiSwitch": {
+        "question": "VPN memutus selepas menukar WiFi atau rangkaian?",
+        "answer": "{{brand}} menyokong penyambungan semula automatik selepas perubahan rangkaian, tetapi pencetus mempunyai kelewatan beberapa saat hingga sedozen saat. Jika anda tidak mahu menunggu, ketik Putuskan secara manual kemudian Sambung untuk pulih dengan segera."
+      },
+      "deviceRemoved": {
+        "question": "Mengapa peranti saya dibuang / dikick keluar?",
+        "answer": "Setiap akaun menyokong sehingga 5 peranti log masuk secara serentak. Apabila anda log masuk pada peranti ke-6, sistem secara automatik membuang peranti log masuk paling awal.\n\nJika anda pasti anda tidak melebihi 5 peranti tetapi masih dikick, sila hantar maklum balas dan kami akan membantu memeriksa pengikatan peranti akaun anda."
+      },
+      "updateIssue": {
+        "question": "Apl tidak berfungsi selepas kemas kini?",
+        "answer": "Mekanisme kemas kini berbeza merentas platform, dan plugin kadang-kadang tidak memuatkan semula dengan segera:\n\n• Windows / macOS: Mulai semula komputer anda sehingga versi baru mengambil kesan penuh.\n• iOS: Jika anda melihat masalah selepas kemas kini, padam apl dan pasang semula daripada App Store — ini menyelesaikan masalah pemuatan semula plugin Sambungan Rangkaian.\n• Android: Mulai semula telefon anda, atau paksakan menghentikan apl dalam Tetapan dan buka semula."
+      },
+      "loginFailed": {
+        "question": "Gagal log masuk / kod pengesahan tidak diterima?",
+        "answer": "Punca paling biasa ialah kesilapan taip dalam e-mel — kira-kira 30% pengguna dalam pangkalan data kami menaip e-mel mereka dengan salah pada percubaan pertama. Sila semak huruf demi huruf:\n\n• Ruang atau aksara tambahan di sekitar tanda @\n• Ejaan domain (contohnya gmial → gmail, hotmial → hotmail)\n• Kekeliruan antara 0 (sifar) dan O (huruf)\n\nSelepas mengesahkan, semak folder spam anda. Jika tiada tiba, cuba alamat e-mel yang berbeza."
+      }
+    }
+  },
+  "ticket": {
+    "title": "Hantar Tiket",
+    "description": "Huraikan isu anda dan kami akan membalas melalui e-mel secepatnya.",
+    "feedbackTitle": "Maklum Balas",
+    "contentLabel": "Penerangan Isu",
+    "contentPlaceholder": "Sila huraikan isu secara terperinci, termasuk langkah operasi, mesej ralat, dll., yang akan membantu kami menyelesaikan isu lebih cepat.",
+    "submitButton": "Hantar Tiket",
+    "loginToSubmit": "Log Masuk untuk Hantar",
+    "submitting": "Menghantar...",
+    "submitSuccess": "Tiket dihantar dengan berjaya",
+    "submitSuccessTitle": "Tiket Dihantar dengan Berjaya!",
+    "submitFailed": "Gagal menghantar tiket, sila cuba lagi kemudian",
+    "nextStepHint": "Sila semak e-mel anda",
+    "emailReplyHint": "Pasukan sokongan kami akan berkomunikasi dengan anda melalui e-mel, sila perhatikan balasan dalam kotak masuk anda.",
+    "howItWorks": "Bagaimana Ia Berfungsi",
+    "dataCollectionHint": "Versi apl, maklumat sistem, dan log dikumpulkan secara automatik semasa penyerahan untuk membantu kami mendiagnosis isu lebih cepat.",
+    "stepper": {
+      "step1": "Huraikan Isu",
+      "step2": "Muatkan Log",
+      "step3": "Balasan E-mel"
+    },
+    "entryTitle": "Hubungi Sokongan",
+    "entryDescription": "Menghadapi masalah? Hantar tiket, kami akan membalas tidak lama lagi",
+    "betaWarning": "Anda menggunakan versi Beta. Jika anda mengalami masalah, anda boleh beralih kembali ke stabil dalam tetapan Akaun.",
+    "switchToStable": "Tukar ke Stabil",
+    "emailLabel": "E-mel Hubungan",
+    "emailPlaceholder": "Masukkan alamat e-mel anda sehingga kami boleh membalas",
+    "anonymousHint": "Anda tidak log masuk. Kami akan membalas anda melalui e-mel selepas penyerahan.",
+    "validation": {
+      "contentRequired": "Sila masukkan penerangan isu",
+      "contentTooLong": "Penerangan isu tidak boleh melebihi 5000 aksara",
+      "emailRequired": "Sila masukkan alamat e-mel anda",
+      "emailInvalid": "Sila masukkan alamat e-mel yang sah"
+    },
+    "quickIssue": {
+      "label": "Pilihan cepat",
+      "cannotConnect": "Tidak dapat menyambung",
+      "unstable": "Sambungan tidak stabil",
+      "slow": "Kecepatan perlahan",
+      "crash": "Apl ranap",
+      "subscription": "Isu langganan"
+    }
+  }
+}

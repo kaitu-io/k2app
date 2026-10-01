@@ -1,0 +1,9 @@
+{
+  "theme": {
+    "switchToLight": "روشن",
+    "switchToDark": "تیره",
+    "light": "حالت روشن",
+    "dark": "حالت تیره",
+    "system": "پیروی از سیستم"
+  }
+}

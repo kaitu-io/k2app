@@ -1,0 +1,50 @@
+{
+  "privateNode": {
+    "title": "Dedizierter Knoten",
+    "manage": "Dedizierten Knoten verwalten",
+    "myRouter": "Mein Router",
+    "buyLine": "Kaufe eine dedizierte Leitung",
+    "buy": "Besorge dir einen dedizierten Knoten",
+    "region": "Knoten-Region",
+    "selectRegion": "Region auswählen",
+    "ipTypeLabel": "IP-Typ",
+    "ipType": {
+      "residential": "Residenzielle IP",
+      "non_residential": "Rechenzentrum IP"
+    },
+    "traffic": "Datenverkehr",
+    "trafficUsed": "{{used}} / {{total}} verwendet",
+    "quota": "Datenverkehrs-Kontingent",
+    "status": {
+      "title": "Status",
+      "pending": "Ausstehend",
+      "provisioning": "Wird bereitgestellt",
+      "active": "Aktiv",
+      "grace": "Gnadenfrist",
+      "suspended": "Ausgesetzt",
+      "deprovisioned": "Bereitstellung aufgehoben",
+      "failed": "Bereitstellung fehlgeschlagen"
+    },
+    "expiresAt": "Verfällt",
+    "graceHint": "Dein Knoten befindet sich in der Gnadenfrist. Bitte erneuere bald, um Aussetzung zu vermeiden.",
+    "suspendedHint": "Der Knoten ist ausgesetzt, aber seine IP wird beibehalten. Er wird nach der Erneuerung wiederhergestellt.",
+    "nodeIp": "Knoten IP",
+    "provisioningHint": "Dein Knoten wird bereitgestellt. Dies dauert normalerweise ein paar Minuten, bitte warten.",
+    "empty": "Du hast noch keine dedizierten Knoten",
+    "renew": "Erneuern",
+    "renewOnWebsite": "Zum Erneuern besuche Mein Router auf unserer Website",
+    "percentUsed": "{{percent}}% verwendet",
+    "quotaExhausted": {
+      "title": "Monatliches Datenverkehrs-Kontingent aufgebraucht",
+      "resetHint": "Setzt sich am {{date}} zurück",
+      "resetUnknown": "Setzt sich am Anfang des nächsten Zyklus zurück",
+      "cta": "Erneuern / Kontingent erweitern"
+    },
+    "router": {
+      "title": "Füge einen Router hinzu",
+      "intro": "Installiere k2r auf deinem OpenWrt-Router — die App erkennt ihn automatisch und zeigt ihn unten an.",
+      "detected": "Router erkannt in deinem lokalen Netzwerk:",
+      "manage": "Router verwalten"
+    }
+  }
+}

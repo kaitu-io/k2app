@@ -101,10 +101,15 @@ describe('countryName', () => {
     expect(countryName('by', 'zh-CN')).toBe('白俄罗斯');
   });
 
-  it('falls back to English for unsupported locale base language', () => {
-    expect(countryName('jp', 'ja')).toBe('Japan');
+  it('asks the platform for languages without a curated table', () => {
+    expect(countryName('jp', 'ja')).toBe('日本');
     expect(countryName('cn', 'de-DE')).toBe('China');
-    expect(countryName('ru', 'fr')).toBe('Russia');
+    expect(countryName('ru', 'fr')).toBe('Russie');
+    expect(countryName('de', 'es')).toBe('Alemania');
+  });
+
+  it('falls back to English when the platform rejects the locale', () => {
+    expect(countryName('jp', 'not-a-locale-!!')).toBe('Japan');
   });
 
   it('resolves zh-TW and zh-HK via zh base language', () => {

@@ -1,0 +1,17 @@
+{
+  "primary": "Ana gezinme",
+  "account": "Hesap",
+  "login": "Giriş yap",
+  "language": "Dil",
+  "searchLanguage": "Dil ara",
+  "noLanguageFound": "Eşleşen dil yok",
+  "footer": {
+    "tagline": "Özel bir VPN. Kayıt tutmaz, her ağda hızlıdır.",
+    "company": "Şirket",
+    "privacy": "Gizlilik Politikası",
+    "terms": "Hizmet Şartları",
+    "deleteAccount": "Hesabınızı silin",
+    "contact": "Bize ulaşın",
+    "copyright": "© {year} {legalName}. Tüm hakları saklıdır."
+  }
+}

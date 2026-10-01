@@ -54,7 +54,7 @@ export function useAppLinks() {
 
   // 获取当前语言，并标准化为支持的语言代码
   const currentLang = useMemo(() => {
-    const lang = i18n.language || 'zh-CN';
+    const lang = i18n.language || '';
     // 标准化语言代码，确保返回的是我们支持的语言代码
     // 例如：zh-SG -> zh-CN, en -> en-US
     return normalizeLanguageCode(lang);

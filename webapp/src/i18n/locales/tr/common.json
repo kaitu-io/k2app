@@ -1,0 +1,184 @@
+{
+  "status": {
+    "stopped": "Durduruldu",
+    "connecting": "Bağlanıyor...",
+    "connected": "Bağlandı",
+    "reconnecting": "Yeniden bağlanıyor...",
+    "disconnecting": "Bağlantı kesiliyor...",
+    "disconnected": "Bağlantı Kesildi",
+    "error": "Bağlantı Başarısız",
+    "failed": "Bağlantı Başarısız",
+    "offline": "Çevrimdışı",
+    "online": "Çevrimiçi",
+    "active": "Etkin",
+    "inactive": "İşlevsiz",
+    "enabled": "Etkin",
+    "disabled": "Devre Dışı",
+    "clickToStop": "Bağlantıyı Kesmek İçin Tıkla",
+    "reconnectingToServer": "Sunucuya yeniden bağlanıyor...",
+    "waitingForNetwork": "Ağ bekleniyor..."
+  },
+  "common": {
+    "justNow": "Az önce",
+    "back": "Geri",
+    "cancel": "İptal",
+    "confirm": "Onayla",
+    "add": "Ekle",
+    "adding": "Ekleniyor...",
+    "ok": "Tamam",
+    "save": "Kaydet",
+    "delete": "Sil",
+    "clear": "Temizle",
+    "copy": "Kopyala",
+    "close": "Kapat",
+    "loading": "Yükleniyor...",
+    "processing": "İşleniyor...",
+    "retry": "Yeniden Dene",
+    "download": "İndir",
+    "error": "Hata",
+    "refresh": "Yenile",
+    "and": "ve",
+    "success": "Başarılı",
+    "loadFailed": "Yükleme Başarısız",
+    "notFound": "Kaynak Bulunamadı",
+    "serverError": "Sunucu Hatası",
+    "unknownError": "Bilinmeyen Hata",
+    "later": "Daha Sonra",
+    "login": "Giriş Yap",
+    "viewDetails": "Ayrıntıları Görüntüle",
+    "experimental": "Deneysel",
+    "edit": "Düzenle",
+    "next": "İleri",
+    "or": "VEYA",
+    "changelog": "Değişiklik Günlüğü"
+  },
+  "errors": {
+    "service": {
+      "serviceNotFound": "Hizmet dosyası bulunamadı, lütfen uygulamayı yeniden yükleyin",
+      "authRequired": "Hizmeti kurmak için yönetici ayrıcalıkları gereklidir",
+      "installFailed": "Hizmet kurulumu başarısız",
+      "connectionFailed": "Hizmete bağlanılamadı"
+    },
+    "config": {
+      "badConfig": "Yapılandırma hatası, lütfen sunucu adresini kontrol edin"
+    },
+    "network": {
+      "timeout": "Bağlantı zaman aşımına uğradı, lütfen ağı kontrol edin",
+      "unreachable": "Sunucu ulaşılamaz, lütfen ağ bağlantısını kontrol edin",
+      "reset": "Ağ bağlantısı kesildi, lütfen ağ durumunu kontrol edin",
+      "dns": "DNS çözülemedi, lütfen ağ ayarlarını kontrol edin",
+      "tls": "Güvenli bağlantı başarısız, lütfen ağ ortamınızı kontrol edin",
+      "refused": "Sunucuya bağlanılamadı, lütfen daha sonra tekrar deneyin",
+      "repairFailed": "Ağ onarımı başarısız, lütfen ayarları el ile kontrol edin",
+      "repairDNS": "DNS onarımı başarısız",
+      "repairRoute": "Rota onarımı başarısız",
+      "repairPreFailed": "Ağ onarımı hazırlığı başarısız",
+      "unavailable": "Ağ bağlantısı yok. Cihazınızın ağını kontrol edin ve tekrar deneyin."
+    },
+    "server": {
+      "unavailable": "Sunucu kullanılamaz, lütfen daha sonra tekrar deneyin",
+      "overload": "Sunucu meşgul, lütfen daha sonra tekrar deneyin",
+      "maintenance": "Sunucu bakımda, lütfen daha sonra tekrar deneyin",
+      "internal": "Sunucu iç hatası, lütfen daha sonra tekrar deneyin",
+      "notImplemented": "Özellik henüz mevcut değil"
+    },
+    "auth": {
+      "logoutFailed": "Çıkış başarısız, lütfen tekrar deneyin",
+      "tokenRefreshFailed": "Oturum yenilemesi başarısız, lütfen tekrar giriş yapın"
+    },
+    "client": {
+      "badRequest": "İstek parametresi hatası",
+      "unauthorized": "Lütfen önce giriş yapın",
+      "forbidden": "Bu işlemi yapma izniniz yok",
+      "notFound": "İstenen kaynak bulunamadı",
+      "paymentRequired": "Üyelik süresi doldu, lütfen yenileyin",
+      "notSupported": "Özellik desteklenmiyor",
+      "upgradeRequired": "Lütfen en son sürüme yükseltin",
+      "conflict": "İşlem çatışması, lütfen tekrar deneyin",
+      "invalidArgument": "Geçersiz parametreler",
+      "tooEarly": "Lütfen bir an bekleyin ve tekrar deneyin",
+      "tooManyRequests": "Çok fazla istek, lütfen daha sonra deneyin",
+      "invalidClock": "Cihaz saati yanlış, lütfen ayarlayın",
+      "selfInvitation": "Kendi davet kodunuzu kullanamazsınız",
+      "licenseKeyNotFound": "Lisans anahtarı bulunamadı",
+      "licenseKeyUsed": "Lisans anahtarı zaten kullanıldı",
+      "licenseKeyExpired": "Lisans anahtarı süresi doldu",
+      "licenseKeyNotMatch": "Bu lisans anahtarı için uygun değilsiniz",
+      "licenseKeyAlreadyRedeemed": "Zaten bir lisans anahtarını geri aldınız (hesap başına bir tane)",
+      "tierMismatch": "Mevcut katmanınız bu planı satın alamaz. Katmanları değiştirmek için desteğe başvurun.",
+      "proxyPurchaseDeprecated": "Proxy satın alma artık desteklenmiyor. Lütfen alıcıdan kendi hesabıyla satın almasını isteyin.",
+      "proxyMembersDeprecated": "Proxy üye yönetimi kaldırıldı. Ödeme sırasında {{brandDomain}}/purchase adresinde alıcıyı belirtin."
+    },
+    "tunnel": {
+      "listFailed": "Sunucu listesi yüklenemedi",
+      "connectFailed": "Sunucuya bağlanılamadı"
+    },
+    "vpn": {
+      "authFailed": "Kimlik doğrulama başarısız, lütfen tekrar giriş yapın",
+      "membershipExpired": "Üyelik süresi doldu, lütfen yenileyin",
+      "forbidden": "Sunucu sertifikası doğrulaması başarısız",
+      "protocolError": "Protokol el sıkışması başarısız, lütfen başka bir düğüm deneyin",
+      "connectionFatal": "Bağlantı başarısız, lütfen yeniden deneyin veya düğümü değiştirin",
+      "permissionDenied": "VPN izni reddedildi. Lütfen sistem ayarlarında VPN'i etkinleştirin.",
+      "environmentSetupFailed": "Ağ kurulumu başarısız. Cihazınızı yeniden başlatın ve tekrar deneyin.",
+      "startFailed": "Hizmet başlatılamadı, lütfen tekrar deneyin",
+      "reconnectFailed": "Yeniden bağlanılamadı, lütfen tekrar deneyin",
+      "timeout": "İşlem zaman aşımına uğradı, lütfen tekrar deneyin",
+      "allAddrsFailed": "Tüm sunucu adresleri başarısız, lütfen düğümü değiştirin"
+    },
+    "action": {
+      "timeout": "İşlem zaman aşımına uğradı, lütfen tekrar deneyin",
+      "parseFailed": "İstek ayrıştırması başarısız"
+    },
+    "api": {
+      "requestFailed": "İstek başarısız, lütfen ağınızı kontrol edin",
+      "responseFailed": "Yanıt ayrıştırması başarısız"
+    },
+    "engine": {
+      "ruleBundlesUnavailable": "Yönlendirme kuralları indirilemedi. Ağı kontrol edin ve yeniden deneyin."
+    },
+    "installCancelled": "Kurulum iptal edildi",
+    "unknown": "Bilinmeyen hata",
+    "unknownError": "Bilinmeyen Hata"
+  },
+  "features": {
+    "fastConnect": "Yıldırım Hızlı",
+    "fastConnectDesc": "Akıllı yönlendirme optimizasyonu, %80 gecikme azalması",
+    "security": "Kurumsal Şifreleme",
+    "securityDesc": "Askeri sınıf AES-256 şifrelemesi, veri güvenliğini koruma",
+    "global": "Global Düğümler",
+    "globalDesc": "50+ ülke, 200+ premium düğüm",
+    "multiDevice": "Çoklu Cihaz Desteği",
+    "multiDeviceDesc": "Bir hesap, tüm platformlar"
+  },
+  "messages": {
+    "sendVerificationSuccess": "Doğrulama e-postası başarıyla gönderildi",
+    "sendVerificationFailed": "Doğrulama e-postası gönderilemedi",
+    "logoutSuccess": "Kullanıcı çıkış yaptı",
+    "logoutFailed": "Çıkış başarısız",
+    "copySuccess": "Başarıyla kopyalandı",
+    "copyFailed": "Kopyalama başarısız",
+    "saveSuccess": "Başarıyla kaydedildi",
+    "saveFailed": "Kaydetme başarısız",
+    "deleteSuccess": "Başarıyla silindi",
+    "deleteFailed": "Silme başarısız",
+    "serviceInstalling": "Hizmet sessizce yükleniyor, lütfen bekleyin...",
+    "serviceInstallSuccess": "Hizmet başarıyla yüklendi!",
+    "serviceInstallFailedAuth": "Hizmeti kurmak için yönetici ayrıcalıkları gereklidir, lütfen UAC iletişim kutusunda \"Evet\"e tıklayın",
+    "updateSuccess": "Başarıyla güncellendi",
+    "updateFailed": "Güncelleme başarısız",
+    "networkError": "Ağ Hatası",
+    "serverError": "Sunucu Hatası",
+    "unknownError": "Bilinmeyen Hata"
+  },
+  "loadingAndEmpty": {
+    "noHistoryTitle": "Geçmiş Yok",
+    "noHistoryDescription": "Henüz ödeme ve yetkilendirme geçmişiniz yok, üyelik avantajlarını deneyimlemeye gidin!",
+    "noPlansTitle": "Mevcut Plan Yok",
+    "noPlansDescription": "Planlar yükleniyor veya geçici olarak kullanılamaz, lütfen daha sonra tekrar deneyin",
+    "noInviteCodesTitle": "Davet Kodu Yok",
+    "noInviteCodesDescription": "Henüz hiç davet kodu oluşturmadınız, arkadaşlarınızla paylaşmak için özel davet kodunuzu oluşturun!",
+    "noDevicesTitle": "Cihaz Yok",
+    "noDevicesDescription": "Henüz giriş yaptığınız cihaz yok"
+  }
+}

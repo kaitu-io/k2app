@@ -1,0 +1,13 @@
+{
+  "network": "Non siamo riusciti a raggiungere Overleap. Controlla la connessione e riprova.",
+  "generic": "Qualcosa è andato storto. Riprova.",
+  "unauthorized": "Devi prima accedere.",
+  "invalidArgument": "Alcuni dati non sono validi.",
+  "invalidVerificationCode": "Il codice non è corretto. Controllalo e riprova.",
+  "verificationCodeExpired": "Il codice è scaduto. Richiedine uno nuovo.",
+  "invalidCredentials": "Email o password non corrette.",
+  "tooManyRequests": "Troppi tentativi. Attendi un minuto e riprova.",
+  "serviceUnavailable": "Al momento non è disponibile. Riprova tra poco.",
+  "passwordTooShort": "La password è troppo corta.",
+  "passwordTooWeak": "La password è troppo debole. Usa una combinazione più lunga o più casuale."
+}

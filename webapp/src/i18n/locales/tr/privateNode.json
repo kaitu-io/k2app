@@ -1,0 +1,50 @@
+{
+  "privateNode": {
+    "title": "Özel Düğüm",
+    "manage": "Özel Düğümü Yönet",
+    "myRouter": "Benim Yönlendiriciim",
+    "buyLine": "Özel Hat Al",
+    "buy": "Özel Düğüm Al",
+    "region": "Düğüm Bölgesi",
+    "selectRegion": "Bölge Seç",
+    "ipTypeLabel": "IP Türü",
+    "ipType": {
+      "residential": "Konut IP",
+      "non_residential": "Veri Merkezi IP"
+    },
+    "traffic": "Trafik",
+    "trafficUsed": "{{used}} / {{total}} kullanıldı",
+    "quota": "Trafik Kotası",
+    "status": {
+      "title": "Durum",
+      "pending": "Bekleme",
+      "provisioning": "Sağlanıyor",
+      "active": "Etkin",
+      "grace": "Ek Süre",
+      "suspended": "Askıya Alındı",
+      "deprovisioned": "Kaldırıldı",
+      "failed": "Sağlama Başarısız"
+    },
+    "expiresAt": "Sona Eriş",
+    "graceHint": "Düğümünüz ek süre dönemindedir. Askıya alınmaktan kaçınmak için kısa zamanda yenileyin.",
+    "suspendedHint": "Düğüm askıya alındı ancak IP'si korunur. Yenilemeden sonra devam edecektir.",
+    "nodeIp": "Düğüm IP",
+    "provisioningHint": "Düğümünüz sağlanıyor. Bu genellikle birkaç dakika sürer, lütfen bekleyin.",
+    "empty": "Henüz özel düğümünüz yok",
+    "renew": "Yenile",
+    "renewOnWebsite": "Yenileme için web sitemizde Benim Yönlendiricime gidin",
+    "percentUsed": "{{percent}}% kullanıldı",
+    "quotaExhausted": {
+      "title": "Aylık trafik kotası tüketildi",
+      "resetHint": "{{date}} tarihinde sıfırlanır",
+      "resetUnknown": "Bir sonraki dönemin başında sıfırlanır",
+      "cta": "Yenile / Kotayı yükselt"
+    },
+    "router": {
+      "title": "Yönlendirici Ekle",
+      "intro": "OpenWrt yönlendiricine k2r kur — uygulama otomatik olarak bulacak ve aşağıda gösterecektir.",
+      "detected": "Yerel ağda bulunan yönlendiriciler:",
+      "manage": "Yönlendiriciyi Yönet"
+    }
+  }
+}

@@ -8,8 +8,10 @@ import type { Locale } from '@/lib/site';
 export type LegalDoc = 'privacy-policy' | 'terms-of-service' | 'delete-account';
 
 /**
- * Renders public/legal/<doc>.md (English master; ja visitors also read it —
+ * Renders public/legal/<doc>.md (English master; every locale reads it —
  * an untranslated legal text is readable, a half-translated one is a liability).
+ * The body is marked lang="en" dir="ltr" so it stays left-to-right inside a
+ * right-to-left page.
  * The files are filed with Apple and Google, so their URLs must stay stable.
  */
 export default async function LegalPage({
@@ -31,7 +33,7 @@ export default async function LegalPage({
           <h1 className="text-4xl font-bold tracking-tight">{title}</h1>
           <p className="mt-3 text-lg text-muted-foreground">{subtitle}</p>
         </header>
-        <div className="prose max-w-none">
+        <div className="prose max-w-none" lang="en" dir="ltr">
           {/* Documents use ### for sections; the page owns the only <h1>, so shift down by one level. */}
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}

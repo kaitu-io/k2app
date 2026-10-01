@@ -1,0 +1,79 @@
+{
+  "startup": {
+    "activeUsers": "Người dùng hoạt động",
+    "certified": "Chứng chỉ ISO 27001",
+    "uptime": "Thời gian hoạt động",
+    "authSuccess": "Xác thực thành công, trạng thái đăng nhập của người dùng đã được cập nhật",
+    "deviceCanDirectLogin": "Thiết bị có thể đăng nhập trực tiếp",
+    "deviceCannotDirectLogin": "Thiết bị không thể đăng nhập trực tiếp",
+    "checkDeviceLoginFailed": "Không thể kiểm tra trạng thái đăng nhập thiết bị",
+    "deviceLoginFailed": "Đăng nhập thiết bị không thành công",
+    "deviceLoginFailedRetry": "Đăng nhập thiết bị không thành công, vui lòng thử lại",
+    "deviceLoginSuccess": "Đăng nhập thiết bị thành công",
+    "pleaseEnterInviteCode": "Vui lòng nhập mã mời",
+    "registrationFailed": "Đăng ký không thành công",
+    "registrationFailedRetry": "Đăng ký không thành công, vui lòng thử lại",
+    "newDevice": "Thiết bị mới",
+    "freeDeviceRegistrationFailed": "Đăng ký thiết bị miễn phí không thành công",
+    "inviteCodeIncorrect": "Mã mời không chính xác",
+    "inviteCodeInvalidOrExpired": "Mã mời không hợp lệ hoặc đã hết hạn",
+    "getInviteCodeInfoFailed": "Không thể lấy thông tin mã mời",
+    "haveProAccount": "Đã có tài khoản Pro?",
+    "loginProAccountDesc": "Đăng nhập vào tài khoản Pro của bạn và tận hưởng tất cả các tính năng",
+    "deviceAlreadyRegistered": "Phát hiện rằng thiết bị này có tài khoản đã đăng ký",
+    "deviceReady": "Thiết bị sẵn sàng đăng nhập",
+    "deviceReadyDesc": "Thiết bị của bạn đã được đăng ký và sẵn sàng sử dụng",
+    "orEmailLogin": "Hoặc đăng nhập bằng email",
+    "experienceProFeatures": "Trải nghiệm tính năng Pro",
+    "enterInviteCodeDesc": "Nhập mã mời để trải nghiệm tính năng Pro ngay lập tức",
+    "inviteCode": "Mã mời",
+    "enterInviteCodePlaceholder": "Vui lòng nhập mã mời (tùy chọn)",
+    "youHaveGoodFriend": "🎁 Bạn có một người bạn tuyệt vời😼",
+    "enjoyNow": "Tận hưởng ngay bây giờ",
+    "days": "ngày",
+    "pro": "Pro",
+    "extraBonus": "Thưởng bổ sung!",
+    "experience": "Trải nghiệm {{days}} ngày",
+    "purchaseBonus": "Mua được {{purchaseDays}}+{{downloadDays}} ngày",
+    "buyNowExtraBonus": "Mua ngay, nhận {{days}} ngày bổ sung",
+    "buyNowEnjoyAllPro": "Mua ngay để tận hưởng tất cả lợi ích Pro",
+    "experienceOnly": "Trải nghiệm {{days}} ngày chỉ",
+    "experienceNow": "Trải nghiệm ngay",
+    "or": "hoặc",
+    "noAccountNoInviteCode": "Không có tài khoản hoặc mã mời?",
+    "processing": "Đang xử lý...",
+    "registerNewAccount": "Đăng ký tài khoản mới trực tiếp"
+  },
+  "serviceStatus": {
+    "disconnected": "Dịch vụ đã ngắt kết nối, đang kết nối lại..."
+  },
+  "upgradeRequired": {
+    "title": "Vui lòng cập nhật ứng dụng",
+    "description": "Phiên bản hiện tại đã lỗi thời, vui lòng tải phiên bản mới nhất để tiếp tục.",
+    "downloadButton": "Đi tới tải xuống"
+  },
+  "forceUpgrade": {
+    "title": "Phiên bản quá cũ, cập nhật bắt buộc",
+    "description": "Phiên bản ứng dụng hiện tại của bạn ({{currentVersion}}) không được hỗ trợ nữa. Vui lòng cập nhật lên phiên bản {{minVersion}} hoặc cao hơn để tiếp tục.",
+    "downloadButton": "Cập nhật ngay"
+  },
+  "app": {
+    "slogan": "Dịch vụ proxy mạng an toàn và thuận tiện",
+    "error": "Lỗi",
+    "updateNow": "Cập nhật ngay",
+    "readyToInstall": "sẵn sàng cài đặt",
+    "hoverForDetails": "di chuột để xem chi tiết",
+    "releaseNotes": "Ghi chú phát hành",
+    "newVersionAvailable": "Phiên bản mới {{version}} có sẵn!",
+    "updating": "Đang cập nhật",
+    "downloadingUpdate": "Đang tải xuống và cài đặt cập nhật... {{progress}}%",
+    "errorBoundary": {
+      "title": "Lỗi ứng dụng",
+      "description": "Lỗi đã được tự động báo cáo, chúng tôi sẽ sửa nó sớm.",
+      "details": "Chi tiết lỗi",
+      "retry": "Thử lại"
+    },
+    "installing": "Đang cài đặt...",
+    "beingInstalled": "đang được cài đặt..."
+  }
+}

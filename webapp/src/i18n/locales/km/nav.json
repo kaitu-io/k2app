@@ -1,0 +1,50 @@
+{
+  "appBar": {
+    "refreshAuth": "ធ្វើឱ្យការអនុញ្ញាតថ្មីឡើងវិញ"
+  },
+  "navigation": {
+    "dashboard": "ផ្ទាំងគ្រប់គ្រង",
+    "discover": "ស្វែងរក",
+    "account": "គណនី",
+    "router": "រ៉ោតទ័រ",
+    "devices": "ឧបករណ៍",
+    "faq": "មតិកែលម្អ",
+    "purchase": "ទិញ",
+    "activate": "បើកដំណើរការ",
+    "invite": "អញ្ជើញ",
+    "retailer": "អ្នកចែកចាយ",
+    "proHistory": "ប្រវត្តិការអនុញ្ញាត",
+    "help": "ជំនួយ"
+  },
+  "appBarConnector": {
+    "disconnecting": "កំពុងផ្តាច់",
+    "connecting": "កំពុងតភ្ជាប់",
+    "antiClickProtection": "ការការពារកុំឱ្យចុចញឹកញាប់៖ ប្រតិបត្តិការញឹកញាប់ពេក",
+    "refreshDataFailed": "ផ្ទុកទិន្នន័យឡើងវិញក្រោយប្រតិបត្តិការមិនបានសម្រេច៖",
+    "connectionOperationFailed": "ប្រតិបត្តិការតភ្ជាប់មិនបានសម្រេច៖",
+    "disconnectingTooltip": "កំពុងផ្តាច់...",
+    "connectingTooltip": "កំពុងតភ្ជាប់...",
+    "clickToDisconnect": "ចុចដើម្បីផ្តាច់",
+    "clickToConnect": "ចុចដើម្បីតភ្ជាប់",
+    "anonymous": "អនាមិក",
+    "disconnect": "ផ្តាច់",
+    "connect": "តភ្ជាប់",
+    "panel": "ផ្ទាំង",
+    "noNodeSelected": "សូមជ្រើសរើសណូតមុនពេលតភ្ជាប់"
+  },
+  "appBarMembership": {
+    "trial": "សាកល្បង",
+    "standard": "ស្តង់ដារ",
+    "expired": "ផុតកំណត់",
+    "proTrial": "សាកល្បង Pro",
+    "recharge": "បញ្ចូលទឹកប្រាក់",
+    "firstOrderPending": "ការបញ្ជាទិញដំបូងកំពុងរង់ចាំ",
+    "unlimitedTrial": "សាកល្បងគ្មានដែនកំណត់",
+    "completePurchase": "បញ្ចប់ការទិញ"
+  },
+  "layout": {
+    "deviceInstall": "ដំឡើងលើឧបករណ៍ផ្សេងទៀត",
+    "troubleshooting": "ការដោះស្រាយបញ្ហា",
+    "accountAndSettings": "គណនី និងការកំណត់"
+  }
+}

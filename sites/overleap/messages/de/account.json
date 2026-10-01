@@ -1,0 +1,45 @@
+{
+  "metaTitle": "Dein Konto",
+  "title": "Dein Konto",
+  "subtitle": "Verwalte dein Abonnement und deine Anmeldung.",
+  "loading": "Wird geladen",
+  "navSubscription": "Abonnement",
+  "navSecurity": "Sicherheit",
+  "signOut": "Abmelden",
+  "subscriptionTitle": "Dein Abonnement",
+  "renewsOn": "Verlängert sich am {date}",
+  "endsOn": "Endet am {date}",
+  "manage": "Abonnement verwalten",
+  "opening": "Wird geöffnet…",
+  "noSubscriptionTitle": "Kein aktives Abonnement",
+  "noSubscription": "Wähle einen Tarif und nutze Overleap auf bis zu fünf Geräten.",
+  "seePlans": "Tarife ansehen",
+  "activating": "Dein Abonnement wird aktiviert…",
+  "activationDelayed": "Zahlung eingegangen. Dein Abonnement ist in wenigen Minuten aktiv. Lade diese Seite neu, um den Status zu prüfen.",
+  "downloadTitle": "Alles bereit: Lade die Apps herunter",
+  "downloadBody": "Installiere Overleap und melde dich mit dieser E-Mail-Adresse an.",
+  "downloadCta": "Overleap herunterladen",
+  "cancel": "Abbrechen",
+  "confirm": "Speichern",
+  "password": {
+    "setPassword": "Passwort festlegen",
+    "changePassword": "Passwort ändern",
+    "newPassword": "Neues Passwort",
+    "confirmPassword": "Passwort bestätigen",
+    "requirements": "Mindestens {length} Zeichen. Vermeide gängige Wörter, Tastaturmuster und wiederholte Zeichen.",
+    "mismatch": "Die Passwörter stimmen nicht überein",
+    "setSuccess": "Passwort gespeichert",
+    "strength": {
+      "label": "Passwortstärke",
+      "veryWeak": "Sehr schwach",
+      "weak": "Schwach",
+      "fair": "Mittel",
+      "good": "Gut",
+      "strong": "Stark"
+    }
+  },
+  "security": {
+    "passwordSet": "Lege ein Passwort fest, um dich mit E-Mail-Adresse und Passwort anzumelden. Den Einmalcode kannst du weiterhin nutzen.",
+    "passwordChange": "Du hast bereits ein Passwort festgelegt. Hier kannst du es ändern."
+  }
+}

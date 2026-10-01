@@ -1,0 +1,13 @@
+{
+  "network": "Tidak dapat terhubung ke Overleap. Periksa koneksi Anda lalu coba lagi.",
+  "generic": "Terjadi kesalahan. Silakan coba lagi.",
+  "unauthorized": "Silakan masuk terlebih dahulu.",
+  "invalidArgument": "Sebagian data tidak valid.",
+  "invalidVerificationCode": "Kode salah. Periksa lalu coba lagi.",
+  "verificationCodeExpired": "Kode sudah kedaluwarsa. Minta kode baru.",
+  "invalidCredentials": "Email atau kata sandi salah.",
+  "tooManyRequests": "Terlalu banyak percobaan. Tunggu semenit lalu coba lagi.",
+  "serviceUnavailable": "Layanan ini belum tersedia saat ini. Silakan coba lagi sebentar lagi.",
+  "passwordTooShort": "Kata sandi terlalu pendek.",
+  "passwordTooWeak": "Kata sandi terlalu lemah. Gunakan kombinasi yang lebih panjang atau lebih acak."
+}

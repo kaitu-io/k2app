@@ -1,0 +1,50 @@
+{
+  "privateNode": {
+    "title": "전용 노드",
+    "manage": "전용 노드 관리",
+    "myRouter": "내 라우터",
+    "buyLine": "전용 선로 구매",
+    "buy": "전용 노드 구매",
+    "region": "노드 지역",
+    "selectRegion": "지역 선택",
+    "ipTypeLabel": "IP 타입",
+    "ipType": {
+      "residential": "주거용 IP",
+      "non_residential": "데이터센터 IP"
+    },
+    "traffic": "트래픽",
+    "trafficUsed": "{{used}} / {{total}} 사용됨",
+    "quota": "트래픽 할당량",
+    "status": {
+      "title": "상태",
+      "pending": "대기 중",
+      "provisioning": "프로비저닝 중",
+      "active": "활성",
+      "grace": "유예 기간",
+      "suspended": "일시 중지됨",
+      "deprovisioned": "프로비저닝 해제됨",
+      "failed": "프로비저닝 실패"
+    },
+    "expiresAt": "만료",
+    "graceHint": "당신의 노드가 유예 기간에 있습니다. 일시 중지를 피하려면 곧 갱신해주세요.",
+    "suspendedHint": "노드는 일시 중지되었지만 IP는 유지됩니다. 갱신 후 재개됩니다.",
+    "nodeIp": "노드 IP",
+    "provisioningHint": "당신의 노드를 프로비저닝하는 중입니다. 보통 몇 분 정도 걸리니 기다려주세요.",
+    "empty": "아직 전용 노드가 없습니다",
+    "renew": "갱신",
+    "renewOnWebsite": "갱신하려면 웹사이트의 내 라우터에서 진행해주세요",
+    "percentUsed": "{{percent}}% 사용됨",
+    "quotaExhausted": {
+      "title": "월간 트래픽 할당량 모두 사용됨",
+      "resetHint": "{{date}}에 초기화됨",
+      "resetUnknown": "다음 주기 시작 시 초기화됨",
+      "cta": "갱신 / 할당량 업그레이드"
+    },
+    "router": {
+      "title": "라우터 추가",
+      "intro": "OpenWrt 라우터에 k2r을 설치하면, 앱이 자동으로 발견해서 아래에 표시합니다.",
+      "detected": "로컬 네트워크에서 감지된 라우터:",
+      "manage": "라우터 관리"
+    }
+  }
+}

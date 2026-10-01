@@ -1,0 +1,184 @@
+{
+  "status": {
+    "stopped": "Dihentikan",
+    "connecting": "Menyambung...",
+    "connected": "Terhubung",
+    "reconnecting": "Menyambung semula...",
+    "disconnecting": "Memutuskan...",
+    "disconnected": "Terputus",
+    "error": "Sambungan Gagal",
+    "failed": "Sambungan Gagal",
+    "offline": "Luar Talian",
+    "online": "Dalam Talian",
+    "active": "Aktif",
+    "inactive": "Tidak Aktif",
+    "enabled": "Dibenarkan",
+    "disabled": "Dilumpuhkan",
+    "clickToStop": "Klik untuk Putuskan",
+    "reconnectingToServer": "Menyambung semula ke pelayan...",
+    "waitingForNetwork": "Menunggu rangkaian..."
+  },
+  "common": {
+    "justNow": "Baru-baru ini",
+    "back": "Kembali",
+    "cancel": "Batalkan",
+    "confirm": "Sahkan",
+    "add": "Tambah",
+    "adding": "Menambah...",
+    "ok": "OK",
+    "save": "Simpan",
+    "delete": "Padam",
+    "clear": "Kosongkan",
+    "copy": "Salin",
+    "close": "Tutup",
+    "loading": "Memuatkan...",
+    "processing": "Memproses...",
+    "retry": "Cuba Semula",
+    "download": "Muat Turun",
+    "error": "Ralat",
+    "refresh": "Muat Semula",
+    "and": "dan",
+    "success": "Berjaya",
+    "loadFailed": "Gagal Memuatkan",
+    "notFound": "Sumber Tidak Dijumpai",
+    "serverError": "Ralat Pelayan",
+    "unknownError": "Ralat Tidak Diketahui",
+    "later": "Kemudian",
+    "login": "Log Masuk",
+    "viewDetails": "Lihat Perincian",
+    "experimental": "Eksperimental",
+    "edit": "Sunting",
+    "next": "Seterusnya",
+    "or": "ATAU",
+    "changelog": "Log Perubahan"
+  },
+  "errors": {
+    "service": {
+      "serviceNotFound": "Fail perkhidmatan tidak dijumpai, sila pasang semula aplikasi",
+      "authRequired": "Kebenaran pentadbir diperlukan untuk memasang perkhidmatan",
+      "installFailed": "Pemasangan perkhidmatan gagal",
+      "connectionFailed": "Tidak dapat menyambung ke perkhidmatan"
+    },
+    "config": {
+      "badConfig": "Ralat konfigurasi, sila semak alamat pelayan"
+    },
+    "network": {
+      "timeout": "Sambungan tamat tempoh, sila semak rangkaian",
+      "unreachable": "Pelayan tidak dapat dijangkau, sila semak sambungan rangkaian",
+      "reset": "Sambungan rangkaian terputus, sila semak status rangkaian",
+      "dns": "Penyelesaian DNS gagal, sila semak tetapan rangkaian",
+      "tls": "Sambungan selamat gagal, sila semak persekitaran rangkaian",
+      "refused": "Tidak dapat menyambung ke pelayan, sila cuba lagi kemudian",
+      "repairFailed": "Pembaikan rangkaian gagal, sila semak tetapan secara manual",
+      "repairDNS": "Pembaikan DNS gagal",
+      "repairRoute": "Pembaikan laluan gagal",
+      "repairPreFailed": "Persediaan pembaikan rangkaian gagal",
+      "unavailable": "Tiada sambungan rangkaian. Semak rangkaian peranti anda dan cuba lagi."
+    },
+    "server": {
+      "unavailable": "Pelayan tidak tersedia, sila cuba lagi kemudian",
+      "overload": "Pelayan sibuk, sila cuba lagi kemudian",
+      "maintenance": "Pelayan dalam penyelenggaraan, sila cuba lagi kemudian",
+      "internal": "Ralat dalaman pelayan, sila cuba lagi kemudian",
+      "notImplemented": "Ciri belum tersedia"
+    },
+    "auth": {
+      "logoutFailed": "Gagal log keluar, sila cuba lagi",
+      "tokenRefreshFailed": "Gagal menyegarkan sesi, sila log masuk semula"
+    },
+    "client": {
+      "badRequest": "Ralat parameter permintaan",
+      "unauthorized": "Sila log masuk terlebih dahulu",
+      "forbidden": "Tiada kebenaran untuk melakukan operasi ini",
+      "notFound": "Sumber yang diminta tidak dijumpai",
+      "paymentRequired": "Keahlian telah tamat, sila perbarui",
+      "notSupported": "Ciri tidak disokong",
+      "upgradeRequired": "Sila naik taraf ke versi terbaru",
+      "conflict": "Konflik operasi, sila cuba lagi",
+      "invalidArgument": "Parameter tidak sah",
+      "tooEarly": "Sila tunggu sebentar dan cuba lagi",
+      "tooManyRequests": "Terlalu banyak permintaan, sila cuba kemudian",
+      "invalidClock": "Jam peranti tidak tepat, sila selaraskan",
+      "selfInvitation": "Tidak dapat menggunakan kod jemput anda sendiri",
+      "licenseKeyNotFound": "Kunci lesen tidak dijumpai",
+      "licenseKeyUsed": "Kunci lesen sudah digunakan",
+      "licenseKeyExpired": "Kunci lesen telah tamat tempoh",
+      "licenseKeyNotMatch": "Tidak layak untuk kunci lesen ini",
+      "licenseKeyAlreadyRedeemed": "Anda sudah menukar kunci lesen (satu per akaun)",
+      "tierMismatch": "Tahap anda saat ini tidak dapat membeli pelan ini. Sila hubungi sokongan untuk menukar tahap.",
+      "proxyPurchaseDeprecated": "Pembelian proksi tidak lagi disokong. Sila minta penerima untuk membeli dengan akaun mereka sendiri.",
+      "proxyMembersDeprecated": "Pengurusan ahli proksi telah dibuang. Tentukan penerima di {{brandDomain}}/purchase semasa pembayaran."
+    },
+    "tunnel": {
+      "listFailed": "Gagal memuatkan senarai pelayan",
+      "connectFailed": "Gagal menyambung ke pelayan"
+    },
+    "vpn": {
+      "authFailed": "Pengesahan gagal, sila log masuk semula",
+      "membershipExpired": "Keahlian telah tamat, sila perbarui",
+      "forbidden": "Pengesahan sijil pelayan gagal",
+      "protocolError": "Hantar tangan protokol gagal, sila cuba nod lain",
+      "connectionFatal": "Sambungan gagal, sila cuba semula atau tukar nod",
+      "permissionDenied": "Kebenaran VPN ditolak. Sila benarkan VPN dalam tetapan sistem.",
+      "environmentSetupFailed": "Persediaan rangkaian gagal. Mulai semula peranti anda dan cuba lagi.",
+      "startFailed": "Gagal memulakan perkhidmatan, sila cuba lagi",
+      "reconnectFailed": "Gagal menyambung semula, sila cuba lagi",
+      "timeout": "Operasi tamat tempoh, sila cuba lagi",
+      "allAddrsFailed": "Semua alamat pelayan gagal, sila tukar nod"
+    },
+    "action": {
+      "timeout": "Operasi tamat tempoh, sila cuba lagi",
+      "parseFailed": "Analisis permintaan gagal"
+    },
+    "api": {
+      "requestFailed": "Permintaan gagal, sila semak rangkaian anda",
+      "responseFailed": "Analisis tindak balas gagal"
+    },
+    "engine": {
+      "ruleBundlesUnavailable": "Gagal memuat turun peraturan penolakan. Semak rangkaian dan cuba semula."
+    },
+    "installCancelled": "Pemasangan dibatalkan",
+    "unknown": "Ralat tidak diketahui",
+    "unknownError": "Ralat Tidak Diketahui"
+  },
+  "features": {
+    "fastConnect": "Kilat Cepat",
+    "fastConnectDesc": "Pengoptimuman penolakan pintar, 80% pengurangan kependaman",
+    "security": "Enkripsi Perusahaan",
+    "securityDesc": "Enkripsi AES-256 gred tentera, melindungi keselamatan data",
+    "global": "Nod Global",
+    "globalDesc": "50+ negara, 200+ nod premium",
+    "multiDevice": "Sokongan Berbilang Peranti",
+    "multiDeviceDesc": "Satu akaun, semua platform"
+  },
+  "messages": {
+    "sendVerificationSuccess": "E-mel pengesahan dihantar dengan berjaya",
+    "sendVerificationFailed": "Gagal menghantar e-mel pengesahan",
+    "logoutSuccess": "Pengguna log keluar",
+    "logoutFailed": "Gagal log keluar",
+    "copySuccess": "Disalin dengan berjaya",
+    "copyFailed": "Gagal menyalin",
+    "saveSuccess": "Disimpan dengan berjaya",
+    "saveFailed": "Gagal menyimpan",
+    "deleteSuccess": "Dipadamkan dengan berjaya",
+    "deleteFailed": "Gagal memadamkan",
+    "serviceInstalling": "Memasang perkhidmatan dalam senyap, sila tunggu...",
+    "serviceInstallSuccess": "Perkhidmatan dipasang dengan berjaya!",
+    "serviceInstallFailedAuth": "Kebenaran pentadbir diperlukan untuk memasang perkhidmatan, sila klik \"Ya\" dalam dialog UAC",
+    "updateSuccess": "Dikemas kini dengan berjaya",
+    "updateFailed": "Gagal mengemas kini",
+    "networkError": "Ralat Rangkaian",
+    "serverError": "Ralat Pelayan",
+    "unknownError": "Ralat Tidak Diketahui"
+  },
+  "loadingAndEmpty": {
+    "noHistoryTitle": "Tiada Sejarah",
+    "noHistoryDescription": "Anda belum mempunyai sejarah pembayaran dan kebenaran, pergi alami faedah keahlian!",
+    "noPlansTitle": "Tiada Pelan Tersedia",
+    "noPlansDescription": "Pelan sedang dimuatkan atau tidak tersedia buat sementara waktu, sila cuba lagi kemudian",
+    "noInviteCodesTitle": "Tiada Kod Jemput",
+    "noInviteCodesDescription": "Anda belum mencipta sebarang kod jemput, cipta kod jemput eksklusif anda untuk berkongsi dengan rakan!",
+    "noDevicesTitle": "Tiada Peranti",
+    "noDevicesDescription": "Anda belum mempunyai sebarang peranti log masuk"
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "feedback": {
+    "newTicket": "Yeni Bilet",
+    "viewTickets": "Biletleri Görüntüle",
+    "myTickets": "Biletlerim",
+    "noTickets": "Henüz bilet yok",
+    "noTicketsHint": "Sorun mu yaşıyorsunuz? Bir bilet gönder ve sana dönüş yapacağız",
+    "loadError": "Yükleme başarısız, lütfen tekrar deneyin",
+    "status": {
+      "open": "Açık",
+      "resolved": "Çözüldü",
+      "closed": "Kapalı"
+    },
+    "adminReplied": "Destek yanıt verdi",
+    "replyPlaceholder": "Yanıtınızı yazın...",
+    "closedNotice": "Bu bilet kapalı",
+    "replyFailed": "Yanıt gönderilemedi",
+    "loginToView": "İlerlemeyi ve yanıtları görmek için {{email}} ile giriş yapın",
+    "time": {
+      "justNow": "Az önce",
+      "minutesAgo": "{{count}}d önce",
+      "hoursAgo": "{{count}}s önce",
+      "daysAgo": "{{count}}g önce"
+    },
+    "send": "Gönder"
+  },
+  "faq": {
+    "title": "SSS",
+    "subtitle": "Burada kontrol et — çoğu sorun hızlı çözülür",
+    "stillNeedHelp": "Cevabını bulamadın mı?",
+    "submitCta": "Bilet Gönder",
+    "entryTitle": "SSS",
+    "entryHint": "Göndermeden önce SSS'yi kontrol et — sorunu daha hızlı çözebilir",
+    "items": {
+      "connection": {
+        "question": "Dengesiz bağlantı veya yavaş hız hakkında ne yapmalıyım?",
+        "answer": "Hız sorunları genellikle yerel ağınızla ilgilidir. Lütfen şu sırayla sorun giderin:\n\n1. Önce farklı tünel hatlarını deneyin. Tüm hatlar yavaşsa, neredeyse kesinlikle yerel bir ağ sorunudur.\n2. Router'ınızı yeniden başlatın. Bu, çoğu geçici yönlendirme önbelleği ve bağlantı sorunlarını çözer.\n3. İnternet sağlayıcınızı arayın ve yurt dışı trafiği için hedefli bir azaltma uyguladıklarını sorun.\n4. ISP'nin teknisyeni göndermesi teklif ederse, reddedin — ISP'lerin genellikle \"geniş bant işleme\" KPI'ları vardır ve sizi yanlış \"hat arızaları\" göstererek planı düşürmeye zorlarlar.\n5. Yukarıdakileri hariç tuttuktan sonra, bu bir düğüm sorunu olabilir. Günlüklerle geri bildirim gönder ve araştıracağız."
+      },
+      "appNotWorking": {
+        "question": "{{brand}} yükledikten sonra belirli bir uygulama veya oyun çalışmayı durdurdu — şimdi ne?",
+        "answer": "Bazı uygulamalar (özellikle Adobe Creative Cloud, belirli oyunlar, üçüncü taraf mesajlaşma uygulamaları ve Çin bankacılığı/hükümet/video uygulamaları) kendi sunucu adreslerini önbelleğe alır veya çalışmak için yerel IP gerektirirler. {{brand}} açıkken, bu istekler proxy aracılığıyla yönlendirilir ve reddedilebilir veya zaman aşımına uğrayabilir. Şu sırayla deneyin:\n\n1. Uygulamayı yeniden başlatın — çoğu zaman, çıkış ve yeniden açma, sunucu önbelleğini yenilemeye izin verir.\n2. Akıllı Bypass'a geçin — Pano'nun en altındaki Gelişmiş Ayarlar'ı genişletin, Yönlendirme Modu'nu Global Proxy'den Akıllı Bypass'a değiştirin ve bir ülke seçin (veya otomatik algılamayı etkinleştirin). Yerel trafik doğrudan yerel ağınız üzerinden gider ve yalnızca yurt dışı trafiği proxy kullanır ve bu da çoğu Çin uygulamasını/bankalarını/video sitelerini hemen geri yükler. Not: yönlendirme modu yalnızca {{brand}} bağlantısı kesikken değiştirilebilir. Akıllı Bypass ayrıca yaygın Çin uygulamalarını (WeChat, Taobao, Douyin, 12306, vb.) otomatik olarak algılar ve onları doğrudan tutar.\n3. Uygulamayı \"VPN'i atlayan uygulamalar\"a ekleyin — Akıllı Bypass'ın kapsamadığı inatçı uygulamalar için (eski yerli oyunlar, kurumsal araçlar), Gelişmiş Ayarlar → VPN'i atlayan uygulamalar'a gidin ve ekleyin. Bu uygulamanın trafiği proxy'yi tamamen atlayacaktır. Masaüstünde liste yalnızca şu anda çalışan uygulamaları gösterir — hedef uygulamayı önce başlatın, sonra geri dönün ve ekleyin.\n4. {{brand}}'ı geçici olarak kesin — nadir durumlarda (örn. Adobe Creative Cloud artık mevcut olmayan eski bir IP'yi önbelleğe alma), {{brand}}'ı o uygulamayı kullanırken kesin ve sonra yeniden bağlanın.\n5. Yukarıdaki hiçbiri işe yaramazsa, günlüklerle bir bilet gönder ve mühendislerimiz araştıracaktır."
+      },
+      "nodeChoice": {
+        "question": "Çok fazla düğüm var — hangisini seçmeliyim?",
+        "answer": "En kolay seçenek: Otomatik Seçim'i kullanın. Düğüm listesinin en üstünde \"Otomatik Seçim\"i dokunun ve {{brand}} gerçek zamanlı gecikme ve yüke bağlı olarak en iyi düğümü seçecek. \"Otomatik Geçiş\"i açın ve koşullar değiştiğinde sizi daha iyi bir düğüme taşıyacaktır. Bu çoğu kullanıcı için en iyi seçimdir.\n\nGerçekten manuel olarak seçmek istiyorsanız:\n\n• Her zaman ilk düğümü dokunmayın — ilk birkaç (özellikle AU/Avustralya) çoğu kullanıcı refleks olarak ilkine dokunduğu için vurulur.\n• JP/SG/KR/US'u ilk deneyin — genellikle daha istikrarlı ve daha hızlıdır.\n• Bağlanamıyorsa veya yavaş hissederse, farklı birine geçin — en iyi düğüm bölgeye ve günün saatine göre değişir.\n• Akış ve tarama düğüm seçimine duyarlı değildir; oyunlar ve video çağrıları gecikmeye duyarlıdır, bu nedenle birkaçını deneyin ve en istikrarlı olanını seçin."
+      },
+      "wifiSwitch": {
+        "question": "WiFi veya ağ değiştirdikten sonra VPN bağlantısı kesiliyor mu?",
+        "answer": "{{brand}}, ağ değişikliklerinden sonra otomatik yeniden bağlanmayı destekler, ancak tetikleyici birkaç saniye ile bir düzine saniye arasında bir gecikme vardır. Beklemek istemiyorsanız, hemen kurtarmak için manuel olarak Bağlantıyı Kes'i dokunun ve sonra Bağlan'ı dokunun."
+      },
+      "deviceRemoved": {
+        "question": "Cihazımın silinmesi/atılması neden?",
+        "answer": "Her hesap aynı anda 5 cihaza kadar oturum açmayı destekler. 6. cihazda oturum açtığınızda, sistem otomatik olarak en erken açılan cihazı kaldırır.\n\n5 cihazı aşmadığınızdan eminseniz ancak yine de atılıyorsanız, lütfen geri bildirim gönderin ve hesabınızın cihaz bağlamalarını kontrol etmede yardımcı olacağız."
+      },
+      "updateIssue": {
+        "question": "Güncelleme sonrasında uygulama çalışmıyor mu?",
+        "answer": "Güncelleme mekanizmaları platformlar arasında farklılık gösterir ve eklentiler bazen hemen yeniden yüklenmez:\n\n• Windows/macOS: Yeni sürümün tam etkisini alması için bilgisayarınızı yeniden başlatın.\n• iOS: Güncelleme sonrasında sorun görmezseniz, uygulamayı silin ve App Store'dan yeniden yükleyin — bu, Network Extension eklenti yeniden yükleme sorunlarını çözer.\n• Android: Telefonunuzu yeniden başlatın veya Ayarlar'da uygulamayı zorla durdur ve yeniden açın."
+      },
+      "loginFailed": {
+        "question": "Giriş başarısız oldu/doğrulama kodu alınmadı?",
+        "answer": "En yaygın neden e-postada yazım hatası — veritabanımızdaki kullanıcıların yaklaşık %30'u ilk denemede e-postasını yanlış yazıyor. Lütfen harf harf kontrol edin:\n\n• @ işaretinin çevresindeki boşluklar veya ekstra karakterler\n• Domain yazımı (örn. gmial → gmail, hotmial → hotmail)\n• 0 (sıfır) ve O (harf) arasındaki karışıklık\n\nTeyit ettikten sonra spam klasörünü kontrol edin. Hiçbir şey gelmezse, farklı bir e-posta adresi deneyin."
+      }
+    }
+  },
+  "ticket": {
+    "title": "Bilet Gönder",
+    "description": "Sorunu açıkla ve mümkün olan en kısa sürede yanıt vereceğiz.",
+    "feedbackTitle": "Geri Bildirim",
+    "contentLabel": "Sorun Açıklaması",
+    "contentPlaceholder": "Lütfen sorunu ayrıntılı olarak açıkla, işlem adımları, hata mesajları vb. dahil et, bu bize sorunu daha hızlı çözmede yardımcı olacak.",
+    "submitButton": "Bilet Gönder",
+    "loginToSubmit": "Göndermek İçin Giriş Yap",
+    "submitting": "Gönderiliyor...",
+    "submitSuccess": "Bilet başarıyla gönderildi",
+    "submitSuccessTitle": "Bilet Başarıyla Gönderildi!",
+    "submitFailed": "Bilet gönderilemedi, lütfen daha sonra tekrar deneyin",
+    "nextStepHint": "Lütfen e-postanızı kontrol edin",
+    "emailReplyHint": "Destek ekibimiz e-posta aracılığıyla sizinle iletişim kuracaktır, lütfen gelen kutunuzdaki yanıtları izleyin.",
+    "howItWorks": "Nasıl Çalışır",
+    "dataCollectionHint": "Uygulama sürümü, sistem bilgisi ve günlükler, sorunları tanımlamada hızlı olmaları için gönderimde otomatik olarak toplanır.",
+    "stepper": {
+      "step1": "Sorunu Açıkla",
+      "step2": "Günlükleri Yükle",
+      "step3": "E-posta Yanıtı"
+    },
+    "entryTitle": "Destek ile İletişime Geçin",
+    "entryDescription": "Sorun mu yaşadınız? Bilet gönder, yakında yanıt verebiliriz",
+    "betaWarning": "Beta sürümü kullanıyorsunuz. Sorun yaşarsanız, Hesap ayarlarında kararlı sürüme geçebilirsiniz.",
+    "switchToStable": "Kararlı Sürüme Geç",
+    "emailLabel": "İletişim E-postası",
+    "emailPlaceholder": "Size yanıt vermek için e-posta adresinizi gir",
+    "anonymousHint": "Giriş yapmadınız. Gönderimi sonrasında e-posta aracılığıyla sana yanıt vereceğiz.",
+    "validation": {
+      "contentRequired": "Lütfen sorun açıklamasını gir",
+      "contentTooLong": "Sorun açıklaması 5000 karakteri geçemez",
+      "emailRequired": "Lütfen e-posta adresini gir",
+      "emailInvalid": "Lütfen geçerli bir e-posta adresi gir"
+    },
+    "quickIssue": {
+      "label": "Hızlı seç",
+      "cannotConnect": "Bağlanamıyor",
+      "unstable": "Dengesiz bağlantı",
+      "slow": "Yavaş hız",
+      "crash": "Uygulama çökmesi",
+      "subscription": "Abonelik sorunu"
+    }
+  }
+}

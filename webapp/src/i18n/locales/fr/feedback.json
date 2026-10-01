@@ -1,0 +1,28 @@
+{
+  "feedback": {
+    "buttonLabel": "Signaler un problème",
+    "buttonTooltip": "Vous rencontrez des problèmes ? Cliquez pour signaler",
+    "dialogTitle": "Signaler un problème",
+    "dialogDescription": "En cliquant sur Soumettre, vous collecterez les journaux d'application pour nous aider à identifier et résoudre les problèmes. Les journaux ne contiennent pas d'informations sensibles.",
+    "submitButton": "Soumettre les commentaires",
+    "uploading": "Téléchargement des journaux...",
+    "uploadSuccess": "Commentaires soumis",
+    "uploadSuccessDescription": "Merci pour vos commentaires ! Nous les traiterons bientôt.",
+    "uploadError": "Échec de la soumission",
+    "uploadFailed": "Échec du téléchargement des journaux. Veuillez réessayer ultérieurement.",
+    "platformNotSupported": "Cette fonctionnalité n'est pas encore prise en charge sur la plateforme actuelle",
+    "disconnectFeedback": {
+      "title": "Comment était votre connexion ?",
+      "thankYou": "Merci pour vos commentaires",
+      "detailTitle": "Qu'est-ce qui s'est mal passé ? (facultatif)",
+      "submit": "Soumettre",
+      "tags": {
+        "slow": "Lent",
+        "cantConnect": "Impossible de se connecter",
+        "frequentDrops": "Déconnexions fréquentes",
+        "contentBlocked": "Sites/vidéos bloqués",
+        "other": "Autre"
+      }
+    }
+  }
+}

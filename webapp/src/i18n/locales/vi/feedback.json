@@ -1,0 +1,28 @@
+{
+  "feedback": {
+    "buttonLabel": "Báo cáo sự cố",
+    "buttonTooltip": "Gặp vấn đề? Nhấp để báo cáo",
+    "dialogTitle": "Báo cáo sự cố",
+    "dialogDescription": "Nhấp gửi sẽ thu thập nhật ký ứng dụng để giúp chúng tôi xác định và giải quyết sự cố. Nhật ký không chứa thông tin nhạy cảm.",
+    "submitButton": "Gửi phản hồi",
+    "uploading": "Đang tải lên nhật ký...",
+    "uploadSuccess": "Phản hồi đã gửi",
+    "uploadSuccessDescription": "Cảm ơn phản hồi của bạn! Chúng tôi sẽ xử lý nó sớm.",
+    "uploadError": "Gửi không thành công",
+    "uploadFailed": "Không thể tải lên nhật ký. Vui lòng thử lại sau.",
+    "platformNotSupported": "Tính năng này chưa được hỗ trợ trên nền tảng hiện tại",
+    "disconnectFeedback": {
+      "title": "Kết nối của bạn thế nào?",
+      "thankYou": "Cảm ơn phản hồi của bạn",
+      "detailTitle": "Có vấn đề gì? (tùy chọn)",
+      "submit": "Gửi",
+      "tags": {
+        "slow": "Chậm",
+        "cantConnect": "Không thể kết nối",
+        "frequentDrops": "Ngắt thường xuyên",
+        "contentBlocked": "Các trang web/video bị chặn",
+        "other": "Khác"
+      }
+    }
+  }
+}

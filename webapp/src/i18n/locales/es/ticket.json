@@ -1,0 +1,108 @@
+{
+  "feedback": {
+    "newTicket": "Nuevo Ticket",
+    "viewTickets": "Ver Tickets",
+    "myTickets": "Mis Tickets",
+    "noTickets": "Sin tickets aún",
+    "noTicketsHint": "¿Tienes un problema? Envía un ticket y te responderemos",
+    "loadError": "Error al cargar, por favor reintenta",
+    "status": {
+      "open": "Abierto",
+      "resolved": "Resuelto",
+      "closed": "Cerrado"
+    },
+    "adminReplied": "Soporte respondió",
+    "replyPlaceholder": "Escribe tu respuesta...",
+    "closedNotice": "Este ticket está cerrado",
+    "replyFailed": "Error al enviar respuesta",
+    "loginToView": "Inicia sesión con {{email}} para ver el progreso y respuestas",
+    "time": {
+      "justNow": "Justo ahora",
+      "minutesAgo": "hace {{count}}m",
+      "hoursAgo": "hace {{count}}h",
+      "daysAgo": "hace {{count}}d"
+    },
+    "send": "Enviar"
+  },
+  "faq": {
+    "title": "Preguntas Frecuentes",
+    "subtitle": "Verifica aquí primero — la mayoría de problemas se resuelven rápidamente",
+    "stillNeedHelp": "¿No encontraste tu respuesta?",
+    "submitCta": "Enviar Ticket",
+    "entryTitle": "Preguntas Frecuentes",
+    "entryHint": "Verifica las Preguntas Frecuentes antes de enviar — puede resolver tu problema más rápido",
+    "items": {
+      "connection": {
+        "question": "¿Qué debo hacer sobre conexión inestable o velocidad lenta?",
+        "answer": "Los problemas de velocidad suelen estar relacionados con tu red local. Por favor, soluciona en este orden:\n\n1. Prueba primero diferentes líneas de túnel. Si todas las líneas son lentas, casi con seguridad es un problema de red local.\n2. Reinicia tu enrutador. Esto resuelve la mayoría de problemas temporales de caché de enrutamiento y enlaces.\n3. Llama a tu ISP y pregunta si han aplicado limitación dirigida al tráfico internacional.\n4. Si el ISP ofrece enviar un técnico al sitio, rechaza — los ISPs a menudo tienen KPIs de \"procesamiento de banda ancha\" y te presionarán para que bajes tu plan citando falsos \"defectos de línea\".\n5. Solo después de descartar lo anterior es posible que sea un problema de nodo. Envía retroalimentación con registros e investigaremos."
+      },
+      "appNotWorking": {
+        "question": "Una aplicación específica o juego dejó de funcionar después de instalar {{brand}} — ¿y ahora?",
+        "answer": "Algunas aplicaciones (notablemente Adobe Creative Cloud, ciertos juegos, mensajeros de terceros, y aplicaciones chinas de banca / gobierno / video) cachean sus propias direcciones de servidor o requieren una IP doméstica para funcionar. Cuando {{brand}} está activado, esas solicitudes se enrutan a través del proxy y pueden ser rechazadas o agotarse. Prueba en este orden:\n\n1. Reinicia la aplicación — la mayoría de las veces, cerrar y reabrir permite actualizar el caché del servidor.\n2. Cambia a Bypass Inteligente — expande Configuración Avanzada en la parte inferior del Panel, cambia Modo de Enrutamiento de Proxy Global a Bypass Inteligente, y elige un país (o habilita autodetección). El tráfico doméstico luego va directo sobre tu red local y solo el tráfico internacional usa el proxy, lo que restaura la mayoría de aplicaciones / bancos / sitios de video chinos inmediatamente. Nota: el modo de enrutamiento solo se puede cambiar mientras {{brand}} está desconectado. Bypass Inteligente también autodetecta aplicaciones chinas comunes (WeChat, Taobao, Douyin, 12306, etc.) y las mantiene en directo.\n3. Añade la aplicación a \"Aplicaciones que evitan VPN\" — para aplicaciones rebeldes que Bypass Inteligente no cubre (juegos domésticos antiguos, herramientas corporativas internas), ve a Configuración Avanzada → Aplicaciones que evitan VPN y añádela. El tráfico de esa aplicación entonces omitirá el proxy completamente. En escritorio la lista solo muestra aplicaciones actualmente en ejecución — inicia primero la aplicación objetivo, luego vuelve y añádela.\n4. Desconecta temporalmente {{brand}} — en casos raros (p. ej. Adobe Creative Cloud cacheando una IP heredada ahora extinta), desconecta {{brand}} mientras usas esa aplicación y reconecta después.\n5. Si nada de lo anterior ayuda, envía un ticket con registros e investigaremos."
+      },
+      "nodeChoice": {
+        "question": "Hay tantos nodos — ¿cuál debería elegir?",
+        "answer": "Opción más fácil: usa Selección Automática. Toca \"Selección Automática\" en la parte superior de la lista de nodos y {{brand}} elegirá el mejor nodo basado en latencia en tiempo real y carga. Activa \"Cambio Automático\" y te moverá a un mejor nodo cuando las condiciones cambien. Esta es la mejor opción para la mayoría de usuarios.\n\nSi realmente quieres elegir manualmente:\n\n• No siempre toques el primer nodo — los primeros (especialmente AU / Australia) reciben mucha carga porque la mayoría de usuarios tocan el primero por reflejo.\n• Prueba primero JP / SG / KR / US — generalmente más estables y rápidos.\n• Si no se conecta o se siente lento, cambia a otro diferente — el mejor nodo varía por región y hora del día.\n• El streaming y navegación no son sensibles a la elección de nodo; los juegos y videollamadas son sensibles a la latencia, así que prueba algunos y quédate con el más estable."
+      },
+      "wifiSwitch": {
+        "question": "¿VPN se desconecta después de cambiar WiFi o red?",
+        "answer": "{{brand}} soporta reconexión automática después de cambios de red, pero el disparador tiene un retraso de varios segundos a una docena de segundos. Si no quieres esperar, toca manualmente Desconectar luego Conectar para recuperarte inmediatamente."
+      },
+      "deviceRemoved": {
+        "question": "¿Por qué se está eliminando mi dispositivo / siendo expulsado?",
+        "answer": "Cada cuenta soporta hasta 5 dispositivos conectados simultáneamente. Cuando inicias sesión en un 6to dispositivo, el sistema automáticamente elimina el dispositivo conectado más tempranamente.\n\nSi estás seguro de que no has excedido 5 dispositivos pero aún estás siendo expulsado, por favor envía retroalimentación y te ayudaremos a verificar los enlaces de dispositivos de tu cuenta."
+      },
+      "updateIssue": {
+        "question": "¿La aplicación no funciona después de actualización?",
+        "answer": "Los mecanismos de actualización difieren entre plataformas, y los plugins a veces no se recargan inmediatamente:\n\n• Windows / macOS: Reinicia tu computadora para que la nueva versión tenga efecto completo.\n• iOS: Si ves problemas después de actualización, elimina la aplicación y reinstala desde el App Store — esto resuelve problemas de recarga del plugin de Network Extension.\n• Android: Reinicia tu teléfono, o fuerza-cierra la aplicación en Configuración y reabrela."
+      },
+      "loginFailed": {
+        "question": "¿Error de inicio de sesión / código de verificación no recibido?",
+        "answer": "La causa más común es un error tipográfico en el correo — aproximadamente 30% de usuarios en nuestra base de datos cometen errores al escribir su correo en el primer intento. Por favor, verifica letra por letra:\n\n• Espacios o caracteres extra alrededor del signo @\n• Ortografía del dominio (p. ej. gmial → gmail, hotmial → hotmail)\n• Confusión entre 0 (cero) y O (letra)\n\nDespués de confirmar, verifica tu carpeta de correo no deseado. Si no llega nada, prueba con una dirección de correo diferente."
+      }
+    }
+  },
+  "ticket": {
+    "title": "Enviar Ticket",
+    "description": "Describe tu problema y te responderemos por correo lo antes posible.",
+    "feedbackTitle": "Retroalimentación",
+    "contentLabel": "Descripción del Problema",
+    "contentPlaceholder": "Por favor, describe el problema en detalle, incluyendo pasos de operación, mensajes de error, etc., lo cual nos ayudará a resolver el problema más rápido.",
+    "submitButton": "Enviar Ticket",
+    "loginToSubmit": "Inicia Sesión para Enviar",
+    "submitting": "Enviando...",
+    "submitSuccess": "Ticket enviado exitosamente",
+    "submitSuccessTitle": "¡Ticket Enviado Exitosamente!",
+    "submitFailed": "Error al enviar ticket, por favor intenta más tarde",
+    "nextStepHint": "Por favor, verifica tu correo",
+    "emailReplyHint": "Nuestro equipo de soporte se comunicará contigo por correo, por favor atento a respuestas en tu bandeja de entrada.",
+    "howItWorks": "Cómo Funciona",
+    "dataCollectionHint": "Versión de aplicación, información del sistema, y registros se recopilan automáticamente al enviar para ayudarnos a diagnosticar problemas más rápido.",
+    "stepper": {
+      "step1": "Describe el Problema",
+      "step2": "Carga Registros",
+      "step3": "Respuesta por Correo"
+    },
+    "entryTitle": "Contactar Soporte",
+    "entryDescription": "¿Encontraste un problema? Envía un ticket, te responderemos pronto",
+    "betaWarning": "Estás usando una versión Beta. Si experimentas problemas, puedes cambiar a estable en la configuración de Cuenta.",
+    "switchToStable": "Cambiar a Estable",
+    "emailLabel": "Correo de Contacto",
+    "emailPlaceholder": "Ingresa tu dirección de correo para que podamos responder",
+    "anonymousHint": "No has iniciado sesión. Te responderemos por correo después del envío.",
+    "validation": {
+      "contentRequired": "Por favor, ingresa descripción del problema",
+      "contentTooLong": "La descripción del problema no puede exceder 5000 caracteres",
+      "emailRequired": "Por favor, ingresa tu dirección de correo",
+      "emailInvalid": "Por favor, ingresa una dirección de correo válida"
+    },
+    "quickIssue": {
+      "label": "Selección rápida",
+      "cannotConnect": "No se puede conectar",
+      "unstable": "Conexión inestable",
+      "slow": "Velocidad lenta",
+      "crash": "Bloqueo de aplicación",
+      "subscription": "Problema de suscripción"
+    }
+  }
+}
