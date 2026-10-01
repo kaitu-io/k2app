@@ -206,6 +206,54 @@ export interface OrderStatisticsResponse {
 }
 
 // Usage analytics types
+// ==================== Funnel Analytics types ====================
+
+export interface FunnelPathInfo {
+  key: string;
+  title: string;
+  question: string;
+  steps: string[];
+  windowHours: number;
+}
+
+export interface FunnelPathsResponse {
+  paths: FunnelPathInfo[];
+  groupDims: string[];
+}
+
+export interface FunnelStep {
+  label: string;
+  count: number;
+  rateFromPrev: number;
+  rateFromFirst: number;
+  medianSecFromPrev: number | null;
+}
+
+export interface FunnelResult {
+  steps: FunnelStep[];
+  daily: { date: string; entered: number; completed: number }[];
+  groups: { key: string; steps: number[] }[];
+}
+
+export interface PaidRetentionRow {
+  cohort: string;
+  size: number;
+  retained: { m1: number | null; m3: number | null; m6: number | null; m12: number | null };
+  refunded: number;
+}
+
+export interface ActiveRetentionRow {
+  cohort: string;
+  size: number;
+  d1: number | null;
+  d7: number | null;
+  d30: number | null;
+}
+
+export interface PaidRetentionResult { rows: PaidRetentionRow[]; note?: string }
+export interface ActiveRetentionResult { rows: ActiveRetentionRow[]; note?: string }
+export type RetentionResult = PaidRetentionResult | ActiveRetentionResult;
+
 export interface UsageOverviewResponse {
   activeDevices: { date: string; count: number }[];
   connections: { date: string; count: number }[];
@@ -2248,6 +2296,34 @@ export const api = {
     return this.request<ConnectionRatingStatisticsResponse>(
       `/app/connection-ratings/statistics?period=${period}`
     );
+  },
+
+  // ==================== Funnel Analytics ====================
+
+  async getFunnelPaths(): Promise<FunnelPathsResponse> {
+    return this.request<FunnelPathsResponse>('/app/stats/funnels');
+  },
+
+  async getFunnel(
+    key: string,
+    p: { brand?: BrandId | string; from: string; to: string; groupBy?: string },
+  ): Promise<FunnelResult> {
+    const qs = new URLSearchParams();
+    if (p.brand) qs.set('brand', p.brand);
+    qs.set('from', p.from);
+    qs.set('to', p.to);
+    if (p.groupBy) qs.set('groupBy', p.groupBy);
+    return this.request<FunnelResult>(`/app/stats/funnels/${encodeURIComponent(key)}?${qs}`);
+  },
+
+  async getRetention<M extends 'paid' | 'active'>(
+    p: { brand?: BrandId | string; metric: M; months?: number },
+  ): Promise<M extends 'paid' ? PaidRetentionResult : ActiveRetentionResult> {
+    const qs = new URLSearchParams();
+    if (p.brand) qs.set('brand', p.brand);
+    qs.set('metric', p.metric);
+    if (p.months) qs.set('months', String(p.months));
+    return this.request<M extends 'paid' ? PaidRetentionResult : ActiveRetentionResult>(`/app/stats/retention?${qs}`);
   },
 
   // ==================== Usage Analytics ====================
