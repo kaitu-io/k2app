@@ -47,6 +47,17 @@ func newOrderedGuest(t *testing.T, brand Brand, cid string, offset time.Duration
 	return id
 }
 
+// countGuestsOwningCID 通过 cid 标识 join 到 guests，数出持有该 (brand, cid) 的 guest 行数。
+func countGuestsOwningCID(t *testing.T, brand Brand, cid string) int64 {
+	t.Helper()
+	var n int64
+	require.NoError(t, db.Get().Table("guests").
+		Joins("JOIN guest_identities gi ON gi.guest_id = guests.id").
+		Where("gi.brand = ? AND gi.kind = ? AND gi.value = ?", string(brand), IdentityCID, cid).
+		Count(&n).Error)
+	return n
+}
+
 func loadGuest(t *testing.T, id uint64) Guest {
 	t.Helper()
 	var g Guest
@@ -65,9 +76,7 @@ func TestResolveGuest_NewAndStable(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, id1, id2)
 
-	var n int64
-	db.Get().Model(&GuestIdentity{}).Where("kind = ? AND value = ?", IdentityCID, v[0]).Count(&n)
-	assert.EqualValues(t, 1, n)
+	assert.EqualValues(t, 1, countGuestsOwningCID(t, BrandKaitu, v[0]), "同一 cid 只对应一行 guests")
 	// 空 locale/country 不覆盖
 	g := loadGuest(t, id1)
 	assert.Equal(t, "zh-CN", g.Locale)
@@ -112,12 +121,14 @@ func TestResolveGuest_ConcurrentSameCid(t *testing.T) {
 		require.NoError(t, errs[i])
 		assert.Equal(t, ids[0], ids[i])
 	}
-	var n int64
-	db.Get().Model(&GuestIdentity{}).Where("kind = ? AND value = ?", IdentityCID, v[0]).Count(&n)
-	assert.EqualValues(t, 1, n)
-	var gn int64
-	db.Get().Model(&Guest{}).Where("id = ?", ids[0]).Count(&gn)
-	assert.EqualValues(t, 1, gn)
+	// 恰好一个 guest 持有该 (brand, cid)，且它就是所有调用方拿到的那个
+	assert.EqualValues(t, 1, countGuestsOwningCID(t, BrandKaitu, v[0]))
+	var owners []uint64
+	require.NoError(t, db.Get().Model(&GuestIdentity{}).
+		Where("brand = ? AND kind = ? AND value = ?", string(BrandKaitu), IdentityCID, v[0]).
+		Pluck("guest_id", &owners).Error)
+	require.Len(t, owners, 1)
+	assert.Equal(t, ids[0], owners[0])
 }
 
 func TestResolveGuest_SameSidAutoMerges(t *testing.T) {
@@ -325,4 +336,127 @@ func TestGuestRootID_TerminatesOnCycle(t *testing.T) {
 	require.NoError(t, db.Get().Model(&Guest{}).Where("id = ?", b).Update("merged_into_id", a).Error)
 	_, err := guestRootID(ctx, a)
 	assert.Error(t, err)
+}
+
+// 撤销为 LIFO：之后还有合并碰过同一批 guest 时拒绝，状态不变。
+func TestUndoMerge_RefusesWithLaterMerge(t *testing.T) {
+	skipIfNoConfig(t)
+	v := chatTestValues(t, 3)
+	ctx := context.Background()
+	z := newOrderedGuest(t, BrandKaitu, v[0], 0)
+	a := newOrderedGuest(t, BrandKaitu, v[1], time.Hour)
+	b := newOrderedGuest(t, BrandKaitu, v[2], 2*time.Hour)
+
+	m1, err := mergeGuests(ctx, b, a, MergeManual, nil, nil) // b -> a
+	require.NoError(t, err)
+	m2, err := mergeGuests(ctx, a, z, MergeManual, nil, nil) // {a,b} -> z
+	require.NoError(t, err)
+
+	err = undoGuestMerge(ctx, m1.ID, 1)
+	assert.ErrorIs(t, err, errGuestMergeHasLaterMerges)
+	for _, id := range []uint64{a, b} {
+		g := loadGuest(t, id)
+		require.NotNil(t, g.MergedIntoID)
+		assert.Equal(t, z, *g.MergedIntoID, "拒绝后状态不变")
+	}
+	var rec GuestMerge
+	require.NoError(t, db.Get().First(&rec, m1.ID).Error)
+	assert.Nil(t, rec.UndoneAt)
+
+	// 先撤 m2，再撤 m1：成功，三个独立根
+	require.NoError(t, undoGuestMerge(ctx, m2.ID, 1))
+	require.NoError(t, undoGuestMerge(ctx, m1.ID, 1))
+	for _, id := range []uint64{z, a, b} {
+		assert.Nil(t, loadGuest(t, id).MergedIntoID)
+	}
+}
+
+func TestUndoMerge_RefusesWhenLaterMergeMovedChild(t *testing.T) {
+	skipIfNoConfig(t)
+	v := chatTestValues(t, 3)
+	ctx := context.Background()
+	a := newOrderedGuest(t, BrandKaitu, v[0], 0)
+	b := newOrderedGuest(t, BrandKaitu, v[1], time.Hour)
+	c := newOrderedGuest(t, BrandKaitu, v[2], 2*time.Hour)
+
+	m1, err := mergeGuests(ctx, c, b, MergeManual, nil, nil) // c -> b
+	require.NoError(t, err)
+	_, err = mergeGuests(ctx, b, a, MergeManual, nil, nil) // {b,c} -> a
+	require.NoError(t, err)
+
+	assert.ErrorIs(t, undoGuestMerge(ctx, m1.ID, 1), errGuestMergeHasLaterMerges)
+	gc := loadGuest(t, c)
+	require.NotNil(t, gc.MergedIntoID)
+	assert.Equal(t, a, *gc.MergedIntoID)
+}
+
+// 撤销的 same_sid 合并不会被访客的下一次请求自动重做。
+func TestResolveGuest_UndoneSameSidNotRemerged(t *testing.T) {
+	skipIfNoConfig(t)
+	v := chatTestValues(t, 3) // cidA cidB sid
+	ctx := context.Background()
+
+	g1, err := resolveGuest(ctx, BrandKaitu, v[0], v[2], "", "")
+	require.NoError(t, err)
+	g2, err := resolveGuest(ctx, BrandKaitu, v[1], v[2], "", "")
+	require.NoError(t, err)
+	require.Equal(t, g1, g2)
+
+	var m GuestMerge
+	require.NoError(t, db.Get().Where("into_guest_id = ? AND reason = ?", g1, MergeSameSID).First(&m).Error)
+	require.NoError(t, undoGuestMerge(ctx, m.ID, 9))
+
+	r1, err := resolveGuest(ctx, BrandKaitu, v[0], v[2], "", "")
+	require.NoError(t, err)
+	r2, err := resolveGuest(ctx, BrandKaitu, v[1], v[2], "", "")
+	require.NoError(t, err)
+	assert.NotEqual(t, r1, r2, "撤销后根保持独立")
+
+	var n int64
+	db.Get().Model(&GuestMerge{}).Where("from_guest_id IN ? OR into_guest_id IN ?",
+		[]uint64{r1, r2}, []uint64{r1, r2}).Count(&n)
+	assert.EqualValues(t, 1, n, "不应产生新的合并记录")
+}
+
+func TestMergeGuests_CrossBrandRefused(t *testing.T) {
+	skipIfNoConfig(t)
+	v := chatTestValues(t, 2)
+	ctx := context.Background()
+	k := newOrderedGuest(t, BrandKaitu, v[0], 0)
+	o := newOrderedGuest(t, BrandOverleap, v[1], time.Hour)
+	m, err := mergeGuests(ctx, o, k, MergeManual, nil, nil)
+	assert.ErrorIs(t, err, errGuestMergeCrossBrand)
+	assert.Nil(t, m)
+	assert.Nil(t, loadGuest(t, o).MergedIntoID)
+}
+
+// 并发合并 W→Y 与 Y→X：无论谁先提交，都不得留下指向非根的行。
+func TestMergeGuests_ConcurrentKeepsDepthOne(t *testing.T) {
+	skipIfNoConfig(t)
+	const rounds = 6
+	v := chatTestValues(t, rounds*3)
+	ctx := context.Background()
+	for i := 0; i < rounds; i++ {
+		x := newOrderedGuest(t, BrandKaitu, v[i*3], 0)
+		y := newOrderedGuest(t, BrandKaitu, v[i*3+1], time.Hour)
+		w := newOrderedGuest(t, BrandKaitu, v[i*3+2], 2*time.Hour)
+
+		var wg sync.WaitGroup
+		errs := make([]error, 2)
+		start := make(chan struct{})
+		wg.Add(2)
+		go func() { defer wg.Done(); <-start; _, errs[0] = mergeGuests(ctx, w, y, MergeManual, nil, nil) }()
+		go func() { defer wg.Done(); <-start; _, errs[1] = mergeGuests(ctx, y, x, MergeManual, nil, nil) }()
+		close(start)
+		wg.Wait()
+		require.NoError(t, errs[0])
+		require.NoError(t, errs[1])
+
+		for _, id := range []uint64{y, w} {
+			g := loadGuest(t, id)
+			require.NotNil(t, g.MergedIntoID, "round %d", i)
+			assert.Equal(t, x, *g.MergedIntoID, "round %d: 深度必须为 1", i)
+		}
+		assert.Nil(t, loadGuest(t, x).MergedIntoID)
+	}
 }
