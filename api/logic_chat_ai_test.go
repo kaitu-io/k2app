@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/openai/filesearch"
+	"github.com/wordgate/qtoolkit/redis"
 )
 
 type aiAskFn = func(ctx context.Context, question string, history []filesearch.Message) (string, error)
@@ -264,4 +266,103 @@ func TestChatAIWelcome(t *testing.T) {
 	assert.Equal(t, []chatOption{
 		{"📱 安装问题", "install"}, {"💳 购买/续费", "purchase"}, {"❓ 使用问题", "usage"},
 	}, opts)
+}
+
+func TestChatAI_TimeoutTransfers(t *testing.T) {
+	conv := newAIConv(t)
+	orig := chatAIAskTimeout
+	chatAIAskTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { chatAIAskTimeout = orig })
+	withAIAsk(t, func(ctx context.Context, _ string, _ []filesearch.Message) (string, error) {
+		<-ctx.Done()
+		return "", ctx.Err()
+	})
+	visitorSays(t, conv, MsgText, "slow")
+
+	assert.Equal(t, HandlerHuman, handlerOf(t, conv.ID))
+	msgs := convMessages(t, conv.ID)
+	assert.Equal(t, 1, countBy(msgs, SenderSystem, MsgEvent))
+	assert.Equal(t, 0, countBy(msgs, SenderAI, ""))
+}
+
+func TestChatAI_MessageDuringLockIsAnsweredAfter(t *testing.T) {
+	conv := newAIConv(t)
+	var questions []string
+	withAIAsk(t, func(_ context.Context, q string, _ []filesearch.Message) (string, error) {
+		questions = append(questions, q)
+		if len(questions) == 1 {
+			visitorSays(t, conv, MsgText, "second") // 持锁期间到达：钩子拿不到锁
+		}
+		return "ok", nil
+	})
+	visitorSays(t, conv, MsgText, "first")
+
+	assert.Equal(t, []string{"first", "second"}, questions)
+	assert.Equal(t, 2, countBy(convMessages(t, conv.ID), SenderAI, MsgText))
+}
+
+func TestChatAI_LockHeldByOtherSkips(t *testing.T) {
+	conv := newAIConv(t)
+	key := fmt.Sprintf("chat:ai:%d", conv.ID)
+	require.NoError(t, redis.Client().Set(context.Background(), key, "other", time.Minute).Err())
+	t.Cleanup(func() { redis.Client().Del(context.Background(), key) })
+	calls := withAIAsk(t, aiReplyText("x"))
+	visitorSays(t, conv, MsgText, "hi")
+
+	assert.Zero(t, calls.Load())
+	assert.Equal(t, 0, countBy(convMessages(t, conv.ID), SenderAI, ""))
+	assert.Equal(t, 0, countBy(convMessages(t, conv.ID), SenderSystem, ""))
+	assert.Equal(t, HandlerAI, handlerOf(t, conv.ID))
+}
+
+func TestChatAI_RedisDownTransfers(t *testing.T) {
+	conv := newAIConv(t)
+	orig := chatAILockFn
+	chatAILockFn = func(context.Context, uint64) (func(), bool, error) { return nil, false, errors.New("redis down") }
+	t.Cleanup(func() { chatAILockFn = orig })
+	calls := withAIAsk(t, aiReplyText("x"))
+	visitorSays(t, conv, MsgText, "hi")
+
+	assert.Zero(t, calls.Load())
+	assert.Equal(t, HandlerHuman, handlerOf(t, conv.ID))
+	assert.Equal(t, 1, countBy(convMessages(t, conv.ID), SenderSystem, MsgEvent))
+}
+
+func TestChatAI_RoundBound(t *testing.T) {
+	conv := newAIConv(t)
+	calls := withAIAsk(t, func(context.Context, string, []filesearch.Message) (string, error) {
+		visitorSays(t, conv, MsgText, "more")
+		return "ok", nil
+	})
+	visitorSays(t, conv, MsgText, "start")
+
+	assert.EqualValues(t, chatAIMaxRounds, calls.Load())
+}
+
+func TestChatAI_DropsReplyIfClosedMeanwhile(t *testing.T) {
+	conv := newAIConv(t)
+	withAIAsk(t, func(context.Context, string, []filesearch.Message) (string, error) {
+		require.NoError(t, db.Get().Model(&Conversation{}).Where("id = ?", conv.ID).Update("status", ConvClosed).Error)
+		return "late", nil
+	})
+	visitorSays(t, conv, MsgText, "hi")
+
+	assert.Equal(t, 0, countBy(convMessages(t, conv.ID), SenderAI, ""))
+}
+
+// 外层 ctx 本身过期（而非只有单次调用超时）时，转人工仍必须成功：兜底走全新 ctx。
+func TestChatAI_OuterContextExpiredStillTransfers(t *testing.T) {
+	conv := newAIConv(t)
+	conv.Handler = HandlerHuman // 内存里标 human，追加访客消息时不触发钩子
+	visitorSays(t, conv, MsgText, "slow")
+	withAIAsk(t, func(ctx context.Context, _ string, _ []filesearch.Message) (string, error) {
+		<-ctx.Done()
+		return "", ctx.Err()
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	chatAIHandle(ctx, conv.ID)
+
+	assert.Equal(t, HandlerHuman, handlerOf(t, conv.ID))
+	assert.Equal(t, 1, countBy(convMessages(t, conv.ID), SenderSystem, MsgEvent))
 }

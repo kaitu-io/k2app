@@ -23,11 +23,22 @@ const (
 	chatAIHistoryLimit = 30
 	// chatAIMaxRounds 单次调用内最多连续处理几轮（访客连发消息时）。
 	chatAIMaxRounds = 5
-	chatAILockTTL   = 60 * time.Second
-	chatAITimeout   = 60 * time.Second
+	// chatAILockTTL 必须大于单次 AI 调用超时（chatAIAskTimeout 默认 45s）：
+	// 否则调用还没结束锁就过期，同一会话会并发出两路回复。
+	chatAILockTTL = 90 * time.Second
+	// chatAITimeout 是整次 chatAIHandle（最多 5 轮）的宽松总上限。
+	chatAITimeout = 5 * time.Minute
+	// chatAIFallbackTimeout 转人工兜底路径的独立超时（不继承可能已过期的 ctx）。
+	chatAIFallbackTimeout = 10 * time.Second
 
 	chatWelcomeText = "您好！请问需要什么帮助？（遇到安装问题时，您可以直接发截图给我 📷）"
 )
+
+// chatAIAskTimeout 单次 AI 调用超时；变量以便测试缩短。必须小于 chatAILockTTL。
+var chatAIAskTimeout = 45 * time.Second
+
+// chatAILockFn 取锁函数；变量以便测试注入 Redis 故障。
+var chatAILockFn = chatAILock
 
 // chatAIAsk 调 OpenAI filesearch 取回复；测试里替换，避免打到真实 OpenAI。
 var chatAIAsk = func(ctx context.Context, question string, history []filesearch.Message) (string, error) {
@@ -155,15 +166,11 @@ func chatAIHistory(ctx context.Context, convID, beforeID uint64) ([]filesearch.M
 func chatAIHandle(ctx context.Context, convID uint64) {
 	var answered uint64
 	for round := 0; round < chatAIMaxRounds; round++ {
-		release, ok, err := chatAILock(ctx, convID)
+		release, ok, err := chatAILockFn(ctx, convID)
 		if err != nil {
 			// Redis 不可用：宁可转人工，也不能让访客既没 AI 也没人
 			log.Errorf(ctx, "chat ai lock failed: conv=%d err=%v", convID, err)
-			if conv, lerr := chatLoadConversation(ctx, convID); lerr == nil && chatAIActive(conv) {
-				if terr := chatTransferToHuman(ctx, conv, ""); terr != nil {
-					log.Errorf(ctx, "chat ai transfer failed: conv=%d err=%v", convID, terr)
-				}
-			}
+			chatAIFallback(ctx, convID, "")
 			return
 		}
 		if !ok {
@@ -200,13 +207,13 @@ func chatAIRound(ctx context.Context, convID, answered uint64) (uint64, bool) {
 	if err := chatAIReply(ctx, conv, q); err != nil {
 		log.Errorf(ctx, "chat ai round failed: conv=%d err=%v", convID, err)
 		// 回复流程自身出错（如落库失败）：转人工兜底，避免访客无人应答
-		if fresh, lerr := chatLoadConversation(ctx, convID); lerr == nil && chatAIActive(fresh) {
-			_ = chatTransferToHuman(ctx, fresh, "")
-		}
+		chatAIFallback(ctx, convID, "")
 		return q.ID, false
 	}
 
-	// 锁释放前无法判断；调用方释放后再看是否有更新的访客消息——这里先返回"需要再检查"
+	// 本轮已处理完：返回 true 让调用方先释放锁，再进下一轮；
+	// 下一轮发现没有比 q 更新的访客消息就会直接退出。这样释放锁之后才判断，
+	// 不会漏掉在持锁期间到达、其钩子因拿不到锁而被跳过的消息。
 	return q.ID, true
 }
 
@@ -218,7 +225,7 @@ func chatAIReply(ctx context.Context, conv *Conversation, q *ConversationMessage
 		return fmt.Errorf("count ai replies: %w", err)
 	}
 	if aiCount >= chatAIMaxReplies {
-		return chatTransferToHuman(ctx, conv, "")
+		return chatAIFallback(ctx, conv.ID, "")
 	}
 
 	history, err := chatAIHistory(ctx, conv.ID, q.ID)
@@ -229,13 +236,15 @@ func chatAIReply(ctx context.Context, conv *Conversation, q *ConversationMessage
 	if q.Kind == MsgOptionReply {
 		question = chatOptionQuestion(question)
 	}
-	reply, err := chatAIAsk(ctx, question, history)
+	askCtx, cancel := context.WithTimeout(ctx, chatAIAskTimeout)
+	reply, err := chatAIAsk(askCtx, question, history)
+	cancel()
 	if err != nil || strings.TrimSpace(reply) == "" {
 		log.Errorf(ctx, "chat ai ask failed: conv=%d err=%v", conv.ID, err)
-		return chatTransferToHuman(ctx, conv, "")
+		return chatAIFallback(ctx, conv.ID, "")
 	}
 	if strings.HasSuffix(strings.TrimSpace(reply), transferHumanMarker) {
-		return chatTransferToHuman(ctx, conv, reply)
+		return chatAIFallback(ctx, conv.ID, reply)
 	}
 
 	// AI 调用期间人工可能已接管或会话已关闭：以 DB 为准，丢弃这条回复
@@ -247,6 +256,21 @@ func chatAIReply(ctx context.Context, conv *Conversation, q *ConversationMessage
 		return nil
 	}
 	return chatAppendAI(ctx, fresh, reply)
+}
+
+// chatAIFallback 在全新的 context 上转人工：调用方的 ctx 可能已超时/取消，
+// 沿用它会让转人工立刻失败、访客既没 AI 也没人。失败必须记 error 日志，不得吞掉。
+func chatAIFallback(ctx context.Context, convID uint64, aiReply string) error {
+	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), chatAIFallbackTimeout)
+	defer cancel()
+	conv, err := chatLoadConversation(fctx, convID)
+	if err == nil {
+		err = chatTransferToHuman(fctx, conv, aiReply)
+	}
+	if err != nil {
+		log.Errorf(fctx, "chat ai transfer to human failed: conv=%d err=%v", convID, err)
+	}
+	return err
 }
 
 func chatAppendAI(ctx context.Context, conv *Conversation, content string) error {
