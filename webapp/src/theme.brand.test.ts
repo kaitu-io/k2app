@@ -39,6 +39,10 @@ describe('MUI theme derives from brand tokens', () => {
       expect(darkTheme.palette.warning.main).toBe('#ebc247');       // --warning
       expect(darkTheme.palette.error.main).toBe('#df3a3a');         // --destructive
       expect(darkTheme.shape.borderRadius).toBe(10);                // --radius .625rem
+      // 中性灰阶 = MUI 默认原值（页面主体底色 grey[900]）；改动即改变开途观感
+      expect(darkTheme.palette.grey[900]).toBe('#212121');
+      expect(darkTheme.palette.grey[800]).toBe('#424242');
+      expect(darkTheme.palette.grey[700]).toBe('#616161');
       // light 保持迁移前取值（dark-only，light 仅为将来重启切换器保留）
       expect(lightTheme.palette.primary.main).toBe('#1565C0');
     });
@@ -78,6 +82,10 @@ describe('MUI theme derives from brand tokens', () => {
       expect(darkTheme.palette.warning.main).toBe('#FBBF24');
       expect(darkTheme.palette.error.main).toBe('#F87171');
       expect(darkTheme.shape.borderRadius).toBe(12);
+      // 页面主体底色（grey[900]）与导航栏（paper）同色相，且页面更深
+      expect(darkTheme.palette.grey[900]).toBe('#0F131C');
+      expect(darkTheme.palette.grey[800]).toBe('#1C2233');
+      expect(darkTheme.palette.grey[700]).toBe('#2A3145');
 
       const status = OVERLEAP_BRAND.theme.status;
       // 已连接 = 薄荷青，待命 = 品牌紫：与开途「绿=通了 / 青=待命」错开

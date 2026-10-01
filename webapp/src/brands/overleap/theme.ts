@@ -26,6 +26,8 @@ export const OVERLEAP_THEME: BrandThemeTokens = {
     textPrimary: '#E6E8F0',
     textSecondary: '#9AA0B4',
     radius: 12,
+    // 与 paper (#141926) 同色相的蓝灰：页面底比导航栏/卡片略深，不再是中性灰配蓝导航
+    neutral: { 700: '#2A3145', 800: '#1C2233', 900: '#0F131C' },
   },
   semantic: {
     success: { main: '#34D399', light: '#6EE7B7', dark: '#059669' },

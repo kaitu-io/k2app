@@ -98,6 +98,10 @@ export interface BrandSurfaceTokens {
   textSecondary: string;
   /** 全局圆角基数，px（对应官网 --radius） */
   radius: number;
+  /** 深色模式的中性灰阶（注入 MUI palette.grey）。页面主体底色用的是 grey[900]，
+   *  不是 background —— 它若是纯中性灰而 paper 带色相，导航栏与页面就会撞色。
+   *  必填：隐式落到 MUI 默认灰会让带色相的品牌静默撞色。 */
+  neutral: { 700: string; 800: string; 900: string };
 }
 
 /** 语义色 —— 成功 / 警告 / 错误。品牌化是因为官网有自己的一套取值，
