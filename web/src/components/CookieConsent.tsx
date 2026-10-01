@@ -6,8 +6,26 @@ import { Button } from "@/components/ui/button";
 import { Cookie, X } from "lucide-react";
 import { safeStorage } from "@/lib/safeStorage";
 
-const COOKIE_CONSENT_KEY = "kaitu_cookie_consent";
-const COOKIE_CONSENT_VERSION = "1"; // Increment when cookie policy changes
+export const COOKIE_CONSENT_KEY = "kaitu_cookie_consent";
+// Increment when the cookie policy or the banner copy changes, so visitors who
+// answered an earlier version see the new text once.
+// 2: the site added a first-party visit / purchase-conversion statistics cookie.
+export const COOKIE_CONSENT_VERSION = "2";
+
+/**
+ * The statistics cookie is HttpOnly, so only the server can replace it with
+ * the opt-out value. `redirect: 'manual'` keeps the browser from following the
+ * endpoint's redirect to a page nobody will read. Sent at click time rather
+ * than after the close animation so it is on the wire before the banner
+ * unmounts; a failure is swallowed — declining must never look broken.
+ */
+function optOutOfStatistics() {
+  try {
+    fetch('/api/px/optout', { credentials: 'same-origin', redirect: 'manual' }).catch(() => {});
+  } catch {
+    /* noop */
+  }
+}
 
 export default function CookieConsent() {
   const t = useTranslations();
@@ -40,6 +58,7 @@ export default function CookieConsent() {
   }, []);
 
   const handleClose = (accepted: boolean) => {
+    if (!accepted) optOutOfStatistics();
     setIsVisible(false);
     // Wait for animation to complete before hiding
     setTimeout(() => {
