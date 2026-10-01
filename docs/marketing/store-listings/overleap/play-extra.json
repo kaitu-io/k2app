@@ -1,0 +1,452 @@
+{
+  "fr": {
+    "subHeading": "ABONNEMENT REQUIS",
+    "subText": "Overleap nécessite un compte avec un abonnement actif. Cette application ne propose aucun achat intégré : vous vous abonnez sur overleap.io, puis vous vous connectez ici avec la même adresse e-mail.",
+    "deleteLabel": "Supprimer votre compte",
+    "supportLabel": "Assistance"
+  },
+  "fr-CA": {
+    "subHeading": "ABONNEMENT REQUIS",
+    "subText": "Overleap nécessite un compte avec un abonnement actif. Cette application ne propose aucun achat intégré : vous vous abonnez sur overleap.io, puis vous ouvrez une session ici avec la même adresse courriel.",
+    "deleteLabel": "Supprimer votre compte",
+    "supportLabel": "Assistance"
+  },
+  "de": {
+    "subHeading": "ABONNEMENT ERFORDERLICH",
+    "subText": "Für Overleap benötigen Sie ein Konto mit einem aktiven Abonnement. Diese App bietet keine In-App-Käufe: Sie schließen das Abonnement auf overleap.io ab und melden sich anschließend hier mit derselben E-Mail-Adresse an.",
+    "deleteLabel": "Konto löschen",
+    "supportLabel": "Support"
+  },
+  "it": {
+    "subHeading": "ABBONAMENTO RICHIESTO",
+    "subText": "Overleap richiede un account con un abbonamento attivo. Questa app non prevede acquisti in-app: ti abboni su overleap.io e poi accedi qui con lo stesso indirizzo e-mail.",
+    "deleteLabel": "Elimina il tuo account",
+    "supportLabel": "Assistenza"
+  },
+  "es-ES": {
+    "subHeading": "SE REQUIERE SUSCRIPCIÓN",
+    "subText": "Overleap necesita una cuenta con una suscripción activa. Esta app no ofrece compras dentro de la app: te suscribes en overleap.io y después inicias sesión aquí con la misma dirección de correo electrónico.",
+    "deleteLabel": "Eliminar tu cuenta",
+    "supportLabel": "Soporte"
+  },
+  "es-419": {
+    "subHeading": "SE REQUIERE SUSCRIPCIÓN",
+    "subText": "Overleap necesita una cuenta con una suscripción activa. Esta app no ofrece compras dentro de la app: te suscribes en overleap.io y luego inicias sesión aquí con la misma dirección de correo electrónico.",
+    "deleteLabel": "Eliminar tu cuenta",
+    "supportLabel": "Soporte"
+  },
+  "pt-BR": {
+    "subHeading": "ASSINATURA NECESSÁRIA",
+    "subText": "O Overleap exige uma conta com uma assinatura ativa. Este app não oferece compras dentro do app: você assina em overleap.io e depois entra aqui com o mesmo endereço de e-mail.",
+    "deleteLabel": "Excluir sua conta",
+    "supportLabel": "Suporte"
+  },
+  "pt-PT": {
+    "subHeading": "SUBSCRIÇÃO NECESSÁRIA",
+    "subText": "A Overleap requer uma conta com uma subscrição ativa. Esta aplicação não disponibiliza compras integradas: subscreve em overleap.io e, em seguida, inicia sessão aqui com o mesmo endereço de e-mail.",
+    "deleteLabel": "Eliminar a sua conta",
+    "supportLabel": "Apoio ao cliente"
+  },
+  "nl": {
+    "subHeading": "ABONNEMENT VEREIST",
+    "subText": "Voor Overleap heb je een account met een actief abonnement nodig. Deze app biedt geen in-app-aankopen: je sluit een abonnement af op overleap.io en logt hier vervolgens in met hetzelfde e-mailadres.",
+    "deleteLabel": "Je account verwijderen",
+    "supportLabel": "Ondersteuning"
+  },
+  "ca": {
+    "subHeading": "CAL UNA SUBSCRIPCIÓ",
+    "subText": "Overleap necessita un compte amb una subscripció activa. Aquesta aplicació no ofereix compres integrades: et subscrius a overleap.io i després inicies la sessió aquí amb la mateixa adreça electrònica.",
+    "deleteLabel": "Elimina el teu compte",
+    "supportLabel": "Assistència"
+  },
+  "gl": {
+    "subHeading": "REQUÍRESE SUBSCRICIÓN",
+    "subText": "Overleap precisa unha conta cunha subscrición activa. Esta aplicación non ofrece compras integradas: subscríbeste en overleap.io e despois inicias sesión aquí co mesmo enderezo de correo electrónico.",
+    "deleteLabel": "Eliminar a túa conta",
+    "supportLabel": "Asistencia"
+  },
+  "eu": {
+    "subHeading": "HARPIDETZA BEHAR DA",
+    "subText": "Overleap erabiltzeko, harpidetza aktiboa duen kontu bat behar da. Aplikazio honek ez du aplikazio barruko erosketarik: overleap.io webgunean harpidetzen zara, eta ondoren hemen hasten duzu saioa helbide elektroniko berarekin.",
+    "deleteLabel": "Ezabatu zure kontua",
+    "supportLabel": "Laguntza"
+  },
+  "rm": {
+    "subHeading": "ABUNAMENT NECESSARI",
+    "subText": "Overleap dovra in conto cun in abunament activ. Questa app na porscha naginas cumpras en l'app: Vus abunais sin overleap.io ed As annunziais suenter qua cun la medema adressa dad e-mail.",
+    "deleteLabel": "Stizzar Voss conto",
+    "supportLabel": "Agid"
+  },
+  "sv": {
+    "subHeading": "ABONNEMANG KRÄVS",
+    "subText": "Overleap kräver ett konto med ett aktivt abonnemang. Den här appen har inga köp i appen: du tecknar abonnemanget på overleap.io och loggar sedan in här med samma e-postadress.",
+    "deleteLabel": "Radera ditt konto",
+    "supportLabel": "Support"
+  },
+  "da": {
+    "subHeading": "ABONNEMENT PÅKRÆVET",
+    "subText": "Overleap kræver en konto med et aktivt abonnement. Denne app har ingen køb i appen: du tegner abonnement på overleap.io og logger derefter ind her med den samme e-mailadresse.",
+    "deleteLabel": "Slet din konto",
+    "supportLabel": "Support"
+  },
+  "nb": {
+    "subHeading": "ABONNEMENT KREVES",
+    "subText": "Overleap krever en konto med et aktivt abonnement. Denne appen har ingen kjøp i appen: du tegner abonnement på overleap.io og logger deretter inn her med den samme e-postadressen.",
+    "deleteLabel": "Slett kontoen din",
+    "supportLabel": "Brukerstøtte"
+  },
+  "fi": {
+    "subHeading": "TILAUS VAADITAAN",
+    "subText": "Overleapin käyttö edellyttää tiliä, jolla on voimassa oleva tilaus. Tässä sovelluksessa ei ole sovelluksen sisäisiä ostoja: tilaus tehdään osoitteessa overleap.io, minkä jälkeen kirjaudut tässä sisään samalla sähköpostiosoitteella.",
+    "deleteLabel": "Poista tilisi",
+    "supportLabel": "Tuki"
+  },
+  "is": {
+    "subHeading": "ÁSKRIFT NAUÐSYNLEG",
+    "subText": "Overleap krefst reiknings með virkri áskrift. Þetta forrit býður ekki upp á kaup í forriti: þú gerist áskrifandi á overleap.io og skráir þig síðan inn hér með sama netfangi.",
+    "deleteLabel": "Eyða reikningnum þínum",
+    "supportLabel": "Aðstoð"
+  },
+  "et": {
+    "subHeading": "VAJALIK ON TELLIMUS",
+    "subText": "Overleapi kasutamiseks on vaja aktiivse tellimusega kontot. Selles rakenduses ei ole rakendusesiseseid oste: tellimuse vormistad aadressil overleap.io ja seejärel logid siin sisse sama e-posti aadressiga.",
+    "deleteLabel": "Kustuta oma konto",
+    "supportLabel": "Klienditugi"
+  },
+  "lv": {
+    "subHeading": "NEPIECIEŠAMS ABONEMENTS",
+    "subText": "Lai lietotu Overleap, ir nepieciešams konts ar aktīvu abonementu. Šajā lietotnē nav pirkumu lietotnē: abonementu noformējat vietnē overleap.io un pēc tam šeit pierakstāties ar to pašu e-pasta adresi.",
+    "deleteLabel": "Dzēst savu kontu",
+    "supportLabel": "Atbalsts"
+  },
+  "lt": {
+    "subHeading": "REIKALINGA PRENUMERATA",
+    "subText": "Norint naudotis Overleap, reikalinga paskyra su galiojančia prenumerata. Šioje programėlėje nėra pirkimų programėlėje: prenumeratą užsisakote svetainėje overleap.io, o tada čia prisijungiate tuo pačiu el. pašto adresu.",
+    "deleteLabel": "Ištrinti savo paskyrą",
+    "supportLabel": "Pagalba"
+  },
+  "pl": {
+    "subHeading": "WYMAGANA SUBSKRYPCJA",
+    "subText": "Overleap wymaga konta z aktywną subskrypcją. Ta aplikacja nie oferuje zakupów w aplikacji: subskrypcję wykupujesz na overleap.io, a następnie logujesz się tutaj przy użyciu tego samego adresu e-mail.",
+    "deleteLabel": "Usuń swoje konto",
+    "supportLabel": "Pomoc techniczna"
+  },
+  "cs": {
+    "subHeading": "VYŽADOVÁNO PŘEDPLATNÉ",
+    "subText": "Overleap vyžaduje účet s aktivním předplatným. Tato aplikace nenabízí nákupy v aplikaci: předplatné si pořídíte na overleap.io a poté se zde přihlásíte stejnou e-mailovou adresou.",
+    "deleteLabel": "Smazat účet",
+    "supportLabel": "Podpora"
+  },
+  "sk": {
+    "subHeading": "VYŽADUJE SA PREDPLATNÉ",
+    "subText": "Overleap vyžaduje účet s aktívnym predplatným. Táto aplikácia neponúka nákupy v aplikácii: predplatné si zakúpite na overleap.io a potom sa tu prihlásite rovnakou e-mailovou adresou.",
+    "deleteLabel": "Odstrániť účet",
+    "supportLabel": "Podpora"
+  },
+  "sl": {
+    "subHeading": "POTREBNA JE NAROČNINA",
+    "subText": "Za uporabo Overleapa potrebujete račun z aktivno naročnino. Ta aplikacija ne omogoča nakupov v aplikaciji: naročnino sklenete na overleap.io, nato pa se tukaj prijavite z istim e-poštnim naslovom.",
+    "deleteLabel": "Izbrišite svoj račun",
+    "supportLabel": "Podpora"
+  },
+  "hu": {
+    "subHeading": "ELŐFIZETÉS SZÜKSÉGES",
+    "subText": "Az Overleap használatához aktív előfizetéssel rendelkező fiók szükséges. Ebben az alkalmazásban nincs alkalmazáson belüli vásárlás: az overleap.io oldalon fizethet elő, majd itt ugyanazzal az e-mail-címmel jelentkezhet be.",
+    "deleteLabel": "Fiók törlése",
+    "supportLabel": "Támogatás"
+  },
+  "ru": {
+    "subHeading": "ТРЕБУЕТСЯ ПОДПИСКА",
+    "subText": "Для работы Overleap нужна учётная запись с действующей подпиской. В этом приложении нет встроенных покупок: вы оформляете подписку на overleap.io, а затем входите здесь с тем же адресом электронной почты.",
+    "deleteLabel": "Удалить учётную запись",
+    "supportLabel": "Поддержка"
+  },
+  "uk": {
+    "subHeading": "ПОТРІБНА ПІДПИСКА",
+    "subText": "Для роботи Overleap потрібен обліковий запис із чинною підпискою. У цьому застосунку немає вбудованих покупок: ви оформлюєте підписку на overleap.io, а потім входите тут із тією самою адресою електронної пошти.",
+    "deleteLabel": "Видалити обліковий запис",
+    "supportLabel": "Підтримка"
+  },
+  "be": {
+    "subHeading": "ПАТРАБУЕЦЦА ПАДПІСКА",
+    "subText": "Для працы Overleap патрэбны ўліковы запіс з дзейнай падпіскай. У гэтай праграме няма ўбудаваных пакупак: вы афармляеце падпіску на overleap.io, а потым уваходзіце тут з тым самым адрасам электроннай пошты.",
+    "deleteLabel": "Выдаліць уліковы запіс",
+    "supportLabel": "Падтрымка"
+  },
+  "bg": {
+    "subHeading": "ИЗИСКВА СЕ АБОНАМЕНТ",
+    "subText": "Overleap изисква профил с активен абонамент. Това приложение не предлага покупки в приложението: абонирате се на overleap.io и след това влизате тук със същия имейл адрес.",
+    "deleteLabel": "Изтриване на профила",
+    "supportLabel": "Поддръжка"
+  },
+  "sr": {
+    "subHeading": "ПОТРЕБНА ЈЕ ПРЕТПЛАТА",
+    "subText": "За Overleap је потребан налог са активном претплатом. Ова апликација не нуди куповину у апликацији: претплаћујете се на overleap.io, а затим се овде пријављујете истом имејл адресом.",
+    "deleteLabel": "Избришите налог",
+    "supportLabel": "Подршка"
+  },
+  "mk": {
+    "subHeading": "ПОТРЕБНА Е ПРЕТПЛАТА",
+    "subText": "За Overleap е потребна сметка со активна претплата. Оваа апликација не нуди купување во апликацијата: се претплатувате на overleap.io, а потоа се најавувате овде со истата е-адреса.",
+    "deleteLabel": "Избришете ја сметката",
+    "supportLabel": "Поддршка"
+  },
+  "hr": {
+    "subHeading": "POTREBNA JE PRETPLATA",
+    "subText": "Za Overleap je potreban račun s aktivnom pretplatom. Ova aplikacija ne nudi kupnju unutar aplikacije: pretplatu ugovarate na overleap.io, a zatim se ovdje prijavljujete istom adresom e-pošte.",
+    "deleteLabel": "Izbrišite račun",
+    "supportLabel": "Podrška"
+  },
+  "ro": {
+    "subHeading": "ABONAMENT NECESAR",
+    "subText": "Overleap necesită un cont cu un abonament activ. Această aplicație nu oferă achiziții în aplicație: vă abonați pe overleap.io și apoi vă conectați aici cu aceeași adresă de e-mail.",
+    "deleteLabel": "Ștergeți contul",
+    "supportLabel": "Asistență"
+  },
+  "el": {
+    "subHeading": "ΑΠΑΙΤΕΙΤΑΙ ΣΥΝΔΡΟΜΗ",
+    "subText": "Το Overleap απαιτεί λογαριασμό με ενεργή συνδρομή. Αυτή η εφαρμογή δεν διαθέτει αγορές εντός εφαρμογής: εγγράφεστε ως συνδρομητής στο overleap.io και στη συνέχεια συνδέεστε εδώ με την ίδια διεύθυνση email.",
+    "deleteLabel": "Διαγραφή του λογαριασμού σας",
+    "supportLabel": "Υποστήριξη"
+  },
+  "sq": {
+    "subHeading": "KËRKOHET ABONIM",
+    "subText": "Overleap kërkon një llogari me një abonim aktiv. Ky aplikacion nuk ofron blerje brenda aplikacionit: abonoheni në overleap.io dhe më pas hyni këtu me të njëjtën adresë email-i.",
+    "deleteLabel": "Fshini llogarinë tuaj",
+    "supportLabel": "Mbështetje"
+  },
+  "tr": {
+    "subHeading": "ABONELİK GEREKLİDİR",
+    "subText": "Overleap, etkin bir aboneliği olan bir hesap gerektirir. Bu uygulamada uygulama içi satın alma yoktur: overleap.io adresinden abone olur, ardından burada aynı e-posta adresiyle oturum açarsınız.",
+    "deleteLabel": "Hesabınızı silin",
+    "supportLabel": "Destek"
+  },
+  "az": {
+    "subHeading": "ABUNƏLİK TƏLƏB OLUNUR",
+    "subText": "Overleap üçün aktiv abunəliyi olan hesab tələb olunur. Bu tətbiqdə tətbiqdaxili alış yoxdur: overleap.io saytında abunə olursunuz, sonra burada eyni e-poçt ünvanı ilə daxil olursunuz.",
+    "deleteLabel": "Hesabınızı silin",
+    "supportLabel": "Dəstək"
+  },
+  "hy": {
+    "subHeading": "ՊԱՀԱՆՋՎՈՒՄ Է ԲԱԺԱՆՈՐԴԱԳՐՈՒԹՅՈՒՆ",
+    "subText": "Overleap-ի համար անհրաժեշտ է գործող բաժանորդագրությամբ հաշիվ։ Այս հավելվածում ներհավելվածային գնումներ չկան․ դուք բաժանորդագրվում եք overleap.io կայքում, ապա մուտք եք գործում այստեղ նույն էլփոստի հասցեով։",
+    "deleteLabel": "Ջնջել ձեր հաշիվը",
+    "supportLabel": "Աջակցություն"
+  },
+  "ar": {
+    "subHeading": "يتطلب اشتراكًا",
+    "subText": "يتطلب Overleap حسابًا باشتراك فعّال. لا يتضمن هذا التطبيق عمليات شراء داخل التطبيق: تشترك عبر overleap.io ثم تسجّل الدخول هنا بعنوان البريد الإلكتروني نفسه.",
+    "deleteLabel": "حذف حسابك",
+    "supportLabel": "الدعم"
+  },
+  "he": {
+    "subHeading": "נדרש מינוי",
+    "subText": "Overleap דורש חשבון עם מינוי פעיל. באפליקציה זו אין רכישות מתוך האפליקציה: נרשמים למינוי באתר overleap.io ולאחר מכן מתחברים כאן עם אותה כתובת אימייל.",
+    "deleteLabel": "מחיקת החשבון",
+    "supportLabel": "תמיכה"
+  },
+  "fa": {
+    "subHeading": "اشتراک لازم است",
+    "subText": "Overleap به حسابی با اشتراک فعال نیاز دارد. این برنامه خرید درون‌برنامه‌ای ندارد: در overleap.io اشتراک تهیه می‌کنید و سپس با همان نشانی ایمیل در اینجا وارد می‌شوید.",
+    "deleteLabel": "حذف حساب کاربری",
+    "supportLabel": "پشتیبانی"
+  },
+  "ur": {
+    "subHeading": "سبسکرپشن درکار ہے",
+    "subText": "Overleap کے لیے فعال سبسکرپشن والا اکاؤنٹ درکار ہے۔ اس ایپ میں کوئی اِن ایپ خریداری نہیں ہے: آپ overleap.io پر سبسکرائب کرتے ہیں اور پھر اسی ای میل ایڈریس سے یہاں سائن اِن کرتے ہیں۔",
+    "deleteLabel": "اپنا اکاؤنٹ حذف کریں",
+    "supportLabel": "سپورٹ"
+  },
+  "ka": {
+    "subHeading": "საჭიროა გამოწერა",
+    "subText": "Overleap-ს სჭირდება ანგარიში აქტიური გამოწერით. ამ აპლიკაციაში აპშიდა შესყიდვები არ არის: გამოწერას აფორმებთ overleap.io-ზე, შემდეგ კი აქ შედიხართ იმავე ელფოსტის მისამართით.",
+    "deleteLabel": "ანგარიშის წაშლა",
+    "supportLabel": "მხარდაჭერა"
+  },
+  "kk": {
+    "subHeading": "ЖАЗЫЛЫМ ҚАЖЕТ",
+    "subText": "Overleap қолданбасына белсенді жазылымы бар тіркелгі қажет. Бұл қолданбада қолданба ішіндегі сатып алу жоқ: жазылымды overleap.io сайтында рәсімдейсіз, содан кейін осы жерде сол электрондық пошта мекенжайымен кіресіз.",
+    "deleteLabel": "Тіркелгіні жою",
+    "supportLabel": "Қолдау"
+  },
+  "ky": {
+    "subHeading": "ЖАЗЫЛУУ ТАЛАП КЫЛЫНАТ",
+    "subText": "Overleap үчүн активдүү жазылуусу бар аккаунт керек. Бул колдонмодо колдонмо ичиндеги сатып алуулар жок: overleap.io сайтында жазыласыз, андан соң бул жерге ошол эле электрондук почта дареги менен киресиз.",
+    "deleteLabel": "Аккаунтту өчүрүү",
+    "supportLabel": "Колдоо"
+  },
+  "mn": {
+    "subHeading": "ЗАХИАЛГА ШААРДЛАГАТАЙ",
+    "subText": "Overleap-д идэвхтэй захиалгатай бүртгэл шаардлагатай. Энэ аппад апп доторх худалдан авалт байхгүй: та overleap.io дээр захиалга хийгээд, дараа нь энд ижил имэйл хаягаар нэвтэрнэ.",
+    "deleteLabel": "Бүртгэлээ устгах",
+    "supportLabel": "Тусламж"
+  },
+  "am": {
+    "subHeading": "የደንበኝነት ምዝገባ ያስፈልጋል",
+    "subText": "Overleap ንቁ የደንበኝነት ምዝገባ ያለው መለያ ያስፈልገዋል። ይህ መተግበሪያ የመተግበሪያ ውስጥ ግዢ የለውም፤ በoverleap.io ላይ ይመዘገባሉ፣ ከዚያም በተመሳሳይ የኢሜይል አድራሻ እዚህ ይገባሉ።",
+    "deleteLabel": "መለያዎን ይሰርዙ",
+    "supportLabel": "ድጋፍ"
+  },
+  "sw": {
+    "subHeading": "USAJILI UNAHITAJIKA",
+    "subText": "Overleap inahitaji akaunti yenye usajili unaotumika. Programu hii haina ununuzi wa ndani ya programu: unajisajili kwenye overleap.io kisha unaingia hapa kwa anwani ile ile ya barua pepe.",
+    "deleteLabel": "Futa akaunti yako",
+    "supportLabel": "Usaidizi"
+  },
+  "zu": {
+    "subHeading": "KUDINGEKA UKUBHALISA",
+    "subText": "I-Overleap idinga i-akhawunti enokubhalisa okusebenzayo. Lolu hlelo lokusebenza alunakho ukuthenga ngaphakathi kohlelo: ubhalisa ku-overleap.io bese ungena lapha ngekheli le-imeyili elifanayo.",
+    "deleteLabel": "Susa i-akhawunti yakho",
+    "supportLabel": "Usekelo"
+  },
+  "af": {
+    "subHeading": "INTEKENING VEREIS",
+    "subText": "Overleap vereis 'n rekening met 'n aktiewe intekening. Hierdie app het geen in-app-aankope nie: jy teken in by overleap.io en meld dan hier aan met dieselfde e-posadres.",
+    "deleteLabel": "Skrap jou rekening",
+    "supportLabel": "Ondersteuning"
+  },
+  "hi": {
+    "subHeading": "सदस्यता आवश्यक है",
+    "subText": "Overleap के लिए सक्रिय सदस्यता वाला खाता आवश्यक है। इस ऐप में कोई इन-ऐप खरीदारी नहीं है: आप overleap.io पर सदस्यता लेते हैं और फिर उसी ईमेल पते से यहाँ साइन इन करते हैं।",
+    "deleteLabel": "अपना खाता हटाएँ",
+    "supportLabel": "सहायता"
+  },
+  "bn": {
+    "subHeading": "সাবস্ক্রিপশন প্রয়োজন",
+    "subText": "Overleap ব্যবহারের জন্য সক্রিয় সাবস্ক্রিপশনসহ একটি অ্যাকাউন্ট প্রয়োজন। এই অ্যাপে কোনো ইন-অ্যাপ কেনাকাটা নেই: আপনি overleap.io-তে সাবস্ক্রাইব করবেন এবং তারপর একই ইমেল ঠিকানা দিয়ে এখানে সাইন ইন করবেন।",
+    "deleteLabel": "আপনার অ্যাকাউন্ট মুছুন",
+    "supportLabel": "সহায়তা"
+  },
+  "gu": {
+    "subHeading": "સબ્સ્ક્રિપ્શન જરૂરી છે",
+    "subText": "Overleap માટે સક્રિય સબ્સ્ક્રિપ્શન ધરાવતું એકાઉન્ટ જરૂરી છે. આ ઍપમાં કોઈ ઇન-ઍપ ખરીદી નથી: તમે overleap.io પર સબ્સ્ક્રાઇબ કરો છો અને પછી એ જ ઇમેઇલ ઍડ્રેસથી અહીં સાઇન ઇન કરો છો.",
+    "deleteLabel": "તમારું એકાઉન્ટ ડિલીટ કરો",
+    "supportLabel": "સપોર્ટ"
+  },
+  "kn": {
+    "subHeading": "ಚಂದಾದಾರಿಕೆ ಅಗತ್ಯವಿದೆ",
+    "subText": "Overleap ಬಳಸಲು ಸಕ್ರಿಯ ಚಂದಾದಾರಿಕೆ ಹೊಂದಿರುವ ಖಾತೆ ಅಗತ್ಯವಿದೆ. ಈ ಆ್ಯಪ್‌ನಲ್ಲಿ ಆ್ಯಪ್‌ನೊಳಗಿನ ಖರೀದಿ ಇಲ್ಲ: ನೀವು overleap.io ನಲ್ಲಿ ಚಂದಾದಾರರಾಗಿ, ನಂತರ ಅದೇ ಇಮೇಲ್ ವಿಳಾಸದೊಂದಿಗೆ ಇಲ್ಲಿ ಸೈನ್ ಇನ್ ಮಾಡುತ್ತೀರಿ.",
+    "deleteLabel": "ನಿಮ್ಮ ಖಾತೆಯನ್ನು ಅಳಿಸಿ",
+    "supportLabel": "ಬೆಂಬಲ"
+  },
+  "ml": {
+    "subHeading": "സബ്‌സ്‌ക്രിപ്‌ഷൻ ആവശ്യമാണ്",
+    "subText": "Overleap ഉപയോഗിക്കാൻ സജീവമായ സബ്‌സ്‌ക്രിപ്‌ഷനുള്ള അക്കൗണ്ട് ആവശ്യമാണ്. ഈ ആപ്പിൽ ഇൻ-ആപ്പ് വാങ്ങലുകളില്ല: നിങ്ങൾ overleap.io-യിൽ സബ്‌സ്‌ക്രൈബ് ചെയ്‌ത ശേഷം അതേ ഇമെയിൽ വിലാസം ഉപയോഗിച്ച് ഇവിടെ സൈൻ ഇൻ ചെയ്യുക.",
+    "deleteLabel": "നിങ്ങളുടെ അക്കൗണ്ട് ഇല്ലാതാക്കുക",
+    "supportLabel": "പിന്തുണ"
+  },
+  "mr": {
+    "subHeading": "सदस्यत्व आवश्यक आहे",
+    "subText": "Overleap साठी सक्रिय सदस्यत्व असलेले खाते आवश्यक आहे. या ॲपमध्ये ॲप-अंतर्गत खरेदी नाही: तुम्ही overleap.io वर सदस्यत्व घेता आणि नंतर त्याच ईमेल पत्त्याने येथे साइन इन करता.",
+    "deleteLabel": "तुमचे खाते हटवा",
+    "supportLabel": "सहाय्य"
+  },
+  "or": {
+    "subHeading": "ସବସ୍କ୍ରିପସନ୍ ଆବଶ୍ୟକ",
+    "subText": "Overleap ପାଇଁ ସକ୍ରିୟ ସବସ୍କ୍ରିପସନ୍ ଥିବା ଏକ ଆକାଉଣ୍ଟ ଆବଶ୍ୟକ। ଏହି ଆପ୍‌ରେ କୌଣସି ଇନ୍-ଆପ୍ କ୍ରୟ ନାହିଁ: ଆପଣ overleap.io ରେ ସବସ୍କ୍ରାଇବ୍ କରନ୍ତି ଏବଂ ତା'ପରେ ସେହି ସମାନ ଇମେଲ୍ ଠିକଣା ସହ ଏଠାରେ ସାଇନ୍ ଇନ୍ କରନ୍ତି।",
+    "deleteLabel": "ଆପଣଙ୍କ ଆକାଉଣ୍ଟ ଡିଲିଟ୍ କରନ୍ତୁ",
+    "supportLabel": "ସହାୟତା"
+  },
+  "pa": {
+    "subHeading": "ਸਬਸਕ੍ਰਿਪਸ਼ਨ ਲੋੜੀਂਦੀ ਹੈ",
+    "subText": "Overleap ਲਈ ਸਰਗਰਮ ਸਬਸਕ੍ਰਿਪਸ਼ਨ ਵਾਲਾ ਖਾਤਾ ਲੋੜੀਂਦਾ ਹੈ। ਇਸ ਐਪ ਵਿੱਚ ਕੋਈ ਇਨ-ਐਪ ਖਰੀਦ ਨਹੀਂ ਹੈ: ਤੁਸੀਂ overleap.io 'ਤੇ ਸਬਸਕ੍ਰਾਈਬ ਕਰਦੇ ਹੋ ਅਤੇ ਫਿਰ ਉਸੇ ਈਮੇਲ ਪਤੇ ਨਾਲ ਇੱਥੇ ਸਾਈਨ ਇਨ ਕਰਦੇ ਹੋ।",
+    "deleteLabel": "ਆਪਣਾ ਖਾਤਾ ਮਿਟਾਓ",
+    "supportLabel": "ਸਹਾਇਤਾ"
+  },
+  "ta": {
+    "subHeading": "சந்தா தேவை",
+    "subText": "Overleap-ஐப் பயன்படுத்த, செயலில் உள்ள சந்தாவுடன் கூடிய கணக்கு தேவை. இந்தச் செயலியில் செயலிக்குள் வாங்குதல் இல்லை: நீங்கள் overleap.io தளத்தில் சந்தா செலுத்தி, பின்னர் அதே மின்னஞ்சல் முகவரியுடன் இங்கே உள்நுழைய வேண்டும்.",
+    "deleteLabel": "உங்கள் கணக்கை நீக்கவும்",
+    "supportLabel": "உதவி"
+  },
+  "te": {
+    "subHeading": "సబ్‌స్క్రిప్షన్ అవసరం",
+    "subText": "Overleap కోసం యాక్టివ్ సబ్‌స్క్రిప్షన్ ఉన్న ఖాతా అవసరం. ఈ యాప్‌లో యాప్‌లో కొనుగోళ్లు లేవు: మీరు overleap.io లో సబ్‌స్క్రయిబ్ చేసి, ఆపై అదే ఇమెయిల్ చిరునామాతో ఇక్కడ సైన్ ఇన్ చేస్తారు.",
+    "deleteLabel": "మీ ఖాతాను తొలగించండి",
+    "supportLabel": "సహాయం"
+  },
+  "ne": {
+    "subHeading": "सदस्यता आवश्यक छ",
+    "subText": "Overleap का लागि सक्रिय सदस्यता भएको खाता आवश्यक छ। यस एपमा कुनै इन-एप खरिद छैन: तपाईं overleap.io मा सदस्यता लिनुहुन्छ र त्यसपछि उही इमेल ठेगानाबाट यहाँ साइन इन गर्नुहुन्छ।",
+    "deleteLabel": "आफ्नो खाता मेटाउनुहोस्",
+    "supportLabel": "सहायता"
+  },
+  "si": {
+    "subHeading": "දායකත්වයක් අවශ්‍යයි",
+    "subText": "Overleap සඳහා සක්‍රිය දායකත්වයක් සහිත ගිණුමක් අවශ්‍ය වේ. මෙම යෙදුමේ යෙදුම තුළ මිලදී ගැනීම් නොමැත: ඔබ overleap.io හි දායක වී, පසුව එම විද්‍යුත් තැපැල් ලිපිනයෙන්ම මෙහි පුරන්න.",
+    "deleteLabel": "ඔබේ ගිණුම මකන්න",
+    "supportLabel": "සහාය"
+  },
+  "ja": {
+    "subHeading": "サブスクリプションが必要です",
+    "subText": "Overleapのご利用には、有効なサブスクリプションのあるアカウントが必要です。このアプリにはアプリ内課金がありません。overleap.ioで登録し、同じメールアドレスでこちらにサインインしてください。",
+    "deleteLabel": "アカウントを削除",
+    "supportLabel": "サポート"
+  },
+  "ko": {
+    "subHeading": "구독 필요",
+    "subText": "Overleap을 사용하려면 활성 구독이 있는 계정이 필요합니다. 이 앱에는 인앱 구매가 없습니다. overleap.io에서 구독한 후 동일한 이메일 주소로 여기에서 로그인하세요.",
+    "deleteLabel": "계정 삭제",
+    "supportLabel": "지원"
+  },
+  "zh-Hans": {
+    "subHeading": "需要订阅",
+    "subText": "使用 Overleap 需要一个拥有有效订阅的账户。本 App 不提供 App 内购买：请在 overleap.io 订阅，然后使用同一电子邮件地址在此登录。",
+    "deleteLabel": "删除账户",
+    "supportLabel": "支持"
+  },
+  "zh-Hant": {
+    "subHeading": "需要訂閱",
+    "subText": "使用 Overleap 需要一個擁有有效訂閱的帳號。本 App 不提供 App 內購買：請在 overleap.io 訂閱，然後使用同一電子郵件地址在此登入。",
+    "deleteLabel": "刪除帳號",
+    "supportLabel": "支援"
+  },
+  "th": {
+    "subHeading": "ต้องสมัครสมาชิก",
+    "subText": "Overleap ต้องใช้บัญชีที่มีการสมัครสมาชิกที่ยังใช้งานอยู่ แอปนี้ไม่มีการซื้อภายในแอป คุณสมัครสมาชิกที่ overleap.io แล้วลงชื่อเข้าใช้ที่นี่ด้วยที่อยู่อีเมลเดียวกัน",
+    "deleteLabel": "ลบบัญชีของคุณ",
+    "supportLabel": "ฝ่ายสนับสนุน"
+  },
+  "vi": {
+    "subHeading": "CẦN CÓ GÓI ĐĂNG KÝ",
+    "subText": "Overleap yêu cầu tài khoản có gói đăng ký đang hoạt động. Ứng dụng này không có giao dịch mua trong ứng dụng: bạn đăng ký tại overleap.io rồi đăng nhập tại đây bằng cùng địa chỉ email.",
+    "deleteLabel": "Xóa tài khoản của bạn",
+    "supportLabel": "Hỗ trợ"
+  },
+  "id": {
+    "subHeading": "PERLU LANGGANAN",
+    "subText": "Overleap memerlukan akun dengan langganan aktif. Aplikasi ini tidak memiliki pembelian dalam aplikasi: Anda berlangganan di overleap.io, lalu masuk di sini dengan alamat email yang sama.",
+    "deleteLabel": "Hapus akun Anda",
+    "supportLabel": "Dukungan"
+  },
+  "ms": {
+    "subHeading": "LANGGANAN DIPERLUKAN",
+    "subText": "Overleap memerlukan akaun dengan langganan aktif. Aplikasi ini tiada pembelian dalam aplikasi: anda melanggan di overleap.io dan kemudian log masuk di sini dengan alamat e-mel yang sama.",
+    "deleteLabel": "Padam akaun anda",
+    "supportLabel": "Sokongan"
+  },
+  "fil": {
+    "subHeading": "KAILANGAN NG SUBSCRIPTION",
+    "subText": "Kailangan ng Overleap ng account na may aktibong subscription. Walang in-app purchase ang app na ito: mag-subscribe ka sa overleap.io at pagkatapos ay mag-sign in dito gamit ang parehong email address.",
+    "deleteLabel": "I-delete ang iyong account",
+    "supportLabel": "Suporta"
+  },
+  "km": {
+    "subHeading": "តម្រូវឱ្យមានការជាវ",
+    "subText": "Overleap តម្រូវឱ្យមានគណនីដែលមានការជាវសកម្ម។ កម្មវិធីនេះមិនមានការទិញក្នុងកម្មវិធីទេ៖ អ្នកជាវនៅ overleap.io រួចចូលគណនីនៅទីនេះដោយប្រើអាសយដ្ឋានអ៊ីមែលដដែល។",
+    "deleteLabel": "លុបគណនីរបស់អ្នក",
+    "supportLabel": "ជំនួយ"
+  },
+  "lo": {
+    "subHeading": "ຕ້ອງສະໝັກໃຊ້",
+    "subText": "Overleap ຕ້ອງໃຊ້ບັນຊີທີ່ມີການສະໝັກໃຊ້ທີ່ຍັງໃຊ້ງານຢູ່. ແອັບນີ້ບໍ່ມີການຊື້ພາຍໃນແອັບ: ທ່ານສະໝັກໃຊ້ທີ່ overleap.io ແລ້ວເຂົ້າສູ່ລະບົບຢູ່ບ່ອນນີ້ດ້ວຍທີ່ຢູ່ອີເມວດຽວກັນ.",
+    "deleteLabel": "ລຶບບັນຊີຂອງທ່ານ",
+    "supportLabel": "ການຊ່ວຍເຫຼືອ"
+  },
+  "my": {
+    "subHeading": "စာရင်းသွင်းမှု လိုအပ်သည်",
+    "subText": "Overleap ကို အသုံးပြုရန် အသက်ဝင်နေသော စာရင်းသွင်းမှုရှိသည့် အကောင့်တစ်ခု လိုအပ်သည်။ ဤအက်ပ်တွင် အက်ပ်တွင်းဝယ်ယူမှု မရှိပါ။ overleap.io တွင် စာရင်းသွင်းပြီးနောက် တူညီသော အီးမေးလ်လိပ်စာဖြင့် ဤနေရာတွင် လက်မှတ်ထိုးဝင်ပါ။",
+    "deleteLabel": "သင့်အကောင့်ကို ဖျက်ရန်",
+    "supportLabel": "အကူအညီ"
+  }
+}

@@ -1,0 +1,1019 @@
+{
+  "en-GB": {
+    "name": "Overleap VPN",
+    "subtitle": "No logs. Fast on any network.",
+    "keywords": "uk,private,privacy,secure,wifi,encrypted,proxy,tunnel,travel,abroad,ip,hide,unblock,hotspot,browsing",
+    "promo": "Private VPN with no logs that stays fast on the networks that let you down. One plan, five devices.",
+    "playShort": "Private VPN with no logs. Stays fast on slow Wi-Fi. One plan, five devices.",
+    "body": "Overleap is a private VPN that hides where you go — even from your ISP — keeps no logs, and stays fast on the networks that let you down.\n\nWHAT YOU GET\n• Hidden even from your ISP: your provider sees one ordinary encrypted connection and nothing more. Encrypted Client Hello hides even the server name.\n• No logs. Nothing to hand over: we don't record the sites you visit, the apps you use or the traffic you send. We keep only what a subscription needs.\n• Fast where other VPNs crawl: Overleap's k2cc rate control keeps your speed up on train Wi-Fi, packed venues and hotel networks.\n• Moves with you: the tunnel migrates from Wi-Fi to mobile data mid-session, so downloads and calls carry on.\n• Keeps working abroad: the connection looks like ordinary web traffic, so it keeps working where other VPNs go dark.\n• Built in the open: the protocol is documented and the server is open source. Run your own node and use Overleap purely as the client.\n\nONE PLAN, EVERY DEVICE\nOne subscription covers five devices at once, with unlimited data and every location.",
+    "iosSubscription": "SUBSCRIPTION\nOverleap Basic is an auto-renewing yearly subscription. Payment is charged to your Apple ID account at confirmation of purchase. The subscription renews automatically unless it is cancelled at least 24 hours before the end of the current period; your account is charged for renewal within 24 hours before the period ends. You can manage or cancel your subscription in your App Store account settings after purchase.",
+    "links": "Privacy Policy: https://overleap.io/en-GB/privacy\nTerms of Use: https://overleap.io/en-GB/terms",
+    "linkLabels": {
+      "privacy": "Privacy Policy",
+      "terms": "Terms of Use"
+    }
+  },
+  "en-AU": {
+    "name": "Overleap VPN",
+    "subtitle": "No logs. Fast on any network.",
+    "keywords": "private,privacy,secure,wifi,encrypted,proxy,tunnel,travel,overseas,ip,hide,unblock,hotspot,australia",
+    "promo": "Private VPN with no logs that stays fast on the networks that let you down. One plan, five devices.",
+    "playShort": "Private VPN with no logs. Stays fast on slow Wi-Fi. One plan, five devices.",
+    "body": "Overleap is a private VPN that hides where you go — even from your ISP — keeps no logs, and stays fast on the networks that let you down.\n\nWHAT YOU GET\n• Hidden even from your ISP: your provider sees one ordinary encrypted connection and nothing more. Encrypted Client Hello hides even the server name.\n• No logs. Nothing to hand over: we don't record the sites you visit, the apps you use or the traffic you send. We keep only what a subscription needs.\n• Fast where other VPNs crawl: Overleap's k2cc rate control keeps your speed up on train Wi-Fi, packed venues and hotel networks.\n• Moves with you: the tunnel migrates from Wi-Fi to mobile data mid-session, so downloads and calls carry on.\n• Keeps working abroad: the connection looks like ordinary web traffic, so it keeps working where other VPNs go dark.\n• Built in the open: the protocol is documented and the server is open source. Run your own node and use Overleap purely as the client.\n\nONE PLAN, EVERY DEVICE\nOne subscription covers five devices at once, with unlimited data and every location.",
+    "iosSubscription": "SUBSCRIPTION\nOverleap Basic is an auto-renewing yearly subscription. Payment is charged to your Apple ID account at confirmation of purchase. The subscription renews automatically unless it is cancelled at least 24 hours before the end of the current period; your account is charged for renewal within 24 hours before the period ends. You can manage or cancel your subscription in your App Store account settings after purchase.",
+    "links": "Privacy Policy: https://overleap.io/en-GB/privacy\nTerms of Use: https://overleap.io/en-GB/terms",
+    "linkLabels": {
+      "privacy": "Privacy Policy",
+      "terms": "Terms of Use"
+    }
+  },
+  "en-CA": {
+    "name": "Overleap VPN",
+    "subtitle": "No logs. Fast on any network.",
+    "keywords": "private,privacy,secure,wifi,encrypted,proxy,tunnel,travel,abroad,ip,hide,unblock,hotspot,canada",
+    "promo": "Private VPN with no logs that stays fast on the networks that let you down. One plan, five devices.",
+    "playShort": "Private VPN with no logs. Stays fast on slow Wi-Fi. One plan, five devices.",
+    "body": "Overleap is a private VPN that hides where you go — even from your ISP — keeps no logs, and stays fast on the networks that let you down.\n\nWHAT YOU GET\n• Hidden even from your ISP: your provider sees one ordinary encrypted connection and nothing more. Encrypted Client Hello hides even the server name.\n• No logs. Nothing to hand over: we don't record the sites you visit, the apps you use or the traffic you send. We keep only what a subscription needs.\n• Fast where other VPNs crawl: Overleap's k2cc rate control keeps your speed up on train Wi-Fi, packed venues and hotel networks.\n• Moves with you: the tunnel migrates from Wi-Fi to mobile data mid-session, so downloads and calls carry on.\n• Keeps working abroad: the connection looks like ordinary web traffic, so it keeps working where other VPNs go dark.\n• Built in the open: the protocol is documented and the server is open source. Run your own node and use Overleap purely as the client.\n\nONE PLAN, EVERY DEVICE\nOne subscription covers five devices at once, with unlimited data and every location.",
+    "iosSubscription": "SUBSCRIPTION\nOverleap Basic is an auto-renewing yearly subscription. Payment is charged to your Apple ID account at confirmation of purchase. The subscription renews automatically unless it is cancelled at least 24 hours before the end of the current period; your account is charged for renewal within 24 hours before the period ends. You can manage or cancel your subscription in your App Store account settings after purchase.",
+    "links": "Privacy Policy: https://overleap.io/en-GB/privacy\nTerms of Use: https://overleap.io/en-GB/terms",
+    "linkLabels": {
+      "privacy": "Privacy Policy",
+      "terms": "Terms of Use"
+    }
+  },
+  "fr": {
+    "name": "Overleap VPN",
+    "subtitle": "Sans logs. Rapide partout.",
+    "keywords": "proxy,confidentialité,vie privée,sécurisé,wifi,chiffré,tunnel,ip,voyage,débloquer,anonyme,protection",
+    "promo": "Un VPN privé sans logs, qui reste rapide sur les réseaux qui vous lâchent. Un abonnement, cinq appareils.",
+    "playShort": "VPN privé sans logs. Rapide même sur un Wi-Fi lent. Un forfait, cinq appareils.",
+    "body": "Overleap est un VPN privé qui masque votre navigation, même à votre fournisseur d'accès à Internet, ne conserve aucun journal et reste rapide sur les réseaux qui vous lâchent.\n\nCE QUE VOUS OBTENEZ\n• Invisible même pour votre FAI : votre fournisseur ne voit qu'une connexion chiffrée ordinaire, rien de plus. Encrypted Client Hello masque jusqu'au nom du serveur.\n• Aucun journal. Rien à transmettre : nous n'enregistrons ni les sites que vous consultez, ni les applications que vous utilisez, ni le trafic que vous envoyez. Nous ne conservons que ce qu'exige un abonnement.\n• Rapide là où les autres VPN rament : le contrôle de débit k2cc d'Overleap maintient votre vitesse sur le Wi-Fi des trains, dans les lieux bondés et sur les réseaux d'hôtel.\n• Vous suit partout : le tunnel passe du Wi-Fi aux données mobiles en pleine session, sans interrompre vos téléchargements ni vos appels.\n• Fonctionne aussi à l'étranger : la connexion ressemble à du trafic web ordinaire et continue donc de fonctionner là où d'autres VPN ne répondent plus.\n• Conçu en toute transparence : le protocole est documenté et le serveur est open source. Hébergez votre propre nœud et utilisez Overleap uniquement comme client.\n\nUN ABONNEMENT, TOUS VOS APPAREILS\nUn seul abonnement couvre cinq appareils simultanément, avec données illimitées et tous les emplacements.",
+    "iosSubscription": "ABONNEMENT\nOverleap Basic est un abonnement annuel à renouvellement automatique. Le paiement est débité de votre compte Apple à la confirmation de l'achat. L'abonnement est renouvelé automatiquement sauf s'il est annulé au moins 24 heures avant la fin de la période en cours ; le renouvellement est facturé sur votre compte dans les 24 heures précédant la fin de la période. Vous pouvez gérer ou annuler votre abonnement dans les réglages de votre compte App Store après l'achat.",
+    "linkLabels": {
+      "privacy": "Politique de confidentialité",
+      "terms": "Conditions d'utilisation"
+    }
+  },
+  "fr-CA": {
+    "name": "Overleap VPN",
+    "subtitle": "Aucun journal. Rapide partout.",
+    "keywords": "rpv,proxy,confidentialité,vie privée,sécuritaire,wifi,chiffré,tunnel,ip,voyage,débloquer,anonyme",
+    "promo": "Un VPN (RPV) privé sans journaux, qui reste rapide sur les réseaux qui vous laissent tomber. Un forfait, cinq appareils.",
+    "playShort": "VPN privé sans journaux. Rapide même sur un Wi-Fi lent. Un forfait, 5 appareils.",
+    "body": "Overleap est un VPN (RPV) privé qui masque votre navigation, même à votre fournisseur de services Internet, ne conserve aucun journal et reste rapide sur les réseaux qui vous laissent tomber.\n\nCE QUE VOUS OBTENEZ\n• Invisible même pour votre fournisseur Internet : il ne voit qu'une connexion chiffrée ordinaire, rien de plus. Encrypted Client Hello masque même le nom du serveur.\n• Aucun journal. Rien à remettre : nous n'enregistrons ni les sites que vous visitez, ni les applications que vous utilisez, ni le trafic que vous envoyez. Nous ne conservons que ce qu'exige un abonnement.\n• Rapide là où les autres VPN se traînent : le contrôle de débit k2cc d'Overleap maintient votre vitesse sur le Wi-Fi des trains, dans les lieux bondés et sur les réseaux d'hôtel.\n• Vous suit partout : le tunnel passe du Wi-Fi aux données cellulaires en pleine session, sans interrompre vos téléchargements ni vos appels.\n• Fonctionne aussi à l'étranger : la connexion ressemble à du trafic Web ordinaire et continue donc de fonctionner là où d'autres VPN cessent de répondre.\n• Conçu en toute transparence : le protocole est documenté et le serveur est à code source ouvert. Hébergez votre propre nœud et utilisez Overleap uniquement comme client.\n\nUN FORFAIT, TOUS VOS APPAREILS\nUn seul abonnement couvre cinq appareils en même temps, avec données illimitées et tous les emplacements.",
+    "iosSubscription": "ABONNEMENT\nOverleap Basic est un abonnement annuel à renouvellement automatique. Le paiement est porté à votre compte Apple à la confirmation de l'achat. L'abonnement se renouvelle automatiquement, à moins d'être annulé au moins 24 heures avant la fin de la période en cours; le renouvellement est facturé à votre compte dans les 24 heures précédant la fin de la période. Vous pouvez gérer ou annuler votre abonnement dans les réglages de votre compte App Store après l'achat.",
+    "linkLabels": {
+      "privacy": "Politique de confidentialité",
+      "terms": "Conditions d'utilisation"
+    }
+  },
+  "de": {
+    "name": "Overleap VPN",
+    "subtitle": "Keine Logs. Überall schnell.",
+    "keywords": "proxy,privatsphäre,datenschutz,sicher,wlan,verschlüsselt,tunnel,ip,reisen,entsperren,anonym,privat",
+    "promo": "Privates VPN ohne Logs, das auch in Netzen schnell bleibt, die Sie sonst im Stich lassen. Ein Abo, fünf Geräte.",
+    "playShort": "Privates VPN ohne Logs. Schnell auch im lahmen WLAN. Ein Abo, fünf Geräte.",
+    "body": "Overleap ist ein privates VPN, das verbirgt, wohin Sie surfen – selbst vor Ihrem Internetanbieter –, keine Logs speichert und auch in Netzen schnell bleibt, die Sie sonst im Stich lassen.\n\nDAS BEKOMMEN SIE\n• Selbst vor Ihrem Internetanbieter verborgen: Ihr Anbieter sieht eine gewöhnliche verschlüsselte Verbindung und sonst nichts. Encrypted Client Hello verbirgt sogar den Servernamen.\n• Keine Logs. Nichts, was sich herausgeben ließe: Wir zeichnen weder die besuchten Websites noch die genutzten Apps noch Ihren Datenverkehr auf. Wir speichern nur, was für ein Abonnement nötig ist.\n• Schnell, wo andere VPNs kriechen: Die k2cc-Ratensteuerung von Overleap hält Ihre Geschwindigkeit im Wi-Fi im Zug, an überfüllten Orten und in Hotelnetzen hoch.\n• Wechselt mit Ihnen: Der Tunnel wechselt mitten in der Sitzung vom Wi-Fi (WLAN) zu mobilen Daten, sodass Downloads und Anrufe weiterlaufen.\n• Funktioniert auch im Ausland: Die Verbindung sieht aus wie gewöhnlicher Web-Datenverkehr und funktioniert deshalb auch dort, wo andere VPNs ausfallen.\n• Offen entwickelt: Das Protokoll ist dokumentiert und der Server ist Open Source. Betreiben Sie Ihren eigenen Knoten und nutzen Sie Overleap ausschließlich als Client.\n\nEIN ABO, ALLE GERÄTE\nEin Abonnement deckt fünf Geräte gleichzeitig ab – mit unbegrenztem Datenvolumen und allen Standorten.",
+    "iosSubscription": "ABONNEMENT\nOverleap Basic ist ein Jahresabonnement, das sich automatisch verlängert. Die Zahlung wird Ihrem Apple-ID-Account bei der Kaufbestätigung belastet. Das Abonnement verlängert sich automatisch, sofern es nicht mindestens 24 Stunden vor Ablauf des aktuellen Zeitraums gekündigt wird; Ihr Account wird innerhalb von 24 Stunden vor Ablauf des Zeitraums mit der Verlängerung belastet. Sie können Ihr Abonnement nach dem Kauf in den Einstellungen Ihres App Store-Accounts verwalten oder kündigen.",
+    "linkLabels": {
+      "privacy": "Datenschutzerklärung",
+      "terms": "Nutzungsbedingungen"
+    }
+  },
+  "it": {
+    "name": "Overleap VPN",
+    "subtitle": "Nessun log. Veloce ovunque.",
+    "keywords": "proxy,privacy,sicuro,sicurezza,wifi,criptato,tunnel,ip,viaggio,sbloccare,anonimo,privato,protezione",
+    "promo": "VPN privata senza log, che resta veloce anche sulle reti che ti lasciano a piedi. Un piano, cinque dispositivi.",
+    "playShort": "VPN privata senza log. Veloce anche con Wi-Fi lento. Un piano, 5 dispositivi.",
+    "body": "Overleap è una VPN privata che nasconde dove navighi, persino al tuo provider Internet, non conserva alcun log e resta veloce anche sulle reti che ti lasciano a piedi.\n\nCOSA OTTIENI\n• Invisibile anche al tuo provider: il tuo fornitore vede una normale connessione cifrata e nient'altro. Encrypted Client Hello nasconde persino il nome del server.\n• Nessun log. Niente da consegnare: non registriamo i siti che visiti, le app che usi né il traffico che invii. Conserviamo solo ciò che serve per l'abbonamento.\n• Veloce dove le altre VPN arrancano: il controllo di velocità k2cc di Overleap mantiene alta la tua velocità sul Wi-Fi dei treni, nei luoghi affollati e sulle reti degli hotel.\n• Si sposta con te: il tunnel passa dal Wi-Fi ai dati mobili a sessione in corso, così download e chiamate proseguono.\n• Funziona anche all'estero: la connessione ha l'aspetto di normale traffico web, quindi continua a funzionare dove le altre VPN smettono di rispondere.\n• Sviluppata alla luce del sole: il protocollo è documentato e il server è open source. Gestisci un tuo nodo e usa Overleap soltanto come client.\n\nUN PIANO, TUTTI I DISPOSITIVI\nUn solo abbonamento copre cinque dispositivi contemporaneamente, con dati illimitati e tutte le località.",
+    "iosSubscription": "ABBONAMENTO\nOverleap Basic è un abbonamento annuale con rinnovo automatico. Il pagamento viene addebitato sul tuo account Apple ID alla conferma dell'acquisto. L'abbonamento si rinnova automaticamente, a meno che non venga annullato almeno 24 ore prima della fine del periodo in corso; il rinnovo viene addebitato sul tuo account nelle 24 ore precedenti la fine del periodo. Dopo l'acquisto puoi gestire o annullare l'abbonamento nelle impostazioni del tuo account App Store.",
+    "linkLabels": {
+      "privacy": "Informativa sulla privacy",
+      "terms": "Condizioni d'uso"
+    }
+  },
+  "es-ES": {
+    "name": "Overleap VPN",
+    "subtitle": "Sin registros. Rápida siempre.",
+    "keywords": "proxy,privacidad,privado,seguro,seguridad,wifi,cifrado,túnel,ip,viajes,desbloquear,anónimo,red",
+    "promo": "VPN privada sin registros que sigue siendo rápida en las redes que te dejan tirado. Un plan, cinco dispositivos.",
+    "playShort": "VPN privada sin registros. Rápida aun con wifi lento. Un plan, 5 dispositivos.",
+    "body": "Overleap es una VPN privada que oculta por dónde navegas, incluso a tu proveedor de Internet, no guarda registros y sigue siendo rápida en las redes que te dejan tirado.\n\nLO QUE OBTIENES\n• Oculto incluso para tu proveedor: tu operador ve una conexión cifrada corriente y nada más. Encrypted Client Hello oculta hasta el nombre del servidor.\n• Sin registros. Nada que entregar: no registramos los sitios que visitas, las aplicaciones que usas ni el tráfico que envías. Solo conservamos lo que necesita una suscripción.\n• Rápida donde otras VPN se arrastran: el control de tasa k2cc de Overleap mantiene tu velocidad en el Wi-Fi del tren, en recintos abarrotados y en redes de hotel.\n• Se mueve contigo: el túnel pasa del Wi-Fi a los datos móviles en plena sesión, así que las descargas y las llamadas continúan.\n• Sigue funcionando en el extranjero: la conexión parece tráfico web corriente, por lo que sigue funcionando donde otras VPN dejan de responder.\n• Hecha a la vista de todos: el protocolo está documentado y el servidor es de código abierto. Monta tu propio nodo y usa Overleap solo como cliente.\n\nUN PLAN, TODOS TUS DISPOSITIVOS\nUna sola suscripción cubre cinco dispositivos a la vez, con datos ilimitados y todas las ubicaciones.",
+    "iosSubscription": "SUSCRIPCIÓN\nOverleap Basic es una suscripción anual con renovación automática. El pago se carga en tu cuenta de Apple ID al confirmar la compra. La suscripción se renueva automáticamente a menos que se cancele al menos 24 horas antes de que termine el periodo en curso; la renovación se carga en tu cuenta en las 24 horas previas al final del periodo. Puedes gestionar o cancelar la suscripción en los ajustes de tu cuenta de App Store después de la compra.",
+    "linkLabels": {
+      "privacy": "Política de privacidad",
+      "terms": "Condiciones de uso"
+    }
+  },
+  "es-419": {
+    "name": "Overleap VPN",
+    "subtitle": "Sin registros. Siempre rápida.",
+    "keywords": "proxy,privacidad,privado,seguro,seguridad,wifi,encriptado,túnel,ip,viajar,desbloquear,anónimo,red",
+    "promo": "VPN privada sin registros que se mantiene rápida en las redes que te fallan. Un plan, cinco dispositivos.",
+    "playShort": "VPN privada sin registros. Rápida aun con wifi lento. Un plan, 5 dispositivos.",
+    "body": "Overleap es una VPN privada que oculta por dónde navegas, incluso a tu proveedor de internet, no guarda registros y se mantiene rápida en las redes que te fallan.\n\nLO QUE OBTIENES\n• Oculto incluso para tu proveedor de internet: tu proveedor ve una conexión encriptada común y nada más. Encrypted Client Hello oculta hasta el nombre del servidor.\n• Sin registros. Nada que entregar: no registramos los sitios que visitas, las apps que usas ni el tráfico que envías. Solo conservamos lo que requiere una suscripción.\n• Rápida donde otras VPN van a paso de tortuga: el control de tasa k2cc de Overleap mantiene tu velocidad en el Wi-Fi del tren, en lugares llenos de gente y en redes de hotel.\n• Se mueve contigo: el túnel pasa del Wi-Fi a los datos móviles en plena sesión, así que tus descargas y llamadas continúan.\n• Sigue funcionando en el extranjero: la conexión se ve como tráfico web común, por eso sigue funcionando donde otras VPN dejan de responder.\n• Desarrollada de forma abierta: el protocolo está documentado y el servidor es de código abierto. Opera tu propio nodo y usa Overleap solo como cliente.\n\nUN PLAN, TODOS TUS DISPOSITIVOS\nUna sola suscripción cubre cinco dispositivos a la vez, con datos ilimitados y todas las ubicaciones.",
+    "iosSubscription": "SUSCRIPCIÓN\nOverleap Basic es una suscripción anual que se renueva automáticamente. El pago se carga a tu cuenta de Apple ID al confirmar la compra. La suscripción se renueva automáticamente, a menos que se cancele al menos 24 horas antes de que termine el periodo actual; la renovación se cobra a tu cuenta dentro de las 24 horas previas al final del periodo. Puedes administrar o cancelar tu suscripción en la configuración de tu cuenta de App Store después de la compra.",
+    "linkLabels": {
+      "privacy": "Política de privacidad",
+      "terms": "Términos de uso"
+    }
+  },
+  "pt-BR": {
+    "name": "Overleap VPN",
+    "subtitle": "Sem registros. Rápida sempre.",
+    "keywords": "proxy,privacidade,privado,seguro,segurança,wifi,criptografado,túnel,ip,viagem,desbloquear,anônimo",
+    "promo": "VPN privada sem registros que continua rápida nas redes que deixam você na mão. Um plano, cinco dispositivos.",
+    "playShort": "VPN privada sem registros. Rápida até no Wi-Fi lento. Um plano, 5 dispositivos.",
+    "body": "O Overleap é uma VPN privada que esconde por onde você navega, até do seu provedor de internet, não guarda registros e continua rápida nas redes que deixam você na mão.\n\nO QUE VOCÊ RECEBE\n• Oculto até do seu provedor: sua operadora vê uma conexão criptografada comum e nada mais. O Encrypted Client Hello esconde até o nome do servidor.\n• Sem registros. Nada a entregar: não registramos os sites que você visita, os apps que você usa nem o tráfego que você envia. Guardamos apenas o que uma assinatura exige.\n• Rápida onde outras VPNs se arrastam: o controle de taxa k2cc do Overleap mantém sua velocidade no Wi-Fi do trem, em locais lotados e em redes de hotel.\n• Vai com você: o túnel migra do Wi-Fi para os dados móveis no meio da sessão, então downloads e chamadas continuam.\n• Continua funcionando no exterior: a conexão parece tráfego web comum, por isso segue funcionando onde outras VPNs param de responder.\n• Feito às claras: o protocolo é documentado e o servidor é de código aberto. Rode seu próprio nó e use o Overleap apenas como cliente.\n\nUM PLANO, TODOS OS DISPOSITIVOS\nUma única assinatura cobre cinco dispositivos ao mesmo tempo, com dados ilimitados e todas as localizações.",
+    "iosSubscription": "ASSINATURA\nOverleap Basic é uma assinatura anual com renovação automática. O pagamento é cobrado na sua conta do Apple ID na confirmação da compra. A assinatura é renovada automaticamente, a menos que seja cancelada pelo menos 24 horas antes do fim do período atual; a renovação é cobrada na sua conta nas 24 horas anteriores ao fim do período. Você pode gerenciar ou cancelar a assinatura nos ajustes da sua conta da App Store após a compra.",
+    "linkLabels": {
+      "privacy": "Política de Privacidade",
+      "terms": "Termos de Uso"
+    }
+  },
+  "pt-PT": {
+    "name": "Overleap VPN",
+    "subtitle": "Sem registos. Rápida sempre.",
+    "keywords": "proxy,privacidade,privado,seguro,segurança,wifi,encriptado,túnel,ip,viagem,desbloquear,anónimo,rede",
+    "promo": "VPN privada sem registos que se mantém rápida nas redes que o deixam ficar mal. Um plano, cinco dispositivos.",
+    "playShort": "VPN privada sem registos. Rápida até com Wi-Fi lento. Um plano, 5 dispositivos.",
+    "body": "A Overleap é uma VPN privada que oculta por onde navega, até do seu fornecedor de Internet, não guarda registos e mantém-se rápida nas redes que o deixam ficar mal.\n\nO QUE RECEBE\n• Oculto até do seu fornecedor de Internet: o seu operador vê uma ligação encriptada normal e nada mais. O Encrypted Client Hello oculta até o nome do servidor.\n• Sem registos. Nada para entregar: não registamos os sites que visita, as aplicações que utiliza nem o tráfego que envia. Guardamos apenas o que uma subscrição exige.\n• Rápida onde outras VPN se arrastam: o controlo de débito k2cc da Overleap mantém a sua velocidade no Wi-Fi do comboio, em recintos cheios e em redes de hotel.\n• Acompanha-o: o túnel passa do Wi-Fi para os dados móveis a meio da sessão, pelo que as transferências e as chamadas continuam.\n• Continua a funcionar no estrangeiro: a ligação parece tráfego web normal, por isso continua a funcionar onde outras VPN deixam de responder.\n• Desenvolvida às claras: o protocolo está documentado e o servidor é de código aberto. Execute o seu próprio nó e utilize a Overleap apenas como cliente.\n\nUM PLANO, TODOS OS DISPOSITIVOS\nUma única subscrição cobre cinco dispositivos em simultâneo, com dados ilimitados e todas as localizações.",
+    "iosSubscription": "SUBSCRIÇÃO\nOverleap Basic é uma subscrição anual com renovação automática. O pagamento é debitado na sua conta do ID Apple no momento da confirmação da compra. A subscrição é renovada automaticamente, salvo se for cancelada pelo menos 24 horas antes do fim do período em curso; a renovação é debitada na sua conta nas 24 horas anteriores ao fim do período. Pode gerir ou cancelar a subscrição nas definições da sua conta da App Store após a compra.",
+    "linkLabels": {
+      "privacy": "Política de Privacidade",
+      "terms": "Termos de Utilização"
+    }
+  },
+  "nl": {
+    "name": "Overleap VPN",
+    "subtitle": "Geen logs. Overal snel.",
+    "keywords": "proxy,privacy,privé,veilig,beveiligd,wifi,versleuteld,tunnel,ip,reizen,deblokkeren,anoniem,netwerk",
+    "promo": "Privé-VPN zonder logs die snel blijft op netwerken die je in de steek laten. Eén abonnement, vijf apparaten.",
+    "playShort": "Privé-VPN zonder logs. Snel, ook op trage wifi. Eén abonnement, vijf apparaten.",
+    "body": "Overleap is een privé-VPN die verbergt waar je naartoe surft, zelfs voor je internetprovider, geen logs bijhoudt en snel blijft op netwerken die je in de steek laten.\n\nWAT JE KRIJGT\n• Zelfs verborgen voor je internetprovider: je provider ziet één gewone versleutelde verbinding en verder niets. Encrypted Client Hello verbergt zelfs de servernaam.\n• Geen logs. Niets om te overhandigen: we leggen niet vast welke sites je bezoekt, welke apps je gebruikt of welk verkeer je verstuurt. We bewaren alleen wat nodig is voor een abonnement.\n• Snel waar andere VPN's kruipen: de k2cc-snelheidsregeling van Overleap houdt je snelheid op peil op Wi-Fi in de trein, op drukke locaties en op hotelnetwerken.\n• Beweegt met je mee: de tunnel stapt midden in een sessie over van Wi-Fi naar mobiele data, zodat downloads en gesprekken gewoon doorgaan.\n• Blijft werken in het buitenland: de verbinding ziet eruit als gewoon webverkeer en blijft dus werken waar andere VPN's uitvallen.\n• Open ontwikkeld: het protocol is gedocumenteerd en de server is open source. Draai je eigen node en gebruik Overleap puur als client.\n\nÉÉN ABONNEMENT, AL JE APPARATEN\nEén abonnement dekt vijf apparaten tegelijk, met onbeperkte data en alle locaties.",
+    "iosSubscription": "ABONNEMENT\nOverleap Basic is een jaarabonnement dat automatisch wordt verlengd. De betaling wordt bij bevestiging van de aankoop in rekening gebracht op je Apple ID-account. Het abonnement wordt automatisch verlengd, tenzij het ten minste 24 uur voor het einde van de lopende periode wordt opgezegd; de verlenging wordt binnen 24 uur voor het einde van de periode op je account in rekening gebracht. Na aankoop kun je je abonnement beheren of opzeggen in de instellingen van je App Store-account.",
+    "linkLabels": {
+      "privacy": "Privacybeleid",
+      "terms": "Gebruiksvoorwaarden"
+    }
+  },
+  "ca": {
+    "name": "Overleap VPN",
+    "subtitle": "Sense registres. Ràpida arreu.",
+    "keywords": "proxy,privadesa,privat,segur,seguretat,wifi,xifrat,túnel,ip,viatge,desbloquejar,anònim,xarxa,segura",
+    "promo": "VPN privada sense registres que continua sent ràpida a les xarxes que et fallen. Un pla, cinc dispositius.",
+    "playShort": "VPN privada sense registres. Ràpida també amb wifi lent. Un pla, 5 dispositius.",
+    "body": "Overleap és una VPN privada que amaga per on navegues, fins i tot al teu proveïdor d'Internet, no desa cap registre i continua sent ràpida a les xarxes que et fallen.\n\nQUÈ OBTENS\n• Ocult fins i tot per al teu proveïdor: el teu operador veu una connexió xifrada corrent i res més. Encrypted Client Hello amaga fins i tot el nom del servidor.\n• Sense registres. Res a lliurar: no registrem els llocs que visites, les aplicacions que fas servir ni el trànsit que envies. Només conservem el que necessita una subscripció.\n• Ràpida on altres VPN s'arrosseguen: el control de taxa k2cc d'Overleap manté la teva velocitat al Wi-Fi del tren, en recintes plens de gent i a les xarxes d'hotel.\n• Es mou amb tu: el túnel passa del Wi-Fi a les dades mòbils en plena sessió, de manera que les baixades i les trucades continuen.\n• Continua funcionant a l'estranger: la connexió sembla trànsit web corrent, i per això continua funcionant on altres VPN deixen de respondre.\n• Feta a la vista de tothom: el protocol està documentat i el servidor és de codi obert. Munta el teu propi node i fes servir Overleap només com a client.\n\nUN PLA, TOTS ELS DISPOSITIUS\nUna sola subscripció cobreix cinc dispositius alhora, amb dades il·limitades i totes les ubicacions.",
+    "iosSubscription": "SUBSCRIPCIÓ\nOverleap Basic és una subscripció anual amb renovació automàtica. El pagament es carrega al teu compte d'Apple ID en confirmar la compra. La subscripció es renova automàticament tret que es cancel·li almenys 24 hores abans que acabi el període en curs; la renovació es carrega al teu compte dins les 24 hores anteriors al final del període. Pots gestionar o cancel·lar la subscripció a la configuració del teu compte de l'App Store després de la compra.",
+    "linkLabels": {
+      "privacy": "Política de privadesa",
+      "terms": "Condicions d'ús"
+    }
+  },
+  "gl": {
+    "name": "Overleap VPN",
+    "subtitle": "Sen rexistros. Rápida sempre.",
+    "keywords": "proxy,privacidade,privado,seguro,seguridade,wifi,cifrado,túnel,ip,viaxe,desbloquear,anónimo,rede",
+    "promo": "VPN privada sen rexistros que segue a ser rápida nas redes que che fallan. Un plan, cinco dispositivos.",
+    "playShort": "VPN privada sen rexistros. Rápida mesmo con wifi lenta. Un plan, 5 dispositivos.",
+    "body": "Overleap é unha VPN privada que agocha por onde navegas, mesmo ao teu provedor de Internet, non garda rexistros e segue a ser rápida nas redes que che fallan.\n\nO QUE OBTÉS\n• Oculto mesmo para o teu provedor: o teu operador ve unha conexión cifrada corrente e nada máis. Encrypted Client Hello agocha ata o nome do servidor.\n• Sen rexistros. Nada que entregar: non rexistramos os sitios que visitas, as aplicacións que usas nin o tráfico que envías. Só conservamos o que precisa unha subscrición.\n• Rápida onde outras VPN se arrastran: o control de taxa k2cc de Overleap mantén a túa velocidade na Wi-Fi do tren, en recintos ateigados e nas redes de hotel.\n• Móvese contigo: o túnel pasa da Wi-Fi aos datos móbiles en plena sesión, de xeito que as descargas e as chamadas continúan.\n• Segue a funcionar no estranxeiro: a conexión semella tráfico web corrente, polo que segue a funcionar onde outras VPN deixan de responder.\n• Feita á vista de todos: o protocolo está documentado e o servidor é de código aberto. Monta o teu propio nodo e usa Overleap só como cliente.\n\nUN PLAN, TODOS OS DISPOSITIVOS\nUnha soa subscrición cobre cinco dispositivos á vez, con datos ilimitados e todas as localizacións.",
+    "iosSubscription": "SUBSCRICIÓN\nOverleap Basic é unha subscrición anual con renovación automática. O pagamento cárgase na túa conta de Apple ID ao confirmar a compra. A subscrición renóvase automaticamente, salvo que se cancele polo menos 24 horas antes de que remate o período en curso; a renovación cárgase na túa conta nas 24 horas previas ao final do período. Podes xestionar ou cancelar a subscrición nos axustes da túa conta da App Store despois da compra.",
+    "linkLabels": {
+      "privacy": "Política de privacidade",
+      "terms": "Condicións de uso"
+    }
+  },
+  "eu": {
+    "name": "Overleap VPN",
+    "subtitle": "Erregistrorik ez. Beti azkar.",
+    "keywords": "proxy,pribatutasuna,pribatua,segurua,segurtasuna,wifi,zifratua,tunela,ip,bidaia,desblokeatu,sarea",
+    "promo": "Erregistrorik gabeko VPN pribatua, huts egiten dizuten sareetan ere azkar dabilena. Plan bat, bost gailu.",
+    "playShort": "Erregistrorik gabeko VPN pribatua. Azkarra Wi-Fi motelean. Plan bat, 5 gailu.",
+    "body": "Overleap VPN pribatua da: nondik nabigatzen duzun ezkutatzen du, baita zure Interneteko hornitzaileari ere, ez du erregistrorik gordetzen eta azkar jarraitzen du huts egiten dizuten sareetan.\n\nZER ESKURATZEN DUZUN\n• Zure hornitzailearentzat ere ezkutuan: hornitzaileak konexio zifratu arrunt bat ikusten du, besterik ez. Encrypted Client Hello protokoloak zerbitzariaren izena ere ezkutatzen du.\n• Erregistrorik ez. Ezer ez dago emateko: ez dugu erregistratzen zer webgune bisitatzen dituzun, zer aplikazio erabiltzen dituzun, ezta bidaltzen duzun trafikoa ere. Harpidetzak behar duena baino ez dugu gordetzen.\n• Azkarra, beste VPN batzuk motel dabiltzan lekuan: Overleap-en k2cc abiadura-kontrolak zure abiadurari eusten dio trenetako Wi-Fi sarean, jendez betetako lekuetan eta hoteletako sareetan.\n• Zurekin mugitzen da: tunela Wi-Fi saretik datu mugikorretara igarotzen da saioaren erdian, eta deskargek eta deiek aurrera jarraitzen dute.\n• Atzerrian ere badabil: konexioak web-trafiko arruntaren itxura du, eta, beraz, beste VPN batzuek huts egiten duten lekuan ere badabil.\n• Modu irekian eraikia: protokoloa dokumentatuta dago eta zerbitzaria kode irekikoa da. Jarri martxan zure nodoa eta erabili Overleap bezero gisa soilik.\n\nPLAN BAT, GAILU GUZTIAK\nHarpidetza bakar batek bost gailu hartzen ditu aldi berean, datu mugagabeekin eta kokapen guztiekin.",
+    "iosSubscription": "HARPIDETZA\nOverleap Basic automatikoki berritzen den urteko harpidetza da. Ordainketa zure Apple ID kontuan kobratzen da erosketa berrestean. Harpidetza automatikoki berritzen da, uneko aldia amaitu baino gutxienez 24 ordu lehenago bertan behera uzten ez bada; berritzea zure kontuan kobratzen da aldia amaitu aurreko 24 orduen barruan. Erosketaren ondoren, harpidetza kudeatu edo bertan behera utz dezakezu App Store kontuaren ezarpenetan.",
+    "linkLabels": {
+      "privacy": "Pribatutasun-politika",
+      "terms": "Erabilera-baldintzak"
+    }
+  },
+  "rm": {
+    "name": "Overleap VPN",
+    "subtitle": "Nagins logs. Svelt dapertut.",
+    "keywords": "proxy,privat,sfera privata,segir,segirezza,wifi,criptà,tunnel,ip,viadi,debloccar,anonim,rait,datas",
+    "promo": "VPN privat senza logs che resta svelt er en las raits che As laschan en il stich. In abunament, tschintg apparats.",
+    "playShort": "VPN privat senza logs. Svelt er cun Wi-Fi plaun. In abunament, 5 apparats.",
+    "body": "Overleap è in VPN privat che zuppenta nua che Vus navigais, schizunt davant Voss purschider d'internet, na memorisescha nagins logs e resta svelt er en las raits che As laschan en il stich.\n\nQUAI CHE VUS SURVEGNIS\n• Zuppentà schizunt davant Voss purschider: el vesa ina colliaziun criptada ordinaria e nagut auter. Encrypted Client Hello zuppenta schizunt il num dal server.\n• Nagins logs. Nagut da surdar: nus na registrain ni las paginas che Vus visitais, ni las apps che Vus duvrais, ni il traffic che Vus tramettais. Nus tegnain mo quai ch'in abunament dovra.\n• Svelt là nua che auters VPNs van plaun: la regulaziun da la rata k2cc dad Overleap mantegna Vossa sveltezza en il Wi-Fi dal tren, en lieus plains da glieud ed en raits d'hotel.\n• Va cun Vus: il tunnel mida dal Wi-Fi a las datas mobilas amez la sesida, uschia che telechargiadas e telefonats cuntinueschan.\n• Funcziuna er a l'exteriur: la colliaziun vesa ora sco traffic da web ordinari e funcziuna perquai er là nua che auters VPNs na funcziunan betg pli.\n• Sviluppà avertamain: il protocol è documentà ed il server è open source. Manischai Voss agen nod e duvrai Overleap mo sco client.\n\nIN ABUNAMENT, TUT ILS APPARATS\nIn sulet abunament cuvra tschintg apparats a medem temp, cun datas illimitadas e tut las posiziuns.",
+    "iosSubscription": "ABUNAMENT\nOverleap Basic è in abunament annual che vegn renovà automaticamain. Il pajament vegn debità a Voss conto da l'Apple ID cun la confermaziun da la cumpra. L'abunament vegn renovà automaticamain, nun ch'el vegnia annullà almain 24 uras avant la fin da la perioda currenta; la renovaziun vegn debitada a Voss conto entaifer las 24 uras avant la fin da la perioda. Suenter la cumpra pudais Vus administrar u annullar Voss abunament en las configuraziuns da Voss conto da l'App Store.",
+    "linkLabels": {
+      "privacy": "Decleraziun da protecziun da datas",
+      "terms": "Cundiziuns d'utilisaziun"
+    }
+  },
+  "sv": {
+    "name": "Overleap VPN",
+    "subtitle": "Inga loggar. Snabb överallt.",
+    "keywords": "integritet,säker,privat,wifi,krypterad,proxy,tunnel,resa,ip,anonym,surfa,skydd,utomlands,nätverk,ech",
+    "promo": "Privat VPN utan loggar som förblir snabb på nätverk som annars sviker dig. Ett abonnemang, fem enheter.",
+    "playShort": "Privat VPN utan loggar. Snabb även på segt Wi-Fi. Ett abonnemang, fem enheter.",
+    "body": "Overleap är en privat VPN-tjänst som döljer vart du surfar – även för din internetleverantör – som inte sparar några loggar och som förblir snabb på nätverk som annars sviker dig.\n\nDET HÄR FÅR DU\n• Dold även för din internetleverantör: din leverantör ser en enda vanlig krypterad anslutning och inget mer. Encrypted Client Hello döljer till och med servernamnet.\n• Inga loggar. Inget att lämna ut: vi registrerar inte vilka webbplatser du besöker, vilka appar du använder eller vilken trafik du skickar. Vi sparar bara det som krävs för ett abonnemang.\n• Snabb där andra VPN-tjänster kryper fram: Overleaps hastighetsreglering k2cc håller farten uppe på tågens Wi-Fi, i fullsatta lokaler och på hotellnätverk.\n• Följer med dig: tunneln flyttar från Wi-Fi till mobildata mitt i sessionen, så att nedladdningar och samtal fortsätter.\n• Fungerar även utomlands: anslutningen ser ut som vanlig webbtrafik, så den fortsätter att fungera där andra VPN-tjänster slutar fungera.\n• Byggd i det öppna: protokollet är dokumenterat och servern har öppen källkod. Kör din egen nod och använd Overleap enbart som klient.\n\nETT ABONNEMANG, ALLA ENHETER\nEtt abonnemang täcker fem enheter samtidigt, med obegränsad data och alla platser.",
+    "iosSubscription": "ABONNEMANG\nOverleap Basic är ett årsabonnemang som förnyas automatiskt. Betalningen debiteras ditt Apple-ID-konto när köpet bekräftas. Abonnemanget förnyas automatiskt om det inte sägs upp minst 24 timmar före den aktuella periodens slut; ditt konto debiteras för förnyelsen inom 24 timmar före periodens slut. Du kan hantera eller säga upp abonnemanget i kontoinställningarna i App Store efter köpet.",
+    "linkLabels": {
+      "privacy": "Integritetspolicy",
+      "terms": "Användarvillkor"
+    }
+  },
+  "da": {
+    "name": "Overleap VPN",
+    "subtitle": "Ingen logning. Hurtig overalt.",
+    "keywords": "privatliv,sikker,privat,wifi,krypteret,proxy,tunnel,rejse,ip,anonym,beskyttelse,udland,netværk,ech",
+    "promo": "Privat VPN uden logning, der forbliver hurtig på de netværk, der ellers svigter dig. Ét abonnement, fem enheder.",
+    "playShort": "Privat VPN uden logning. Hurtig på langsomt Wi-Fi. Ét abonnement, fem enheder.",
+    "body": "Overleap er en privat VPN, der skjuler, hvor du færdes på nettet – selv for din internetudbyder – ikke gemmer logfiler og forbliver hurtig på de netværk, der ellers svigter dig.\n\nDET FÅR DU\n• Skjult selv for din internetudbyder: din udbyder ser én almindelig krypteret forbindelse og intet andet. Encrypted Client Hello skjuler endda servernavnet.\n• Ingen logning. Intet at udlevere: vi registrerer ikke de websteder, du besøger, de apps, du bruger, eller den trafik, du sender. Vi gemmer kun det, et abonnement kræver.\n• Hurtig, hvor andre VPN-tjenester sniger sig af sted: Overleaps hastighedsstyring k2cc holder farten oppe på togets Wi-Fi, på tætpakkede spillesteder og på hotelnetværk.\n• Følger med dig: tunnellen skifter fra Wi-Fi til mobildata midt i sessionen, så downloads og opkald fortsætter.\n• Virker også i udlandet: forbindelsen ligner almindelig webtrafik, så den bliver ved med at virke, hvor andre VPN-tjenester går i sort.\n• Bygget i åbenhed: protokollen er dokumenteret, og serveren er open source. Kør din egen node, og brug Overleap udelukkende som klient.\n\nÉT ABONNEMENT, ALLE ENHEDER\nÉt abonnement dækker fem enheder på samme tid med ubegrænset data og alle lokationer.",
+    "iosSubscription": "ABONNEMENT\nOverleap Basic er et årligt abonnement, der fornyes automatisk. Betalingen opkræves på din Apple-id-konto ved bekræftelse af købet. Abonnementet fornyes automatisk, medmindre det opsiges mindst 24 timer før udløbet af den aktuelle periode; din konto opkræves for fornyelsen inden for 24 timer før periodens udløb. Du kan administrere eller opsige dit abonnement i dine kontoindstillinger i App Store efter købet.",
+    "linkLabels": {
+      "privacy": "Privatlivspolitik",
+      "terms": "Vilkår for brug"
+    }
+  },
+  "nb": {
+    "name": "Overleap VPN",
+    "subtitle": "Ingen logger. Rask overalt.",
+    "keywords": "personvern,sikker,privat,wifi,kryptert,proxy,tunnel,reise,ip,anonym,beskyttelse,utland,nettverk,ech",
+    "promo": "Privat VPN uten logger som holder farten på nettverkene som ellers svikter deg. Ett abonnement, fem enheter.",
+    "playShort": "Privat VPN uten logger. Rask på tregt Wi-Fi. Ett abonnement, fem enheter.",
+    "body": "Overleap er en privat VPN som skjuler hvor du ferdes på nettet – selv for internettleverandøren din – ikke lagrer logger og holder farten på nettverkene som ellers svikter deg.\n\nDETTE FÅR DU\n• Skjult selv for internettleverandøren: leverandøren din ser én vanlig kryptert tilkobling og ingenting mer. Encrypted Client Hello skjuler til og med servernavnet.\n• Ingen logger. Ingenting å utlevere: vi registrerer ikke nettstedene du besøker, appene du bruker eller trafikken du sender. Vi lagrer bare det et abonnement krever.\n• Rask der andre VPN-tjenester kryper: Overleaps hastighetskontroll k2cc holder farten oppe på Wi-Fi om bord på tog, i fullsatte lokaler og på hotellnettverk.\n• Følger med deg: tunnelen flytter seg fra Wi-Fi til mobildata midt i økten, slik at nedlastinger og samtaler fortsetter.\n• Fungerer også i utlandet: tilkoblingen ser ut som vanlig nettrafikk, så den fortsetter å fungere der andre VPN-tjenester slutter å virke.\n• Bygget i åpenhet: protokollen er dokumentert, og serveren har åpen kildekode. Kjør din egen node og bruk Overleap kun som klient.\n\nETT ABONNEMENT, ALLE ENHETER\nEtt abonnement dekker fem enheter samtidig, med ubegrenset data og alle lokasjoner.",
+    "iosSubscription": "ABONNEMENT\nOverleap Basic er et årsabonnement som fornyes automatisk. Betalingen belastes Apple-ID-kontoen din når kjøpet bekreftes. Abonnementet fornyes automatisk med mindre det sies opp minst 24 timer før utløpet av gjeldende periode; kontoen din belastes for fornyelsen i løpet av de siste 24 timene før perioden utløper. Du kan administrere eller si opp abonnementet i kontoinnstillingene dine i App Store etter kjøpet.",
+    "linkLabels": {
+      "privacy": "Personvernerklæring",
+      "terms": "Vilkår for bruk"
+    }
+  },
+  "fi": {
+    "name": "Overleap VPN",
+    "subtitle": "Ei lokeja. Nopea kaikkialla.",
+    "keywords": "yksityisyys,turvallinen,yksityinen,wifi,salattu,proxy,tunneli,matka,ip,anonyymi,suojaus,tietosuoja",
+    "promo": "Yksityinen VPN ilman lokeja, joka pysyy nopeana verkoissa, jotka muuten pettävät. Yksi tilaus, viisi laitetta.",
+    "playShort": "VPN ilman lokeja. Nopea hitaassakin Wi-Fissä. Yksi tilaus, viisi laitetta.",
+    "body": "Overleap on yksityinen VPN, joka piilottaa, missä liikut verkossa – jopa internetoperaattoriltasi – ei tallenna lokeja ja pysyy nopeana verkoissa, jotka muuten pettävät.\n\nMITÄ SAAT\n• Piilossa jopa operaattoriltasi: operaattorisi näkee yhden tavallisen salatun yhteyden eikä mitään muuta. Encrypted Client Hello piilottaa jopa palvelimen nimen.\n• Ei lokeja. Ei mitään luovutettavaa: emme tallenna sivustoja, joilla käyt, sovelluksia, joita käytät, emmekä liikennettä, jota lähetät. Säilytämme vain sen, mitä tilaus edellyttää.\n• Nopea siellä, missä muut VPN-palvelut matelevat: Overleapin k2cc-nopeudensäätö pitää vauhdin yllä junien Wi-Fi-verkoissa, täpötäysissä tapahtumapaikoissa ja hotelliverkoissa.\n• Kulkee mukanasi: tunneli siirtyy Wi-Fi-verkosta mobiilidataan kesken istunnon, joten lataukset ja puhelut jatkuvat.\n• Toimii myös ulkomailla: yhteys näyttää tavalliselta verkkoliikenteeltä, joten se toimii sielläkin, missä muut VPN-palvelut pimenevät.\n• Rakennettu avoimesti: protokolla on dokumentoitu ja palvelin on avointa lähdekoodia. Voit ylläpitää omaa solmua ja käyttää Overleapia pelkkänä asiakasohjelmana.\n\nYKSI TILAUS, KAIKKI LAITTEET\nYksi tilaus kattaa viisi laitetta samanaikaisesti, rajattomalla datalla ja kaikilla sijainneilla.",
+    "iosSubscription": "TILAUS\nOverleap Basic on automaattisesti uusiutuva vuositilaus. Maksu veloitetaan Apple ID -tililtäsi, kun osto vahvistetaan. Tilaus uusiutuu automaattisesti, ellei sitä peruuteta vähintään 24 tuntia ennen kuluvan jakson päättymistä; uusiminen veloitetaan tililtäsi 24 tunnin kuluessa ennen jakson päättymistä. Voit hallita tilaustasi tai peruuttaa sen App Store -tilisi asetuksissa oston jälkeen.",
+    "linkLabels": {
+      "privacy": "Tietosuojakäytäntö",
+      "terms": "Käyttöehdot"
+    }
+  },
+  "is": {
+    "name": "Overleap VPN",
+    "subtitle": "Engin skráning. Alltaf hratt.",
+    "keywords": "persónuvernd,öruggt,einka,wifi,dulkóðun,proxy,göng,ferðalög,ip,nafnleynd,öryggi,vernd,erlendis,ech",
+    "promo": "Einka-VPN án skráningar sem helst hratt á netum sem annars bregðast þér. Ein áskrift, fimm tæki.",
+    "playShort": "Einka-VPN án skráningar. Hratt á hægu Wi-Fi. Ein áskrift, fimm tæki.",
+    "body": "Overleap er einka-VPN sem felur hvert þú ferð á netinu – jafnvel fyrir netþjónustuaðilanum þínum – geymir engar annálaskrár og helst hratt á netum sem annars bregðast þér.\n\nÞETTA FÆRÐU\n• Falið jafnvel fyrir netþjónustuaðilanum: þjónustuaðilinn þinn sér eina venjulega dulkóðaða tengingu og ekkert annað. Encrypted Client Hello felur meira að segja heiti netþjónsins.\n• Engin skráning. Ekkert til að afhenda: við skráum ekki vefsvæðin sem þú heimsækir, forritin sem þú notar eða umferðina sem þú sendir. Við geymum aðeins það sem áskrift krefst.\n• Hratt þar sem önnur VPN silast áfram: k2cc-hraðastýring Overleap heldur hraðanum uppi á Wi-Fi í lestum, á fjölmennum viðburðastöðum og á hótelnetum.\n• Fylgir þér: göngin færast af Wi-Fi yfir á farsímagögn í miðri lotu, svo niðurhal og símtöl halda áfram.\n• Virkar áfram erlendis: tengingin lítur út eins og venjuleg vefumferð, svo hún heldur áfram að virka þar sem önnur VPN hætta að virka.\n• Smíðað fyrir opnum tjöldum: samskiptareglan er skjalfest og netþjónninn er opinn hugbúnaður. Keyrðu þinn eigin hnút og notaðu Overleap eingöngu sem biðlara.\n\nEIN ÁSKRIFT, ÖLL TÆKI\nEin áskrift nær yfir fimm tæki samtímis, með ótakmörkuðu gagnamagni og öllum staðsetningum.",
+    "iosSubscription": "ÁSKRIFT\nOverleap Basic er ársáskrift sem endurnýjast sjálfkrafa. Greiðsla er skuldfærð á Apple ID-reikninginn þinn við staðfestingu kaupa. Áskriftin endurnýjast sjálfkrafa nema henni sé sagt upp að minnsta kosti 24 klukkustundum fyrir lok yfirstandandi tímabils; reikningurinn þinn er skuldfærður fyrir endurnýjun innan 24 klukkustunda fyrir lok tímabilsins. Þú getur stjórnað áskriftinni eða sagt henni upp í reikningsstillingum þínum í App Store eftir kaupin.",
+    "linkLabels": {
+      "privacy": "Persónuverndarstefna",
+      "terms": "Notkunarskilmálar"
+    }
+  },
+  "et": {
+    "name": "Overleap VPN",
+    "subtitle": "Logideta. Kiire igas võrgus.",
+    "keywords": "privaatsus,turvaline,privaatne,wifi,krüpteeritud,proxy,tunnel,reisimine,ip,anonüümne,kaitse,internet",
+    "promo": "Privaatne VPN ilma logideta, mis püsib kiire ka võrkudes, mis muidu alt veavad. Üks pakett, viis seadet.",
+    "playShort": "Privaatne VPN ilma logideta. Kiire ka aeglases Wi-Fis. Üks pakett, viis seadet.",
+    "body": "Overleap on privaatne VPN, mis varjab, kus sa internetis käid – isegi sinu internetiteenuse pakkuja eest –, ei säilita logisid ja püsib kiire ka võrkudes, mis muidu alt veavad.\n\nMIDA SA SAAD\n• Varjatud isegi internetiteenuse pakkuja eest: sinu teenusepakkuja näeb üht tavalist krüpteeritud ühendust ja ei midagi enamat. Encrypted Client Hello varjab isegi serveri nime.\n• Logideta. Pole midagi üle anda: me ei salvesta külastatavaid saite, kasutatavaid rakendusi ega saadetavat liiklust. Säilitame ainult seda, mida tellimus nõuab.\n• Kiire seal, kus teised VPN-id venivad: Overleapi k2cc kiiruse juhtimine hoiab kiirust rongi Wi-Fis, rahvarohketes kohtades ja hotellivõrkudes.\n• Liigub sinuga kaasa: tunnel läheb keset seanssi Wi-Fi-lt üle mobiilsele andmesidele, nii et allalaadimised ja kõned jätkuvad.\n• Töötab ka välismaal: ühendus näeb välja nagu tavaline veebiliiklus, seega töötab see edasi ka seal, kus teised VPN-id lakkavad töötamast.\n• Loodud avatult: protokoll on dokumenteeritud ja server on avatud lähtekoodiga. Käita oma sõlme ja kasuta Overleapi üksnes kliendina.\n\nÜKS PAKETT, KÕIK SEADMED\nÜks tellimus katab korraga viis seadet, piiramatu andmemahu ja kõigi asukohtadega.",
+    "iosSubscription": "TELLIMUS\nOverleap Basic on automaatselt uuenev aastatellimus. Makse võetakse sinu Apple ID kontolt ostu kinnitamisel. Tellimus uueneb automaatselt, kui seda ei tühistata vähemalt 24 tundi enne jooksva perioodi lõppu; uuendamise tasu võetakse sinu kontolt 24 tunni jooksul enne perioodi lõppu. Pärast ostu saad tellimust hallata või selle tühistada oma App Store'i konto seadetes.",
+    "linkLabels": {
+      "privacy": "Privaatsuspoliitika",
+      "terms": "Kasutustingimused"
+    }
+  },
+  "lv": {
+    "name": "Overleap VPN",
+    "subtitle": "Bez žurnāliem. Ātrs visur.",
+    "keywords": "privātums,drošs,privāts,wifi,šifrēts,proxy,starpniekserveris,tunelis,ceļojumi,ip,anonīms,aizsardzība",
+    "promo": "Privāts VPN bez žurnāliem, kas saglabā ātrumu tīklos, kuri citkārt pieviļ. Viens plāns, piecas ierīces.",
+    "playShort": "Privāts VPN bez žurnāliem. Ātrs arī lēnā Wi-Fi. Viens plāns, piecas ierīces.",
+    "body": "Overleap ir privāts VPN, kas slēpj, ko jūs apmeklējat internetā, – pat no jūsu interneta pakalpojumu sniedzēja –, neglabā žurnālus un saglabā ātrumu tīklos, kuri citkārt pieviļ.\n\nKO JŪS IEGŪSTAT\n• Slēpts pat no interneta pakalpojumu sniedzēja: jūsu pakalpojumu sniedzējs redz vienu parastu šifrētu savienojumu un neko vairāk. Encrypted Client Hello slēpj pat servera nosaukumu.\n• Bez žurnāliem. Nav nekā, ko izsniegt: mēs nereģistrējam vietnes, kuras apmeklējat, lietotnes, kuras izmantojat, vai datplūsmu, ko sūtāt. Mēs glabājam tikai to, kas nepieciešams abonementam.\n• Ātrs tur, kur citi VPN velkas: Overleap ātruma vadība k2cc uztur ātrumu vilcienu Wi-Fi, pārpildītās pasākumu vietās un viesnīcu tīklos.\n• Pārvietojas kopā ar jums: tunelis sesijas laikā pāriet no Wi-Fi uz mobilajiem datiem, tāpēc lejupielādes un zvani turpinās.\n• Darbojas arī ārzemēs: savienojums izskatās kā parasta tīmekļa datplūsma, tāpēc tas turpina darboties tur, kur citi VPN pārstāj strādāt.\n• Veidots atklāti: protokols ir dokumentēts, un serveris ir atvērtā pirmkoda. Darbiniet savu mezglu un izmantojiet Overleap tikai kā klientu.\n\nVIENS PLĀNS, VISAS IERĪCES\nViens abonements vienlaikus aptver piecas ierīces ar neierobežotu datu apjomu un visām atrašanās vietām.",
+    "iosSubscription": "ABONEMENTS\nOverleap Basic ir gada abonements ar automātisku atjaunošanu. Maksājums tiek iekasēts no jūsu Apple ID konta, apstiprinot pirkumu. Abonements tiek atjaunots automātiski, ja vien tas netiek atcelts vismaz 24 stundas pirms pašreizējā perioda beigām; maksa par atjaunošanu tiek iekasēta no jūsu konta 24 stundu laikā pirms perioda beigām. Pēc pirkuma abonementu varat pārvaldīt vai atcelt sava App Store konta iestatījumos.",
+    "linkLabels": {
+      "privacy": "Privātuma politika",
+      "terms": "Lietošanas noteikumi"
+    }
+  },
+  "lt": {
+    "name": "Overleap VPN",
+    "subtitle": "Jokių įrašų. Greitas visur.",
+    "keywords": "privatumas,saugus,privatus,wifi,šifruotas,proxy,tunelis,kelionės,ip,anonimiškas,apsauga,internetas",
+    "promo": "Privatus VPN be veiklos įrašų, kuris išlieka greitas tinkluose, kurie kitaip nuvilia. Vienas planas, penki įrenginiai.",
+    "playShort": "Privatus VPN be įrašų. Greitas ir lėtame Wi-Fi. Vienas planas, penki įrenginiai.",
+    "body": "Overleap yra privatus VPN, kuris paslepia, kur lankotės internete – net nuo jūsų interneto paslaugų teikėjo, – nekaupia veiklos įrašų ir išlieka greitas tinkluose, kurie kitaip nuvilia.\n\nKĄ GAUNATE\n• Paslėpta net nuo interneto paslaugų teikėjo: jūsų teikėjas mato vieną įprastą šifruotą ryšį ir nieko daugiau. Encrypted Client Hello paslepia net serverio pavadinimą.\n• Jokių įrašų. Nėra ko perduoti: neregistruojame svetainių, kuriose lankotės, programėlių, kuriomis naudojatės, ar srauto, kurį siunčiate. Saugome tik tai, ko reikia prenumeratai.\n• Greitas ten, kur kiti VPN vos juda: Overleap spartos valdymas k2cc palaiko greitį traukinių Wi-Fi, sausakimšose renginių vietose ir viešbučių tinkluose.\n• Juda kartu su jumis: tunelis seanso metu pereina iš Wi-Fi į mobiliuosius duomenis, todėl atsisiuntimai ir skambučiai tęsiasi.\n• Veikia ir užsienyje: ryšys atrodo kaip įprastas žiniatinklio srautas, todėl jis veikia ir ten, kur kiti VPN nustoja veikti.\n• Kuriama atvirai: protokolas dokumentuotas, o serveris yra atvirojo kodo. Paleiskite savo mazgą ir naudokite Overleap vien kaip klientą.\n\nVIENAS PLANAS, VISI ĮRENGINIAI\nViena prenumerata vienu metu apima penkis įrenginius, su neribotais duomenimis ir visomis vietovėmis.",
+    "iosSubscription": "PRENUMERATA\nOverleap Basic yra automatiškai atnaujinama metinė prenumerata. Mokėjimas nuskaitomas iš jūsų Apple ID paskyros patvirtinus pirkimą. Prenumerata atnaujinama automatiškai, nebent ji atšaukiama likus ne mažiau kaip 24 valandoms iki dabartinio laikotarpio pabaigos; mokestis už atnaujinimą nuskaitomas iš jūsų paskyros per 24 valandas iki laikotarpio pabaigos. Po pirkimo prenumeratą galite tvarkyti arba atšaukti savo App Store paskyros nustatymuose.",
+    "linkLabels": {
+      "privacy": "Privatumo politika",
+      "terms": "Naudojimo sąlygos"
+    }
+  },
+  "pl": {
+    "name": "Overleap VPN",
+    "subtitle": "Bez logów. Szybki wszędzie.",
+    "keywords": "prywatność,bezpieczny,prywatny,wifi,szyfrowanie,proxy,tunel,podróż,ip,anonimowy,ochrona,internet,ech",
+    "promo": "Prywatny VPN bez logów, który pozostaje szybki w sieciach, które zwykle zawodzą. Jeden plan, pięć urządzeń.",
+    "playShort": "Prywatny VPN bez logów. Szybki nawet na wolnym Wi-Fi. Jeden plan, pięć urządzeń.",
+    "body": "Overleap to prywatny VPN, który ukrywa, co robisz w sieci – nawet przed Twoim dostawcą internetu – nie przechowuje logów i pozostaje szybki w sieciach, które zwykle zawodzą.\n\nCO ZYSKUJESZ\n• Ukryty nawet przed dostawcą internetu: Twój dostawca widzi jedno zwykłe szyfrowane połączenie i nic więcej. Encrypted Client Hello ukrywa nawet nazwę serwera.\n• Bez logów. Nie ma czego przekazać: nie rejestrujemy odwiedzanych stron, używanych aplikacji ani przesyłanego ruchu. Przechowujemy tylko to, czego wymaga subskrypcja.\n• Szybki tam, gdzie inne sieci VPN ledwo działają: kontrola przepływności k2cc w Overleap utrzymuje prędkość w pociągowym Wi-Fi, w zatłoczonych obiektach i w sieciach hotelowych.\n• Podąża za Tobą: tunel przenosi się z Wi-Fi na dane komórkowe w trakcie sesji, więc pobieranie i rozmowy trwają dalej.\n• Działa także za granicą: połączenie wygląda jak zwykły ruch internetowy, więc działa tam, gdzie inne sieci VPN przestają działać.\n• Tworzony otwarcie: protokół jest udokumentowany, a serwer ma otwarty kod źródłowy. Uruchom własny węzeł i używaj Overleap wyłącznie jako klienta.\n\nJEDEN PLAN, WSZYSTKIE URZĄDZENIA\nJedna subskrypcja obejmuje pięć urządzeń jednocześnie, bez limitu danych i ze wszystkimi lokalizacjami.",
+    "iosSubscription": "SUBSKRYPCJA\nOverleap Basic to automatycznie odnawiana subskrypcja roczna. Płatność zostanie pobrana z konta Apple ID w momencie potwierdzenia zakupu. Subskrypcja odnawia się automatycznie, o ile nie zostanie anulowana co najmniej 24 godziny przed końcem bieżącego okresu; opłata za odnowienie zostanie pobrana z konta w ciągu 24 godzin przed końcem okresu. Po zakupie subskrypcją można zarządzać lub ją anulować w ustawieniach konta App Store.",
+    "linkLabels": {
+      "privacy": "Polityka prywatności",
+      "terms": "Warunki użytkowania"
+    }
+  },
+  "cs": {
+    "name": "Overleap VPN",
+    "subtitle": "Bez logů. Rychlá v každé síti.",
+    "keywords": "soukromí,bezpečná,soukromá,wifi,šifrování,proxy,tunel,cesty,ip,anonymní,ochrana,internet,zahraničí",
+    "promo": "Soukromá VPN bez logů, která zůstává rychlá i v sítích, které vás jinak nechají na holičkách. Jeden tarif, pět zařízení.",
+    "playShort": "Soukromá VPN bez logů. Rychlá i na pomalé Wi-Fi. Jeden tarif, pět zařízení.",
+    "body": "Overleap je soukromá VPN, která skrývá, kam na internetu chodíte – dokonce i před vaším poskytovatelem připojení –, neuchovává žádné logy a zůstává rychlá i v sítích, které vás jinak nechají na holičkách.\n\nCO ZÍSKÁTE\n• Skrytí i před poskytovatelem připojení: váš poskytovatel vidí jedno běžné šifrované spojení a nic víc. Encrypted Client Hello skryje dokonce i název serveru.\n• Bez logů. Není co vydat: nezaznamenáváme weby, které navštěvujete, aplikace, které používáte, ani provoz, který odesíláte. Uchováváme jen to, co vyžaduje předplatné.\n• Rychlá tam, kde se jiné VPN plazí: řízení rychlosti k2cc od Overleap udržuje vaši rychlost na Wi-Fi ve vlaku, na přeplněných akcích i v hotelových sítích.\n• Přesouvá se s vámi: tunel během relace přejde z Wi-Fi na mobilní data, takže stahování i hovory pokračují.\n• Funguje i v zahraničí: spojení vypadá jako běžný webový provoz, takže funguje i tam, kde jiné VPN přestávají fungovat.\n• Vyvíjeno otevřeně: protokol je zdokumentovaný a server má otevřený zdrojový kód. Provozujte vlastní uzel a používejte Overleap čistě jako klienta.\n\nJEDEN TARIF, VŠECHNA ZAŘÍZENÍ\nJedno předplatné pokrývá pět zařízení současně, s neomezenými daty a všemi lokalitami.",
+    "iosSubscription": "PŘEDPLATNÉ\nOverleap Basic je automaticky obnovované roční předplatné. Platba bude stržena z vašeho účtu Apple ID při potvrzení nákupu. Předplatné se automaticky obnovuje, pokud není zrušeno nejméně 24 hodin před koncem aktuálního období; platba za obnovení bude z vašeho účtu stržena během 24 hodin před koncem období. Předplatné můžete po nákupu spravovat nebo zrušit v nastavení svého účtu v App Storu.",
+    "linkLabels": {
+      "privacy": "Zásady ochrany osobních údajů",
+      "terms": "Podmínky použití"
+    }
+  },
+  "sk": {
+    "name": "Overleap VPN",
+    "subtitle": "Bez logov. Rýchla všade.",
+    "keywords": "súkromie,bezpečná,súkromná,wifi,šifrovanie,proxy,tunel,cestovanie,ip,anonymná,ochrana,internet,sieť",
+    "promo": "Súkromná VPN bez logov, ktorá zostáva rýchla aj v sieťach, ktoré vás inak nechajú v štichu. Jeden plán, päť zariadení.",
+    "playShort": "Súkromná VPN bez logov. Rýchla aj na pomalej Wi-Fi. Jeden plán, päť zariadení.",
+    "body": "Overleap je súkromná VPN, ktorá skrýva, kam na internete chodíte – dokonca aj pred vaším poskytovateľom pripojenia –, neuchováva žiadne logy a zostáva rýchla aj v sieťach, ktoré vás inak nechajú v štichu.\n\nČO ZÍSKATE\n• Skrytie aj pred poskytovateľom pripojenia: váš poskytovateľ vidí jedno bežné šifrované spojenie a nič viac. Encrypted Client Hello skryje dokonca aj názov servera.\n• Bez logov. Nie je čo vydať: nezaznamenávame weby, ktoré navštevujete, aplikácie, ktoré používate, ani prevádzku, ktorú odosielate. Uchovávame len to, čo vyžaduje predplatné.\n• Rýchla tam, kde sa iné VPN vlečú: riadenie rýchlosti k2cc od Overleap udržiava vašu rýchlosť na Wi-Fi vo vlaku, na preplnených podujatiach aj v hotelových sieťach.\n• Presúva sa s vami: tunel počas relácie prejde z Wi-Fi na mobilné dáta, takže sťahovanie aj hovory pokračujú.\n• Funguje aj v zahraničí: spojenie vyzerá ako bežná webová prevádzka, takže funguje aj tam, kde iné VPN prestávajú fungovať.\n• Vyvíjané otvorene: protokol je zdokumentovaný a server má otvorený zdrojový kód. Prevádzkujte vlastný uzol a používajte Overleap čisto ako klienta.\n\nJEDEN PLÁN, VŠETKY ZARIADENIA\nJedno predplatné pokrýva päť zariadení súčasne, s neobmedzenými dátami a všetkými lokalitami.",
+    "iosSubscription": "PREDPLATNÉ\nOverleap Basic je automaticky obnovované ročné predplatné. Platba sa stiahne z vášho účtu Apple ID pri potvrdení nákupu. Predplatné sa automaticky obnovuje, pokiaľ nie je zrušené najmenej 24 hodín pred koncom aktuálneho obdobia; platba za obnovenie sa z vášho účtu stiahne počas 24 hodín pred koncom obdobia. Predplatné môžete po nákupe spravovať alebo zrušiť v nastaveniach svojho účtu v App Store.",
+    "linkLabels": {
+      "privacy": "Zásady ochrany osobných údajov",
+      "terms": "Podmienky používania"
+    }
+  },
+  "sl": {
+    "name": "Overleap VPN",
+    "subtitle": "Brez dnevnikov. Hiter povsod.",
+    "keywords": "zasebnost,varen,zaseben,wifi,šifriran,proxy,tunel,potovanje,ip,anonimen,zaščita,internet,tujina,ech",
+    "promo": "Zaseben VPN brez dnevnikov, ki ostane hiter tudi v omrežjih, ki vas sicer pustijo na cedilu. En paket, pet naprav.",
+    "playShort": "Zaseben VPN brez dnevnikov. Hiter tudi na počasnem Wi-Fi. En paket, pet naprav.",
+    "body": "Overleap je zaseben VPN, ki skrije, kam greste na spletu – celo pred vašim ponudnikom interneta –, ne hrani dnevnikov in ostane hiter tudi v omrežjih, ki vas sicer pustijo na cedilu.\n\nKAJ DOBITE\n• Skrito celo pred ponudnikom interneta: vaš ponudnik vidi eno običajno šifrirano povezavo in nič več. Encrypted Client Hello skrije celo ime strežnika.\n• Brez dnevnikov. Ničesar ni mogoče izročiti: ne beležimo spletnih mest, ki jih obiskujete, aplikacij, ki jih uporabljate, ali prometa, ki ga pošiljate. Hranimo le tisto, kar je potrebno za naročnino.\n• Hiter tam, kjer se drugi VPN-ji vlečejo: Overleapov nadzor hitrosti k2cc ohranja vašo hitrost na Wi-Fi na vlaku, na polnih prizoriščih in v hotelskih omrežjih.\n• Premika se z vami: tunel se med sejo preseli z Wi-Fi na mobilne podatke, zato se prenosi in klici nadaljujejo.\n• Deluje tudi v tujini: povezava je videti kot običajen spletni promet, zato deluje tudi tam, kjer drugi VPN-ji odpovejo.\n• Razvit odprto: protokol je dokumentiran, strežnik pa je odprtokoden. Poganjajte svoje vozlišče in uporabljajte Overleap zgolj kot odjemalca.\n\nEN PAKET, VSE NAPRAVE\nEna naročnina pokriva pet naprav hkrati, z neomejenim prenosom podatkov in vsemi lokacijami.",
+    "iosSubscription": "NAROČNINA\nOverleap Basic je letna naročnina, ki se samodejno podaljšuje. Plačilo se zaračuna vašemu računu Apple ID ob potrditvi nakupa. Naročnina se samodejno podaljša, razen če jo prekličete vsaj 24 ur pred koncem tekočega obdobja; podaljšanje se vašemu računu zaračuna v 24 urah pred koncem obdobja. Naročnino lahko po nakupu upravljate ali prekličete v nastavitvah svojega računa v trgovini App Store.",
+    "linkLabels": {
+      "privacy": "Pravilnik o zasebnosti",
+      "terms": "Pogoji uporabe"
+    }
+  },
+  "hu": {
+    "name": "Overleap VPN",
+    "subtitle": "Naplózás nélkül. Gyors bárhol.",
+    "keywords": "magánszféra,biztonságos,privát,wifi,titkosított,proxy,alagút,utazás,ip,névtelen,adatvédelem,internet",
+    "promo": "Privát VPN naplózás nélkül, amely azokon a hálózatokon is gyors marad, amelyek máskor cserben hagynak. Egy csomag, öt eszköz.",
+    "playShort": "Privát VPN naplózás nélkül. Lassú Wi-Fin is gyors. Egy csomag, öt eszköz.",
+    "body": "Az Overleap privát VPN, amely elrejti, merre jár az interneten – még az internetszolgáltatója elől is –, nem vezet naplót, és azokon a hálózatokon is gyors marad, amelyek máskor cserben hagynak.\n\nAMIT KAP\n• Még az internetszolgáltatója elől is rejtve: a szolgáltatója egyetlen szokványos titkosított kapcsolatot lát, semmi többet. Az Encrypted Client Hello még a szerver nevét is elrejti.\n• Nincs naplózás. Nincs mit kiadni: nem rögzítjük a felkeresett webhelyeket, a használt alkalmazásokat és a küldött forgalmat sem. Csak azt őrizzük meg, ami az előfizetéshez szükséges.\n• Gyors ott is, ahol más VPN-ek vánszorognak: az Overleap k2cc sebességszabályozása fenntartja a sebességet a vonatok Wi-Fi-hálózatán, zsúfolt rendezvényhelyszíneken és szállodai hálózatokon.\n• Önnel tart: az alagút munkamenet közben átvált Wi-Fi-ről mobiladatra, így a letöltések és a hívások folytatódnak.\n• Külföldön is működik: a kapcsolat szokványos webes forgalomnak látszik, ezért ott is működik, ahol más VPN-ek leállnak.\n• Nyíltan fejlesztve: a protokoll dokumentált, a szerver pedig nyílt forráskódú. Futtasson saját csomópontot, és használja az Overleapet kizárólag kliensként.\n\nEGY CSOMAG, MINDEN ESZKÖZ\nEgyetlen előfizetés egyszerre öt eszközt fed le, korlátlan adatforgalommal és minden helyszínnel.",
+    "iosSubscription": "ELŐFIZETÉS\nAz Overleap Basic automatikusan megújuló éves előfizetés. A fizetés a vásárlás megerősítésekor az Apple ID-fiókját terheli. Az előfizetés automatikusan megújul, kivéve, ha azt legalább 24 órával az aktuális időszak vége előtt lemondják; a megújítás díját az időszak vége előtti 24 órán belül terheljük a fiókjára. Az előfizetést a vásárlás után az App Store-fiókja beállításaiban kezelheti vagy mondhatja le.",
+    "linkLabels": {
+      "privacy": "Adatvédelmi irányelvek",
+      "terms": "Felhasználási feltételek"
+    }
+  },
+  "ru": {
+    "name": "Overleap VPN",
+    "subtitle": "Без логов. Быстро в любой сети",
+    "keywords": "впн,прокси,приватность,анонимность,безопасность,защита,шифрование,туннель,ip,доступ,сайты,wifi,proxy",
+    "promo": "Приватный VPN без логов, который остаётся быстрым там, где сеть подводит. Один тариф — пять устройств.",
+    "playShort": "Приватный VPN без логов. Быстрый даже на слабом Wi-Fi. Один тариф, 5 устройств.",
+    "body": "Overleap — приватный VPN, который скрывает, какие сайты вы посещаете, даже от вашего провайдера, не ведёт логов и остаётся быстрым в сетях, которые подводят.\n\nЧТО ВЫ ПОЛУЧАЕТЕ\n• Скрыто даже от провайдера: ваш провайдер видит одно обычное зашифрованное соединение — и больше ничего. Encrypted Client Hello скрывает даже имя сервера.\n• Без логов. Передавать нечего: мы не записываем сайты, которые вы посещаете, приложения, которыми пользуетесь, и трафик, который отправляете. Мы храним только то, что необходимо для подписки.\n• Быстро там, где другие VPN еле работают: управление скоростью k2cc в Overleap поддерживает вашу скорость на Wi-Fi в поездах, в людных местах и в гостиничных сетях.\n• Перемещается вместе с вами: туннель переходит с Wi-Fi на мобильный интернет прямо во время сеанса, поэтому загрузки и звонки не прерываются.\n• Работает и за границей: соединение выглядит как обычный веб-трафик, поэтому продолжает работать там, где другие VPN отключаются.\n• Создан открыто: протокол задокументирован, а сервер имеет открытый исходный код. Запустите собственный узел и используйте Overleap только как клиент.\n\nОДИН ТАРИФ — ВСЕ УСТРОЙСТВА\nОдна подписка действует на пяти устройствах одновременно, с безлимитным трафиком и всеми локациями.",
+    "iosSubscription": "ПОДПИСКА\nOverleap Basic — годовая подписка с автоматическим продлением. Оплата списывается с вашей учётной записи Apple ID при подтверждении покупки. Подписка продлевается автоматически, если она не отменена не позднее чем за 24 часа до окончания текущего периода; плата за продление списывается с вашей учётной записи в течение 24 часов до окончания периода. Управлять подпиской или отменить её можно в настройках учётной записи App Store после покупки.",
+    "linkLabels": {
+      "privacy": "Политика конфиденциальности",
+      "terms": "Условия использования"
+    }
+  },
+  "uk": {
+    "name": "Overleap VPN",
+    "subtitle": "Без логів. Швидкий будь-де.",
+    "keywords": "впн,проксі,приватність,анонімність,безпека,захист,шифрування,тунель,ip,доступ,сайти,wifi,proxy,обхід",
+    "promo": "Приватний VPN без логів, який залишається швидким там, де мережа підводить. Один тариф — п’ять пристроїв.",
+    "playShort": "Приватний VPN без логів. Швидкий і на слабкому Wi-Fi. Один тариф, 5 пристроїв.",
+    "body": "Overleap — приватний VPN, який приховує, які сайти ви відвідуєте, навіть від вашого провайдера, не веде логів і залишається швидким у мережах, які підводять.\n\nЩО ВИ ОТРИМУЄТЕ\n• Приховано навіть від провайдера: ваш провайдер бачить одне звичайне зашифроване з’єднання — і більше нічого. Encrypted Client Hello приховує навіть ім’я сервера.\n• Без логів. Передавати нічого: ми не записуємо сайти, які ви відвідуєте, застосунки, якими користуєтеся, і трафік, який надсилаєте. Ми зберігаємо лише те, що потрібно для підписки.\n• Швидко там, де інші VPN ледве працюють: керування швидкістю k2cc в Overleap підтримує вашу швидкість на Wi-Fi у потягах, у людних місцях і в готельних мережах.\n• Рухається разом з вами: тунель переходить з Wi-Fi на мобільний інтернет просто під час сеансу, тож завантаження і дзвінки не перериваються.\n• Працює і за кордоном: з’єднання виглядає як звичайний вебтрафік, тому продовжує працювати там, де інші VPN відключаються.\n• Створено відкрито: протокол задокументовано, а сервер має відкритий вихідний код. Запустіть власний вузол і використовуйте Overleap лише як клієнт.\n\nОДИН ТАРИФ — УСІ ПРИСТРОЇ\nОдна підписка діє на п’яти пристроях одночасно, з безлімітним трафіком і всіма локаціями.",
+    "iosSubscription": "ПІДПИСКА\nOverleap Basic — річна підписка з автоматичним поновленням. Оплата списується з вашого облікового запису Apple ID під час підтвердження покупки. Підписка поновлюється автоматично, якщо її не скасовано щонайменше за 24 години до кінця поточного періоду; плата за поновлення списується з вашого облікового запису протягом 24 годин до кінця періоду. Керувати підпискою або скасувати її можна в налаштуваннях облікового запису App Store після покупки.",
+    "linkLabels": {
+      "privacy": "Політика конфіденційності",
+      "terms": "Умови використання"
+    }
+  },
+  "be": {
+    "name": "Overleap VPN",
+    "subtitle": "Без логаў. Хутка ў любой сетцы",
+    "keywords": "впн,проксі,прыватнасць,ананімнасць,бяспека,абарона,шыфраванне,тунэль,ip,доступ,сайты,wifi,proxy,ech",
+    "promo": "Прыватны VPN без логаў, які застаецца хуткім там, дзе сетка падводзіць. Адзін тарыф — пяць прылад.",
+    "playShort": "Прыватны VPN без логаў. Хуткі нават на слабым Wi-Fi. Адзін тарыф, 5 прылад.",
+    "body": "Overleap — прыватны VPN, які хавае, якія сайты вы наведваеце, нават ад вашага правайдара, не вядзе логаў і застаецца хуткім у сетках, якія падводзяць.\n\nШТО ВЫ АТРЫМЛІВАЕЦЕ\n• Схавана нават ад правайдара: ваш правайдар бачыць адно звычайнае зашыфраванае злучэнне — і больш нічога. Encrypted Client Hello хавае нават імя сервера.\n• Без логаў. Перадаваць няма чаго: мы не запісваем сайты, якія вы наведваеце, праграмы, якімі карыстаецеся, і трафік, які адпраўляеце. Мы захоўваем толькі тое, што патрэбна для падпіскі.\n• Хутка там, дзе іншыя VPN ледзь працуюць: кіраванне хуткасцю k2cc у Overleap падтрымлівае вашу хуткасць на Wi-Fi у цягніках, у людных месцах і ў гасцінічных сетках.\n• Рухаецца разам з вамі: тунэль пераходзіць з Wi-Fi на мабільны інтэрнэт проста падчас сеанса, таму спампоўкі і званкі не перарываюцца.\n• Працуе і за мяжой: злучэнне выглядае як звычайны вэб-трафік, таму працягвае працаваць там, дзе іншыя VPN адключаюцца.\n• Створана адкрыта: пратакол задакументаваны, а сервер мае адкрыты зыходны код. Запусціце ўласны вузел і выкарыстоўвайце Overleap толькі як кліент.\n\nАДЗІН ТАРЫФ — УСЕ ПРЫЛАДЫ\nАдна падпіска дзейнічае на пяці прыладах адначасова, з безлімітным трафікам і ўсімі лакацыямі.",
+    "iosSubscription": "ПАДПІСКА\nOverleap Basic — гадавая падпіска з аўтаматычным працягам. Аплата спісваецца з вашага ўліковага запісу Apple ID пры пацвярджэнні пакупкі. Падпіска працягваецца аўтаматычна, калі яна не скасавана не пазней чым за 24 гадзіны да канца бягучага перыяду; плата за працяг спісваецца з вашага ўліковага запісу на працягу 24 гадзін да канца перыяду. Кіраваць падпіскай або скасаваць яе можна ў наладах уліковага запісу App Store пасля пакупкі.",
+    "linkLabels": {
+      "privacy": "Палітыка прыватнасці",
+      "terms": "Умовы выкарыстання"
+    }
+  },
+  "bg": {
+    "name": "Overleap VPN",
+    "subtitle": "Без логове. Бърз навсякъде.",
+    "keywords": "впн,прокси,поверителност,анонимност,сигурност,защита,криптиране,тунел,ip,достъп,мрежа,wifi,proxy,ech",
+    "promo": "Частен VPN без логове, който остава бърз в мрежите, които ви подвеждат. Един план, пет устройства.",
+    "playShort": "Частен VPN без логове. Бърз и при бавен Wi-Fi. Един план, пет устройства.",
+    "body": "Overleap е частен VPN, който скрива какво посещавате — дори от вашия интернет доставчик, не пази логове и остава бърз в мрежите, които ви подвеждат.\n\nКАКВО ПОЛУЧАВАТЕ\n• Скрито дори от доставчика: вашият доставчик вижда една обикновена криптирана връзка и нищо повече. Encrypted Client Hello скрива дори името на сървъра.\n• Без логове. Няма какво да предадем: не записваме сайтовете, които посещавате, приложенията, които използвате, нито трафика, който изпращате. Пазим само необходимото за абонамента.\n• Бърз там, където другите VPN едва работят: контролът на скоростта k2cc на Overleap поддържа скоростта ви при Wi-Fi във влака, на претъпкани места и в хотелски мрежи.\n• Движи се с вас: тунелът преминава от Wi-Fi към мобилни данни по време на сесията, така че изтеглянията и разговорите продължават.\n• Работи и в чужбина: връзката изглежда като обикновен уеб трафик, затова продължава да работи там, където другите VPN спират.\n• Създаден открито: протоколът е документиран, а сървърът е с отворен код. Пуснете собствен възел и използвайте Overleap само като клиент.\n\nЕДИН ПЛАН, ВСЯКО УСТРОЙСТВО\nЕдин абонамент покрива пет устройства едновременно, с неограничени данни и всички локации.",
+    "iosSubscription": "АБОНАМЕНТ\nOverleap Basic е годишен абонамент с автоматично подновяване. Плащането се таксува от вашия акаунт с Apple ID при потвърждаване на покупката. Абонаментът се подновява автоматично, освен ако не бъде отменен поне 24 часа преди края на текущия период; акаунтът ви се таксува за подновяването в рамките на 24 часа преди края на периода. Можете да управлявате или отмените абонамента си в настройките на акаунта си в App Store след покупката.",
+    "linkLabels": {
+      "privacy": "Политика за поверителност",
+      "terms": "Условия за ползване"
+    }
+  },
+  "sr": {
+    "name": "Overleap VPN",
+    "subtitle": "Без логова. Брз у свакој мрежи",
+    "keywords": "впн,прокси,приватност,анонимност,безбедност,заштита,шифровање,тунел,ip,wifi,proxy,privatnost,zastita",
+    "promo": "Приватни VPN без логова који остаје брз на мрежама које вас изневере. Један план, пет уређаја.",
+    "playShort": "Приватни VPN без логова. Брз и на спором Wi-Fi-ју. Један план, пет уређаја.",
+    "body": "Overleap је приватни VPN који скрива шта посећујете — чак и од вашег интернет провајдера, не чува логове и остаје брз на мрежама које вас изневере.\n\nШТА ДОБИЈАТЕ\n• Скривено чак и од провајдера: ваш провајдер види једну обичну шифровану везу и ништа више. Encrypted Client Hello скрива чак и име сервера.\n• Без логова. Нема шта да се преда: не бележимо сајтове које посећујете, апликације које користите нити саобраћај који шаљете. Чувамо само оно што је потребно за претплату.\n• Брз тамо где други VPN-ови пузе: k2cc контрола брзине у апликацији Overleap одржава вашу брзину на Wi-Fi мрежи у возу, на препуним местима и у хотелским мрежама.\n• Креће се са вама: тунел усред сесије прелази са Wi-Fi мреже на мобилне податке, па се преузимања и позиви настављају.\n• Ради и у иностранству: веза изгледа као обичан веб саобраћај, па наставља да ради тамо где други VPN-ови престају.\n• Грађен отворено: протокол је документован, а сервер је отвореног кода. Покрените сопствени чвор и користите Overleap само као клијент.\n\nЈЕДАН ПЛАН, СВАКИ УРЕЂАЈ\nЈедна претплата покрива пет уређаја истовремено, уз неограничен пренос података и све локације.",
+    "iosSubscription": "ПРЕТПЛАТА\nOverleap Basic је годишња претплата која се аутоматски обнавља. Плаћање се наплаћује са вашег Apple ID налога при потврди куповине. Претплата се аутоматски обнавља осим ако се не откаже најмање 24 сата пре краја текућег периода; обнова се наплаћује са вашег налога у року од 24 сата пре краја периода. Претплатом можете управљати или је отказати у подешавањима свог App Store налога након куповине.",
+    "linkLabels": {
+      "privacy": "Политика приватности",
+      "terms": "Услови коришћења"
+    }
+  },
+  "mk": {
+    "name": "Overleap VPN",
+    "subtitle": "Без логови. Брз на сите мрежи",
+    "keywords": "впн,прокси,приватност,анонимност,безбедност,заштита,енкрипција,тунел,ip,пристап,wifi,proxy,интернет",
+    "promo": "Приватен VPN без логови што останува брз на мрежите што ве изневеруваат. Еден план, пет уреди.",
+    "playShort": "Приватен VPN без логови. Брз и на бавен Wi-Fi. Еден план, пет уреди.",
+    "body": "Overleap е приватен VPN кој крие што посетувате — дури и од вашиот интернет-провајдер, не чува логови и останува брз на мрежите што ве изневеруваат.\n\nШТО ДОБИВАТЕ\n• Скриено дури и од провајдерот: вашиот провајдер гледа една обична шифрирана врска и ништо повеќе. Encrypted Client Hello го крие дури и името на серверот.\n• Без логови. Нема што да се предаде: не ги запишуваме страниците што ги посетувате, апликациите што ги користите ниту сообраќајот што го испраќате. Чуваме само она што е потребно за претплатата.\n• Брз таму каде што другите VPN ползат: контролата на брзина k2cc на Overleap ја одржува вашата брзина на Wi-Fi во воз, на преполни места и во хотелски мрежи.\n• Се движи со вас: тунелот среде сесија преминува од Wi-Fi на мобилен интернет, па преземањата и повиците продолжуваат.\n• Работи и во странство: врската изгледа како обичен веб-сообраќај, па продолжува да работи таму каде што другите VPN престануваат.\n• Граден отворено: протоколот е документиран, а серверот е со отворен код. Пуштете сопствен јазол и користете го Overleap само како клиент.\n\nЕДЕН ПЛАН, СЕКОЈ УРЕД\nЕдна претплата покрива пет уреди истовремено, со неограничен сообраќај и сите локации.",
+    "iosSubscription": "ПРЕТПЛАТА\nOverleap Basic е годишна претплата со автоматско обновување. Плаќањето се наплатува од вашата сметка Apple ID при потврдување на купувањето. Претплатата се обновува автоматски освен ако не се откаже најмалку 24 часа пред крајот на тековниот период; обновувањето се наплатува од вашата сметка во рок од 24 часа пред крајот на периодот. Можете да управувате со претплатата или да ја откажете во поставките на вашата сметка во App Store по купувањето.",
+    "linkLabels": {
+      "privacy": "Политика за приватност",
+      "terms": "Услови за користење"
+    }
+  },
+  "hr": {
+    "name": "Overleap VPN",
+    "subtitle": "Bez zapisa. Brz u svakoj mreži",
+    "keywords": "proxy,privatnost,anonimnost,sigurnost,zaštita,šifriranje,tunel,ip,pristup,wifi,online,putovanja,ech",
+    "promo": "Privatni VPN bez zapisa koji ostaje brz na mrežama koje vas iznevjere. Jedan plan, pet uređaja.",
+    "playShort": "Privatni VPN bez zapisa. Brz i na sporom Wi-Fi-ju. Jedan plan, pet uređaja.",
+    "body": "Overleap je privatni VPN koji skriva što posjećujete — čak i od vašeg davatelja internetskih usluga, ne čuva zapise i ostaje brz na mrežama koje vas iznevjere.\n\nŠTO DOBIVATE\n• Skriveno čak i od davatelja usluga: vaš davatelj vidi jednu običnu šifriranu vezu i ništa više. Encrypted Client Hello skriva čak i naziv poslužitelja.\n• Bez zapisa. Nemamo što predati: ne bilježimo stranice koje posjećujete, aplikacije koje koristite ni promet koji šaljete. Čuvamo samo ono što je potrebno za pretplatu.\n• Brz tamo gdje drugi VPN-ovi pužu: k2cc kontrola brzine u aplikaciji Overleap održava vašu brzinu na Wi-Fi mreži u vlaku, na prepunim mjestima i u hotelskim mrežama.\n• Kreće se s vama: tunel usred sesije prelazi s Wi-Fi mreže na mobilne podatke pa se preuzimanja i pozivi nastavljaju.\n• Radi i u inozemstvu: veza izgleda kao običan web-promet pa nastavlja raditi tamo gdje drugi VPN-ovi zakažu.\n• Građen otvoreno: protokol je dokumentiran, a poslužitelj je otvorenog koda. Pokrenite vlastiti čvor i koristite Overleap samo kao klijent.\n\nJEDAN PLAN, SVAKI UREĐAJ\nJedna pretplata pokriva pet uređaja istodobno, uz neograničen podatkovni promet i sve lokacije.",
+    "iosSubscription": "PRETPLATA\nOverleap Basic godišnja je pretplata koja se automatski obnavlja. Plaćanje se tereti s vašeg Apple ID računa pri potvrdi kupnje. Pretplata se automatski obnavlja osim ako se ne otkaže najmanje 24 sata prije kraja tekućeg razdoblja; obnova se naplaćuje s vašeg računa unutar 24 sata prije kraja razdoblja. Pretplatom možete upravljati ili je otkazati u postavkama svog App Store računa nakon kupnje.",
+    "linkLabels": {
+      "privacy": "Pravila o privatnosti",
+      "terms": "Uvjeti korištenja"
+    }
+  },
+  "ro": {
+    "name": "Overleap VPN",
+    "subtitle": "Fără loguri. Rapid oriunde.",
+    "keywords": "proxy,confidențialitate,privat,anonim,securitate,protecție,criptare,tunel,ip,deblocare,wifi,online",
+    "promo": "VPN privat, fără loguri, care rămâne rapid pe rețelele care vă fac probleme. Un singur plan, cinci dispozitive.",
+    "playShort": "VPN privat, fără loguri. Rapid și pe Wi-Fi lent. Un plan, cinci dispozitive.",
+    "body": "Overleap este un VPN privat care ascunde ce accesați — chiar și de furnizorul dvs. de internet —, nu păstrează loguri și rămâne rapid pe rețelele care vă fac probleme.\n\nCE PRIMIȚI\n• Ascuns chiar și de furnizorul de internet: furnizorul dvs. vede o singură conexiune criptată obișnuită și nimic mai mult. Encrypted Client Hello ascunde chiar și numele serverului.\n• Fără loguri. Nimic de predat: nu înregistrăm site-urile pe care le vizitați, aplicațiile pe care le folosiți sau traficul pe care îl trimiteți. Păstrăm doar ce este necesar pentru abonament.\n• Rapid acolo unde alte VPN-uri se târăsc: controlul ratei k2cc din Overleap vă menține viteza pe Wi-Fi-ul din tren, în locuri aglomerate și în rețelele hotelurilor.\n• Se mișcă odată cu dvs.: tunelul trece de pe Wi-Fi pe date mobile în mijlocul sesiunii, astfel încât descărcările și apelurile continuă.\n• Funcționează și în străinătate: conexiunea arată ca un trafic web obișnuit, așa că funcționează în continuare acolo unde alte VPN-uri cedează.\n• Construit la vedere: protocolul este documentat, iar serverul este open source. Rulați propriul nod și folosiți Overleap doar ca client.\n\nUN SINGUR PLAN, TOATE DISPOZITIVELE\nUn singur abonament acoperă cinci dispozitive simultan, cu date nelimitate și toate locațiile.",
+    "iosSubscription": "ABONAMENT\nOverleap Basic este un abonament anual cu reînnoire automată. Plata este debitată din contul dvs. Apple ID la confirmarea achiziției. Abonamentul se reînnoiește automat, cu excepția cazului în care este anulat cu cel puțin 24 de ore înainte de sfârșitul perioadei curente; contul dvs. este debitat pentru reînnoire în intervalul de 24 de ore dinaintea sfârșitului perioadei. Vă puteți gestiona sau anula abonamentul din setările contului App Store, după achiziție.",
+    "linkLabels": {
+      "privacy": "Politica de confidențialitate",
+      "terms": "Termeni de utilizare"
+    }
+  },
+  "el": {
+    "name": "Overleap VPN",
+    "subtitle": "Χωρίς logs. Γρήγορο παντού.",
+    "keywords": "proxy,απόρρητο,ιδιωτικότητα,ανωνυμία,ασφάλεια,προστασία,κρυπτογράφηση,ip,wifi,ίντερνετ,δίκτυο,ταξίδι",
+    "promo": "Ιδιωτικό VPN χωρίς αρχεία καταγραφής, που μένει γρήγορο στα δίκτυα που σας απογοητεύουν. Ένα πρόγραμμα, πέντε συσκευές.",
+    "playShort": "Ιδιωτικό VPN χωρίς logs. Γρήγορο και σε αργό Wi-Fi. Ένα πρόγραμμα, 5 συσκευές.",
+    "body": "Το Overleap είναι ένα ιδιωτικό VPN που κρύβει πού πηγαίνετε — ακόμη και από τον πάροχό σας —, δεν κρατά αρχεία καταγραφής και παραμένει γρήγορο στα δίκτυα που σας απογοητεύουν.\n\nΤΙ ΠΑΙΡΝΕΤΕ\n• Κρυφό ακόμη και από τον πάροχό σας: ο πάροχός σας βλέπει μία συνηθισμένη κρυπτογραφημένη σύνδεση και τίποτα περισσότερο. Το Encrypted Client Hello κρύβει ακόμη και το όνομα του διακομιστή.\n• Χωρίς αρχεία καταγραφής. Τίποτα να παραδώσουμε: δεν καταγράφουμε τους ιστότοπους που επισκέπτεστε, τις εφαρμογές που χρησιμοποιείτε ή την κίνηση που στέλνετε. Κρατάμε μόνο όσα χρειάζεται μια συνδρομή.\n• Γρήγορο εκεί όπου άλλα VPN σέρνονται: ο έλεγχος ρυθμού k2cc του Overleap διατηρεί την ταχύτητά σας στο Wi-Fi του τρένου, σε πολυσύχναστους χώρους και σε δίκτυα ξενοδοχείων.\n• Κινείται μαζί σας: το τούνελ μεταβαίνει από το Wi-Fi στα δεδομένα κινητής στη μέση της συνεδρίας, ώστε οι λήψεις και οι κλήσεις να συνεχίζονται.\n• Λειτουργεί και στο εξωτερικό: η σύνδεση μοιάζει με συνηθισμένη κίνηση ιστού, γι’ αυτό συνεχίζει να λειτουργεί εκεί όπου άλλα VPN σταματούν.\n• Φτιαγμένο ανοιχτά: το πρωτόκολλο είναι τεκμηριωμένο και ο διακομιστής είναι ανοιχτού κώδικα. Τρέξτε τον δικό σας κόμβο και χρησιμοποιήστε το Overleap μόνο ως πρόγραμμα-πελάτη.\n\nΕΝΑ ΠΡΟΓΡΑΜΜΑ, ΚΑΘΕ ΣΥΣΚΕΥΗ\nΜία συνδρομή καλύπτει πέντε συσκευές ταυτόχρονα, με απεριόριστα δεδομένα και όλες τις τοποθεσίες.",
+    "iosSubscription": "ΣΥΝΔΡΟΜΗ\nΤο Overleap Basic είναι ετήσια συνδρομή με αυτόματη ανανέωση. Η πληρωμή χρεώνεται στον λογαριασμό σας Apple ID κατά την επιβεβαίωση της αγοράς. Η συνδρομή ανανεώνεται αυτόματα, εκτός αν ακυρωθεί τουλάχιστον 24 ώρες πριν από τη λήξη της τρέχουσας περιόδου· ο λογαριασμός σας χρεώνεται για την ανανέωση εντός 24 ωρών πριν από τη λήξη της περιόδου. Μπορείτε να διαχειριστείτε ή να ακυρώσετε τη συνδρομή σας στις ρυθμίσεις του λογαριασμού σας στο App Store μετά την αγορά.",
+    "linkLabels": {
+      "privacy": "Πολιτική απορρήτου",
+      "terms": "Όροι χρήσης"
+    }
+  },
+  "sq": {
+    "name": "Overleap VPN",
+    "subtitle": "Pa regjistra. I shpejtë kudo.",
+    "keywords": "proxy,privatësi,anonim,siguri,mbrojtje,enkriptim,tunel,ip,zhbllokim,wifi,internet,rrjet,udhëtim,ech",
+    "promo": "VPN privat pa regjistra, që mbetet i shpejtë në rrjetet që ju lënë në baltë. Një plan, pesë pajisje.",
+    "playShort": "VPN privat pa regjistra. I shpejtë edhe në Wi-Fi të dobët. Një plan, 5 pajisje.",
+    "body": "Overleap është një VPN privat që fsheh se ku shkoni — edhe nga ofruesi juaj i internetit —, nuk mban regjistra dhe mbetet i shpejtë në rrjetet që ju lënë në baltë.\n\nÇFARË PËRFITONI\n• I fshehur edhe nga ofruesi i internetit: ofruesi juaj sheh një lidhje të zakonshme të enkriptuar dhe asgjë më shumë. Encrypted Client Hello fsheh edhe emrin e serverit.\n• Pa regjistra. Asgjë për të dorëzuar: nuk regjistrojmë faqet që vizitoni, aplikacionet që përdorni apo trafikun që dërgoni. Ruajmë vetëm atë që i nevojitet një abonimi.\n• I shpejtë aty ku VPN-të e tjera zvarriten: kontrolli i shpejtësisë k2cc i Overleap e mban shpejtësinë tuaj në Wi-Fi të trenit, në vende të mbushura me njerëz dhe në rrjetet e hoteleve.\n• Lëviz me ju: tuneli kalon nga Wi-Fi te të dhënat celulare në mes të sesionit, kështu që shkarkimet dhe thirrjet vazhdojnë.\n• Punon edhe jashtë vendit: lidhja duket si trafik i zakonshëm uebi, ndaj vazhdon të punojë aty ku VPN-të e tjera ndalen.\n• Ndërtuar hapur: protokolli është i dokumentuar dhe serveri është me kod të hapur. Vini në punë nyjën tuaj dhe përdoreni Overleap vetëm si klient.\n\nNJË PLAN, ÇDO PAJISJE\nNjë abonim mbulon pesë pajisje njëkohësisht, me të dhëna të pakufizuara dhe të gjitha vendndodhjet.",
+    "iosSubscription": "ABONIMI\nOverleap Basic është një abonim vjetor me rinovim automatik. Pagesa i ngarkohet llogarisë suaj Apple ID në momentin e konfirmimit të blerjes. Abonimi rinovohet automatikisht, përveç rastit kur anulohet të paktën 24 orë para përfundimit të periudhës aktuale; llogaria juaj ngarkohet për rinovimin brenda 24 orëve para përfundimit të periudhës. Abonimin mund ta menaxhoni ose ta anuloni te cilësimet e llogarisë suaj në App Store pas blerjes.",
+    "linkLabels": {
+      "privacy": "Politika e privatësisë",
+      "terms": "Kushtet e përdorimit"
+    }
+  },
+  "tr": {
+    "name": "Overleap VPN",
+    "subtitle": "Kayıt yok. Her ağda hızlı.",
+    "keywords": "proxy,vekil,gizlilik,güvenlik,güvenli,şifreli,tünel,ip,wifi,internet,erişim,anonim,seyahat,koruma",
+    "promo": "Kayıt tutmayan, sizi yarı yolda bırakan ağlarda bile hızlı kalan özel VPN. Tek plan, beş cihaz.",
+    "playShort": "Kayıt tutmayan özel VPN. Yavaş Wi-Fi’da bile hızlı. Tek plan, beş cihaz.",
+    "body": "Overleap, nereye gittiğinizi internet sağlayıcınızdan bile gizleyen, kayıt tutmayan ve sizi yarı yolda bırakan ağlarda bile hızlı kalan özel bir VPN’dir.\n\nNELER SUNUYOR\n• İnternet sağlayıcınızdan bile gizli: sağlayıcınız yalnızca sıradan bir şifreli bağlantı görür, başka hiçbir şey görmez. Encrypted Client Hello sunucu adını bile gizler.\n• Kayıt yok. Teslim edilecek bir şey de yok: ziyaret ettiğiniz siteleri, kullandığınız uygulamaları veya gönderdiğiniz trafiği kaydetmiyoruz. Yalnızca aboneliğin gerektirdiği bilgileri saklıyoruz.\n• Diğer VPN’lerin yavaşladığı yerde hızlı: Overleap’in k2cc hız kontrolü; tren Wi-Fi’ında, kalabalık mekânlarda ve otel ağlarında hızınızı korur.\n• Sizinle birlikte hareket eder: tünel, oturum sürerken Wi-Fi’dan mobil veriye geçer; indirmeler ve aramalar kesilmeden devam eder.\n• Yurt dışında da çalışır: bağlantı sıradan web trafiği gibi görünür, bu nedenle diğer VPN’lerin çalışmadığı yerlerde çalışmaya devam eder.\n• Açık biçimde geliştirildi: protokol belgelenmiştir, sunucu ise açık kaynaklıdır. Kendi düğümünüzü çalıştırın ve Overleap’i yalnızca istemci olarak kullanın.\n\nTEK PLAN, TÜM CİHAZLAR\nTek abonelik, sınırsız veri ve tüm konumlarla aynı anda beş cihazı kapsar.",
+    "iosSubscription": "ABONELİK\nOverleap Basic, otomatik olarak yenilenen yıllık bir aboneliktir. Ödeme, satın alma onaylandığında Apple ID hesabınızdan tahsil edilir. Abonelik, geçerli dönemin bitiminden en az 24 saat önce iptal edilmediği sürece otomatik olarak yenilenir; yenileme ücreti, dönemin bitiminden önceki 24 saat içinde hesabınızdan tahsil edilir. Satın alma işleminden sonra aboneliğinizi App Store hesap ayarlarınızdan yönetebilir veya iptal edebilirsiniz.",
+    "linkLabels": {
+      "privacy": "Gizlilik Politikası",
+      "terms": "Kullanım Koşulları"
+    }
+  },
+  "az": {
+    "name": "Overleap VPN",
+    "subtitle": "Loqsuz. Hər şəbəkədə sürətli.",
+    "keywords": "proksi,proxy,məxfilik,təhlükəsizlik,anonim,şifrələmə,tunel,ip,wifi,internet,giriş,qoruma,səyahət,ech",
+    "promo": "Loq saxlamayan, sizi yarı yolda qoyan şəbəkələrdə də sürətli qalan şəxsi VPN. Bir plan, beş cihaz.",
+    "playShort": "Loq saxlamayan şəxsi VPN. Zəif Wi-Fi-da da sürətli. Bir plan, beş cihaz.",
+    "body": "Overleap hara getdiyinizi hətta internet provayderinizdən belə gizlədən, loq saxlamayan və sizi yarı yolda qoyan şəbəkələrdə də sürətli qalan şəxsi VPN-dir.\n\nNƏ ƏLDƏ EDİRSİNİZ\n• Hətta provayderinizdən də gizli: provayderiniz yalnız bir adi şifrələnmiş bağlantı görür, başqa heç nə. Encrypted Client Hello hətta server adını da gizlədir.\n• Loq yoxdur. Təhvil veriləcək heç nə yoxdur: daxil olduğunuz saytları, istifadə etdiyiniz tətbiqləri və göndərdiyiniz trafiki qeydə almırıq. Yalnız abunəlik üçün lazım olanı saxlayırıq.\n• Digər VPN-lərin ləngidiyi yerdə sürətli: Overleap-in k2cc sürət idarəetməsi qatar Wi-Fi-ında, izdihamlı məkanlarda və otel şəbəkələrində sürətinizi qoruyur.\n• Sizinlə birlikdə hərəkət edir: tunel seans zamanı Wi-Fi-dan mobil internetə keçir, beləliklə yükləmələr və zənglər davam edir.\n• Xaricdə də işləyir: bağlantı adi veb trafik kimi görünür, buna görə də digər VPN-lərin işləmədiyi yerlərdə işləməyə davam edir.\n• Açıq şəkildə hazırlanıb: protokol sənədləşdirilib, server isə açıq mənbəlidir. Öz qovşağınızı işə salın və Overleap-dən yalnız klient kimi istifadə edin.\n\nBİR PLAN, BÜTÜN CİHAZLAR\nBir abunəlik limitsiz trafik və bütün məkanlarla eyni anda beş cihazı əhatə edir.",
+    "iosSubscription": "ABUNƏLİK\nOverleap Basic avtomatik yenilənən illik abunəlikdir. Ödəniş alış təsdiqləndikdə Apple ID hesabınızdan tutulur. Abunəlik cari dövrün bitməsinə ən azı 24 saat qalmış ləğv edilmədikdə avtomatik yenilənir; yenilənmə haqqı dövrün bitməsindən əvvəlki 24 saat ərzində hesabınızdan tutulur. Alışdan sonra abunəliyinizi App Store hesab ayarlarınızda idarə edə və ya ləğv edə bilərsiniz.",
+    "linkLabels": {
+      "privacy": "Məxfilik Siyasəti",
+      "terms": "İstifadə Şərtləri"
+    }
+  },
+  "hy": {
+    "name": "Overleap VPN",
+    "subtitle": "Առանց լոգերի։ Արագ ամենուր։",
+    "keywords": "վպն,պրոքսի,գաղտնիություն,անվտանգություն,անանուն,պաշտպանություն,թունել,ցանց,ip,wifi,ինտերնետ,proxy",
+    "promo": "Մասնավոր VPN առանց լոգերի, որն արագ է մնում այն ցանցերում, որոնք ձեզ հուսախաբ են անում։ Մեկ փաթեթ՝ հինգ սարք։",
+    "playShort": "Մասնավոր VPN առանց լոգերի։ Արագ նույնիսկ թույլ Wi-Fi-ով։ Մեկ փաթեթ՝ հինգ սարք։",
+    "body": "Overleap-ը մասնավոր VPN է, որը թաքցնում է, թե ուր եք գնում, նույնիսկ ձեր ինտերնետ մատակարարից, լոգեր չի պահում և արագ է մնում այն ցանցերում, որոնք ձեզ հուսախաբ են անում։\n\nԻՆՉ ԵՔ ՍՏԱՆՈՒՄ\n• Թաքնված նույնիսկ մատակարարից․ ձեր մատակարարը տեսնում է մեկ սովորական գաղտնագրված կապ և ոչինչ ավելին։ Encrypted Client Hello-ն թաքցնում է նույնիսկ սերվերի անունը։\n• Առանց լոգերի։ Հանձնելու ոչինչ չկա․ մենք չենք գրանցում ձեր այցելած կայքերը, ձեր օգտագործած հավելվածները կամ ձեր ուղարկած թրաֆիկը։ Պահում ենք միայն այն, ինչ անհրաժեշտ է բաժանորդագրության համար։\n• Արագ այնտեղ, որտեղ մյուս VPN-ները դանդաղում են․ Overleap-ի k2cc արագության կառավարումը պահպանում է ձեր արագությունը գնացքի Wi-Fi-ում, մարդաշատ վայրերում և հյուրանոցային ցանցերում։\n• Շարժվում է ձեզ հետ․ թունելը սեանսի ընթացքում Wi-Fi-ից անցնում է բջջային ինտերնետի, այնպես որ ներբեռնումներն ու զանգերը շարունակվում են։\n• Աշխատում է նաև արտերկրում․ կապը նման է սովորական վեբ թրաֆիկի, ուստի շարունակում է աշխատել այնտեղ, որտեղ մյուս VPN-ները դադարում են աշխատել։\n• Ստեղծված է բաց կերպով․ արձանագրությունը փաստաթղթավորված է, իսկ սերվերը բաց կոդով է։ Գործարկեք ձեր սեփական հանգույցը և օգտագործեք Overleap-ը միայն որպես կլիենտ։\n\nՄԵԿ ՓԱԹԵԹ՝ ԲՈԼՈՐ ՍԱՐՔԵՐԸ\nՄեկ բաժանորդագրությունը ներառում է միաժամանակ հինգ սարք՝ անսահմանափակ թրաֆիկով և բոլոր տեղակայություններով։",
+    "iosSubscription": "ԲԱԺԱՆՈՐԴԱԳՐՈՒԹՅՈՒՆ\nOverleap Basic-ը ավտոմատ երկարաձգվող տարեկան բաժանորդագրություն է։ Վճարը գանձվում է ձեր Apple ID հաշվից գնումը հաստատելու պահին։ Բաժանորդագրությունը երկարաձգվում է ավտոմատ կերպով, եթե այն չի չեղարկվել ընթացիկ ժամանակահատվածի ավարտից առնվազն 24 ժամ առաջ․ երկարաձգման վճարը գանձվում է ձեր հաշվից ժամանակահատվածի ավարտին նախորդող 24 ժամվա ընթացքում։ Գնումից հետո կարող եք կառավարել կամ չեղարկել բաժանորդագրությունը ձեր App Store հաշվի կարգավորումներում։",
+    "linkLabels": {
+      "privacy": "Գաղտնիության քաղաքականություն",
+      "terms": "Օգտագործման պայմաններ"
+    }
+  },
+  "ar": {
+    "name": "Overleap VPN",
+    "subtitle": "بلا سجلات. سريع على أي شبكة.",
+    "keywords": "في بي ان,بروكسي,خصوصية,آمن,واي فاي,تشفير,نفق,فتح المواقع,سفر,اي بي,حماية,انترنت,خاص,مشفر,فك الحجب",
+    "promo": "VPN خاص بلا سجلات يبقى سريعًا على الشبكات التي تخذلك. اشتراك واحد، خمسة أجهزة.",
+    "playShort": "VPN خاص بلا سجلات. سريع حتى على Wi-Fi البطيء. اشتراك واحد، خمسة أجهزة.",
+    "body": "Overleap هو VPN خاص يخفي وجهتك على الإنترنت — حتى عن مزوّد خدمة الإنترنت — ولا يحتفظ بأي سجلات، ويبقى سريعًا على الشبكات التي تخذلك.\n\nما الذي تحصل عليه\n• مخفي حتى عن مزوّد الخدمة: يرى مزوّدك اتصالًا مشفّرًا عاديًا واحدًا ولا شيء غير ذلك. وتقنية Encrypted Client Hello تخفي حتى اسم الخادم.\n• بلا سجلات. لا شيء نسلّمه: لا نسجّل المواقع التي تزورها ولا التطبيقات التي تستخدمها ولا البيانات التي ترسلها. نحتفظ فقط بما يتطلبه الاشتراك.\n• سريع حيث تتعثر خدمات VPN الأخرى: تقنية التحكم في المعدّل k2cc من Overleap تحافظ على سرعتك على Wi-Fi القطارات والأماكن المزدحمة وشبكات الفنادق.\n• يتنقل معك: ينتقل النفق من Wi-Fi إلى بيانات الجوال أثناء الجلسة، فتستمر التنزيلات والمكالمات.\n• يواصل العمل في الخارج: يبدو الاتصال كحركة ويب عادية، فيظل يعمل حيث تتوقف خدمات VPN الأخرى.\n• مبني بشفافية: البروتوكول موثّق والخادم مفتوح المصدر. شغّل خادمك الخاص واستخدم Overleap كتطبيق عميل فقط.\n\nاشتراك واحد لكل أجهزتك\nاشتراك واحد يغطي خمسة أجهزة في آن واحد، مع بيانات غير محدودة وجميع مواقع الخوادم.",
+    "iosSubscription": "الاشتراك\nOverleap Basic اشتراك سنوي يتجدد تلقائيًا. يُخصم المبلغ من حساب Apple ID الخاص بك عند تأكيد الشراء. يتجدد الاشتراك تلقائيًا ما لم يُلغَ قبل 24 ساعة على الأقل من نهاية الفترة الحالية؛ ويُخصم مبلغ التجديد من حسابك خلال 24 ساعة قبل نهاية الفترة. يمكنك إدارة اشتراكك أو إلغاؤه من إعدادات حسابك في App Store بعد الشراء.",
+    "linkLabels": {
+      "privacy": "سياسة الخصوصية",
+      "terms": "شروط الاستخدام"
+    }
+  },
+  "he": {
+    "name": "Overleap VPN",
+    "subtitle": "ללא לוגים. מהיר בכל רשת.",
+    "keywords": "וי פי אן,פרוקסי,פרטיות,מאובטח,וויפי,הצפנה,מנהרה,פתיחת חסימות,נסיעות,אייפי,הגנה,אינטרנט,פרטי,מוצפן",
+    "promo": "VPN פרטי ללא לוגים שנשאר מהיר גם ברשתות שמאכזבות. מינוי אחד, חמישה מכשירים.",
+    "playShort": "VPN פרטי ללא לוגים. מהיר גם ב-Wi-Fi איטי. מינוי אחד, חמישה מכשירים.",
+    "body": "Overleap הוא VPN פרטי שמסתיר לאן אתם גולשים – אפילו מספק האינטרנט שלכם – אינו שומר לוגים ונשאר מהיר גם ברשתות שמאכזבות אתכם.\n\nמה מקבלים\n• מוסתר אפילו מספק האינטרנט: הספק רואה חיבור מוצפן רגיל אחד ותו לא. Encrypted Client Hello מסתיר אפילו את שם השרת.\n• ללא לוגים. אין מה למסור: איננו מתעדים את האתרים שבהם אתם מבקרים, את האפליקציות שבהן אתם משתמשים או את התעבורה שאתם שולחים. אנחנו שומרים רק את מה שנדרש למינוי.\n• מהיר במקום שבו שירותי VPN אחרים זוחלים: בקרת הקצב k2cc של Overleap שומרת על המהירות ב-Wi-Fi ברכבת, במקומות הומי אדם וברשתות של בתי מלון.\n• זז איתכם: המנהרה עוברת מ-Wi-Fi לנתונים סלולריים באמצע החיבור, כך שהורדות ושיחות ממשיכות.\n• ממשיך לעבוד בחו\"ל: החיבור נראה כמו תעבורת אינטרנט רגילה, ולכן הוא ממשיך לעבוד במקומות שבהם שירותי VPN אחרים מפסיקים לפעול.\n• נבנה בגלוי: הפרוטוקול מתועד והשרת בקוד פתוח. הפעילו שרת משלכם והשתמשו ב-Overleap כלקוח בלבד.\n\nמינוי אחד, כל המכשירים\nמינוי אחד מכסה חמישה מכשירים בו-זמנית, עם נתונים ללא הגבלה וכל המיקומים.",
+    "iosSubscription": "מינוי\nOverleap Basic הוא מינוי שנתי המתחדש אוטומטית. התשלום יחויב בחשבון ה-Apple ID שלכם עם אישור הרכישה. המינוי מתחדש אוטומטית אלא אם בוטל לפחות 24 שעות לפני תום התקופה הנוכחית; החשבון יחויב עבור החידוש בתוך 24 השעות שלפני תום התקופה. ניתן לנהל או לבטל את המינוי בהגדרות החשבון ב-App Store לאחר הרכישה.",
+    "linkLabels": {
+      "privacy": "מדיניות פרטיות",
+      "terms": "תנאי שימוש"
+    }
+  },
+  "fa": {
+    "name": "Overleap VPN",
+    "subtitle": "بدون لاگ. سریع در هر شبکه.",
+    "keywords": "وی پی ان,فیلترشکن,پروکسی,حریم خصوصی,امن,وای فای,رمزگذاری,تونل,سفر,آی پی,امنیت,اینترنت,خصوصی,proxy",
+    "promo": "VPN خصوصی بدون لاگ که در شبکه‌های ضعیف هم سریع می‌ماند. یک اشتراک، پنج دستگاه.",
+    "playShort": "VPN خصوصی بدون لاگ. سریع حتی با Wi-Fi کند. یک اشتراک، پنج دستگاه.",
+    "body": "Overleap یک VPN خصوصی است که مقصد شما را پنهان می‌کند — حتی از ارائه‌دهندهٔ اینترنت شما — هیچ لاگی نگه نمی‌دارد و در شبکه‌هایی که ناامیدتان می‌کنند هم سریع می‌ماند.\n\nآنچه دریافت می‌کنید\n• پنهان حتی از ارائه‌دهندهٔ اینترنت: ارائه‌دهندهٔ شما فقط یک اتصال رمزگذاری‌شدهٔ معمولی می‌بیند و نه چیزی بیشتر. Encrypted Client Hello حتی نام سرور را هم پنهان می‌کند.\n• بدون لاگ. چیزی برای تحویل دادن وجود ندارد: ما سایت‌هایی را که بازدید می‌کنید، برنامه‌هایی را که استفاده می‌کنید و ترافیکی را که می‌فرستید ثبت نمی‌کنیم. فقط آنچه برای اشتراک لازم است نگه می‌داریم.\n• سریع در جایی که وی‌پی‌ان‌های دیگر کند می‌شوند: کنترل نرخ k2cc در Overleap سرعت شما را در Wi-Fi قطار، مکان‌های شلوغ و شبکه‌های هتل حفظ می‌کند.\n• همراه شما جابه‌جا می‌شود: تونل در میانهٔ اتصال از Wi-Fi به اینترنت همراه منتقل می‌شود تا دانلودها و تماس‌ها ادامه پیدا کنند.\n• در خارج از کشور هم کار می‌کند: اتصال شبیه ترافیک عادی وب است، بنابراین در جایی که وی‌پی‌ان‌های دیگر از کار می‌افتند همچنان کار می‌کند.\n• ساخته‌شده به‌صورت شفاف: پروتکل مستند است و سرور متن‌باز. سرور خودتان را راه‌اندازی کنید و از Overleap فقط به‌عنوان کلاینت استفاده کنید.\n\nیک اشتراک، همهٔ دستگاه‌ها\nیک اشتراک پنج دستگاه را هم‌زمان پوشش می‌دهد، با حجم نامحدود و همهٔ موقعیت‌ها.",
+    "iosSubscription": "اشتراک\nOverleap Basic یک اشتراک سالانه با تمدید خودکار است. مبلغ هنگام تأیید خرید از حساب Apple ID شما کسر می‌شود. اشتراک به‌طور خودکار تمدید می‌شود، مگر اینکه دست‌کم ۲۴ ساعت پیش از پایان دورهٔ جاری لغو شود؛ هزینهٔ تمدید ظرف ۲۴ ساعت پیش از پایان دوره از حساب شما کسر می‌شود. پس از خرید می‌توانید اشتراک خود را در تنظیمات حساب App Store مدیریت یا لغو کنید.",
+    "linkLabels": {
+      "privacy": "سیاست حفظ حریم خصوصی",
+      "terms": "شرایط استفاده"
+    }
+  },
+  "ur": {
+    "name": "Overleap VPN",
+    "subtitle": "لاگز نہیں۔ ہر نیٹ ورک پر تیز۔",
+    "keywords": "وی پی این,پراکسی,پرائیویسی,محفوظ,وائی فائی,انکرپٹڈ,ٹنل,ان بلاک,سفر,آئی پی,سیکیورٹی,انٹرنیٹ,proxy",
+    "promo": "بغیر لاگز کا نجی VPN جو اُن نیٹ ورکس پر بھی تیز رہتا ہے جو آپ کو مایوس کرتے ہیں۔ ایک پلان، پانچ ڈیوائسز۔",
+    "playShort": "بغیر لاگز کا نجی VPN۔ سست Wi-Fi پر بھی تیز۔ ایک پلان، پانچ ڈیوائسز۔",
+    "body": "Overleap ایک نجی VPN ہے جو یہ چھپاتا ہے کہ آپ کہاں جاتے ہیں — آپ کے انٹرنیٹ فراہم کنندہ سے بھی — کوئی لاگز نہیں رکھتا، اور اُن نیٹ ورکس پر بھی تیز رہتا ہے جو آپ کو مایوس کرتے ہیں۔\n\nآپ کو کیا ملتا ہے\n• انٹرنیٹ فراہم کنندہ سے بھی پوشیدہ: آپ کا فراہم کنندہ صرف ایک عام انکرپٹڈ کنکشن دیکھتا ہے، اس سے زیادہ کچھ نہیں۔ Encrypted Client Hello سرور کا نام تک چھپا دیتا ہے۔\n• کوئی لاگز نہیں۔ حوالے کرنے کو کچھ نہیں: ہم نہ وہ سائٹس ریکارڈ کرتے ہیں جو آپ دیکھتے ہیں، نہ وہ ایپس جو آپ استعمال کرتے ہیں، نہ وہ ٹریفک جو آپ بھیجتے ہیں۔ ہم صرف وہی رکھتے ہیں جو سبسکرپشن کے لیے ضروری ہے۔\n• وہاں تیز جہاں دوسرے VPN سست پڑ جاتے ہیں: Overleap کا k2cc ریٹ کنٹرول ٹرین کے Wi-Fi، پُرہجوم مقامات اور ہوٹل کے نیٹ ورکس پر آپ کی رفتار برقرار رکھتا ہے۔\n• آپ کے ساتھ چلتا ہے: ٹنل سیشن کے دوران Wi-Fi سے موبائل ڈیٹا پر منتقل ہو جاتی ہے، اس لیے ڈاؤن لوڈز اور کالز جاری رہتی ہیں۔\n• بیرونِ ملک بھی کام کرتا رہتا ہے: کنکشن عام ویب ٹریفک جیسا دکھائی دیتا ہے، اس لیے وہاں بھی چلتا رہتا ہے جہاں دوسرے VPN بند ہو جاتے ہیں۔\n• کھلے انداز میں تیار کردہ: پروٹوکول دستاویزی ہے اور سرور اوپن سورس ہے۔ اپنا نوڈ خود چلائیں اور Overleap کو صرف کلائنٹ کے طور پر استعمال کریں۔\n\nایک پلان، ہر ڈیوائس\nایک سبسکرپشن بیک وقت پانچ ڈیوائسز کا احاطہ کرتی ہے، لامحدود ڈیٹا اور ہر لوکیشن کے ساتھ۔",
+    "iosSubscription": "سبسکرپشن\nOverleap Basic ایک خودکار طور پر تجدید ہونے والی سالانہ سبسکرپشن ہے۔ خریداری کی تصدیق پر ادائیگی آپ کے Apple ID اکاؤنٹ سے وصول کی جاتی ہے۔ سبسکرپشن خودکار طور پر تجدید ہو جاتی ہے جب تک کہ اسے موجودہ مدت ختم ہونے سے کم از کم 24 گھنٹے پہلے منسوخ نہ کر دیا جائے؛ مدت ختم ہونے سے پہلے 24 گھنٹوں کے اندر تجدید کی رقم آپ کے اکاؤنٹ سے وصول کی جاتی ہے۔ خریداری کے بعد آپ App Store کے اکاؤنٹ کی ترتیبات میں اپنی سبسکرپشن کا نظم یا اسے منسوخ کر سکتے ہیں۔",
+    "linkLabels": {
+      "privacy": "رازداری کی پالیسی",
+      "terms": "استعمال کی شرائط"
+    }
+  },
+  "ka": {
+    "name": "Overleap VPN",
+    "subtitle": "ლოგების გარეშე, სწრაფი ყველგან",
+    "keywords": "ვიპიენი,პროქსი,კონფიდენციალურობა,უსაფრთხო,wifi,დაშიფრული,გვირაბი,განბლოკვა,მოგზაურობა,ip,დაცვა,ech",
+    "promo": "პირადი VPN ლოგების გარეშე, რომელიც სწრაფი რჩება სუსტ ქსელებშიც. ერთი გეგმა, ხუთი მოწყობილობა.",
+    "playShort": "პირადი VPN ლოგების გარეშე. სწრაფია ნელ Wi-Fi-ზეც. ერთი გეგმა, 5 მოწყობილობა.",
+    "body": "Overleap არის პირადი VPN, რომელიც მალავს, სად შედიხართ — თქვენი ინტერნეტპროვაიდერისგანაც კი — არ ინახავს ლოგებს და სწრაფი რჩება იმ ქსელებშიც, რომლებიც გიმტყუნებთ.\n\nრას იღებთ\n• დაფარულია პროვაიდერისგანაც კი: თქვენი პროვაიდერი ხედავს ერთ ჩვეულებრივ დაშიფრულ კავშირს და მეტს არაფერს. Encrypted Client Hello სერვერის სახელსაც კი მალავს.\n• ლოგების გარეშე. გადასაცემი არაფერია: ჩვენ არ ვინახავთ ჩანაწერებს თქვენ მიერ მონახულებული საიტების, გამოყენებული აპების ან გაგზავნილი ტრაფიკის შესახებ. ვინახავთ მხოლოდ იმას, რაც გამოწერისთვისაა საჭირო.\n• სწრაფია იქ, სადაც სხვა VPN-ები ძლივს მუშაობს: Overleap-ის k2cc სიჩქარის კონტროლი ინარჩუნებს თქვენს სიჩქარეს მატარებლის Wi-Fi-ზე, ხალხმრავალ ადგილებსა და სასტუმროს ქსელებში.\n• თქვენთან ერთად გადაადგილდება: გვირაბი სესიის დროს Wi-Fi-დან მობილურ ინტერნეტზე გადადის, ამიტომ ჩამოტვირთვები და ზარები გრძელდება.\n• მუშაობს საზღვარგარეთაც: კავშირი ჩვეულებრივ ვებტრაფიკს ჰგავს, ამიტომ მუშაობას განაგრძობს იქაც, სადაც სხვა VPN-ები წყდება.\n• ღიად შექმნილი: პროტოკოლი დოკუმენტირებულია, სერვერი კი ღია კოდისაა. გაუშვით საკუთარი სერვერი და გამოიყენეთ Overleap მხოლოდ როგორც კლიენტი.\n\nერთი გეგმა, ყველა მოწყობილობა\nერთი გამოწერა ერთდროულად ხუთ მოწყობილობას ფარავს, ულიმიტო ინტერნეტით და ყველა ლოკაციით.",
+    "iosSubscription": "გამოწერა\nOverleap Basic არის ავტომატურად განახლებადი წლიური გამოწერა. გადახდა ჩამოიჭრება თქვენი Apple ID ანგარიშიდან შეძენის დადასტურებისას. გამოწერა ავტომატურად განახლდება, თუ ის არ გაუქმდება მიმდინარე პერიოდის დასრულებამდე სულ მცირე 24 საათით ადრე; განახლების საფასური თქვენს ანგარიშს ჩამოეჭრება პერიოდის დასრულებამდე 24 საათის განმავლობაში. შეძენის შემდეგ გამოწერის მართვა ან გაუქმება შეგიძლიათ App Store-ის ანგარიშის პარამეტრებში.",
+    "linkLabels": {
+      "privacy": "კონფიდენციალურობის პოლიტიკა",
+      "terms": "გამოყენების პირობები"
+    }
+  },
+  "kk": {
+    "name": "Overleap VPN",
+    "subtitle": "Логсыз. Әр желіде жылдам.",
+    "keywords": "впн,прокси,құпиялылық,қауіпсіз,wifi,шифрлау,туннель,бұғаттан шығару,саяхат,ip,қорғау,интернет,жеке",
+    "promo": "Лог сақтамайтын жеке VPN: нашар желілерде де жылдам. Бір тариф, бес құрылғы.",
+    "playShort": "Логсыз жеке VPN. Баяу Wi-Fi-да да жылдам. Бір тариф, бес құрылғы.",
+    "body": "Overleap — қайда кіретініңізді тіпті интернет провайдеріңізден де жасыратын, ешқандай лог сақтамайтын және нашар желілерде де жылдам жұмыс істейтін жеке VPN.\n\nНЕ АЛАСЫЗ\n• Провайдерден де жасырын: провайдеріңіз бір ғана қарапайым шифрланған қосылымды көреді, одан артық ештеңе емес. Encrypted Client Hello тіпті сервер атауын да жасырады.\n• Логсыз. Беретін ештеңе жоқ: біз сіз кірген сайттарды, пайдаланған қолданбаларды немесе жіберген трафикті жазып алмаймыз. Тек жазылымға қажет деректерді ғана сақтаймыз.\n• Басқа VPN-дер баяулайтын жерде жылдам: Overleap-тің k2cc жылдамдықты басқару технологиясы пойыздағы Wi-Fi-да, адам көп жерлерде және қонақүй желілерінде жылдамдығыңызды сақтайды.\n• Сізбен бірге қозғалады: туннель сеанс кезінде Wi-Fi-дан мобильді интернетке ауысады, сондықтан жүктеулер мен қоңыраулар үзілмейді.\n• Шетелде де жұмыс істейді: қосылым кәдімгі веб-трафик сияқты көрінеді, сондықтан басқа VPN-дер істемей қалатын жерде де жұмысын жалғастырады.\n• Ашық түрде жасалған: протокол құжатталған, ал сервердің бастапқы коды ашық. Өз серверіңізді іске қосып, Overleap-ті тек клиент ретінде пайдаланыңыз.\n\nБІР ТАРИФ, БАРЛЫҚ ҚҰРЫЛҒЫ\nБір жазылым бір уақытта бес құрылғыны қамтиды: шексіз трафик және барлық локация.",
+    "iosSubscription": "ЖАЗЫЛЫМ\nOverleap Basic — автоматты түрде жаңартылатын жылдық жазылым. Төлем сатып алуды растаған кезде Apple ID тіркелгіңізден алынады. Жазылым ағымдағы кезең аяқталғанға дейін кемінде 24 сағат бұрын тоқтатылмаса, автоматты түрде жаңартылады; жаңарту төлемі кезең аяқталғанға дейінгі 24 сағат ішінде тіркелгіңізден алынады. Сатып алғаннан кейін жазылымды App Store тіркелгісінің параметрлерінде басқаруға немесе тоқтатуға болады.",
+    "linkLabels": {
+      "privacy": "Құпиялылық саясаты",
+      "terms": "Пайдалану шарттары"
+    }
+  },
+  "ky": {
+    "name": "Overleap VPN",
+    "subtitle": "Логсуз. Ар бир тармакта тез.",
+    "keywords": "впн,прокси,купуялык,коопсуз,wifi,шифрлөө,туннель,бөгөттөн чыгаруу,саякат,ip,коргоо,интернет,жеке,ech",
+    "promo": "Лог сактабаган жеке VPN: начар тармактарда да тез иштейт. Бир тариф, беш түзмөк.",
+    "playShort": "Логсуз жеке VPN. Жай Wi-Fi-да да тез. Бир тариф, беш түзмөк.",
+    "body": "Overleap — кайда киргениңизди интернет провайдериңизден да жашырган, эч кандай лог сактабаган жана начар тармактарда да тез иштеген жеке VPN.\n\nЭМНЕ АЛАСЫЗ\n• Провайдерден да жашыруун: провайдериңиз бир гана кадимки шифрленген туташууну көрөт, андан башка эч нерсе эмес. Encrypted Client Hello сервердин атын да жашырат.\n• Логсуз. Бере турган эч нерсе жок: биз сиз кирген сайттарды, колдонгон тиркемелерди же жөнөткөн трафикти жазып албайбыз. Жазылууга керектүү маалыматты гана сактайбыз.\n• Башка VPN-дер жайлаган жерде тез: Overleap-тин k2cc ылдамдыкты башкаруу технологиясы поезддеги Wi-Fi-да, эл көп жерлерде жана мейманкана тармактарында ылдамдыгыңызды сактайт.\n• Сиз менен кошо жылат: туннель сеанс учурунда Wi-Fi-дан мобилдик интернетке өтөт, ошондуктан жүктөөлөр менен чалуулар үзүлбөйт.\n• Чет өлкөдө да иштейт: туташуу кадимки веб-трафик сыяктуу көрүнөт, ошондуктан башка VPN-дер иштебей калган жерде да иштей берет.\n• Ачык түзүлгөн: протокол документтештирилген, ал эми сервердин баштапкы коду ачык. Өз сервериңизди иштетип, Overleap-ти клиент катары гана колдонуңуз.\n\nБИР ТАРИФ, БАРДЫК ТҮЗМӨК\nБир жазылуу бир эле учурда беш түзмөктү камтыйт: чексиз трафик жана бардык локациялар.",
+    "iosSubscription": "ЖАЗЫЛУУ\nOverleap Basic — автоматтык түрдө жаңыртылуучу жылдык жазылуу. Төлөм сатып алууну ырастаганда Apple ID аккаунтуңуздан алынат. Жазылуу учурдагы мезгил аяктаганга чейин кеминде 24 саат мурун жокко чыгарылбаса, автоматтык түрдө жаңыртылат; жаңыртуу төлөмү мезгил аяктаганга чейинки 24 сааттын ичинде аккаунтуңуздан алынат. Сатып алгандан кийин жазылууну App Store аккаунтунун жөндөөлөрүнөн башкарып же жокко чыгара аласыз.",
+    "linkLabels": {
+      "privacy": "Купуялык саясаты",
+      "terms": "Колдонуу шарттары"
+    }
+  },
+  "mn": {
+    "name": "Overleap VPN",
+    "subtitle": "Логгүй. Аль ч сүлжээнд хурдан.",
+    "keywords": "впн,прокси,нууцлал,аюулгүй,wifi,шифрлэлт,туннель,хориг тайлах,аялал,ip,хамгаалалт,интернэт,хувийн",
+    "promo": "Лог хадгалдаггүй хувийн VPN. Муу сүлжээнд ч хурдан хэвээр. Нэг багц, таван төхөөрөмж.",
+    "playShort": "Лог хадгалдаггүй хувийн VPN. Удаан Wi-Fi-д ч хурдан. Нэг багц, 5 төхөөрөмж.",
+    "body": "Overleap бол таны хаашаа орж байгааг интернэт үйлчилгээ үзүүлэгчээс чинь хүртэл нуудаг, ямар ч лог хадгалдаггүй, муу сүлжээнд ч хурдан хэвээр байдаг хувийн VPN юм.\n\nТА ЮУ АВАХ ВЭ\n• Үйлчилгээ үзүүлэгчээс ч нуугдана: таны үйлчилгээ үзүүлэгч ердийн нэг шифрлэгдсэн холболтыг л харна, өөр юу ч биш. Encrypted Client Hello серверийн нэрийг хүртэл нууна.\n• Лог хадгалахгүй. Гаргаж өгөх зүйл байхгүй: бид таны зочилсон сайт, ашигласан апп, илгээсэн траффикийг бүртгэдэггүй. Зөвхөн захиалгад шаардлагатай зүйлийг л хадгална.\n• Бусад VPN удааширдаг газарт хурдан: Overleap-ийн k2cc хурдны хяналт нь галт тэрэгний Wi-Fi, хөл хөдөлгөөн ихтэй газар, зочид буудлын сүлжээнд таны хурдыг хадгална.\n• Тантай хамт шилжинэ: туннель холболтын дундуур Wi-Fi-аас мобайл дата руу шилждэг тул таталт болон дуудлага тасрахгүй.\n• Гадаадад ч ажилласаар байна: холболт нь ердийн вэб траффик шиг харагддаг тул бусад VPN ажиллахаа больсон газарт ч ажиллана.\n• Нээлттэй бүтээгдсэн: протокол нь баримтжуулагдсан, сервер нь нээлттэй эхтэй. Өөрийн серверийг ажиллуулж, Overleap-ийг зөвхөн клиент болгон ашиглаарай.\n\nНЭГ БАГЦ, БҮХ ТӨХӨӨРӨМЖ\nНэг захиалга таван төхөөрөмжийг нэгэн зэрэг хамарна. Хязгааргүй дата, бүх байршил багтсан.",
+    "iosSubscription": "ЗАХИАЛГА\nOverleap Basic нь автоматаар сунгагддаг жилийн захиалга юм. Худалдан авалтыг баталгаажуулах үед төлбөрийг таны Apple ID бүртгэлээс суутгана. Захиалгыг тухайн хугацаа дуусахаас дор хаяж 24 цагийн өмнө цуцлаагүй бол автоматаар сунгагдана; сунгалтын төлбөрийг хугацаа дуусахаас өмнөх 24 цагийн дотор таны бүртгэлээс суутгана. Худалдан авсны дараа та App Store бүртгэлийнхээ тохиргооноос захиалгаа удирдах эсвэл цуцлах боломжтой.",
+    "linkLabels": {
+      "privacy": "Нууцлалын бодлого",
+      "terms": "Ашиглалтын нөхцөл"
+    }
+  },
+  "am": {
+    "name": "Overleap VPN",
+    "subtitle": "ምዝግብ የለም። በማንኛውም ኔትወርክ ፈጣን።",
+    "keywords": "ቪፒኤን,ፕሮክሲ,ግላዊነት,ደህንነት,ዋይፋይ,ምስጠራ,ዋሻ,ጉዞ,ኢንተርኔት,የግል,ጥበቃ,proxy,privacy,secure,wifi,ip,unblock,private",
+    "promo": "ምዝግብ የማያስቀምጥ የግል VPN፤ በሚያስቸግሩ ኔትወርኮች ላይም ፈጣን። አንድ ዕቅድ፣ አምስት መሣሪያዎች።",
+    "playShort": "ምዝግብ የሌለው የግል VPN። በዘገምተኛ Wi-Fi ላይም ፈጣን። አንድ ዕቅድ፣ አምስት መሣሪያዎች።",
+    "body": "Overleap የት እንደሚሄዱ ከኢንተርኔት አገልግሎት ሰጪዎ እንኳን የሚደብቅ፣ ምንም ምዝግብ የማያስቀምጥ እና በሚያስቸግሩ ኔትወርኮች ላይም ፈጣን ሆኖ የሚቆይ የግል VPN ነው።\n\nየሚያገኙት\n• ከአገልግሎት ሰጪዎ እንኳን የተደበቀ፦ አገልግሎት ሰጪዎ አንድ ተራ የተመሰጠረ ግንኙነት ብቻ ነው የሚያየው፣ ከዚያ በላይ ምንም። Encrypted Client Hello የአገልጋዩን ስም እንኳን ይደብቃል።\n• ምዝግብ የለም። የሚሰጥ ነገር የለም፦ የሚጎበኟቸውን ድረ-ገጾች፣ የሚጠቀሟቸውን መተግበሪያዎች ወይም የሚልኩትን ትራፊክ አንመዘግብም። ለደንበኝነት ምዝገባ የሚያስፈልገውን ብቻ እናስቀምጣለን።\n• ሌሎች VPNዎች በሚዘገዩበት ቦታ ፈጣን፦ የOverleap k2cc የፍጥነት መቆጣጠሪያ በባቡር Wi-Fi፣ በተጨናነቁ ቦታዎች እና በሆቴል ኔትወርኮች ላይ ፍጥነትዎን ይጠብቃል።\n• ከእርስዎ ጋር ይንቀሳቀሳል፦ ዋሻው በክፍለ ጊዜ መካከል ከWi-Fi ወደ ሞባይል ዳታ ይሸጋገራል፣ ስለዚህ ማውረዶች እና ጥሪዎች ይቀጥላሉ።\n• በውጭ አገርም መሥራቱን ይቀጥላል፦ ግንኙነቱ ተራ የድር ትራፊክ ይመስላል፣ ስለዚህ ሌሎች VPNዎች በሚቋረጡበት ቦታም ይሠራል።\n• በግልጽ የተገነባ፦ ፕሮቶኮሉ በሰነድ የተደገፈ ሲሆን አገልጋዩ ክፍት ምንጭ ነው። የራስዎን አገልጋይ ያስኪዱ እና Overleapን እንደ ደንበኛ መተግበሪያ ብቻ ይጠቀሙ።\n\nአንድ ዕቅድ፣ ሁሉም መሣሪያዎች\nአንድ የደንበኝነት ምዝገባ አምስት መሣሪያዎችን በአንድ ጊዜ ይሸፍናል፤ ገደብ የለሽ ዳታ እና ሁሉም አካባቢዎች ተካትተዋል።",
+    "iosSubscription": "የደንበኝነት ምዝገባ\nOverleap Basic በራስ-ሰር የሚታደስ ዓመታዊ የደንበኝነት ምዝገባ ነው። ግዢው ሲረጋገጥ ክፍያው ከApple ID መለያዎ ይቆረጣል። የአሁኑ ጊዜ ከማብቃቱ ቢያንስ 24 ሰዓታት በፊት ካልተሰረዘ በስተቀር የደንበኝነት ምዝገባው በራስ-ሰር ይታደሳል፤ የእድሳት ክፍያው ጊዜው ከማብቃቱ በፊት ባሉት 24 ሰዓታት ውስጥ ከመለያዎ ይቆረጣል። ከግዢ በኋላ የደንበኝነት ምዝገባዎን በApp Store መለያ ቅንብሮችዎ ውስጥ ማስተዳደር ወይም መሰረዝ ይችላሉ።",
+    "linkLabels": {
+      "privacy": "የግላዊነት መመሪያ",
+      "terms": "የአጠቃቀም ውል"
+    }
+  },
+  "sw": {
+    "name": "Overleap VPN",
+    "subtitle": "Bila kumbukumbu. Kasi popote.",
+    "keywords": "faragha,salama,wifi,usimbaji,proksi,proxy,handaki,safari,fungua tovuti,ip,ulinzi,intaneti,binafsi",
+    "promo": "VPN ya faragha isiyohifadhi kumbukumbu, inayobaki na kasi kwenye mitandao inayokuangusha. Mpango mmoja, vifaa vitano.",
+    "playShort": "VPN ya faragha bila kumbukumbu. Kasi kwenye Wi-Fi hafifu. Mpango 1, vifaa 5.",
+    "body": "Overleap ni VPN ya faragha inayoficha unakokwenda mtandaoni — hata kwa mtoa huduma wako wa intaneti — haihifadhi kumbukumbu zozote, na hubaki na kasi kwenye mitandao inayokuangusha.\n\nUNACHOPATA\n• Imefichwa hata kwa mtoa huduma wako: mtoa huduma wako huona muunganisho mmoja wa kawaida uliosimbwa na si zaidi. Encrypted Client Hello huficha hata jina la seva.\n• Hakuna kumbukumbu. Hakuna cha kukabidhi: haturekodi tovuti unazotembelea, programu unazotumia wala data unayotuma. Tunahifadhi tu kile kinachohitajika kwa usajili.\n• Kasi pale VPN nyingine zinapojikokota: udhibiti wa kasi wa k2cc wa Overleap hudumisha kasi yako kwenye Wi-Fi ya treni, maeneo yenye watu wengi na mitandao ya hoteli.\n• Husafiri nawe: njia ya VPN huhama kutoka Wi-Fi hadi data ya simu katikati ya kipindi, hivyo upakuaji na simu huendelea.\n• Huendelea kufanya kazi nje ya nchi: muunganisho huonekana kama trafiki ya kawaida ya wavuti, hivyo huendelea kufanya kazi pale VPN nyingine zinapokatika.\n• Imejengwa kwa uwazi: itifaki imeandikwa wazi na seva ni ya chanzo huria. Endesha seva yako mwenyewe na utumie Overleap kama programu ya mteja pekee.\n\nMPANGO MMOJA, KILA KIFAA\nUsajili mmoja unahudumia vifaa vitano kwa wakati mmoja, pamoja na data isiyo na kikomo na maeneo yote.",
+    "iosSubscription": "USAJILI\nOverleap Basic ni usajili wa mwaka unaojisasisha kiotomatiki. Malipo hutozwa kwenye akaunti yako ya Apple ID unapothibitisha ununuzi. Usajili hujisasisha kiotomatiki isipokuwa ukighairiwa angalau saa 24 kabla ya mwisho wa kipindi cha sasa; akaunti yako hutozwa malipo ya kusasisha ndani ya saa 24 kabla ya kipindi kuisha. Unaweza kudhibiti au kughairi usajili wako katika mipangilio ya akaunti yako ya App Store baada ya ununuzi.",
+    "linkLabels": {
+      "privacy": "Sera ya Faragha",
+      "terms": "Masharti ya Matumizi"
+    }
+  },
+  "zu": {
+    "name": "Overleap VPN",
+    "subtitle": "Awekho amarekhodi. Iyashesha.",
+    "keywords": "imfihlo,ukuphepha,wifi,proxy,umhubhe,uhambo,vula,ip,ukuvikela,inthanethi,private,secure,unblock,ech",
+    "promo": "I-VPN eyimfihlo engagcini amarekhodi, ehlala ishesha kumanethiwekhi akudumazayo. Uhlelo olulodwa, amadivayisi amahlanu.",
+    "playShort": "I-VPN eyimfihlo engagcini amarekhodi. Ishesha naku-Wi-Fi enensayo.",
+    "body": "I-Overleap iyi-VPN eyimfihlo efihla lapho uya khona ku-inthanethi — ngisho nakumhlinzeki wakho we-inthanethi — ayigcini amarekhodi, futhi ihlala ishesha kumanethiwekhi akudumazayo.\n\nOKUTHOLAYO\n• Kufihlekile ngisho nakumhlinzeki wakho: umhlinzeki wakho ubona ukuxhumana okukodwa okujwayelekile okubethelwe, akukho okunye. I-Encrypted Client Hello ifihla ngisho negama leseva.\n• Awekho amarekhodi. Akukho esingakunikeza: asirekhodi amasayithi owavakashelayo, izinhlelo zokusebenza ozisebenzisayo noma idatha oyithumelayo. Sigcina kuphela lokho okudingwa wukubhalisa.\n• Iyashesha lapho amanye ama-VPN ehamba kancane: ukulawulwa kwejubane kwe-k2cc kwe-Overleap kugcina ijubane lakho ku-Wi-Fi yesitimela, ezindaweni ezigcwele abantu nakumanethiwekhi amahhotela.\n• Ihamba nawe: umhubhe usuka ku-Wi-Fi uye kudatha yeselula phakathi neseshini, ngakho ukulanda nezingcingo kuyaqhubeka.\n• Iqhubeka isebenza phesheya: ukuxhumana kubukeka njengethrafikhi yewebhu ejwayelekile, ngakho kuqhubeka kusebenza lapho amanye ama-VPN ema khona.\n• Yakhiwe obala: iphrothokholi ibhaliwe futhi iseva ingumthombo ovulekile. Qalisa iseva yakho bese usebenzisa i-Overleap njengeklayenti kuphela.\n\nUHLELO OLULODWA, WONKE AMADIVAYISI\nUkubhalisa okukodwa kuhlanganisa amadivayisi amahlanu ngesikhathi esisodwa, nedatha engenamkhawulo nazo zonke izindawo.",
+    "iosSubscription": "UKUBHALISA\nI-Overleap Basic ukubhalisa konyaka okuzivuselela ngokuzenzakalelayo. Inkokhelo ikhokhiswa ku-akhawunti yakho ye-Apple ID lapho uqinisekisa ukuthenga. Ukubhalisa kuzivuselela ngokuzenzakalelayo ngaphandle uma kukhanselwa okungenani amahora angu-24 ngaphambi kokuphela kwesikhathi samanje; i-akhawunti yakho ikhokhiswa ukuvuselelwa phakathi kwamahora angu-24 ngaphambi kokuphela kwesikhathi. Ungaphatha noma ukhansele ukubhalisa kwakho kumasethingi e-akhawunti yakho ye-App Store ngemva kokuthenga.",
+    "linkLabels": {
+      "privacy": "Inqubomgomo Yobumfihlo",
+      "terms": "Imigomo Yokusebenzisa"
+    }
+  },
+  "af": {
+    "name": "Overleap VPN",
+    "subtitle": "Geen logs. Vinnig oral.",
+    "keywords": "privaat,privaatheid,veilig,wifi,enkripsie,proxy,tonnel,reis,deblokkeer,ip,beskerm,internet,data,ech",
+    "promo": "Private VPN sonder logs wat vinnig bly op die netwerke wat jou in die steek laat. Een plan, vyf toestelle.",
+    "playShort": "Private VPN sonder logs. Bly vinnig op stadige Wi-Fi. Een plan, vyf toestelle.",
+    "body": "Overleap is 'n private VPN wat wegsteek waarheen jy gaan – selfs vir jou internetdiensverskaffer – geen logs hou nie en vinnig bly op die netwerke wat jou in die steek laat.\n\nWAT JY KRY\n• Selfs vir jou diensverskaffer verborge: jou verskaffer sien een gewone geënkripteerde verbinding en niks meer nie. Encrypted Client Hello versteek selfs die bedienernaam.\n• Geen logs. Niks om te oorhandig nie: ons teken nie die webwerwe wat jy besoek, die apps wat jy gebruik of die verkeer wat jy stuur aan nie. Ons hou net wat 'n intekening nodig het.\n• Vinnig waar ander VPN's kruip: Overleap se k2cc-tempobeheer hou jou spoed op met trein-Wi-Fi, stampvol venues en hotelnetwerke.\n• Beweeg saam met jou: die tonnel skuif midde-in 'n sessie van Wi-Fi na mobiele data, sodat aflaaie en oproepe voortgaan.\n• Werk steeds in die buiteland: die verbinding lyk soos gewone webverkeer, so dit bly werk waar ander VPN's uitval.\n• In die openbaar gebou: die protokol is gedokumenteer en die bediener is oopbron. Bedryf jou eie nodus en gebruik Overleap bloot as die kliënt.\n\nEEN PLAN, ELKE TOESTEL\nEen intekening dek vyf toestelle gelyktydig, met onbeperkte data en elke ligging.",
+    "iosSubscription": "INTEKENING\nOverleap Basic is 'n jaarlikse intekening wat outomaties hernu. Betaling word by bevestiging van aankoop van jou Apple ID-rekening gehef. Die intekening hernu outomaties tensy dit minstens 24 uur voor die einde van die huidige tydperk gekanselleer word; jou rekening word binne 24 uur voor die einde van die tydperk vir die hernuwing gehef. Jy kan ná aankoop jou intekening in jou App Store-rekeninginstellings bestuur of kanselleer.",
+    "linkLabels": {
+      "privacy": "Privaatheidsbeleid",
+      "terms": "Gebruiksvoorwaardes"
+    }
+  },
+  "hi": {
+    "name": "Overleap VPN",
+    "subtitle": "लॉग नहीं। हर नेटवर्क पर तेज़।",
+    "keywords": "वीपीएन,प्रॉक्सी,प्राइवेसी,गोपनीयता,सुरक्षित,वाईफाई,निजी,आईपी,अनब्लॉक,यात्रा,proxy,wifi,secure,ip",
+    "promo": "बिना लॉग वाला निजी VPN, जो उन नेटवर्क पर भी तेज़ रहता है जो अक्सर साथ छोड़ देते हैं। एक प्लान, पाँच डिवाइस।",
+    "playShort": "बिना लॉग वाला निजी VPN। धीमे Wi-Fi पर भी तेज़। एक प्लान, पाँच डिवाइस।",
+    "body": "Overleap एक निजी VPN है जो यह छिपाता है कि आप इंटरनेट पर कहाँ जाते हैं — आपके इंटरनेट सेवा प्रदाता (ISP) से भी — कोई लॉग नहीं रखता, और उन नेटवर्क पर भी तेज़ रहता है जो अक्सर साथ छोड़ देते हैं।\n\nआपको क्या मिलता है\n• आपके ISP से भी छिपा हुआ: आपके प्रदाता को सिर्फ़ एक साधारण एन्क्रिप्टेड कनेक्शन दिखता है, इससे ज़्यादा कुछ नहीं। Encrypted Client Hello सर्वर का नाम तक छिपा देता है।\n• कोई लॉग नहीं। सौंपने के लिए कुछ नहीं: हम यह रिकॉर्ड नहीं करते कि आप कौन-सी साइटें देखते हैं, कौन-से ऐप इस्तेमाल करते हैं या कौन-सा ट्रैफ़िक भेजते हैं। हम सिर्फ़ वही रखते हैं जो सदस्यता के लिए ज़रूरी है।\n• वहाँ भी तेज़, जहाँ दूसरे VPN रेंगते हैं: Overleap का k2cc रेट कंट्रोल ट्रेन के Wi-Fi, भीड़ भरी जगहों और होटल के नेटवर्क पर आपकी स्पीड बनाए रखता है।\n• आपके साथ चलता है: टनल सत्र के बीच में ही Wi-Fi से मोबाइल डेटा पर चला जाता है, इसलिए डाउनलोड और कॉल जारी रहते हैं।\n• विदेश में भी काम करता रहता है: कनेक्शन साधारण वेब ट्रैफ़िक जैसा दिखता है, इसलिए यह वहाँ भी चलता रहता है जहाँ दूसरे VPN बंद पड़ जाते हैं।\n• खुले तौर पर बनाया गया: प्रोटोकॉल का पूरा दस्तावेज़ उपलब्ध है और सर्वर ओपन सोर्स है। अपना खुद का नोड चलाएँ और Overleap को सिर्फ़ क्लाइंट के रूप में इस्तेमाल करें।\n\nएक प्लान, हर डिवाइस\nएक सदस्यता में एक साथ पाँच डिवाइस, असीमित डेटा और हर लोकेशन शामिल है।",
+    "iosSubscription": "सदस्यता\nOverleap Basic अपने आप नवीनीकृत होने वाली वार्षिक सदस्यता है। खरीदारी की पुष्टि होने पर भुगतान आपके Apple ID खाते से लिया जाता है। सदस्यता अपने आप नवीनीकृत हो जाती है, जब तक कि उसे मौजूदा अवधि खत्म होने से कम से कम 24 घंटे पहले रद्द न कर दिया जाए; अवधि खत्म होने से पहले के 24 घंटों के भीतर नवीनीकरण का शुल्क आपके खाते से लिया जाता है। खरीदारी के बाद आप अपनी App Store खाता सेटिंग में सदस्यता को प्रबंधित या रद्द कर सकते हैं।",
+    "linkLabels": {
+      "privacy": "गोपनीयता नीति",
+      "terms": "उपयोग की शर्तें"
+    }
+  },
+  "bn": {
+    "name": "Overleap VPN",
+    "subtitle": "লগ নেই। সব নেটওয়ার্কে দ্রুত।",
+    "keywords": "ভিপিএন,প্রক্সি,গোপনীয়তা,প্রাইভেসি,নিরাপদ,ওয়াইফাই,আইপি,আনব্লক,ভ্রমণ,সুরক্ষিত,proxy,wifi,secure,ip",
+    "promo": "লগ না রাখা প্রাইভেট VPN, যা সেইসব নেটওয়ার্কেও দ্রুত থাকে যেগুলো প্রায়ই আপনাকে হতাশ করে। এক প্ল্যান, পাঁচ ডিভাইস।",
+    "playShort": "লগবিহীন প্রাইভেট VPN। ধীর Wi-Fi-তেও দ্রুত। এক প্ল্যান, পাঁচ ডিভাইস।",
+    "body": "Overleap একটি প্রাইভেট VPN, যা আপনি অনলাইনে কোথায় যান তা গোপন রাখে — এমনকি আপনার ইন্টারনেট সেবাদাতার (ISP) কাছ থেকেও — কোনো লগ রাখে না, এবং সেইসব নেটওয়ার্কেও দ্রুত থাকে যেগুলো প্রায়ই আপনাকে হতাশ করে।\n\nআপনি যা পাচ্ছেন\n• ISP-র কাছ থেকেও গোপন: আপনার সেবাদাতা শুধু একটি সাধারণ এনক্রিপ্টেড সংযোগ দেখে, তার বেশি কিছু নয়। Encrypted Client Hello সার্ভারের নাম পর্যন্ত গোপন রাখে।\n• কোনো লগ নেই। হস্তান্তর করার মতো কিছুই নেই: আপনি কোন সাইটে যান, কোন অ্যাপ ব্যবহার করেন বা কী ট্র্যাফিক পাঠান, আমরা তা রেকর্ড করি না। সাবস্ক্রিপশনের জন্য যেটুকু দরকার, শুধু সেটুকুই রাখি।\n• যেখানে অন্য VPN ধুঁকতে থাকে, সেখানেও দ্রুত: Overleap-এর k2cc রেট কন্ট্রোল ট্রেনের Wi-Fi, ভিড়ে ঠাসা জায়গা ও হোটেলের নেটওয়ার্কে আপনার গতি ধরে রাখে।\n• আপনার সঙ্গে চলে: সেশনের মাঝপথেই টানেল Wi-Fi থেকে মোবাইল ডেটায় চলে যায়, ফলে ডাউনলোড ও কল চলতে থাকে।\n• বিদেশেও কাজ করে: সংযোগটি সাধারণ ওয়েব ট্র্যাফিকের মতো দেখায়, তাই যেখানে অন্য VPN অচল হয়ে পড়ে সেখানেও এটি চলতে থাকে।\n• খোলাখুলিভাবে তৈরি: প্রোটোকলটি নথিভুক্ত এবং সার্ভার ওপেন সোর্স। নিজের নোড চালান এবং Overleap-কে শুধু ক্লায়েন্ট হিসেবে ব্যবহার করুন।\n\nএক প্ল্যান, সব ডিভাইস\nএকটি সাবস্ক্রিপশনে একসঙ্গে পাঁচটি ডিভাইস, সঙ্গে আনলিমিটেড ডেটা ও সব লোকেশন।",
+    "iosSubscription": "সাবস্ক্রিপশন\nOverleap Basic একটি স্বয়ংক্রিয়ভাবে নবায়ন হওয়া বার্ষিক সাবস্ক্রিপশন। ক্রয় নিশ্চিত করার সময় আপনার Apple ID অ্যাকাউন্ট থেকে অর্থ কেটে নেওয়া হয়। চলতি মেয়াদ শেষ হওয়ার অন্তত ২৪ ঘণ্টা আগে বাতিল না করলে সাবস্ক্রিপশন স্বয়ংক্রিয়ভাবে নবায়ন হয়; মেয়াদ শেষ হওয়ার আগের ২৪ ঘণ্টার মধ্যে নবায়নের অর্থ আপনার অ্যাকাউন্ট থেকে কাটা হয়। ক্রয়ের পর আপনি আপনার App Store অ্যাকাউন্ট সেটিংসে সাবস্ক্রিপশন পরিচালনা বা বাতিল করতে পারেন।",
+    "linkLabels": {
+      "privacy": "গোপনীয়তা নীতি",
+      "terms": "ব্যবহারের শর্তাবলি"
+    }
+  },
+  "gu": {
+    "name": "Overleap VPN",
+    "subtitle": "લૉગ નહીં. દરેક નેટવર્કે ઝડપી.",
+    "keywords": "વીપીએન,પ્રોક્સી,ગોપનીયતા,પ્રાઇવસી,સુરક્ષિત,વાઇફાઇ,ખાનગી,આઇપી,અનબ્લોક,પ્રવાસ,proxy,wifi,secure,ip",
+    "promo": "લૉગ ન રાખતું ખાનગી VPN, જે એવા નેટવર્ક પર પણ ઝડપી રહે છે જે વારંવાર સાથ છોડી દે છે. એક પ્લાન, પાંચ ડિવાઇસ.",
+    "playShort": "લૉગ વિનાનું ખાનગી VPN. ધીમા Wi-Fi પર પણ ઝડપી. એક પ્લાન, પાંચ ડિવાઇસ.",
+    "body": "Overleap એક ખાનગી VPN છે, જે તમે ઇન્ટરનેટ પર ક્યાં જાઓ છો તે છુપાવે છે — તમારા ઇન્ટરનેટ સેવા પ્રદાતા (ISP)થી પણ — કોઈ લૉગ રાખતું નથી, અને એવા નેટવર્ક પર પણ ઝડપી રહે છે જે વારંવાર સાથ છોડી દે છે.\n\nતમને શું મળે છે\n• તમારા ISPથી પણ છુપાયેલું: તમારા પ્રદાતાને માત્ર એક સામાન્ય એન્ક્રિપ્ટેડ કનેક્શન દેખાય છે, એથી વધુ કંઈ નહીં. Encrypted Client Hello સર્વરનું નામ સુધ્ધાં છુપાવે છે.\n• કોઈ લૉગ નહીં. સોંપવા જેવું કંઈ નહીં: તમે કઈ સાઇટ જુઓ છો, કઈ ઍપ વાપરો છો કે કયો ટ્રાફિક મોકલો છો તે અમે રેકોર્ડ કરતા નથી. અમે માત્ર એટલું જ રાખીએ છીએ જેટલું સબ્સ્ક્રિપ્શન માટે જરૂરી છે.\n• જ્યાં બીજા VPN ધીમા પડી જાય ત્યાં પણ ઝડપી: Overleapનું k2cc રેટ કંટ્રોલ ટ્રેનના Wi-Fi, ભીડવાળાં સ્થળો અને હોટેલના નેટવર્ક પર તમારી સ્પીડ જાળવી રાખે છે.\n• તમારી સાથે ચાલે છે: ટનલ સેશનની વચ્ચે જ Wi-Fi પરથી મોબાઇલ ડેટા પર ખસી જાય છે, તેથી ડાઉનલોડ અને કૉલ ચાલુ રહે છે.\n• વિદેશમાં પણ કામ કરતું રહે છે: કનેક્શન સામાન્ય વેબ ટ્રાફિક જેવું દેખાય છે, તેથી જ્યાં બીજા VPN બંધ પડી જાય ત્યાં પણ તે ચાલતું રહે છે.\n• ખુલ્લેઆમ બનાવેલું: પ્રોટોકોલનું દસ્તાવેજીકરણ ઉપલબ્ધ છે અને સર્વર ઓપન સોર્સ છે. તમારો પોતાનો નોડ ચલાવો અને Overleapનો માત્ર ક્લાયન્ટ તરીકે ઉપયોગ કરો.\n\nએક પ્લાન, દરેક ડિવાઇસ\nએક સબ્સ્ક્રિપ્શનમાં એકસાથે પાંચ ડિવાઇસ, અમર્યાદિત ડેટા અને દરેક લોકેશન સામેલ છે.",
+    "iosSubscription": "સબ્સ્ક્રિપ્શન\nOverleap Basic આપમેળે રિન્યૂ થતું વાર્ષિક સબ્સ્ક્રિપ્શન છે. ખરીદીની પુષ્ટિ થાય ત્યારે ચુકવણી તમારા Apple ID એકાઉન્ટમાંથી લેવામાં આવે છે. વર્તમાન અવધિ પૂરી થવાના ઓછામાં ઓછા 24 કલાક પહેલાં રદ ન કરવામાં આવે તો સબ્સ્ક્રિપ્શન આપમેળે રિન્યૂ થાય છે; અવધિ પૂરી થવા પહેલાંના 24 કલાકની અંદર રિન્યૂઅલનો ચાર્જ તમારા એકાઉન્ટમાંથી લેવામાં આવે છે. ખરીદી પછી તમે તમારા App Store એકાઉન્ટ સેટિંગ્સમાં સબ્સ્ક્રિપ્શન મેનેજ કે રદ કરી શકો છો.",
+    "linkLabels": {
+      "privacy": "ગોપનીયતા નીતિ",
+      "terms": "ઉપયોગની શરતો"
+    }
+  },
+  "kn": {
+    "name": "Overleap VPN",
+    "subtitle": "ಲಾಗ್ ಇಲ್ಲ. ಎಲ್ಲೆಡೆ ವೇಗ.",
+    "keywords": "ವಿಪಿಎನ್,ಪ್ರಾಕ್ಸಿ,ಗೌಪ್ಯತೆ,ಖಾಸಗಿ,ಸುರಕ್ಷಿತ,ವೈಫೈ,ಐಪಿ,ಅನ್‌ಬ್ಲಾಕ್,ಪ್ರಯಾಣ,proxy,wifi,secure,private,ip",
+    "promo": "ಲಾಗ್ ಇಡದ ಖಾಸಗಿ VPN. ಆಗಾಗ ಕೈಕೊಡುವ ನೆಟ್‌ವರ್ಕ್‌ಗಳಲ್ಲೂ ವೇಗವಾಗಿಯೇ ಇರುತ್ತದೆ. ಒಂದು ಪ್ಲಾನ್, ಐದು ಸಾಧನಗಳು.",
+    "playShort": "ಲಾಗ್ ಇಲ್ಲದ ಖಾಸಗಿ VPN. ನಿಧಾನ Wi-Fi ಯಲ್ಲೂ ವೇಗ. ಒಂದು ಪ್ಲಾನ್, ಐದು ಸಾಧನಗಳು.",
+    "body": "Overleap ಒಂದು ಖಾಸಗಿ VPN. ನೀವು ಇಂಟರ್ನೆಟ್‌ನಲ್ಲಿ ಎಲ್ಲಿಗೆ ಹೋಗುತ್ತೀರಿ ಎಂಬುದನ್ನು ಇದು ಮರೆಮಾಡುತ್ತದೆ — ನಿಮ್ಮ ಇಂಟರ್ನೆಟ್ ಸೇವಾ ಪೂರೈಕೆದಾರರಿಂದಲೂ (ISP) — ಯಾವುದೇ ಲಾಗ್ ಇಡುವುದಿಲ್ಲ, ಮತ್ತು ಆಗಾಗ ಕೈಕೊಡುವ ನೆಟ್‌ವರ್ಕ್‌ಗಳಲ್ಲೂ ವೇಗವಾಗಿಯೇ ಇರುತ್ತದೆ.\n\nನಿಮಗೆ ಏನು ಸಿಗುತ್ತದೆ\n• ನಿಮ್ಮ ISP ಯಿಂದಲೂ ಮರೆ: ನಿಮ್ಮ ಪೂರೈಕೆದಾರರಿಗೆ ಕಾಣುವುದು ಒಂದು ಸಾಮಾನ್ಯ ಎನ್‌ಕ್ರಿಪ್ಟೆಡ್ ಸಂಪರ್ಕ ಮಾತ್ರ, ಅದಕ್ಕಿಂತ ಹೆಚ್ಚೇನೂ ಇಲ್ಲ. Encrypted Client Hello ಸರ್ವರ್ ಹೆಸರನ್ನೂ ಮರೆಮಾಡುತ್ತದೆ.\n• ಲಾಗ್ ಇಲ್ಲ. ಒಪ್ಪಿಸಲು ಏನೂ ಇಲ್ಲ: ನೀವು ಭೇಟಿ ನೀಡುವ ಸೈಟ್‌ಗಳು, ಬಳಸುವ ಆ್ಯಪ್‌ಗಳು ಅಥವಾ ಕಳುಹಿಸುವ ಟ್ರಾಫಿಕ್ ಅನ್ನು ನಾವು ದಾಖಲಿಸುವುದಿಲ್ಲ. ಚಂದಾದಾರಿಕೆಗೆ ಅಗತ್ಯವಿರುವುದನ್ನು ಮಾತ್ರ ಇಟ್ಟುಕೊಳ್ಳುತ್ತೇವೆ.\n• ಇತರ VPN ಗಳು ತೆವಳುವ ಕಡೆಯೂ ವೇಗ: Overleap ನ k2cc ರೇಟ್ ಕಂಟ್ರೋಲ್ ರೈಲಿನ Wi-Fi, ಜನದಟ್ಟಣೆಯ ಸ್ಥಳಗಳು ಮತ್ತು ಹೋಟೆಲ್ ನೆಟ್‌ವರ್ಕ್‌ಗಳಲ್ಲಿ ನಿಮ್ಮ ವೇಗವನ್ನು ಕಾಯ್ದುಕೊಳ್ಳುತ್ತದೆ.\n• ನಿಮ್ಮೊಂದಿಗೆ ಸಾಗುತ್ತದೆ: ಸೆಷನ್ ನಡುವೆಯೇ ಟನಲ್ Wi-Fi ಯಿಂದ ಮೊಬೈಲ್ ಡೇಟಾಗೆ ಬದಲಾಗುತ್ತದೆ, ಹೀಗಾಗಿ ಡೌನ್‌ಲೋಡ್‌ಗಳು ಮತ್ತು ಕರೆಗಳು ಮುಂದುವರಿಯುತ್ತವೆ.\n• ವಿದೇಶದಲ್ಲೂ ಕೆಲಸ ಮಾಡುತ್ತಲೇ ಇರುತ್ತದೆ: ಸಂಪರ್ಕವು ಸಾಮಾನ್ಯ ವೆಬ್ ಟ್ರಾಫಿಕ್‌ನಂತೆ ಕಾಣುತ್ತದೆ, ಹೀಗಾಗಿ ಇತರ VPN ಗಳು ಸ್ಥಗಿತಗೊಳ್ಳುವ ಕಡೆಯೂ ಇದು ಕೆಲಸ ಮಾಡುತ್ತದೆ.\n• ಮುಕ್ತವಾಗಿ ನಿರ್ಮಿಸಲಾಗಿದೆ: ಪ್ರೋಟೋಕಾಲ್ ಅನ್ನು ದಾಖಲಿಸಲಾಗಿದೆ ಮತ್ತು ಸರ್ವರ್ ಓಪನ್ ಸೋರ್ಸ್ ಆಗಿದೆ. ನಿಮ್ಮದೇ ನೋಡ್ ನಡೆಸಿ, Overleap ಅನ್ನು ಕೇವಲ ಕ್ಲೈಂಟ್ ಆಗಿ ಬಳಸಿ.\n\nಒಂದು ಪ್ಲಾನ್, ಎಲ್ಲಾ ಸಾಧನಗಳು\nಒಂದು ಚಂದಾದಾರಿಕೆಯಲ್ಲಿ ಏಕಕಾಲಕ್ಕೆ ಐದು ಸಾಧನಗಳು, ಅನಿಯಮಿತ ಡೇಟಾ ಮತ್ತು ಎಲ್ಲಾ ಲೊಕೇಶನ್‌ಗಳು ಸೇರಿವೆ.",
+    "iosSubscription": "ಚಂದಾದಾರಿಕೆ\nOverleap Basic ಸ್ವಯಂಚಾಲಿತವಾಗಿ ನವೀಕರಣಗೊಳ್ಳುವ ವಾರ್ಷಿಕ ಚಂದಾದಾರಿಕೆಯಾಗಿದೆ. ಖರೀದಿಯನ್ನು ದೃಢೀಕರಿಸಿದಾಗ ಪಾವತಿಯನ್ನು ನಿಮ್ಮ Apple ID ಖಾತೆಗೆ ವಿಧಿಸಲಾಗುತ್ತದೆ. ಪ್ರಸ್ತುತ ಅವಧಿ ಮುಗಿಯುವ ಕನಿಷ್ಠ 24 ಗಂಟೆಗಳ ಮೊದಲು ರದ್ದುಗೊಳಿಸದಿದ್ದರೆ ಚಂದಾದಾರಿಕೆ ಸ್ವಯಂಚಾಲಿತವಾಗಿ ನವೀಕರಣಗೊಳ್ಳುತ್ತದೆ; ಅವಧಿ ಮುಗಿಯುವ ಮೊದಲಿನ 24 ಗಂಟೆಗಳ ಒಳಗೆ ನವೀಕರಣದ ಶುಲ್ಕವನ್ನು ನಿಮ್ಮ ಖಾತೆಗೆ ವಿಧಿಸಲಾಗುತ್ತದೆ. ಖರೀದಿಯ ನಂತರ ನಿಮ್ಮ App Store ಖಾತೆ ಸೆಟ್ಟಿಂಗ್‌ಗಳಲ್ಲಿ ಚಂದಾದಾರಿಕೆಯನ್ನು ನಿರ್ವಹಿಸಬಹುದು ಅಥವಾ ರದ್ದುಗೊಳಿಸಬಹುದು.",
+    "linkLabels": {
+      "privacy": "ಗೌಪ್ಯತಾ ನೀತಿ",
+      "terms": "ಬಳಕೆಯ ನಿಯಮಗಳು"
+    }
+  },
+  "ml": {
+    "name": "Overleap VPN",
+    "subtitle": "ലോഗുകളില്ല. എവിടെയും വേഗം.",
+    "keywords": "വിപിഎൻ,പ്രോക്സി,സ്വകാര്യത,സുരക്ഷിതം,വൈഫൈ,ഐപി,അൺബ്ലോക്ക്,യാത്ര,നെറ്റ്,proxy,wifi,secure,private,ip",
+    "promo": "ലോഗുകൾ സൂക്ഷിക്കാത്ത സ്വകാര്യ VPN. പലപ്പോഴും കൈവിടുന്ന നെറ്റ്‌വർക്കുകളിലും വേഗം നിലനിർത്തുന്നു. ഒരു പ്ലാൻ, അഞ്ച് ഉപകരണങ്ങൾ.",
+    "playShort": "ലോഗുകളില്ലാത്ത സ്വകാര്യ VPN. സ്ലോ Wi-Fi-യിലും വേഗം. ഒരു പ്ലാൻ, അഞ്ച് ഉപകരണം.",
+    "body": "Overleap ഒരു സ്വകാര്യ VPN ആണ്. നിങ്ങൾ ഇന്റർനെറ്റിൽ എവിടേക്ക് പോകുന്നു എന്നത് ഇത് മറച്ചുവയ്ക്കുന്നു — നിങ്ങളുടെ ഇന്റർനെറ്റ് സേവനദാതാവിൽ (ISP) നിന്നുപോലും — ലോഗുകളൊന്നും സൂക്ഷിക്കുന്നില്ല, പലപ്പോഴും കൈവിടുന്ന നെറ്റ്‌വർക്കുകളിലും വേഗം നിലനിർത്തുന്നു.\n\nനിങ്ങൾക്ക് ലഭിക്കുന്നത്\n• നിങ്ങളുടെ ISP-യിൽ നിന്നുപോലും മറഞ്ഞിരിക്കുന്നു: നിങ്ങളുടെ സേവനദാതാവ് കാണുന്നത് ഒരു സാധാരണ എൻക്രിപ്റ്റഡ് കണക്ഷൻ മാത്രം, അതിൽ കൂടുതലൊന്നുമില്ല. Encrypted Client Hello സെർവറിന്റെ പേരുപോലും മറയ്ക്കുന്നു.\n• ലോഗുകളില്ല. കൈമാറാൻ ഒന്നുമില്ല: നിങ്ങൾ സന്ദർശിക്കുന്ന സൈറ്റുകളോ ഉപയോഗിക്കുന്ന ആപ്പുകളോ അയയ്ക്കുന്ന ട്രാഫിക്കോ ഞങ്ങൾ രേഖപ്പെടുത്തുന്നില്ല. സബ്‌സ്‌ക്രിപ്‌ഷന് ആവശ്യമായത് മാത്രമേ ഞങ്ങൾ സൂക്ഷിക്കുന്നുള്ളൂ.\n• മറ്റ് VPN-കൾ ഇഴയുന്നിടത്തും വേഗം: Overleap-ന്റെ k2cc റേറ്റ് കൺട്രോൾ ട്രെയിനിലെ Wi-Fi, തിരക്കേറിയ ഇടങ്ങൾ, ഹോട്ടൽ നെറ്റ്‌വർക്കുകൾ എന്നിവയിൽ നിങ്ങളുടെ വേഗം നിലനിർത്തുന്നു.\n• നിങ്ങൾക്കൊപ്പം നീങ്ങുന്നു: സെഷനിടയിൽത്തന്നെ ടണൽ Wi-Fi-യിൽ നിന്ന് മൊബൈൽ ഡാറ്റയിലേക്ക് മാറുന്നു, അതിനാൽ ഡൗൺലോഡുകളും കോളുകളും തുടരുന്നു.\n• വിദേശത്തും പ്രവർത്തിച്ചുകൊണ്ടിരിക്കുന്നു: കണക്ഷൻ സാധാരണ വെബ് ട്രാഫിക് പോലെ കാണപ്പെടുന്നതിനാൽ, മറ്റ് VPN-കൾ നിലച്ചുപോകുന്നിടത്തും ഇത് പ്രവർത്തിക്കുന്നു.\n• തുറന്ന രീതിയിൽ നിർമ്മിച്ചത്: പ്രോട്ടോക്കോൾ രേഖപ്പെടുത്തിയിട്ടുണ്ട്, സെർവർ ഓപ്പൺ സോഴ്‌സാണ്. നിങ്ങളുടെ സ്വന്തം നോഡ് പ്രവർത്തിപ്പിച്ച് Overleap ഒരു ക്ലയന്റായി മാത്രം ഉപയോഗിക്കാം.\n\nഒരു പ്ലാൻ, എല്ലാ ഉപകരണങ്ങളും\nഒരു സബ്‌സ്‌ക്രിപ്‌ഷനിൽ ഒരേസമയം അഞ്ച് ഉപകരണങ്ങൾ, പരിധിയില്ലാത്ത ഡാറ്റ, എല്ലാ ലൊക്കേഷനുകളും ഉൾപ്പെടുന്നു.",
+    "iosSubscription": "സബ്‌സ്‌ക്രിപ്‌ഷൻ\nOverleap Basic സ്വയമേവ പുതുക്കപ്പെടുന്ന വാർഷിക സബ്‌സ്‌ക്രിപ്‌ഷനാണ്. വാങ്ങൽ സ്ഥിരീകരിക്കുമ്പോൾ നിങ്ങളുടെ Apple ID അക്കൗണ്ടിൽ നിന്ന് പണം ഈടാക്കും. നിലവിലെ കാലയളവ് അവസാനിക്കുന്നതിന് കുറഞ്ഞത് 24 മണിക്കൂർ മുമ്പ് റദ്ദാക്കിയില്ലെങ്കിൽ സബ്‌സ്‌ക്രിപ്‌ഷൻ സ്വയമേവ പുതുക്കപ്പെടും; കാലയളവ് അവസാനിക്കുന്നതിന് മുമ്പുള്ള 24 മണിക്കൂറിനുള്ളിൽ പുതുക്കലിനുള്ള തുക നിങ്ങളുടെ അക്കൗണ്ടിൽ നിന്ന് ഈടാക്കും. വാങ്ങിയതിനുശേഷം നിങ്ങളുടെ App Store അക്കൗണ്ട് ക്രമീകരണങ്ങളിൽ സബ്‌സ്‌ക്രിപ്‌ഷൻ നിയന്ത്രിക്കാനോ റദ്ദാക്കാനോ കഴിയും.",
+    "linkLabels": {
+      "privacy": "സ്വകാര്യതാ നയം",
+      "terms": "ഉപയോഗ നിബന്ധനകൾ"
+    }
+  },
+  "mr": {
+    "name": "Overleap VPN",
+    "subtitle": "लॉग नाही. सर्व नेटवर्कवर जलद",
+    "keywords": "व्हीपीएन,प्रॉक्सी,गोपनीयता,प्रायव्हसी,सुरक्षित,वायफाय,खाजगी,आयपी,अनब्लॉक,प्रवास,proxy,wifi,secure,ip",
+    "promo": "लॉग न ठेवणारा खाजगी VPN, जो वारंवार दगा देणाऱ्या नेटवर्कवरही वेगवान राहतो. एक प्लॅन, पाच डिव्हाइस.",
+    "playShort": "लॉग न ठेवणारा खाजगी VPN. संथ Wi-Fi वरही वेगवान. एक प्लॅन, पाच डिव्हाइस.",
+    "body": "Overleap हा एक खाजगी VPN आहे, जो तुम्ही इंटरनेटवर कुठे जाता ते लपवतो — अगदी तुमच्या इंटरनेट सेवा प्रदात्यापासूनही (ISP) — कोणतेही लॉग ठेवत नाही, आणि वारंवार दगा देणाऱ्या नेटवर्कवरही वेगवान राहतो.\n\nतुम्हाला काय मिळते\n• तुमच्या ISP पासूनही लपलेले: तुमच्या प्रदात्याला फक्त एक साधे एन्क्रिप्टेड कनेक्शन दिसते, त्यापलीकडे काहीच नाही. Encrypted Client Hello सर्व्हरचे नावसुद्धा लपवते.\n• लॉग नाहीत. सुपूर्द करण्यासारखे काहीच नाही: तुम्ही कोणत्या साइटला भेट देता, कोणती ॲप्स वापरता किंवा कोणता ट्रॅफिक पाठवता याची आम्ही नोंद ठेवत नाही. सदस्यत्वासाठी जेवढे आवश्यक आहे तेवढेच आम्ही ठेवतो.\n• जिथे इतर VPN रेंगाळतात तिथेही वेगवान: Overleap चे k2cc रेट कंट्रोल ट्रेनमधील Wi-Fi, गर्दीची ठिकाणे आणि हॉटेलच्या नेटवर्कवर तुमचा वेग टिकवून ठेवते.\n• तुमच्यासोबत चालतो: सत्र सुरू असतानाच टनेल Wi-Fi वरून मोबाइल डेटावर जातो, त्यामुळे डाउनलोड आणि कॉल सुरूच राहतात.\n• परदेशातही चालू राहतो: कनेक्शन साध्या वेब ट्रॅफिकसारखे दिसते, त्यामुळे जिथे इतर VPN बंद पडतात तिथेही तो चालू राहतो.\n• खुलेपणाने बनवलेला: प्रोटोकॉलचे दस्तऐवजीकरण उपलब्ध आहे आणि सर्व्हर ओपन सोर्स आहे. स्वतःचा नोड चालवा आणि Overleap फक्त क्लायंट म्हणून वापरा.\n\nएक प्लॅन, प्रत्येक डिव्हाइस\nएका सदस्यत्वात एकाच वेळी पाच डिव्हाइस, अमर्यादित डेटा आणि प्रत्येक लोकेशन समाविष्ट आहे.",
+    "iosSubscription": "सदस्यत्व\nOverleap Basic हे आपोआप नूतनीकरण होणारे वार्षिक सदस्यत्व आहे. खरेदीची पुष्टी झाल्यावर पेमेंट तुमच्या Apple ID खात्यातून आकारले जाते. चालू कालावधी संपण्याच्या किमान 24 तास आधी रद्द न केल्यास सदस्यत्वाचे आपोआप नूतनीकरण होते; कालावधी संपण्यापूर्वीच्या 24 तासांच्या आत नूतनीकरणाचे शुल्क तुमच्या खात्यातून आकारले जाते. खरेदीनंतर तुम्ही तुमच्या App Store खाते सेटिंग्जमध्ये सदस्यत्व व्यवस्थापित किंवा रद्द करू शकता.",
+    "linkLabels": {
+      "privacy": "गोपनीयता धोरण",
+      "terms": "वापराच्या अटी"
+    }
+  },
+  "or": {
+    "name": "Overleap VPN",
+    "subtitle": "ଲଗ୍ ନାହିଁ। ସବୁ ନେଟୱର୍କରେ ଦ୍ରୁତ",
+    "keywords": "ଭିପିଏନ୍,ପ୍ରକ୍ସି,ଗୋପନୀୟତା,ସୁରକ୍ଷିତ,ୱାଇଫାଇ,ଆଇପି,ଅନବ୍ଲକ୍,ଯାତ୍ରା,ବ୍ୟକ୍ତିଗତ,proxy,wifi,secure,private,ip",
+    "promo": "ଲଗ୍ ରଖୁନଥିବା ବ୍ୟକ୍ତିଗତ VPN, ଯାହା ବାରମ୍ବାର ନିରାଶ କରୁଥିବା ନେଟୱର୍କରେ ମଧ୍ୟ ଦ୍ରୁତ ରହେ। ଗୋଟିଏ ପ୍ଲାନ୍, ପାଞ୍ଚଟି ଡିଭାଇସ୍।",
+    "playShort": "ଲଗ୍ ବିନା ବ୍ୟକ୍ତିଗତ VPN। ଧୀର Wi-Fi ରେ ମଧ୍ୟ ଦ୍ରୁତ। ଗୋଟିଏ ପ୍ଲାନ୍, ପାଞ୍ଚଟି ଡିଭାଇସ୍।",
+    "body": "Overleap ଏକ ବ୍ୟକ୍ତିଗତ VPN, ଯାହା ଆପଣ ଇଣ୍ଟରନେଟରେ କେଉଁଠାକୁ ଯାଉଛନ୍ତି ତାହା ଲୁଚାଇ ରଖେ — ଏପରିକି ଆପଣଙ୍କ ଇଣ୍ଟରନେଟ ସେବା ପ୍ରଦାନକାରୀ (ISP) ଠାରୁ ମଧ୍ୟ — କୌଣସି ଲଗ୍ ରଖେ ନାହିଁ, ଏବଂ ବାରମ୍ବାର ନିରାଶ କରୁଥିବା ନେଟୱର୍କରେ ମଧ୍ୟ ଦ୍ରୁତ ରହେ।\n\nଆପଣ କ'ଣ ପାଆନ୍ତି\n• ଆପଣଙ୍କ ISP ଠାରୁ ମଧ୍ୟ ଲୁକ୍କାୟିତ: ଆପଣଙ୍କ ପ୍ରଦାନକାରୀ କେବଳ ଗୋଟିଏ ସାଧାରଣ ଏନକ୍ରିପ୍ଟେଡ୍ ସଂଯୋଗ ଦେଖନ୍ତି, ତା'ଠାରୁ ଅଧିକ କିଛି ନୁହେଁ। Encrypted Client Hello ସର୍ଭରର ନାମ ମଧ୍ୟ ଲୁଚାଇଦିଏ।\n• ଲଗ୍ ନାହିଁ। ହସ୍ତାନ୍ତର କରିବାକୁ କିଛି ନାହିଁ: ଆପଣ କେଉଁ ସାଇଟ୍ ଦେଖନ୍ତି, କେଉଁ ଆପ୍ ବ୍ୟବହାର କରନ୍ତି କିମ୍ବା କେଉଁ ଟ୍ରାଫିକ୍ ପଠାନ୍ତି, ଆମେ ତାହା ରେକର୍ଡ କରୁନାହୁଁ। ସବସ୍କ୍ରିପସନ୍ ପାଇଁ ଯାହା ଆବଶ୍ୟକ, ଆମେ କେବଳ ସେତିକି ରଖୁ।\n• ଯେଉଁଠି ଅନ୍ୟ VPN ଧୀର ପଡ଼ିଯାଏ, ସେଠି ମଧ୍ୟ ଦ୍ରୁତ: Overleap ର k2cc ରେଟ୍ କଣ୍ଟ୍ରୋଲ୍ ଟ୍ରେନର Wi-Fi, ଭିଡ଼ ଥିବା ସ୍ଥାନ ଏବଂ ହୋଟେଲ ନେଟୱର୍କରେ ଆପଣଙ୍କ ଗତି ବଜାୟ ରଖେ।\n• ଆପଣଙ୍କ ସହ ଚାଲେ: ସେସନ୍ ମଝିରେ ହିଁ ଟନେଲ୍ Wi-Fi ରୁ ମୋବାଇଲ ଡାଟାକୁ ଚାଲିଯାଏ, ତେଣୁ ଡାଉନଲୋଡ୍ ଓ କଲ୍ ଜାରି ରହେ।\n• ବିଦେଶରେ ମଧ୍ୟ କାମ କରେ: ସଂଯୋଗଟି ସାଧାରଣ ୱେବ୍ ଟ୍ରାଫିକ୍ ପରି ଦେଖାଯାଏ, ତେଣୁ ଯେଉଁଠି ଅନ୍ୟ VPN ବନ୍ଦ ହୋଇଯାଏ ସେଠି ମଧ୍ୟ ଏହା ଚାଲୁ ରହେ।\n• ଖୋଲାଖୋଲି ଭାବେ ନିର୍ମିତ: ପ୍ରୋଟୋକଲର ଦସ୍ତାବିଜ ଉପଲବ୍ଧ ଏବଂ ସର୍ଭର ଓପନ୍ ସୋର୍ସ। ନିଜର ନୋଡ୍ ଚଲାନ୍ତୁ ଏବଂ Overleap କୁ କେବଳ କ୍ଲାଏଣ୍ଟ ଭାବେ ବ୍ୟବହାର କରନ୍ତୁ।\n\nଗୋଟିଏ ପ୍ଲାନ୍, ସବୁ ଡିଭାଇସ୍\nଗୋଟିଏ ସବସ୍କ୍ରିପସନ୍‌ରେ ଏକାସାଙ୍ଗରେ ପାଞ୍ଚଟି ଡିଭାଇସ୍, ଅସୀମିତ ଡାଟା ଏବଂ ସବୁ ଲୋକେସନ୍ ଅନ୍ତର୍ଭୁକ୍ତ।",
+    "iosSubscription": "ସବସ୍କ୍ରିପସନ୍\nOverleap Basic ଏକ ସ୍ୱୟଂଚାଳିତ ଭାବେ ନବୀକରଣ ହେଉଥିବା ବାର୍ଷିକ ସବସ୍କ୍ରିପସନ୍। କ୍ରୟ ନିଶ୍ଚିତ କରିବା ସମୟରେ ଆପଣଙ୍କ Apple ID ଆକାଉଣ୍ଟରୁ ଦେୟ ନିଆଯାଏ। ଚଳିତ ଅବଧି ଶେଷ ହେବାର ଅତିକମରେ 24 ଘଣ୍ଟା ପୂର୍ବରୁ ବାତିଲ ନକଲେ ସବସ୍କ୍ରିପସନ୍ ସ୍ୱୟଂଚାଳିତ ଭାବେ ନବୀକରଣ ହୁଏ; ଅବଧି ଶେଷ ହେବା ପୂର୍ବର 24 ଘଣ୍ଟା ଭିତରେ ନବୀକରଣ ପାଇଁ ଆପଣଙ୍କ ଆକାଉଣ୍ଟରୁ ଦେୟ ନିଆଯାଏ। କ୍ରୟ ପରେ ଆପଣ ନିଜ App Store ଆକାଉଣ୍ଟ ସେଟିଂସରେ ସବସ୍କ୍ରିପସନ୍ ପରିଚାଳନା କିମ୍ବା ବାତିଲ କରିପାରିବେ।",
+    "linkLabels": {
+      "privacy": "ଗୋପନୀୟତା ନୀତି",
+      "terms": "ବ୍ୟବହାର ସର୍ତ୍ତାବଳୀ"
+    }
+  },
+  "pa": {
+    "name": "Overleap VPN",
+    "subtitle": "ਲੌਗ ਨਹੀਂ। ਹਰ ਨੈੱਟਵਰਕ 'ਤੇ ਤੇਜ਼",
+    "keywords": "ਵੀਪੀਐਨ,ਪ੍ਰੌਕਸੀ,ਪਰਦੇਦਾਰੀ,ਪ੍ਰਾਈਵੇਸੀ,ਸੁਰੱਖਿਅਤ,ਵਾਈਫਾਈ,ਨਿੱਜੀ,ਆਈਪੀ,ਅਨਬਲੌਕ,ਯਾਤਰਾ,proxy,wifi,secure,ip",
+    "promo": "ਬਿਨਾਂ ਲੌਗ ਵਾਲਾ ਨਿੱਜੀ VPN, ਜੋ ਉਨ੍ਹਾਂ ਨੈੱਟਵਰਕਾਂ 'ਤੇ ਵੀ ਤੇਜ਼ ਰਹਿੰਦਾ ਹੈ ਜੋ ਅਕਸਰ ਸਾਥ ਛੱਡ ਦਿੰਦੇ ਹਨ। ਇੱਕ ਪਲਾਨ, ਪੰਜ ਡਿਵਾਈਸ।",
+    "playShort": "ਬਿਨਾਂ ਲੌਗ ਵਾਲਾ ਨਿੱਜੀ VPN। ਹੌਲੀ Wi-Fi 'ਤੇ ਵੀ ਤੇਜ਼। ਇੱਕ ਪਲਾਨ, ਪੰਜ ਡਿਵਾਈਸ।",
+    "body": "Overleap ਇੱਕ ਨਿੱਜੀ VPN ਹੈ ਜੋ ਇਹ ਲੁਕਾਉਂਦਾ ਹੈ ਕਿ ਤੁਸੀਂ ਇੰਟਰਨੈੱਟ 'ਤੇ ਕਿੱਥੇ ਜਾਂਦੇ ਹੋ — ਤੁਹਾਡੇ ਇੰਟਰਨੈੱਟ ਸੇਵਾ ਪ੍ਰਦਾਤਾ (ISP) ਤੋਂ ਵੀ — ਕੋਈ ਲੌਗ ਨਹੀਂ ਰੱਖਦਾ, ਅਤੇ ਉਨ੍ਹਾਂ ਨੈੱਟਵਰਕਾਂ 'ਤੇ ਵੀ ਤੇਜ਼ ਰਹਿੰਦਾ ਹੈ ਜੋ ਅਕਸਰ ਸਾਥ ਛੱਡ ਦਿੰਦੇ ਹਨ।\n\nਤੁਹਾਨੂੰ ਕੀ ਮਿਲਦਾ ਹੈ\n• ਤੁਹਾਡੇ ISP ਤੋਂ ਵੀ ਲੁਕਿਆ ਹੋਇਆ: ਤੁਹਾਡੇ ਪ੍ਰਦਾਤਾ ਨੂੰ ਸਿਰਫ਼ ਇੱਕ ਆਮ ਐਨਕ੍ਰਿਪਟਡ ਕਨੈਕਸ਼ਨ ਦਿਸਦਾ ਹੈ, ਇਸ ਤੋਂ ਵੱਧ ਕੁਝ ਨਹੀਂ। Encrypted Client Hello ਸਰਵਰ ਦਾ ਨਾਮ ਤੱਕ ਲੁਕਾ ਦਿੰਦਾ ਹੈ।\n• ਕੋਈ ਲੌਗ ਨਹੀਂ। ਸੌਂਪਣ ਲਈ ਕੁਝ ਨਹੀਂ: ਤੁਸੀਂ ਕਿਹੜੀਆਂ ਸਾਈਟਾਂ ਦੇਖਦੇ ਹੋ, ਕਿਹੜੀਆਂ ਐਪਾਂ ਵਰਤਦੇ ਹੋ ਜਾਂ ਕਿਹੜਾ ਟ੍ਰੈਫਿਕ ਭੇਜਦੇ ਹੋ, ਅਸੀਂ ਇਹ ਰਿਕਾਰਡ ਨਹੀਂ ਕਰਦੇ। ਅਸੀਂ ਸਿਰਫ਼ ਓਨਾ ਹੀ ਰੱਖਦੇ ਹਾਂ ਜਿੰਨਾ ਸਬਸਕ੍ਰਿਪਸ਼ਨ ਲਈ ਜ਼ਰੂਰੀ ਹੈ।\n• ਉੱਥੇ ਵੀ ਤੇਜ਼, ਜਿੱਥੇ ਦੂਜੇ VPN ਰੀਂਗਦੇ ਹਨ: Overleap ਦਾ k2cc ਰੇਟ ਕੰਟਰੋਲ ਰੇਲਗੱਡੀ ਦੇ Wi-Fi, ਭੀੜ ਵਾਲੀਆਂ ਥਾਵਾਂ ਅਤੇ ਹੋਟਲ ਦੇ ਨੈੱਟਵਰਕਾਂ 'ਤੇ ਤੁਹਾਡੀ ਸਪੀਡ ਬਣਾਈ ਰੱਖਦਾ ਹੈ।\n• ਤੁਹਾਡੇ ਨਾਲ ਚੱਲਦਾ ਹੈ: ਸੈਸ਼ਨ ਦੇ ਵਿਚਕਾਰ ਹੀ ਟਨਲ Wi-Fi ਤੋਂ ਮੋਬਾਈਲ ਡਾਟਾ 'ਤੇ ਚਲਾ ਜਾਂਦਾ ਹੈ, ਇਸ ਲਈ ਡਾਊਨਲੋਡ ਅਤੇ ਕਾਲਾਂ ਜਾਰੀ ਰਹਿੰਦੀਆਂ ਹਨ।\n• ਵਿਦੇਸ਼ ਵਿੱਚ ਵੀ ਕੰਮ ਕਰਦਾ ਰਹਿੰਦਾ ਹੈ: ਕਨੈਕਸ਼ਨ ਆਮ ਵੈੱਬ ਟ੍ਰੈਫਿਕ ਵਰਗਾ ਦਿਸਦਾ ਹੈ, ਇਸ ਲਈ ਇਹ ਉੱਥੇ ਵੀ ਚੱਲਦਾ ਰਹਿੰਦਾ ਹੈ ਜਿੱਥੇ ਦੂਜੇ VPN ਬੰਦ ਹੋ ਜਾਂਦੇ ਹਨ।\n• ਖੁੱਲ੍ਹੇ ਤੌਰ 'ਤੇ ਬਣਾਇਆ ਗਿਆ: ਪ੍ਰੋਟੋਕੋਲ ਦਾ ਦਸਤਾਵੇਜ਼ ਉਪਲਬਧ ਹੈ ਅਤੇ ਸਰਵਰ ਓਪਨ ਸੋਰਸ ਹੈ। ਆਪਣਾ ਖੁਦ ਦਾ ਨੋਡ ਚਲਾਓ ਅਤੇ Overleap ਨੂੰ ਸਿਰਫ਼ ਕਲਾਇੰਟ ਵਜੋਂ ਵਰਤੋ।\n\nਇੱਕ ਪਲਾਨ, ਹਰ ਡਿਵਾਈਸ\nਇੱਕ ਸਬਸਕ੍ਰਿਪਸ਼ਨ ਵਿੱਚ ਇੱਕੋ ਸਮੇਂ ਪੰਜ ਡਿਵਾਈਸ, ਅਸੀਮਤ ਡਾਟਾ ਅਤੇ ਹਰ ਲੋਕੇਸ਼ਨ ਸ਼ਾਮਲ ਹੈ।",
+    "iosSubscription": "ਸਬਸਕ੍ਰਿਪਸ਼ਨ\nOverleap Basic ਆਪਣੇ-ਆਪ ਨਵਿਆਈ ਜਾਣ ਵਾਲੀ ਸਾਲਾਨਾ ਸਬਸਕ੍ਰਿਪਸ਼ਨ ਹੈ। ਖਰੀਦ ਦੀ ਪੁਸ਼ਟੀ ਹੋਣ 'ਤੇ ਭੁਗਤਾਨ ਤੁਹਾਡੇ Apple ID ਖਾਤੇ ਤੋਂ ਲਿਆ ਜਾਂਦਾ ਹੈ। ਸਬਸਕ੍ਰਿਪਸ਼ਨ ਆਪਣੇ-ਆਪ ਨਵਿਆਈ ਜਾਂਦੀ ਹੈ, ਜਦੋਂ ਤੱਕ ਇਸਨੂੰ ਮੌਜੂਦਾ ਮਿਆਦ ਖਤਮ ਹੋਣ ਤੋਂ ਘੱਟੋ-ਘੱਟ 24 ਘੰਟੇ ਪਹਿਲਾਂ ਰੱਦ ਨਾ ਕੀਤਾ ਜਾਵੇ; ਮਿਆਦ ਖਤਮ ਹੋਣ ਤੋਂ ਪਹਿਲਾਂ ਦੇ 24 ਘੰਟਿਆਂ ਦੇ ਅੰਦਰ ਨਵਿਆਉਣ ਦੀ ਰਕਮ ਤੁਹਾਡੇ ਖਾਤੇ ਤੋਂ ਲਈ ਜਾਂਦੀ ਹੈ। ਖਰੀਦ ਤੋਂ ਬਾਅਦ ਤੁਸੀਂ ਆਪਣੀਆਂ App Store ਖਾਤਾ ਸੈਟਿੰਗਾਂ ਵਿੱਚ ਸਬਸਕ੍ਰਿਪਸ਼ਨ ਦਾ ਪ੍ਰਬੰਧਨ ਕਰ ਸਕਦੇ ਹੋ ਜਾਂ ਇਸਨੂੰ ਰੱਦ ਕਰ ਸਕਦੇ ਹੋ।",
+    "linkLabels": {
+      "privacy": "ਪਰਦੇਦਾਰੀ ਨੀਤੀ",
+      "terms": "ਵਰਤੋਂ ਦੀਆਂ ਸ਼ਰਤਾਂ"
+    }
+  },
+  "ta": {
+    "name": "Overleap VPN",
+    "subtitle": "பதிவுகள் இல்லை. எங்கும் வேகம்.",
+    "keywords": "விபிஎன்,ப்ராக்ஸி,தனியுரிமை,பாதுகாப்பு,வைஃபை,ஐபி,அன்பிளாக்,பயணம்,இணையம்,proxy,wifi,secure,private,ip",
+    "promo": "பதிவுகள் எதையும் வைத்திருக்காத தனிப்பட்ட VPN. அடிக்கடி கைவிடும் நெட்வொர்க்குகளிலும் வேகமாகவே இருக்கும். ஒரு திட்டம், ஐந்து சாதனங்கள்.",
+    "playShort": "பதிவில்லாத தனிப்பட்ட VPN. மெதுவான Wi-Fi-யிலும் வேகம். ஒரு திட்டம், 5 சாதனங்கள்.",
+    "body": "Overleap ஒரு தனிப்பட்ட VPN. நீங்கள் இணையத்தில் எங்கு செல்கிறீர்கள் என்பதை இது மறைக்கிறது — உங்கள் இணைய சேவை வழங்குநரிடமிருந்தும் (ISP) கூட — பதிவுகள் எதையும் வைத்திருப்பதில்லை, அடிக்கடி கைவிடும் நெட்வொர்க்குகளிலும் வேகமாகவே இருக்கும்.\n\nஉங்களுக்குக் கிடைப்பவை\n• உங்கள் ISP-யிடமிருந்தும் மறைக்கப்படுகிறது: உங்கள் சேவை வழங்குநர் ஒரு சாதாரண என்க்ரிப்ட் செய்யப்பட்ட இணைப்பை மட்டுமே பார்க்கிறார், அதற்கு மேல் எதுவும் இல்லை. Encrypted Client Hello சர்வரின் பெயரைக் கூட மறைக்கிறது.\n• பதிவுகள் இல்லை. ஒப்படைக்க எதுவும் இல்லை: நீங்கள் பார்க்கும் தளங்கள், பயன்படுத்தும் ஆப்கள் அல்லது அனுப்பும் டிராஃபிக் எதையும் நாங்கள் பதிவு செய்வதில்லை. சந்தாவுக்குத் தேவையானதை மட்டுமே வைத்திருக்கிறோம்.\n• மற்ற VPN-கள் தவழும் இடங்களிலும் வேகம்: Overleap-இன் k2cc ரேட் கண்ட்ரோல், ரயில் Wi-Fi, கூட்டம் நிறைந்த இடங்கள் மற்றும் ஹோட்டல் நெட்வொர்க்குகளில் உங்கள் வேகத்தைத் தக்கவைக்கிறது.\n• உங்களுடன் நகர்கிறது: அமர்வின் நடுவிலேயே டனல் Wi-Fi-யிலிருந்து மொபைல் டேட்டாவுக்கு மாறுகிறது, எனவே பதிவிறக்கங்களும் அழைப்புகளும் தொடர்கின்றன.\n• வெளிநாட்டிலும் தொடர்ந்து வேலை செய்கிறது: இணைப்பு சாதாரண வலை டிராஃபிக் போலத் தெரிவதால், மற்ற VPN-கள் செயலிழக்கும் இடங்களிலும் இது தொடர்ந்து இயங்குகிறது.\n• வெளிப்படையாக உருவாக்கப்பட்டது: புரோட்டோகால் ஆவணப்படுத்தப்பட்டுள்ளது, சர்வர் ஓப்பன் சோர்ஸ். உங்கள் சொந்த நோடை இயக்கி, Overleap-ஐ வெறும் கிளையன்டாக மட்டும் பயன்படுத்தலாம்.\n\nஒரு திட்டம், எல்லா சாதனங்களும்\nஒரே சந்தாவில் ஒரே நேரத்தில் ஐந்து சாதனங்கள், வரம்பற்ற டேட்டா மற்றும் அனைத்து இருப்பிடங்களும் அடங்கும்.",
+    "iosSubscription": "சந்தா\nOverleap Basic என்பது தானாகப் புதுப்பிக்கப்படும் ஆண்டுச் சந்தா ஆகும். வாங்குதலை உறுதிப்படுத்தும்போது உங்கள் Apple ID கணக்கில் கட்டணம் வசூலிக்கப்படும். நடப்புக் காலம் முடிவதற்குக் குறைந்தது 24 மணிநேரத்திற்கு முன் ரத்து செய்யப்படாவிட்டால் சந்தா தானாகவே புதுப்பிக்கப்படும்; காலம் முடிவதற்கு முந்தைய 24 மணிநேரத்திற்குள் புதுப்பித்தலுக்கான கட்டணம் உங்கள் கணக்கில் வசூலிக்கப்படும். வாங்கிய பிறகு உங்கள் App Store கணக்கு அமைப்புகளில் சந்தாவை நிர்வகிக்கலாம் அல்லது ரத்து செய்யலாம்.",
+    "linkLabels": {
+      "privacy": "தனியுரிமைக் கொள்கை",
+      "terms": "பயன்பாட்டு விதிமுறைகள்"
+    }
+  },
+  "te": {
+    "name": "Overleap VPN",
+    "subtitle": "లాగ్‌లు లేవు. ఎక్కడైనా వేగం.",
+    "keywords": "విపిఎన్,ప్రాక్సీ,గోప్యత,ప్రైవసీ,సురక్షితం,వైఫై,ఐపీ,అన్‌బ్లాక్,ప్రయాణం,proxy,wifi,secure,private,ip",
+    "promo": "లాగ్‌లు ఉంచని ప్రైవేట్ VPN. తరచూ మొరాయించే నెట్‌వర్క్‌లలో కూడా వేగంగానే ఉంటుంది. ఒక ప్లాన్, ఐదు పరికరాలు.",
+    "playShort": "లాగ్‌లు లేని ప్రైవేట్ VPN. నెమ్మదైన Wi-Fiలోనూ వేగం. ఒక ప్లాన్, ఐదు పరికరాలు.",
+    "body": "Overleap ఒక ప్రైవేట్ VPN. మీరు ఇంటర్నెట్‌లో ఎక్కడికి వెళ్తున్నారో ఇది దాచిపెడుతుంది — మీ ఇంటర్నెట్ సేవా ప్రదాత (ISP) నుండి కూడా — ఎలాంటి లాగ్‌లు ఉంచదు, తరచూ మొరాయించే నెట్‌వర్క్‌లలో కూడా వేగంగానే ఉంటుంది.\n\nమీకు లభించేవి\n• మీ ISP నుండి కూడా దాగి ఉంటుంది: మీ ప్రదాతకు ఒక సాధారణ ఎన్‌క్రిప్టెడ్ కనెక్షన్ మాత్రమే కనిపిస్తుంది, అంతకు మించి ఏమీ కాదు. Encrypted Client Hello సర్వర్ పేరును కూడా దాచిపెడుతుంది.\n• లాగ్‌లు లేవు. అప్పగించడానికి ఏమీ లేదు: మీరు సందర్శించే సైట్‌లు, వాడే యాప్‌లు లేదా పంపే ట్రాఫిక్‌ను మేము రికార్డ్ చేయము. సబ్‌స్క్రిప్షన్‌కు అవసరమైనది మాత్రమే ఉంచుకుంటాము.\n• ఇతర VPNలు నత్తనడక నడిచే చోట కూడా వేగం: Overleap యొక్క k2cc రేట్ కంట్రోల్ రైలు Wi-Fi, రద్దీ ప్రదేశాలు, హోటల్ నెట్‌వర్క్‌లలో మీ వేగాన్ని నిలబెడుతుంది.\n• మీతో పాటే కదులుతుంది: సెషన్ మధ్యలోనే టన్నెల్ Wi-Fi నుండి మొబైల్ డేటాకు మారుతుంది, కాబట్టి డౌన్‌లోడ్‌లు, కాల్స్ కొనసాగుతాయి.\n• విదేశాల్లోనూ పని చేస్తూనే ఉంటుంది: కనెక్షన్ సాధారణ వెబ్ ట్రాఫిక్‌లా కనిపిస్తుంది, కాబట్టి ఇతర VPNలు ఆగిపోయే చోట కూడా ఇది పని చేస్తుంది.\n• బహిరంగంగా నిర్మించబడింది: ప్రోటోకాల్ డాక్యుమెంట్ చేయబడింది, సర్వర్ ఓపెన్ సోర్స్. మీ సొంత నోడ్‌ను నడుపుతూ Overleapను కేవలం క్లయింట్‌గా వాడుకోవచ్చు.\n\nఒక ప్లాన్, అన్ని పరికరాలు\nఒకే సబ్‌స్క్రిప్షన్‌లో ఒకేసారి ఐదు పరికరాలు, అపరిమిత డేటా, అన్ని లొకేషన్‌లు ఉంటాయి.",
+    "iosSubscription": "సబ్‌స్క్రిప్షన్\nOverleap Basic అనేది ఆటోమేటిక్‌గా పునరుద్ధరించబడే వార్షిక సబ్‌స్క్రిప్షన్. కొనుగోలును నిర్ధారించినప్పుడు చెల్లింపు మీ Apple ID ఖాతాకు ఛార్జ్ చేయబడుతుంది. ప్రస్తుత వ్యవధి ముగియడానికి కనీసం 24 గంటల ముందు రద్దు చేయకపోతే సబ్‌స్క్రిప్షన్ ఆటోమేటిక్‌గా పునరుద్ధరించబడుతుంది; వ్యవధి ముగియడానికి ముందు 24 గంటలలోపు పునరుద్ధరణ రుసుము మీ ఖాతాకు ఛార్జ్ చేయబడుతుంది. కొనుగోలు తర్వాత మీ App Store ఖాతా సెట్టింగ్‌లలో సబ్‌స్క్రిప్షన్‌ను నిర్వహించవచ్చు లేదా రద్దు చేయవచ్చు.",
+    "linkLabels": {
+      "privacy": "గోప్యతా విధానం",
+      "terms": "వినియోగ నిబంధనలు"
+    }
+  },
+  "ne": {
+    "name": "Overleap VPN",
+    "subtitle": "लग छैन। हरेक नेटवर्कमा छिटो।",
+    "keywords": "भीपीएन,प्रोक्सी,गोपनीयता,प्राइभेसी,सुरक्षित,वाइफाइ,निजी,आइपी,अनब्लक,यात्रा,proxy,wifi,secure,ip",
+    "promo": "लग नराख्ने निजी VPN, जुन बारम्बार धोका दिने नेटवर्कमा पनि छिटो रहन्छ। एउटा प्लान, पाँच डिभाइस।",
+    "playShort": "लग नराख्ने निजी VPN। ढिलो Wi-Fi मा पनि छिटो। एउटा प्लान, पाँच डिभाइस।",
+    "body": "Overleap एउटा निजी VPN हो, जसले तपाईं इन्टरनेटमा कहाँ जानुहुन्छ भन्ने कुरा लुकाउँछ — तपाईंको इन्टरनेट सेवा प्रदायक (ISP) बाट समेत — कुनै लग राख्दैन, र बारम्बार धोका दिने नेटवर्कमा पनि छिटो रहन्छ।\n\nतपाईंले के पाउनुहुन्छ\n• तपाईंको ISP बाट समेत लुकेको: तपाईंको प्रदायकले एउटा साधारण इन्क्रिप्टेड जडान मात्र देख्छ, त्योभन्दा बढी केही होइन। Encrypted Client Hello ले सर्भरको नामसमेत लुकाउँछ।\n• लग छैन। बुझाउनुपर्ने केही छैन: तपाईंले हेर्ने साइट, प्रयोग गर्ने एप वा पठाउने ट्राफिक हामी रेकर्ड गर्दैनौं। सदस्यताका लागि चाहिने कुरा मात्र हामी राख्छौं।\n• अरू VPN घस्रिने ठाउँमा पनि छिटो: Overleap को k2cc रेट कन्ट्रोलले रेलको Wi-Fi, भीडभाड हुने ठाउँ र होटलको नेटवर्कमा तपाईंको गति कायम राख्छ।\n• तपाईंसँगै हिँड्छ: सेसनको बीचमै टनेल Wi-Fi बाट मोबाइल डेटामा सर्छ, त्यसैले डाउनलोड र कल चलिरहन्छन्।\n• विदेशमा पनि चलिरहन्छ: जडान साधारण वेब ट्राफिकजस्तै देखिन्छ, त्यसैले अरू VPN बन्द हुने ठाउँमा पनि यो चलिरहन्छ।\n• खुला रूपमा बनाइएको: प्रोटोकलको कागजात उपलब्ध छ र सर्भर ओपन सोर्स छ। आफ्नै नोड चलाउनुहोस् र Overleap लाई केवल क्लाइन्टका रूपमा प्रयोग गर्नुहोस्।\n\nएउटा प्लान, हरेक डिभाइस\nएउटै सदस्यतामा एकैपटक पाँच डिभाइस, असीमित डेटा र हरेक लोकेसन समावेश छ।",
+    "iosSubscription": "सदस्यता\nOverleap Basic स्वतः नवीकरण हुने वार्षिक सदस्यता हो। खरिद पुष्टि हुँदा भुक्तानी तपाईंको Apple ID खाताबाट लिइन्छ। हालको अवधि सकिनुभन्दा कम्तीमा 24 घण्टाअघि रद्द नगरिएमा सदस्यता स्वतः नवीकरण हुन्छ; अवधि सकिनुअघिको 24 घण्टाभित्र नवीकरणको शुल्क तपाईंको खाताबाट लिइन्छ। खरिदपछि तपाईंले आफ्नो App Store खाता सेटिङमा सदस्यता व्यवस्थापन वा रद्द गर्न सक्नुहुन्छ।",
+    "linkLabels": {
+      "privacy": "गोपनीयता नीति",
+      "terms": "प्रयोगका सर्तहरू"
+    }
+  },
+  "si": {
+    "name": "Overleap VPN",
+    "subtitle": "ලොග් නැත. ඕනෑම ජාලයක වේගවත්.",
+    "keywords": "වීපීඑන්,ප්‍රොක්සි,පෞද්ගලිකත්වය,ආරක්ෂිත,වයිෆයි,අයිපී,අන්බ්ලොක්,සංචාර,proxy,wifi,secure,private,ip",
+    "promo": "ලොග් තබා නොගන්නා පෞද්ගලික VPN එකක්. නිතර අතරමං කරන ජාලවලදීත් වේගවත්ව පවතී. එක් සැලසුමක්, උපාංග පහක්.",
+    "playShort": "ලොග් නැති පෞද්ගලික VPN. මන්දගාමී Wi-Fi වලත් වේගවත්. එක් සැලසුමක්, උපාංග පහක්.",
+    "body": "Overleap යනු ඔබ අන්තර්ජාලයේ යන්නේ කොහේදැයි සඟවන පෞද්ගලික VPN එකකි — ඔබේ අන්තර්ජාල සේවා සපයන්නාගෙන් (ISP) පවා — එය කිසිදු ලොග් එකක් තබා නොගන්නා අතර, නිතර අතරමං කරන ජාලවලදීත් වේගවත්ව පවතී.\n\nඔබට ලැබෙන දේ\n• ඔබේ ISP ගෙන් පවා සැඟවී ඇත: ඔබේ සේවා සපයන්නා දකින්නේ එක් සාමාන්‍ය සංකේතනය කළ සම්බන්ධතාවක් පමණි, ඊට වඩා කිසිවක් නැත. Encrypted Client Hello මඟින් සේවාදායකයේ නම පවා සඟවයි.\n• ලොග් නැත. භාර දීමට කිසිවක් නැත: ඔබ පිවිසෙන අඩවි, භාවිත කරන යෙදුම් හෝ යවන දත්ත ගමනාගමනය අප සටහන් නොකරයි. අප තබා ගන්නේ දායකත්වයකට අවශ්‍ය දේ පමණි.\n• වෙනත් VPN බඩගාන තැන්වලත් වේගවත්: Overleap හි k2cc වේග පාලනය දුම්රිය Wi-Fi, සෙනඟ පිරුණු ස්ථාන සහ හෝටල් ජාලවලදී ඔබේ වේගය රඳවා තබයි.\n• ඔබ සමඟ ගමන් කරයි: සැසිය අතරතුරදීම ටනලය Wi-Fi සිට ජංගම දත්ත වෙත මාරු වන බැවින් බාගැනීම් සහ ඇමතුම් නොනැවතී පවතී.\n• විදේශයේදීත් දිගටම ක්‍රියා කරයි: සම්බන්ධතාව සාමාන්‍ය වෙබ් ගමනාගමනයක් ලෙස පෙනෙන නිසා, වෙනත් VPN අක්‍රිය වන තැන්වලත් එය ක්‍රියා කරයි.\n• විවෘතව ගොඩනඟා ඇත: ප්‍රොටොකෝලය ලේඛනගත කර ඇති අතර සේවාදායකය විවෘත මූලාශ්‍ර වේ. ඔබේම නෝඩයක් ධාවනය කර Overleap සේවාලාභියා ලෙස පමණක් භාවිත කළ හැක.\n\nඑක් සැලසුමක්, සෑම උපාංගයක්ම\nඑක් දායකත්වයකින් එකවර උපාංග පහක්, අසීමිත දත්ත සහ සෑම ස්ථානයක්ම ආවරණය වේ.",
+    "iosSubscription": "දායකත්වය\nOverleap Basic යනු ස්වයංක්‍රීයව අලුත් වන වාර්ෂික දායකත්වයකි. මිලදී ගැනීම තහවුරු කරන අවස්ථාවේදී ගෙවීම ඔබේ Apple ID ගිණුමෙන් අය කෙරේ. වත්මන් කාලසීමාව අවසන් වීමට අවම වශයෙන් පැය 24කට පෙර අවලංගු නොකළහොත් දායකත්වය ස්වයංක්‍රීයව අලුත් වේ; කාලසීමාව අවසන් වීමට පෙර පැය 24 ඇතුළත අලුත් කිරීම සඳහා ඔබේ ගිණුමෙන් අය කෙරේ. මිලදී ගැනීමෙන් පසු ඔබේ App Store ගිණුම් සැකසීම් තුළ දායකත්වය කළමනාකරණය කිරීමට හෝ අවලංගු කිරීමට හැකිය.",
+    "linkLabels": {
+      "privacy": "රහස්‍යතා ප්‍රතිපත්තිය",
+      "terms": "භාවිත නියම"
+    }
+  },
+  "ja": {
+    "name": "Overleap VPN",
+    "subtitle": "ログなし。どんな回線でも高速",
+    "keywords": "プライバシー,セキュリティ,暗号化,プロキシ,匿名,通信保護,安全,ワイファイ,wifi,公衆無線LAN,海外,旅行,出張,IPアドレス,トンネル,ブイピーエヌ,proxy,ech,ネット接続",
+    "promo": "ログを残さないプライベートVPN。つながりにくいネットワークでも速さを保ちます。1つのプランで5台まで。",
+    "playShort": "ログを残さないプライベートVPN。遅いWi-Fiでも高速。1プランで5台まで。",
+    "body": "Overleapは、あなたのアクセス先をプロバイダーからも隠すプライベートVPNです。ログは一切保存せず、つながりにくいネットワークでも速さを保ちます。\n\n主な特長\n• プロバイダーにも見えない：プロバイダーから見えるのは、ごく普通の暗号化された接続が1本だけです。Encrypted Client Helloにより、サーバー名も隠されます。\n• ログなし。渡せるものがありません：閲覧したサイト、使用したアプリ、送信した通信内容を記録しません。保持するのは、サブスクリプションに必要な情報だけです。\n• ほかのVPNが遅くなる場所でも高速：Overleap独自のk2ccレート制御が、電車内のWi-Fi、混雑した会場、ホテルのネットワークでも速度を保ちます。\n• 移動しても途切れない：通信中にWi-Fiからモバイルデータ通信へ切り替わってもトンネルがそのまま引き継がれるため、ダウンロードも通話も続きます。\n• 海外でも使える：接続は通常のウェブ通信と同じように見えるため、ほかのVPNがつながらなくなる場所でも使い続けられます。\n• オープンな開発：プロトコルは文書化され、サーバーはオープンソースです。自分でノードを運用し、Overleapをクライアントとしてだけ使うこともできます。\n\n1つのプランで、すべてのデバイスに\n1つのサブスクリプションで5台まで同時に利用でき、データ通信量は無制限、すべてのロケーションを利用できます。",
+    "iosSubscription": "サブスクリプション\nOverleap Basicは、自動更新される年額サブスクリプションです。お支払いは、購入確定時にApple IDアカウントに請求されます。現在の期間が終了する24時間前までにキャンセルしない限り、サブスクリプションは自動的に更新されます。更新料金は、期間終了前の24時間以内にアカウントに請求されます。購入後、App Storeのアカウント設定でサブスクリプションの管理やキャンセルができます。",
+    "linkLabels": {
+      "privacy": "プライバシーポリシー",
+      "terms": "利用規約"
+    }
+  },
+  "ko": {
+    "name": "Overleap VPN",
+    "subtitle": "로그 없음. 어떤 네트워크에서도 빠르게",
+    "keywords": "브이피엔,프라이버시,개인정보,보안,암호화,프록시,우회,와이파이,wifi,공용와이파이,해외,여행,출장,아이피,ip변경,터널,익명,인터넷,속도,안전,proxy,ech,보호,접속,사생활",
+    "promo": "로그를 남기지 않는 프라이빗 VPN. 불안정한 네트워크에서도 빠른 속도를 유지합니다. 요금제 하나로 기기 5대까지.",
+    "playShort": "로그를 남기지 않는 프라이빗 VPN. 느린 Wi-Fi에서도 빠르게. 요금제 하나로 기기 5대.",
+    "body": "Overleap은 인터넷 서비스 제공업체(ISP)조차 내가 어디에 접속하는지 알 수 없게 숨겨 주는 프라이빗 VPN입니다. 로그를 남기지 않으며, 불안정한 네트워크에서도 빠른 속도를 유지합니다.\n\n주요 기능\n• ISP에게도 보이지 않습니다: 통신사에는 평범한 암호화 연결 하나만 보일 뿐입니다. Encrypted Client Hello가 서버 이름까지 숨겨 줍니다.\n• 로그 없음. 넘겨줄 것이 없습니다: 방문한 사이트, 사용한 앱, 전송한 트래픽을 기록하지 않습니다. 구독에 필요한 정보만 보관합니다.\n• 다른 VPN이 느려지는 곳에서도 빠릅니다: Overleap의 k2cc 속도 제어 기술이 기차 Wi-Fi, 붐비는 행사장, 호텔 네트워크에서도 속도를 유지합니다.\n• 이동 중에도 끊기지 않습니다: 사용 중에 Wi-Fi에서 모바일 데이터로 바뀌어도 터널이 그대로 이어지므로 다운로드와 통화가 계속됩니다.\n• 해외에서도 계속 작동합니다: 연결이 일반 웹 트래픽처럼 보이기 때문에 다른 VPN이 먹통이 되는 곳에서도 계속 작동합니다.\n• 공개적으로 개발합니다: 프로토콜은 문서로 공개되어 있고 서버는 오픈 소스입니다. 직접 노드를 운영하고 Overleap을 클라이언트로만 사용할 수도 있습니다.\n\n요금제 하나로 모든 기기에서\n구독 하나로 기기 5대를 동시에 사용할 수 있으며, 데이터는 무제한이고 모든 위치를 이용할 수 있습니다.",
+    "iosSubscription": "구독 안내\nOverleap Basic은 자동으로 갱신되는 연간 구독입니다. 결제 금액은 구매 확정 시 Apple ID 계정으로 청구됩니다. 현재 구독 기간이 끝나기 최소 24시간 전에 취소하지 않으면 구독은 자동으로 갱신되며, 갱신 요금은 기간 종료 전 24시간 이내에 계정으로 청구됩니다. 구매 후 App Store 계정 설정에서 구독을 관리하거나 취소할 수 있습니다.",
+    "linkLabels": {
+      "privacy": "개인정보 처리방침",
+      "terms": "이용약관"
+    }
+  },
+  "zh-Hans": {
+    "name": "Overleap VPN",
+    "subtitle": "不留日志，任何网络都快",
+    "keywords": "隐私,私密,安全,加密,代理,加速器,匿名,公共wifi,无线,旅行,出差,海外,ip地址,隧道,保护,上网,proxy,ech,防追踪,连接,稳定,高速,private,secure,travel",
+    "promo": "不留日志的私密 VPN，在信号不佳的网络上依然快速。一个方案，五台设备。",
+    "playShort": "不留日志的私密 VPN，Wi-Fi 再慢也保持快速。一个方案，五台设备。",
+    "body": "Overleap 是一款私密 VPN：连网络服务商也看不到你访问了什么，不留任何日志，在信号不佳的网络上依然快速。\n\n你将获得\n• 连网络服务商也看不到：服务商只能看到一条普通的加密连接，仅此而已。Encrypted Client Hello 连服务器名称也一并隐藏。\n• 不留日志，无可交出：我们不记录你访问的网站、使用的应用或传输的流量，只保留订阅所必需的信息。\n• 别的 VPN 变慢的地方，它依然快：Overleap 的 k2cc 速率控制让你在火车 Wi-Fi、人群密集的场馆和酒店网络上保持速度。\n• 随你移动：使用途中从 Wi-Fi 切换到移动数据时，隧道会无缝迁移，下载和通话不会中断。\n• 出国照常使用：连接看起来与普通网页流量无异，在其他 VPN 无法连接的地方依然可用。\n• 公开构建：协议有公开文档，服务器端开源。你可以自行搭建节点，只把 Overleap 当作客户端使用。\n\n一个方案，所有设备\n一份订阅可同时用于五台设备，流量不限，所有地点均可使用。",
+    "iosSubscription": "订阅说明\nOverleap Basic 是自动续订的年度订阅。款项将在确认购买时从你的 Apple ID 账户扣取。除非在当前订阅期结束前至少 24 小时取消，否则订阅将自动续订；续订费用将在当前订阅期结束前 24 小时内从你的账户扣取。购买后，你可以在 App Store 账户设置中管理或取消订阅。",
+    "linkLabels": {
+      "privacy": "隐私政策",
+      "terms": "使用条款"
+    }
+  },
+  "zh-Hant": {
+    "name": "Overleap VPN",
+    "subtitle": "不留記錄，任何網路都快速",
+    "keywords": "隱私,私密,安全,加密,代理,加速器,匿名,公共wifi,無線,旅行,出差,海外,ip位址,保護,上網,proxy,ech,防追蹤,連線,穩定,高速,private,secure,travel,跨區",
+    "promo": "不留記錄的私密 VPN，在訊號不佳的網路上依然快速。一個方案，五台裝置。",
+    "playShort": "不留記錄的私密 VPN，Wi-Fi 再慢也維持快速。一個方案，五台裝置。",
+    "body": "Overleap 是一款私密 VPN：連網路服務供應商也看不到你去了哪些網站，不留任何記錄，在訊號不佳的網路上依然快速。\n\n你將獲得\n• 連網路服務供應商也看不到：供應商只會看到一條普通的加密連線，僅此而已。Encrypted Client Hello 連伺服器名稱也一併隱藏。\n• 不留記錄，無可交出：我們不記錄你造訪的網站、使用的應用程式或傳輸的流量，只保留訂閱所必需的資訊。\n• 其他 VPN 變慢的地方，它依然快：Overleap 的 k2cc 速率控制讓你在火車 Wi-Fi、人潮擁擠的場館和飯店網路上維持速度。\n• 隨你移動：使用途中從 Wi-Fi 切換到行動數據時，通道會無縫轉移，下載和通話不會中斷。\n• 出國照常使用：連線看起來與一般網頁流量無異，在其他 VPN 連不上的地方依然可用。\n• 公開透明地打造：通訊協定有公開文件，伺服器端為開放原始碼。你可以自行架設節點，只把 Overleap 當作用戶端使用。\n\n一個方案，所有裝置\n一份訂閱可同時用於五台裝置，流量不限，所有地點皆可使用。",
+    "iosSubscription": "訂閱說明\nOverleap Basic 是自動續訂的年度訂閱。款項將於確認購買時向你的 Apple ID 帳號收取。除非在目前訂閱期結束前至少 24 小時取消，否則訂閱將自動續訂；續訂費用將於目前訂閱期結束前 24 小時內向你的帳號收取。購買後，你可以在 App Store 帳號設定中管理或取消訂閱。",
+    "linkLabels": {
+      "privacy": "隱私權政策",
+      "terms": "使用條款"
+    }
+  },
+  "th": {
+    "name": "Overleap VPN",
+    "subtitle": "ไม่เก็บบันทึก เร็วทุกเครือข่าย",
+    "keywords": "วีพีเอ็น,ความเป็นส่วนตัว,ปลอดภัย,พร็อกซี,proxy,wifi,ไวไฟ,เปลี่ยนไอพี,ip,ท่องเที่ยว,ปลดบล็อก,ech",
+    "promo": "VPN ส่วนตัวที่ไม่เก็บบันทึก และยังเร็วแม้บนเครือข่ายที่สัญญาณไม่ดี แพ็กเกจเดียว ใช้ได้ห้าอุปกรณ์",
+    "playShort": "VPN ส่วนตัว ไม่เก็บบันทึก เร็วแม้ Wi-Fi ช้า แพ็กเกจเดียว ใช้ได้ห้าอุปกรณ์",
+    "body": "Overleap คือ VPN ส่วนตัวที่ซ่อนปลายทางที่คุณเข้าใช้งาน แม้แต่จากผู้ให้บริการอินเทอร์เน็ตของคุณ ไม่เก็บบันทึกการใช้งาน และยังคงเร็วแม้บนเครือข่ายที่สัญญาณไม่ดี\n\nสิ่งที่คุณจะได้รับ\n• ซ่อนได้แม้แต่จากผู้ให้บริการอินเทอร์เน็ต: ผู้ให้บริการจะเห็นเพียงการเชื่อมต่อแบบเข้ารหัสธรรมดาหนึ่งรายการเท่านั้น Encrypted Client Hello ซ่อนแม้กระทั่งชื่อเซิร์ฟเวอร์\n• ไม่เก็บบันทึก ไม่มีอะไรให้ส่งมอบ: เราไม่บันทึกเว็บไซต์ที่คุณเข้าชม แอปที่คุณใช้ หรือข้อมูลที่คุณรับส่ง เราเก็บเฉพาะข้อมูลที่จำเป็นสำหรับการสมัครสมาชิกเท่านั้น\n• เร็วในที่ที่ VPN อื่นช้า: ระบบควบคุมอัตราการส่งข้อมูล k2cc ของ Overleap ช่วยรักษาความเร็วบน Wi-Fi บนรถไฟ สถานที่ที่มีคนหนาแน่น และเครือข่ายโรงแรม\n• ไปกับคุณทุกที่: อุโมงค์จะย้ายจาก Wi-Fi ไปยังอินเทอร์เน็ตมือถือได้ระหว่างใช้งาน การดาวน์โหลดและการโทรจึงไม่สะดุด\n• ใช้งานได้ต่อเนื่องในต่างประเทศ: การเชื่อมต่อดูเหมือนการใช้งานเว็บทั่วไป จึงยังใช้งานได้ในที่ที่ VPN อื่นใช้ไม่ได้\n• พัฒนาอย่างเปิดเผย: โปรโตคอลมีเอกสารประกอบและเซิร์ฟเวอร์เป็นโอเพนซอร์ส คุณสามารถตั้งโหนดของตัวเองและใช้ Overleap เป็นไคลเอนต์เพียงอย่างเดียวได้\n\nแพ็กเกจเดียว ใช้ได้ทุกอุปกรณ์\nการสมัครสมาชิกหนึ่งรายการใช้ได้พร้อมกันห้าอุปกรณ์ ไม่จำกัดปริมาณข้อมูล และใช้ได้ทุกตำแหน่งที่ตั้ง",
+    "iosSubscription": "การสมัครสมาชิก\nOverleap Basic เป็นการสมัครสมาชิกรายปีแบบต่ออายุอัตโนมัติ ระบบจะเรียกเก็บเงินจากบัญชี Apple ID ของคุณเมื่อยืนยันการซื้อ การสมัครสมาชิกจะต่ออายุโดยอัตโนมัติ เว้นแต่จะยกเลิกอย่างน้อย 24 ชั่วโมงก่อนสิ้นสุดรอบปัจจุบัน และบัญชีของคุณจะถูกเรียกเก็บค่าต่ออายุภายใน 24 ชั่วโมงก่อนสิ้นสุดรอบ คุณสามารถจัดการหรือยกเลิกการสมัครสมาชิกได้ในการตั้งค่าบัญชี App Store หลังการซื้อ",
+    "linkLabels": {
+      "privacy": "นโยบายความเป็นส่วนตัว",
+      "terms": "ข้อกำหนดการใช้งาน"
+    }
+  },
+  "vi": {
+    "name": "Overleap VPN",
+    "subtitle": "Không lưu log. Nhanh mọi mạng.",
+    "keywords": "riêng tư,bảo mật,an toàn,mã hóa,proxy,ẩn danh,wifi,đổi ip,fake ip,du lịch,nước ngoài,bỏ chặn,tốc độ",
+    "promo": "VPN riêng tư không lưu nhật ký, vẫn nhanh trên những mạng chập chờn. Một gói, năm thiết bị.",
+    "playShort": "VPN riêng tư không lưu nhật ký. Vẫn nhanh khi Wi-Fi chậm. Một gói, năm thiết bị.",
+    "body": "Overleap là VPN riêng tư giúp ẩn những nơi bạn truy cập, kể cả với nhà mạng, không lưu nhật ký và vẫn nhanh trên những mạng chập chờn.\n\nBẠN NHẬN ĐƯỢC GÌ\n• Ẩn cả với nhà mạng: nhà cung cấp dịch vụ chỉ thấy một kết nối mã hóa thông thường, không hơn. Encrypted Client Hello ẩn luôn cả tên máy chủ.\n• Không lưu nhật ký. Không có gì để giao nộp: chúng tôi không ghi lại trang web bạn truy cập, ứng dụng bạn dùng hay lưu lượng bạn gửi đi. Chúng tôi chỉ giữ những gì cần cho gói đăng ký.\n• Nhanh ở nơi các VPN khác ì ạch: cơ chế kiểm soát tốc độ k2cc của Overleap giữ tốc độ ổn định trên Wi-Fi tàu hỏa, nơi đông người và mạng khách sạn.\n• Di chuyển cùng bạn: đường hầm tự chuyển từ Wi-Fi sang dữ liệu di động ngay giữa phiên, nên việc tải xuống và cuộc gọi không bị gián đoạn.\n• Vẫn hoạt động khi ra nước ngoài: kết nối trông như lưu lượng web thông thường, nên vẫn hoạt động ở những nơi VPN khác mất kết nối.\n• Xây dựng công khai: giao thức có tài liệu công khai và máy chủ là mã nguồn mở. Bạn có thể tự chạy nút của riêng mình và chỉ dùng Overleap làm ứng dụng khách.\n\nMỘT GÓI, MỌI THIẾT BỊ\nMột gói đăng ký dùng được cùng lúc trên năm thiết bị, không giới hạn dữ liệu và dùng được mọi vị trí.",
+    "iosSubscription": "GÓI ĐĂNG KÝ\nOverleap Basic là gói đăng ký theo năm tự động gia hạn. Khoản thanh toán được tính vào tài khoản Apple ID của bạn khi xác nhận mua. Gói đăng ký tự động gia hạn trừ khi được hủy ít nhất 24 giờ trước khi kết thúc kỳ hiện tại; tài khoản của bạn sẽ bị tính phí gia hạn trong vòng 24 giờ trước khi kỳ hiện tại kết thúc. Sau khi mua, bạn có thể quản lý hoặc hủy gói đăng ký trong phần cài đặt tài khoản App Store.",
+    "linkLabels": {
+      "privacy": "Chính sách quyền riêng tư",
+      "terms": "Điều khoản sử dụng"
+    }
+  },
+  "id": {
+    "name": "Overleap VPN",
+    "subtitle": "Tanpa log. Cepat di mana saja.",
+    "keywords": "privasi,pribadi,aman,enkripsi,proxy,wifi,internet,buka blokir,ganti ip,anonim,liburan,luar negeri",
+    "promo": "VPN pribadi tanpa log yang tetap cepat di jaringan yang sering mengecewakan. Satu paket, lima perangkat.",
+    "playShort": "VPN pribadi tanpa log. Tetap cepat di Wi-Fi lambat. Satu paket, lima perangkat.",
+    "body": "Overleap adalah VPN pribadi yang menyembunyikan ke mana Anda pergi di internet, bahkan dari penyedia layanan internet (ISP) Anda, tidak menyimpan log, dan tetap cepat di jaringan yang sering mengecewakan.\n\nYANG ANDA DAPATKAN\n• Tersembunyi bahkan dari ISP: penyedia Anda hanya melihat satu koneksi terenkripsi biasa, tidak lebih. Encrypted Client Hello bahkan menyembunyikan nama server.\n• Tanpa log. Tidak ada yang bisa diserahkan: kami tidak mencatat situs yang Anda kunjungi, aplikasi yang Anda gunakan, atau lalu lintas data yang Anda kirim. Kami hanya menyimpan apa yang diperlukan untuk langganan.\n• Cepat saat VPN lain melambat: kontrol laju k2cc milik Overleap menjaga kecepatan Anda di Wi-Fi kereta, tempat yang padat pengunjung, dan jaringan hotel.\n• Ikut bergerak bersama Anda: tunnel berpindah dari Wi-Fi ke data seluler di tengah sesi, sehingga unduhan dan panggilan terus berjalan.\n• Tetap berfungsi di luar negeri: koneksinya terlihat seperti lalu lintas web biasa, sehingga tetap berfungsi di tempat VPN lain tidak bisa tersambung.\n• Dibangun secara terbuka: protokolnya terdokumentasi dan servernya open source. Jalankan node Anda sendiri dan gunakan Overleap hanya sebagai klien.\n\nSATU PAKET, SEMUA PERANGKAT\nSatu langganan mencakup lima perangkat sekaligus, dengan data tanpa batas dan semua lokasi.",
+    "iosSubscription": "LANGGANAN\nOverleap Basic adalah langganan tahunan yang diperpanjang otomatis. Pembayaran ditagihkan ke akun Apple ID Anda saat pembelian dikonfirmasi. Langganan diperpanjang secara otomatis kecuali dibatalkan setidaknya 24 jam sebelum periode berjalan berakhir; akun Anda akan ditagih biaya perpanjangan dalam 24 jam sebelum periode berakhir. Anda dapat mengelola atau membatalkan langganan di pengaturan akun App Store setelah pembelian.",
+    "linkLabels": {
+      "privacy": "Kebijakan Privasi",
+      "terms": "Ketentuan Penggunaan"
+    }
+  },
+  "ms": {
+    "name": "Overleap VPN",
+    "subtitle": "Tiada log. Laju di mana-mana.",
+    "keywords": "privasi,peribadi,selamat,penyulitan,proksi,proxy,wifi,internet,nyahsekat,tukar ip,melancong,ech,awam",
+    "promo": "VPN peribadi tanpa log yang kekal laju pada rangkaian yang selalu mengecewakan. Satu pelan, lima peranti.",
+    "playShort": "VPN peribadi tanpa log. Kekal laju pada Wi-Fi perlahan. Satu pelan, 5 peranti.",
+    "body": "Overleap ialah VPN peribadi yang menyembunyikan ke mana anda pergi dalam talian sehingga penyedia perkhidmatan Internet (ISP) anda pun tidak nampak, tidak menyimpan log, dan kekal laju pada rangkaian yang selalu mengecewakan.\n\nAPA YANG ANDA DAPAT\n• ISP anda pun tidak nampak: penyedia anda hanya nampak satu sambungan tersulit biasa, itu sahaja. Encrypted Client Hello turut menyembunyikan nama pelayan.\n• Tiada log. Tiada apa-apa untuk diserahkan: kami tidak merekodkan laman yang anda lawati, aplikasi yang anda gunakan atau trafik yang anda hantar. Kami hanya menyimpan apa yang diperlukan untuk langganan.\n• Laju ketika VPN lain perlahan: kawalan kadar k2cc Overleap mengekalkan kelajuan anda pada Wi-Fi kereta api, tempat yang sesak dan rangkaian hotel.\n• Bergerak bersama anda: terowong berpindah dari Wi-Fi ke data mudah alih di tengah-tengah sesi, jadi muat turun dan panggilan terus berjalan.\n• Terus berfungsi di luar negara: sambungan kelihatan seperti trafik web biasa, jadi ia terus berfungsi di tempat VPN lain terputus.\n• Dibina secara terbuka: protokolnya didokumenkan dan pelayannya bersumber terbuka. Jalankan nod anda sendiri dan gunakan Overleap sebagai klien sahaja.\n\nSATU PELAN, SEMUA PERANTI\nSatu langganan meliputi lima peranti serentak, dengan data tanpa had dan semua lokasi.",
+    "iosSubscription": "LANGGANAN\nOverleap Basic ialah langganan tahunan yang diperbaharui secara automatik. Bayaran dicaj ke akaun Apple ID anda semasa pengesahan pembelian. Langganan diperbaharui secara automatik melainkan dibatalkan sekurang-kurangnya 24 jam sebelum tempoh semasa tamat; akaun anda akan dicaj untuk pembaharuan dalam masa 24 jam sebelum tempoh tamat. Anda boleh mengurus atau membatalkan langganan dalam tetapan akaun App Store selepas pembelian.",
+    "linkLabels": {
+      "privacy": "Dasar Privasi",
+      "terms": "Terma Penggunaan"
+    }
+  },
+  "fil": {
+    "name": "Overleap VPN",
+    "subtitle": "Walang log. Mabilis saanman.",
+    "keywords": "pribado,privacy,ligtas,secure,encrypted,proxy,wifi,internet,unblock,ip,biyahe,travel,private,fast",
+    "promo": "Pribadong VPN na walang log at nananatiling mabilis sa mga network na madalas pumalya. Isang plan, limang device.",
+    "playShort": "Pribadong VPN, walang log. Mabilis sa mabagal na Wi-Fi. Isang plan, 5 device.",
+    "body": "Ang Overleap ay isang pribadong VPN na nagtatago kung saan ka pumupunta online, kahit sa iyong internet service provider (ISP), walang itinatagong log, at nananatiling mabilis sa mga network na madalas pumalya.\n\nANG MAKUKUHA MO\n• Nakatago kahit sa iyong ISP: isang karaniwang naka-encrypt na koneksyon lang ang nakikita ng provider mo, wala nang iba. Itinatago ng Encrypted Client Hello maging ang pangalan ng server.\n• Walang log. Walang maibibigay: hindi namin itinatala ang mga site na binibisita mo, ang mga app na ginagamit mo, o ang trapikong ipinapadala mo. Ang itinatago lang namin ay ang kailangan para sa subscription.\n• Mabilis kung saan bumabagal ang ibang VPN: pinapanatili ng k2cc rate control ng Overleap ang bilis mo sa Wi-Fi ng tren, sa mga siksikang lugar, at sa mga network ng hotel.\n• Sumasabay sa iyo: lumilipat ang tunnel mula Wi-Fi papuntang mobile data sa gitna ng session, kaya tuloy-tuloy ang mga download at tawag.\n• Gumagana pa rin sa ibang bansa: mukhang karaniwang web traffic ang koneksyon, kaya gumagana pa rin ito kung saan hindi na kumokonekta ang ibang VPN.\n• Bukas ang pagkakabuo: nakadokumento ang protocol at open source ang server. Magpatakbo ng sarili mong node at gamitin ang Overleap bilang client lang.\n\nISANG PLAN, LAHAT NG DEVICE\nSakop ng isang subscription ang limang device nang sabay-sabay, na may unlimited na data at lahat ng lokasyon.",
+    "iosSubscription": "SUBSCRIPTION\nAng Overleap Basic ay isang taunang subscription na awtomatikong nagre-renew. Sisingilin ang bayad sa iyong Apple ID account sa pagkumpirma ng pagbili. Awtomatikong magre-renew ang subscription maliban kung kanselahin ito nang hindi bababa sa 24 na oras bago matapos ang kasalukuyang panahon; sisingilin ang iyong account para sa renewal sa loob ng 24 na oras bago matapos ang panahon. Maaari mong pamahalaan o kanselahin ang iyong subscription sa mga setting ng iyong App Store account pagkatapos ng pagbili.",
+    "linkLabels": {
+      "privacy": "Patakaran sa Privacy",
+      "terms": "Mga Tuntunin ng Paggamit"
+    }
+  },
+  "km": {
+    "name": "Overleap VPN",
+    "subtitle": "គ្មានកំណត់ហេតុ។ លឿនគ្រប់បណ្តាញ",
+    "keywords": "ឯកជនភាព,សុវត្ថិភាព,ឯកជន,អ៊ិនគ្រីប,ប្រូកស៊ី,proxy,wifi,វ៉ាយហ្វាយ,អ៊ីនធឺណិត,ip,បរទេស,private,secure",
+    "promo": "VPN ឯកជនដែលមិនរក្សាទុកកំណត់ហេតុ ហើយនៅតែលឿនលើបណ្តាញដែលខ្សោយ។ គម្រោងមួយ ឧបករណ៍ប្រាំ។",
+    "playShort": "VPN ឯកជន គ្មានកំណត់ហេតុ។ លឿនសូម្បីលើ Wi-Fi យឺត។ គម្រោងមួយ ឧបករណ៍ប្រាំ។",
+    "body": "Overleap គឺជា VPN ឯកជនដែលលាក់ទីកន្លែងដែលអ្នកចូលមើល សូម្បីតែពីក្រុមហ៊ុនផ្តល់សេវាអ៊ីនធឺណិតរបស់អ្នក មិនរក្សាទុកកំណត់ហេតុ ហើយនៅតែលឿនលើបណ្តាញដែលខ្សោយ។\n\nអ្វីដែលអ្នកទទួលបាន\n• លាក់សូម្បីតែពីក្រុមហ៊ុនផ្តល់សេវាអ៊ីនធឺណិត៖ ក្រុមហ៊ុនផ្តល់សេវារបស់អ្នកឃើញតែការតភ្ជាប់ដែលបានអ៊ិនគ្រីបធម្មតាមួយប៉ុណ្ណោះ គ្មានអ្វីលើសពីនេះទេ។ Encrypted Client Hello លាក់សូម្បីតែឈ្មោះម៉ាស៊ីនមេ។\n• គ្មានកំណត់ហេតុ។ គ្មានអ្វីត្រូវប្រគល់ឱ្យអ្នកណាឡើយ៖ យើងមិនកត់ត្រាគេហទំព័រដែលអ្នកចូលមើល កម្មវិធីដែលអ្នកប្រើ ឬទិន្នន័យដែលអ្នកបញ្ជូនឡើយ។ យើងរក្សាទុកតែអ្វីដែលចាំបាច់សម្រាប់ការជាវប៉ុណ្ណោះ។\n• លឿននៅកន្លែងដែល VPN ផ្សេងទៀតយឺត៖ ការគ្រប់គ្រងអត្រាបញ្ជូន k2cc របស់ Overleap រក្សាល្បឿនរបស់អ្នកលើ Wi-Fi ក្នុងរថភ្លើង កន្លែងដែលមានមនុស្សច្រើនកុះករ និងបណ្តាញសណ្ឋាគារ។\n• ទៅជាមួយអ្នកគ្រប់ទីកន្លែង៖ ផ្លូវរូងប្តូរពី Wi-Fi ទៅទិន្នន័យទូរសព្ទចល័តក្នុងពេលកំពុងប្រើ ដូច្នេះការទាញយក និងការហៅទូរសព្ទនៅតែបន្ត។\n• នៅតែដំណើរការនៅបរទេស៖ ការតភ្ជាប់មើលទៅដូចជាចរាចរណ៍គេហទំព័រធម្មតា ដូច្នេះវានៅតែដំណើរការនៅកន្លែងដែល VPN ផ្សេងទៀតប្រើមិនកើត។\n• បង្កើតឡើងដោយបើកចំហ៖ ពិធីការមានឯកសារបង្ហាញជាសាធារណៈ ហើយម៉ាស៊ីនមេជាកូដបើកចំហ។ អ្នកអាចដំណើរការណូតផ្ទាល់ខ្លួន ហើយប្រើ Overleap ជាកម្មវិធីភ្ញៀវតែប៉ុណ្ណោះ។\n\nគម្រោងមួយ សម្រាប់គ្រប់ឧបករណ៍\nការជាវមួយប្រើបានលើឧបករណ៍ប្រាំក្នុងពេលតែមួយ ជាមួយទិន្នន័យគ្មានដែនកំណត់ និងគ្រប់ទីតាំង។",
+    "iosSubscription": "ការជាវ\nOverleap Basic គឺជាការជាវប្រចាំឆ្នាំដែលបន្តដោយស្វ័យប្រវត្តិ។ ការទូទាត់នឹងត្រូវគិតប្រាក់ពីគណនី Apple ID របស់អ្នកនៅពេលបញ្ជាក់ការទិញ។ ការជាវនឹងបន្តដោយស្វ័យប្រវត្តិ លុះត្រាតែត្រូវបានបោះបង់យ៉ាងហោចណាស់ 24 ម៉ោងមុនពេលផុតរយៈពេលបច្ចុប្បន្ន ហើយគណនីរបស់អ្នកនឹងត្រូវគិតប្រាក់សម្រាប់ការបន្តក្នុងរយៈពេល 24 ម៉ោងមុនពេលផុតរយៈពេលនោះ។ ក្រោយពេលទិញ អ្នកអាចគ្រប់គ្រង ឬបោះបង់ការជាវរបស់អ្នកនៅក្នុងការកំណត់គណនី App Store។",
+    "linkLabels": {
+      "privacy": "គោលការណ៍ឯកជនភាព",
+      "terms": "លក្ខខណ្ឌប្រើប្រាស់"
+    }
+  },
+  "lo": {
+    "name": "Overleap VPN",
+    "subtitle": "ບໍ່ເກັບບັນທຶກ. ໄວທຸກເຄືອຂ່າຍ",
+    "keywords": "ຄວາມເປັນສ່ວນຕົວ,ປອດໄພ,ເຂົ້າລະຫັດ,ພຣັອກຊີ,proxy,wifi,ວາຍຟາຍ,ອິນເຕີເນັດ,ip,ຕ່າງປະເທດ,private,secure",
+    "promo": "VPN ສ່ວນຕົວທີ່ບໍ່ເກັບບັນທຶກ ແລະ ຍັງໄວຢູ່ເທິງເຄືອຂ່າຍທີ່ສັນຍານບໍ່ດີ. ແພັກເກັດດຽວ ໃຊ້ໄດ້ຫ້າອຸປະກອນ.",
+    "playShort": "VPN ສ່ວນຕົວ ບໍ່ເກັບບັນທຶກ. ໄວແມ່ນແຕ່ Wi-Fi ຊ້າ. ແພັກເກັດດຽວ ຫ້າອຸປະກອນ.",
+    "body": "Overleap ແມ່ນ VPN ສ່ວນຕົວທີ່ເຊື່ອງບ່ອນທີ່ທ່ານເຂົ້າເບິ່ງ ແມ່ນແຕ່ຈາກຜູ້ໃຫ້ບໍລິການອິນເຕີເນັດຂອງທ່ານ, ບໍ່ເກັບບັນທຶກ ແລະ ຍັງໄວຢູ່ເທິງເຄືອຂ່າຍທີ່ສັນຍານບໍ່ດີ.\n\nສິ່ງທີ່ທ່ານຈະໄດ້ຮັບ\n• ເຊື່ອງໄດ້ແມ່ນແຕ່ຈາກຜູ້ໃຫ້ບໍລິການອິນເຕີເນັດ: ຜູ້ໃຫ້ບໍລິການຂອງທ່ານຈະເຫັນພຽງການເຊື່ອມຕໍ່ແບບເຂົ້າລະຫັດທຳມະດາອັນດຽວເທົ່ານັ້ນ. Encrypted Client Hello ເຊື່ອງແມ່ນແຕ່ຊື່ເຊີບເວີ.\n• ບໍ່ເກັບບັນທຶກ. ບໍ່ມີຫຍັງໃຫ້ສົ່ງມອບ: ພວກເຮົາບໍ່ບັນທຶກເວັບໄຊທີ່ທ່ານເຂົ້າເບິ່ງ, ແອັບທີ່ທ່ານໃຊ້ ຫຼື ຂໍ້ມູນທີ່ທ່ານຮັບສົ່ງ. ພວກເຮົາເກັບສະເພາະຂໍ້ມູນທີ່ຈຳເປັນສຳລັບການສະໝັກໃຊ້ເທົ່ານັ້ນ.\n• ໄວໃນບ່ອນທີ່ VPN ອື່ນຊ້າ: ລະບົບຄວບຄຸມອັດຕາການສົ່ງຂໍ້ມູນ k2cc ຂອງ Overleap ຮັກສາຄວາມໄວຂອງທ່ານເທິງ Wi-Fi ໃນລົດໄຟ, ສະຖານທີ່ທີ່ມີຄົນແອອັດ ແລະ ເຄືອຂ່າຍໂຮງແຮມ.\n• ໄປກັບທ່ານທຸກບ່ອນ: ອຸໂມງຈະຍ້າຍຈາກ Wi-Fi ໄປຫາອິນເຕີເນັດມືຖືໃນລະຫວ່າງການໃຊ້ງານ, ການດາວໂຫຼດ ແລະ ການໂທຈຶ່ງສືບຕໍ່ໄດ້.\n• ໃຊ້ງານໄດ້ຕໍ່ເນື່ອງຢູ່ຕ່າງປະເທດ: ການເຊື່ອມຕໍ່ເບິ່ງຄືກັບການໃຊ້ງານເວັບທົ່ວໄປ, ຈຶ່ງຍັງໃຊ້ງານໄດ້ໃນບ່ອນທີ່ VPN ອື່ນໃຊ້ບໍ່ໄດ້.\n• ພັດທະນາຢ່າງເປີດເຜີຍ: ໂປຣໂຕຄໍມີເອກະສານປະກອບ ແລະ ເຊີບເວີເປັນໂອເພນຊອດ. ທ່ານສາມາດຕັ້ງໂນດຂອງຕົນເອງ ແລະ ໃຊ້ Overleap ເປັນໄຄລເອນພຽງຢ່າງດຽວ.\n\nແພັກເກັດດຽວ ໃຊ້ໄດ້ທຸກອຸປະກອນ\nການສະໝັກໃຊ້ໜຶ່ງລາຍການໃຊ້ໄດ້ພ້ອມກັນຫ້າອຸປະກອນ, ບໍ່ຈຳກັດຂໍ້ມູນ ແລະ ໃຊ້ໄດ້ທຸກສະຖານທີ່.",
+    "iosSubscription": "ການສະໝັກໃຊ້\nOverleap Basic ແມ່ນການສະໝັກໃຊ້ລາຍປີແບບຕໍ່ອາຍຸອັດຕະໂນມັດ. ການຊຳລະເງິນຈະຖືກຮຽກເກັບຈາກບັນຊີ Apple ID ຂອງທ່ານເມື່ອຢືນຢັນການຊື້. ການສະໝັກໃຊ້ຈະຕໍ່ອາຍຸໂດຍອັດຕະໂນມັດ ເວັ້ນເສຍແຕ່ຈະຍົກເລີກຢ່າງໜ້ອຍ 24 ຊົ່ວໂມງກ່ອນສິ້ນສຸດໄລຍະເວລາປັດຈຸບັນ; ບັນຊີຂອງທ່ານຈະຖືກຮຽກເກັບຄ່າຕໍ່ອາຍຸພາຍໃນ 24 ຊົ່ວໂມງກ່ອນສິ້ນສຸດໄລຍະເວລາ. ທ່ານສາມາດຈັດການ ຫຼື ຍົກເລີກການສະໝັກໃຊ້ໄດ້ໃນການຕັ້ງຄ່າບັນຊີ App Store ຫຼັງຈາກການຊື້.",
+    "linkLabels": {
+      "privacy": "ນະໂຍບາຍຄວາມເປັນສ່ວນຕົວ",
+      "terms": "ຂໍ້ກຳນົດການນຳໃຊ້"
+    }
+  },
+  "my": {
+    "name": "Overleap VPN",
+    "subtitle": "Log မသိမ်း။ နေရာတိုင်းမြန်",
+    "keywords": "ကိုယ်ရေးလုံခြုံမှု,လုံခြုံ,ပရောက်စီ,proxy,wifi,အင်တာနက်,internet,ip,ခရီးသွား,private,secure,privacy",
+    "promo": "မှတ်တမ်းမသိမ်းသော ကိုယ်ပိုင် VPN။ လိုင်းမကောင်းသော ကွန်ရက်များတွင်လည်း မြန်ဆန်နေဆဲ။ အစီအစဉ်တစ်ခု၊ စက်ငါးလုံး။",
+    "playShort": "မှတ်တမ်းမသိမ်းသော ကိုယ်ပိုင် VPN။ Wi-Fi နှေးလည်း မြန်သည်။ စက်ငါးလုံးသုံးနိုင်။",
+    "body": "Overleap သည် သင်ဝင်ရောက်ကြည့်ရှုသည့်နေရာများကို သင့်အင်တာနက်ဝန်ဆောင်မှုပေးသူ (ISP) ထံမှပင် ဖုံးကွယ်ပေးသော ကိုယ်ပိုင် VPN ဖြစ်ပြီး မှတ်တမ်းများ မသိမ်းဆည်းဘဲ လိုင်းမကောင်းသော ကွန်ရက်များတွင်လည်း မြန်ဆန်နေဆဲဖြစ်သည်။\n\nသင်ရရှိမည့်အရာများ\n• ISP ထံမှပင် ဖုံးကွယ်ထားသည်- သင့်ဝန်ဆောင်မှုပေးသူသည် သာမန် ကုဒ်ဝှက်ထားသော ချိတ်ဆက်မှုတစ်ခုကိုသာ မြင်ရပြီး ထိုထက်မပိုပါ။ Encrypted Client Hello က ဆာဗာအမည်ကိုပင် ဖုံးကွယ်ပေးသည်။\n• မှတ်တမ်းမရှိ။ လွှဲပြောင်းပေးစရာ ဘာမျှမရှိ- သင်ဝင်ကြည့်သည့် ဝဘ်ဆိုက်များ၊ သင်အသုံးပြုသည့် အက်ပ်များ သို့မဟုတ် သင်ပေးပို့သည့် ဒေတာများကို ကျွန်ုပ်တို့ မှတ်တမ်းမတင်ပါ။ စာရင်းသွင်းမှုအတွက် လိုအပ်သည့်အရာကိုသာ သိမ်းထားပါသည်။\n• အခြား VPN များ နှေးကွေးသည့်နေရာတွင် မြန်ဆန်သည်- Overleap ၏ k2cc နှုန်းထိန်းချုပ်မှုက ရထားပေါ်ရှိ Wi-Fi၊ လူစည်ကားသည့်နေရာများနှင့် ဟိုတယ်ကွန်ရက်များတွင် သင့်အမြန်နှုန်းကို ထိန်းထားပေးသည်။\n• သင်နှင့်အတူ ရွေ့လျားသည်- အသုံးပြုနေစဉ် Wi-Fi မှ မိုဘိုင်းဒေတာသို့ ပြောင်းသွားသည့်အခါ tunnel က ဆက်လက်လိုက်ပါသောကြောင့် ဒေါင်းလုဒ်များနှင့် ဖုန်းခေါ်ဆိုမှုများ ဆက်လက်လုပ်ဆောင်နိုင်သည်။\n• ပြည်ပတွင်လည်း ဆက်လက်အလုပ်လုပ်သည်- ချိတ်ဆက်မှုသည် သာမန်ဝဘ်အသုံးပြုမှုကဲ့သို့ မြင်ရသောကြောင့် အခြား VPN များ မချိတ်ဆက်နိုင်သည့်နေရာများတွင်လည်း ဆက်လက်အလုပ်လုပ်သည်။\n• ပွင့်လင်းမြင်သာစွာ တည်ဆောက်ထားသည်- ပရိုတိုကောကို စာရွက်စာတမ်းဖြင့် ဖော်ပြထားပြီး ဆာဗာသည် open source ဖြစ်သည်။ သင့်ကိုယ်ပိုင် node ကို လည်ပတ်ပြီး Overleap ကို client အဖြစ်သာ အသုံးပြုနိုင်သည်။\n\nအစီအစဉ်တစ်ခု၊ စက်ပစ္စည်းအားလုံးအတွက်\nစာရင်းသွင်းမှုတစ်ခုဖြင့် စက်ပစ္စည်းငါးလုံးကို တစ်ပြိုင်နက် အသုံးပြုနိုင်ပြီး ဒေတာအကန့်အသတ်မရှိ၊ တည်နေရာအားလုံးကို အသုံးပြုနိုင်သည်။",
+    "iosSubscription": "စာရင်းသွင်းမှု\nOverleap Basic သည် အလိုအလျောက် သက်တမ်းတိုးသည့် နှစ်စဉ်စာရင်းသွင်းမှုဖြစ်သည်။ ဝယ်ယူမှုကို အတည်ပြုသည့်အချိန်တွင် ငွေပေးချေမှုကို သင့် Apple ID အကောင့်မှ ကောက်ခံပါမည်။ လက်ရှိကာလ မကုန်ဆုံးမီ အနည်းဆုံး 24 နာရီအလိုတွင် မပယ်ဖျက်ပါက စာရင်းသွင်းမှုသည် အလိုအလျောက် သက်တမ်းတိုးမည်ဖြစ်ပြီး ကာလမကုန်ဆုံးမီ 24 နာရီအတွင်း သက်တမ်းတိုးခကို သင့်အကောင့်မှ ကောက်ခံပါမည်။ ဝယ်ယူပြီးနောက် App Store အကောင့်ဆက်တင်များတွင် သင့်စာရင်းသွင်းမှုကို စီမံခန့်ခွဲနိုင်သည် သို့မဟုတ် ပယ်ဖျက်နိုင်သည်။",
+    "linkLabels": {
+      "privacy": "ကိုယ်ရေးအချက်အလက်မူဝါဒ",
+      "terms": "အသုံးပြုမှုစည်းမျဉ်းများ"
+    }
+  }
+}

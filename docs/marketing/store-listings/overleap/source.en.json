@@ -1,0 +1,10 @@
+{
+  "name": "Overleap VPN",
+  "subtitle": "No logs. Fast on any network.",
+  "keywords": "vpn,private,privacy,no logs,secure,fast,wifi,encrypted,proxy,tunnel,ech,travel,unblock",
+  "promo": "Private VPN with no logs that stays fast on the networks that let you down. One plan, five devices.",
+  "playShort": "Private VPN with no logs. Stays fast on slow Wi-Fi. One plan, five devices.",
+  "body": "Overleap is a private VPN that hides where you go — even from your ISP — keeps no logs, and stays fast on the networks that let you down.\n\nWHAT YOU GET\n• Hidden even from your ISP: your provider sees one ordinary encrypted connection and nothing more. Encrypted Client Hello hides even the server name.\n• No logs. Nothing to hand over: we don't record the sites you visit, the apps you use or the traffic you send. We keep only what a subscription needs.\n• Fast where other VPNs crawl: Overleap's k2cc rate control keeps your speed up on train Wi-Fi, packed venues and hotel networks.\n• Moves with you: the tunnel migrates from Wi-Fi to mobile data mid-session, so downloads and calls carry on.\n• Keeps working abroad: the connection looks like ordinary web traffic, so it keeps working where other VPNs go dark.\n• Built in the open: the protocol is documented and the server is open source. Run your own node and use Overleap purely as the client.\n\nONE PLAN, EVERY DEVICE\nOne subscription covers five devices at once, with unlimited data and every location.",
+  "iosSubscription": "SUBSCRIPTION\nOverleap Basic is an auto-renewing yearly subscription. Payment is charged to your Apple ID account at confirmation of purchase. The subscription renews automatically unless it is cancelled at least 24 hours before the end of the current period; your account is charged for renewal within 24 hours before the period ends. You can manage or cancel your subscription in your App Store account settings after purchase.",
+  "links": "Privacy Policy: https://overleap.io/en-GB/privacy\nTerms of Use: https://overleap.io/en-GB/terms"
+}
