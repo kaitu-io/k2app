@@ -476,19 +476,12 @@ func api_chat_messages_send(c *gin.Context) {
 		Error(c, ErrorSystemError, "failed to load conversation")
 		return
 	}
-	if conv == nil {
-		if conv, err = chatNewConversation(ctx, subj); err != nil {
-			chatSendNewConvError(c, err)
-			return
-		}
-	}
 	clientID := req.ClientID
-	msg, _, err := appendMessage(ctx, conv, appendMessageInput{
+	conv, msg, err := chatVisitorAppend(ctx, subj, conv, appendMessageInput{
 		SenderType: SenderVisitor, Kind: req.Kind, Content: req.Content, ClientID: &clientID,
 	})
 	if err != nil {
-		log.Errorf(ctx, "api_chat_messages_send: %v", err)
-		Error(c, ErrorSystemError, "failed to save message")
+		chatSendNewConvError(c, err)
 		return
 	}
 	dto := chatMessageDTO(msg)
@@ -498,14 +491,35 @@ func api_chat_messages_send(c *gin.Context) {
 	}{dto, chatConversationDTO(conv)})
 }
 
-// chatSendNewConvError 把开新会话的失败写成响应：超限 429，其余 500。
+// chatVisitorAppend 把访客消息追加到 conv（nil = 主体还没有 open 会话，先开一个），返回消息最终所在的会话。
+// 追加带 RequireOpen：读到 conv 之后它被关闭（人工 !close、后台关闭、闲置关闭）的话，消息不落进已关闭的会话
+// ——那个会话的 Slack 频道即将归档，落进去就再也到不了客服——而是对访客透明地开一个新会话再追加。
+// 新开会话受每实例新建上限约束（errChatConvCreateLimited）。
+func chatVisitorAppend(ctx context.Context, subj chatSubject, conv *Conversation, in appendMessageInput) (*Conversation, *ConversationMessage, error) {
+	in.RequireOpen = true
+	if conv != nil {
+		msg, _, err := appendMessage(ctx, conv, in)
+		if !errors.Is(err, errChatConversationClosed) {
+			return conv, msg, err
+		}
+	}
+	conv, err := chatNewConversation(ctx, subj)
+	if err != nil {
+		return nil, nil, err
+	}
+	// 新会话刚建好又被关掉的概率可以忽略；真撞上就报错，由访客端重试
+	msg, _, err := appendMessage(ctx, conv, in)
+	return conv, msg, err
+}
+
+// chatSendNewConvError 把访客发送的失败写成响应：新建会话超限 429，其余 500。
 func chatSendNewConvError(c *gin.Context, err error) {
 	if errors.Is(err, errChatConvCreateLimited) {
 		Error(c, ErrorTooManyRequests, "too many requests")
 		return
 	}
 	log.Errorf(c.Request.Context(), "api_chat_messages_send: %v", err)
-	Error(c, ErrorSystemError, "failed to create conversation")
+	Error(c, ErrorSystemError, "failed to save message")
 }
 
 var errChatEmailCap = errors.New("chat email cap reached")

@@ -376,3 +376,13 @@ func TestChatAI_OuterContextExpiredStillTransfers(t *testing.T) {
 	assert.Equal(t, HandlerHuman, handlerOf(t, conv.ID))
 	assert.Equal(t, 1, countBy(convMessages(t, conv.ID), SenderSystem, MsgEvent))
 }
+
+// AI 回复落库前会话已关闭（内存里的会话还是 open）：以库为准丢弃，不算出错。
+func TestChatAI_AppendDroppedWhenClosedInDB(t *testing.T) {
+	conv := newAIConv(t)
+	require.NoError(t, db.Get().Model(&Conversation{}).Where("id = ?", conv.ID).
+		Updates(map[string]any{"status": ConvClosed, "closed_at": time.Now()}).Error)
+
+	require.NoError(t, chatAppendAI(context.Background(), conv, "late reply"))
+	assert.Empty(t, convMessages(t, conv.ID))
+}

@@ -234,7 +234,7 @@ func chatSlackHandleMessage(ctx context.Context, evt slackMessageEvt) string {
 		return res.String()
 	}
 
-	// 以刚读出的会话状态判断：已关闭不再发给访客
+	// 刚读出的状态只是快速路径（省掉一次无谓的交接）；真正的判断在落库时以库为准（RequireOpen）
 	if conv.Status == ConvClosed {
 		chatSlackWarnOnce(ctx, evt.Channel, evt.TS, chatSlackWarnClosed)
 		return "closed"
@@ -245,7 +245,11 @@ func chatSlackHandleMessage(ctx context.Context, evt slackMessageEvt) string {
 		chatSlackWarnOnce(ctx, evt.Channel, evt.TS, chatSlackWarnSendFail)
 		return "handler_error"
 	}
+	in.RequireOpen = true
 	_, res := chatSlackRecord(ctx, &conv, in)
+	if res == recordClosed {
+		chatSlackWarnOnce(ctx, evt.Channel, evt.TS, chatSlackWarnClosed)
+	}
 	return res.String()
 }
 
@@ -255,16 +259,20 @@ const (
 	recordOK chatRecordResult = iota
 	recordDup
 	recordErr
+	recordClosed // 带 RequireOpen 的追加撞上已关闭的会话：没有落库，由调用方提示
 )
 
 func (r chatRecordResult) String() string {
-	return [...]string{"recorded", "dup", "record_error"}[r]
+	return [...]string{"recorded", "dup", "record_error", "closed"}[r]
 }
 
 // chatSlackRecord 追加一条带 SlackTS 的消息，区分首次送达 / 重复 / 出错。
 // 出错（含 slack_ts 属于别的会话）时在频道提示"没有发给访客"，Slack 不会重投，只能让客服重发。
 func chatSlackRecord(ctx context.Context, conv *Conversation, in appendMessageInput) (*ConversationMessage, chatRecordResult) {
 	msg, dup, err := appendMessage(ctx, conv, in)
+	if errors.Is(err, errChatConversationClosed) {
+		return nil, recordClosed
+	}
 	if err != nil {
 		log.Errorf(ctx, "slack events: append message conv=%d: %v", conv.ID, err)
 		chatSlackWarnOnce(ctx, conv.SlackChannelID, *in.SlackTS, chatSlackWarnSendFail)
@@ -303,7 +311,11 @@ func chatSlackCommand(ctx context.Context, conv *Conversation, in appendMessageI
 		return "already_ai"
 	}
 	in.Kind = MsgNote
+	in.RequireOpen = true // 上面读到的状态可能已过时：命令标记同样以库为准
 	marker, res := chatSlackRecord(ctx, conv, in)
+	if res == recordClosed {
+		chatSlackWarnOnce(ctx, ch, ts, chatSlackWarnCmdClosed)
+	}
 	if res != recordOK {
 		return res.String()
 	}
@@ -331,77 +343,31 @@ func chatSlackCommand(ctx context.Context, conv *Conversation, in appendMessageI
 	return "closed_by_staff"
 }
 
-const (
-	chatCloseLockTTL  = 30 * time.Second
-	chatCloseLockWait = 10 * time.Second
-)
-
 // chatCloseByStaff 是人工关闭会话的唯一实现（Slack `!close` 与后台 PUT .../close 共用）：
-// closed 事件 → 关闭 → 归档。事件落不下就不关闭并返回错误（"人工关闭必有 closed 事件"，T10 的补偿判据依赖它）；
-// 关闭失败则把刚落的事件删掉，保持"有事件 ⇔ 已关闭"。
-// 按会话加 Redis 锁并在锁内以库为准复查：并发调用只有一方落事件、关一次；已关闭则幂等返回（wasOpen=false），
-// 不追加事件。归档失败只记日志（chatSlackSweep 会补）。
+// closed 事件与关闭在同一个事务里完成（appendMessage 的 CloseConversation，持会话行锁），然后归档。
+// 原子性保证两件事：事件落不下就不关闭（"人工关闭必有 closed 事件"，T10 的补偿判据依赖它）；
+// 访客 / 客服 / AI 的发言（都带 RequireOpen）插不进事件与关闭之间，不会落在 closed 事件之后。
+// 以库为准：并发调用只有一方落事件、关一次；已关闭则幂等返回（wasOpen=false），不追加事件。
+// 归档失败只记日志（chatSlackSweep 会补）。
 func chatCloseByStaff(ctx context.Context, conv *Conversation) (wasOpen bool, err error) {
-	release, err := chatCloseLock(ctx, conv.ID)
-	if err != nil {
+	_, _, err = chatSlackAppendSystem(ctx, conv, appendMessageInput{
+		SenderType: SenderSystem, Kind: MsgEvent, Content: "会话已关闭", Meta: chatEventMeta(ChatEventClosed),
+		CloseConversation: true,
+	})
+	switch {
+	case errors.Is(err, errChatConversationClosed):
+		conv.Status = ConvClosed
+	case err != nil:
+		log.Errorf(ctx, "chat close: closed event conv=%d: %v", conv.ID, err)
 		return false, err
-	}
-	wasOpen, err = func() (bool, error) {
-		defer release()
-		var cur Conversation
-		if err := db.Get().WithContext(ctx).Select("id", "status").First(&cur, conv.ID).Error; err != nil {
-			return false, fmt.Errorf("reload conversation: %w", err)
-		}
-		if cur.Status != ConvOpen {
-			conv.Status = cur.Status
-			return false, nil
-		}
-		ev, err := chatSlackSystemEvent(ctx, conv, "会话已关闭", ChatEventClosed)
-		if err != nil {
-			return false, err
-		}
-		if err := closeConversation(ctx, conv); err != nil {
-			if derr := db.Get().WithContext(ctx).Delete(&ConversationMessage{}, ev.ID).Error; derr != nil {
-				log.Errorf(ctx, "chat close: remove orphan closed event conv=%d: %v", conv.ID, derr)
-			}
-			return false, err
-		}
-		return true, nil
-	}()
-	if err != nil {
-		return false, err
+	default:
+		wasOpen = true
+		chatNotifyStateChange(conv)
 	}
 	if err := chatSlackArchive(ctx, conv); err != nil {
 		log.Warnf(ctx, "chat close: archive channel conv=%d: %v", conv.ID, err)
 	}
 	return wasOpen, nil
-}
-
-// chatCloseLock 取会话关闭锁；被占用时轮询等待（持锁方很快结束），超时报错。
-func chatCloseLock(ctx context.Context, convID uint64) (release func(), err error) {
-	key := "chat:close:" + strconv.FormatUint(convID, 10)
-	token := generateId("cl")
-	deadline := time.Now().Add(chatCloseLockWait)
-	for {
-		ok, err := redis.Client().SetNX(ctx, key, token, chatCloseLockTTL).Result()
-		if err != nil {
-			return nil, fmt.Errorf("close lock: %w", err)
-		}
-		if ok {
-			return func() {
-				const script = `if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end`
-				_ = redis.Client().Eval(context.Background(), script, []string{key}, token).Err()
-			}, nil
-		}
-		if time.Now().After(deadline) {
-			return nil, errors.New("close lock: timeout")
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(50 * time.Millisecond):
-		}
-	}
 }
 
 func chatSlackSystemEvent(ctx context.Context, conv *Conversation, content, event string) (*ConversationMessage, error) {

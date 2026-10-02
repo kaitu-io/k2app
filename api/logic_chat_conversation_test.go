@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	db "github.com/wordgate/qtoolkit/db"
+	"gorm.io/gorm"
 )
 
 var chatSubjectSeq atomic.Uint64
@@ -571,5 +573,265 @@ func TestAppendMessage_ConcurrentCommitOrderMatchesIdOrder(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// ---- 终审修复：关闭竞态 ----
+
+// 内存里的会话还是 open、库里已关闭：RequireOpen 的追加不落库、不触发钩子。
+func TestAppendMessage_RequireOpenRejectsClosed(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	conv, _, err := ensureConversation(ctx, newChatSubject(t), "")
+	require.NoError(t, err)
+	stale := *conv
+	require.NoError(t, closeConversation(ctx, conv))
+	hook := withAppendHook(t)
+
+	for _, sender := range []string{SenderVisitor, SenderStaff, SenderAI} {
+		c := stale
+		msg, dup, err := appendMessage(ctx, &c, appendMessageInput{SenderType: sender, Kind: MsgText, Content: "late", RequireOpen: true})
+		assert.ErrorIs(t, err, errChatConversationClosed, sender)
+		assert.Nil(t, msg)
+		assert.False(t, dup)
+	}
+	var cnt int64
+	require.NoError(t, db.Get().Model(&ConversationMessage{}).Where("conversation_id = ?", conv.ID).Count(&cnt).Error)
+	assert.Zero(t, cnt, "已关闭的会话不得再落发言")
+	assert.Zero(t, hook.Load())
+
+	// 对照：open 会话上 RequireOpen 正常追加
+	open, _, err := ensureConversation(ctx, newChatSubject(t), "")
+	require.NoError(t, err)
+	_, _, err = appendMessage(ctx, open, appendMessageInput{SenderType: SenderVisitor, Kind: MsgText, Content: "ok", RequireOpen: true})
+	require.NoError(t, err)
+}
+
+// 访客重发一条已经落在（现已关闭的）会话里的消息：按 clientId 认出是重复，不当成"撞上关闭"。
+func TestAppendMessage_RequireOpenClosedStillDedupes(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	conv, _, err := ensureConversation(ctx, newChatSubject(t), "")
+	require.NoError(t, err)
+	in := appendMessageInput{SenderType: SenderVisitor, Kind: MsgText, Content: "once", ClientID: strp("retry-1"), RequireOpen: true}
+	first, _, err := appendMessage(ctx, conv, in)
+	require.NoError(t, err)
+	stale := *conv
+	require.NoError(t, closeConversation(ctx, conv))
+
+	again, dup, err := appendMessage(ctx, &stale, in)
+	require.NoError(t, err)
+	assert.True(t, dup)
+	assert.Equal(t, first.ID, again.ID)
+}
+
+// CloseConversation：事件与关闭在同一事务里完成；会话已关闭时不再落第二条事件。
+func TestAppendMessage_CloseConversationAtomic(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	conv, _, err := ensureConversation(ctx, newChatSubject(t), "")
+	require.NoError(t, err)
+	stale := *conv
+	in := appendMessageInput{SenderType: SenderSystem, Kind: MsgEvent, Content: "会话已关闭",
+		Meta: chatEventMeta(ChatEventClosed), CloseConversation: true}
+
+	ev, _, err := appendMessage(ctx, conv, in)
+	require.NoError(t, err)
+	assert.Equal(t, ConvClosed, conv.Status, "传入的结构体同步更新")
+	require.NotNil(t, conv.ClosedAt)
+	var fresh Conversation
+	require.NoError(t, db.Get().First(&fresh, conv.ID).Error)
+	assert.Equal(t, ConvClosed, fresh.Status)
+	assert.NotNil(t, fresh.ClosedAt)
+
+	_, _, err = appendMessage(ctx, &stale, in)
+	assert.ErrorIs(t, err, errChatConversationClosed)
+	var ids []uint64
+	require.NoError(t, db.Get().Model(&ConversationMessage{}).Where("conversation_id = ?", conv.ID).Pluck("id", &ids).Error)
+	assert.Equal(t, []uint64{ev.ID}, ids)
+}
+
+// chatIdleConv 建一个闲置了 age 的会话（专属品牌，closeIdleConversationsIn 不碰库里别的会话）。
+func chatIdleConv(t *testing.T, brand Brand, handler string, age time.Duration) (chatSubject, *Conversation) {
+	t.Helper()
+	subj := newChatSubjectBrand(t, brand)
+	conv, _, err := ensureConversation(context.Background(), subj, "")
+	require.NoError(t, err)
+	at := time.Now().Add(-age)
+	require.NoError(t, db.Get().Model(&Conversation{}).Where("id = ?", conv.ID).
+		Updates(map[string]any{"handler": handler, "last_message_at": at}).Error)
+	conv.Handler, conv.LastMessageAt = handler, at
+	return subj, conv
+}
+
+func chatTestBrand() Brand {
+	return Brand(fmt.Sprintf("tc%d", time.Now().UnixNano()%1_000_000_000_000))
+}
+
+// 候选查询之后、关闭之前访客又发了消息：会话已被唤醒，不得被闲置关闭。
+func TestCloseIdle_SkipsConversationWokenAfterScan(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	brand := chatTestBrand()
+	_, conv := chatIdleConv(t, brand, HandlerAI, 25*time.Hour)
+
+	orig := chatCloseIdleOne
+	t.Cleanup(func() { chatCloseIdleOne = orig })
+	chatCloseIdleOne = func(d *gorm.DB, c *Conversation, cutoff time.Time) (bool, error) {
+		if c.ID == conv.ID {
+			woke := *conv
+			_, _, err := appendMessage(ctx, &woke, appendMessageInput{SenderType: SenderVisitor, Kind: MsgText, Content: "我回来了", RequireOpen: true})
+			require.NoError(t, err)
+		}
+		return orig(d, c, cutoff)
+	}
+	closed, err := closeIdleConversationsIn(ctx, 24*time.Hour, 72*time.Hour, string(brand))
+	require.NoError(t, err)
+	assert.Empty(t, closed)
+	var fresh Conversation
+	require.NoError(t, db.Get().First(&fresh, conv.ID).Error)
+	assert.Equal(t, ConvOpen, fresh.Status, "被唤醒的会话不得被关闭")
+}
+
+// 候选查询之后被人工接手（handler 变了）：按 AI 的 24 小时判出来的候选不得按人工会话关掉。
+func TestCloseIdle_SkipsConversationTakenOverAfterScan(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	brand := chatTestBrand()
+	_, conv := chatIdleConv(t, brand, HandlerAI, 25*time.Hour)
+
+	orig := chatCloseIdleOne
+	t.Cleanup(func() { chatCloseIdleOne = orig })
+	chatCloseIdleOne = func(d *gorm.DB, c *Conversation, cutoff time.Time) (bool, error) {
+		require.NoError(t, db.Get().Model(&Conversation{}).Where("id = ?", c.ID).Update("handler", HandlerHuman).Error)
+		return orig(d, c, cutoff)
+	}
+	closed, err := closeIdleConversationsIn(ctx, 24*time.Hour, 72*time.Hour, string(brand))
+	require.NoError(t, err)
+	assert.Empty(t, closed)
+	var fresh Conversation
+	require.NoError(t, db.Get().First(&fresh, conv.ID).Error)
+	assert.Equal(t, ConvOpen, fresh.Status)
+}
+
+// 一个会话关闭失败不中断整批：后面的照常关闭，错误汇总返回。
+func TestCloseIdle_OneFailureDoesNotStopBatch(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	brand := chatTestBrand()
+	_, first := chatIdleConv(t, brand, HandlerAI, 25*time.Hour)
+	_, second := chatIdleConv(t, brand, HandlerAI, 25*time.Hour)
+	require.Less(t, first.ID, second.ID)
+
+	orig := chatCloseIdleOne
+	t.Cleanup(func() { chatCloseIdleOne = orig })
+	chatCloseIdleOne = func(d *gorm.DB, c *Conversation, cutoff time.Time) (bool, error) {
+		if c.ID == first.ID {
+			return false, errors.New("boom")
+		}
+		return orig(d, c, cutoff)
+	}
+	closed, err := closeIdleConversationsIn(ctx, 24*time.Hour, 72*time.Hour, string(brand))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "boom")
+	require.Len(t, closed, 1)
+	assert.Equal(t, second.ID, closed[0].ID)
+	var fresh Conversation
+	require.NoError(t, db.Get().First(&fresh, first.ID).Error)
+	assert.Equal(t, ConvOpen, fresh.Status)
+}
+
+// chatCloseEventIndex 返回会话消息里第一条关闭事件（closed / auto_closed）的下标；没有返回 -1。
+func chatCloseEventIndex(msgs []ConversationMessage) int {
+	metas := chatCloseEventMetas()
+	for i, m := range msgs {
+		if m.Kind == MsgEvent && (m.Meta == metas[0] || m.Meta == metas[1]) {
+			return i
+		}
+	}
+	return -1
+}
+
+// 关闭与访客发送并发（产品硬要求：任何消息都要进 Slack，而归档后的频道发不进去）：
+// 每条访客消息要么在关闭事件之前进了原会话，要么进了新会话，绝不落在原会话的关闭事件之后。
+func TestChatVisitorAppend_ConcurrentWithClose(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	chatAppendMidTx = func() { time.Sleep(time.Duration(rand.Intn(4)) * time.Millisecond) }
+	t.Cleanup(func() { chatAppendMidTx = nil })
+	chatConvCreateLimiter.reset()
+	t.Cleanup(chatConvCreateLimiter.reset)
+	oldLimit := chatConvCreateLimiter.limit
+	chatConvCreateLimiter.limit = 1 << 20
+	t.Cleanup(func() { chatConvCreateLimiter.limit = oldLimit })
+
+	for _, mode := range []string{"staff", "idle"} {
+		t.Run(mode, func(t *testing.T) {
+			brand := chatTestBrand()
+			for iter := 0; iter < 10; iter++ {
+				subj, conv := chatIdleConv(t, brand, HandlerAI, 25*time.Hour)
+
+				const n = 4
+				var wg sync.WaitGroup
+				sent := make([]*ConversationMessage, n)
+				for i := 0; i < n; i++ {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						time.Sleep(time.Duration(rand.Intn(8)) * time.Millisecond)
+						c := *conv
+						cid := fmt.Sprintf("cc-%d-%d", iter, i)
+						_, m, err := chatVisitorAppend(ctx, subj, &c, appendMessageInput{
+							SenderType: SenderVisitor, Kind: MsgText, Content: cid, ClientID: &cid})
+						if assert.NoError(t, err) {
+							sent[i] = m
+						}
+					}()
+				}
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					time.Sleep(time.Duration(rand.Intn(8)) * time.Millisecond)
+					if mode == "staff" {
+						c := *conv
+						_, err := chatCloseByStaff(ctx, &c)
+						assert.NoError(t, err)
+					} else {
+						_, err := chatCloseIdleRun(ctx, string(brand))
+						assert.NoError(t, err)
+					}
+				}()
+				wg.Wait()
+
+				var old []ConversationMessage
+				require.NoError(t, db.Get().Where("conversation_id = ?", conv.ID).Order("id").Find(&old).Error)
+				var fresh Conversation
+				require.NoError(t, db.Get().First(&fresh, conv.ID).Error)
+				at := chatCloseEventIndex(old)
+				if mode == "staff" {
+					require.Equal(t, ConvClosed, fresh.Status, "iter %d", iter)
+					require.GreaterOrEqual(t, at, 0, "iter %d: 人工关闭必有 closed 事件", iter)
+				}
+				if at >= 0 {
+					for _, m := range old[at+1:] {
+						assert.NotEqual(t, SenderVisitor, m.SenderType,
+							"iter %d: 访客消息 %d 落在已关闭会话的关闭事件之后", iter, m.ID)
+					}
+				}
+				for i, m := range sent {
+					if m == nil {
+						continue
+					}
+					var owner Conversation
+					require.NoError(t, db.Get().First(&owner, m.ConversationID).Error)
+					assert.Equal(t, subj.ID, owner.SubjectID)
+					if owner.ID != conv.ID {
+						assert.Greater(t, owner.ID, conv.ID, "iter %d msg %d: 进的是新开的会话", iter, i)
+					} else if fresh.Status == ConvClosed && fresh.ClosedAt != nil {
+						assert.False(t, m.CreatedAt.After(*fresh.ClosedAt), "iter %d msg %d: 关闭之后的消息不得留在原会话", iter, i)
+					}
+				}
+			}
+		})
 	}
 }

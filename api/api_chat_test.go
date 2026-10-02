@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1013,4 +1014,83 @@ func TestChatMessages_NewConversationCap(t *testing.T) {
 
 	resp, _ = chatPostMessage(t, r, cids[0], "nc-3", "still talking")
 	assert.Equal(t, 0, resp.Code, "已有 open 会话的访客不受新建上限影响: %s", resp.Message)
+}
+
+// ---- 终审修复：关闭竞态 ----
+
+// chatCloseOnAppend 让目标会话在下一次 appendMessage 开事务之前被人工关闭一次
+// （模拟"读到 open 会话"与"追加"之间插入的关闭）。
+func chatCloseOnAppend(t *testing.T, convID uint64) {
+	t.Helper()
+	var fired atomic.Bool
+	chatAppendPreLock = func(id uint64) {
+		if id != convID || !fired.CompareAndSwap(false, true) {
+			return
+		}
+		conv := slackReload(t, convID)
+		_, err := chatCloseByStaff(context.Background(), conv)
+		require.NoError(t, err)
+	}
+	t.Cleanup(func() { chatAppendPreLock = nil })
+}
+
+func chatConvByUUID(t *testing.T, uuid string) *Conversation {
+	t.Helper()
+	var conv Conversation
+	require.NoError(t, db.Get().Where("uuid = ?", uuid).First(&conv).Error)
+	return &conv
+}
+
+// 访客发送撞上关闭：对访客透明地开新会话，消息进新会话，原会话的 closed 事件之后没有任何东西。
+func TestChatSend_ClosedBetweenLookupAndAppendOpensNewConversation(t *testing.T) {
+	r := chatSetup(t, true)
+	w, _ := chatOpenSession(t, r, "/pricing", nil)
+	cid := chatCookie(w, CookieChatCid).Value
+	chatCleanupCID(t, cid)
+	resp, md := chatPostMessage(t, r, cid, "race-0", "first")
+	require.Equal(t, 0, resp.Code, resp.Message)
+	old := chatConvByUUID(t, md["conversation"].(map[string]any)["uuid"].(string))
+
+	chatCloseOnAppend(t, old.ID)
+	resp, md = chatPostMessage(t, r, cid, "race-1", "sent while closing")
+	require.Equal(t, 0, resp.Code, resp.Message)
+	got := md["conversation"].(map[string]any)
+	assert.NotEqual(t, old.UUID, got["uuid"], "消息必须进新会话")
+	assert.Equal(t, ConvOpen, got["status"])
+	assert.Equal(t, int64(2), chatConvCount(t, cid))
+
+	var oldMsgs []ConversationMessage
+	require.NoError(t, db.Get().Where("conversation_id = ?", old.ID).Order("id").Find(&oldMsgs).Error)
+	require.Len(t, oldMsgs, 2)
+	assert.Equal(t, "first", oldMsgs[0].Content)
+	assert.Equal(t, chatEventMeta(ChatEventClosed), oldMsgs[1].Meta, "原会话以 closed 事件收尾")
+
+	fresh := chatConvByUUID(t, got["uuid"].(string))
+	var newMsgs []ConversationMessage
+	require.NoError(t, db.Get().Where("conversation_id = ?", fresh.ID).Find(&newMsgs).Error)
+	require.Len(t, newMsgs, 1)
+	assert.Equal(t, "sent while closing", newMsgs[0].Content)
+	assert.Equal(t, "/pricing", fresh.EntryPath)
+}
+
+// 撞上关闭后的重开同样受"新建会话"上限约束：超限 429，消息哪儿都不落。
+func TestChatSend_ReopenAfterCloseRespectsNewConversationCap(t *testing.T) {
+	r := chatSetup(t, true)
+	w, _ := chatOpenSession(t, r, "/", nil)
+	cid := chatCookie(w, CookieChatCid).Value
+	chatCleanupCID(t, cid)
+	oldLimit := chatConvCreateLimiter.limit
+	chatConvCreateLimiter.limit = 1
+	t.Cleanup(func() { chatConvCreateLimiter.limit = oldLimit })
+	resp, md := chatPostMessage(t, r, cid, "cap-0", "first")
+	require.Equal(t, 0, resp.Code, resp.Message)
+	old := chatConvByUUID(t, md["conversation"].(map[string]any)["uuid"].(string))
+
+	chatCloseOnAppend(t, old.ID)
+	resp, _ = chatPostMessage(t, r, cid, "cap-1", "sent while closing")
+	assert.Equal(t, int(ErrorTooManyRequests), resp.Code)
+	assert.Equal(t, int64(1), chatConvCount(t, cid))
+	var n int64
+	require.NoError(t, db.Get().Model(&ConversationMessage{}).Where("content = ? AND client_id = ?", "sent while closing", "cap-1").Count(&n).Error)
+	assert.Zero(t, n)
 }

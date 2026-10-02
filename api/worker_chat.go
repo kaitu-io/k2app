@@ -105,9 +105,9 @@ func chatCloseIdleRun(ctx context.Context, brand string) (int, error) {
 
 // chatAutoCloseRecord 给"已关闭、24 小时内关闭、还没有任何关闭事件"的会话记一条 auto_closed 事件并归档频道。
 //
-// 模型里没有"关闭原因"列，判据是消息表：人工关闭（Slack 里的 !close）在关闭**之前**先落 closed 事件，
+// 模型里没有"关闭原因"列，判据是消息表：人工关闭（chatCloseByStaff）的 closed 事件与关闭在同一事务里落下，
 // 闲置关闭是唯一先关后记的路径——所以关了却没有 closed / auto_closed 事件的，就是欠一条 auto_closed。
-// 新增关闭路径时必须保持"先落事件再关"，否则会被这里补成自动关闭。
+// 新增关闭路径时必须保持"事件不晚于关闭"，否则会被这里补成自动关闭。
 // 时间下界避免在历史数据上逐个补事件。单个会话失败只记日志，下一轮再来。
 // chatSlackSweep 的归档遍只碰已有关闭事件的会话，所以事件一定先于归档进频道。
 func chatAutoCloseRecord(ctx context.Context, brand string) (int, error) {

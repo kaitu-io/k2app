@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -281,10 +282,14 @@ func chatAIFallback(ctx context.Context, convID uint64, aiReply string) error {
 	return err
 }
 
+// chatAppendAI 追加一条 AI 回复。会话在此之前已关闭（以库为准，行锁下判断）则丢弃，不算出错。
 func chatAppendAI(ctx context.Context, conv *Conversation, content string) error {
 	_, _, err := appendMessage(ctx, conv, appendMessageInput{
-		SenderType: SenderAI, SenderName: "AI", Kind: MsgText, Content: content,
+		SenderType: SenderAI, SenderName: "AI", Kind: MsgText, Content: content, RequireOpen: true,
 	})
+	if errors.Is(err, errChatConversationClosed) {
+		return nil
+	}
 	return err
 }
 

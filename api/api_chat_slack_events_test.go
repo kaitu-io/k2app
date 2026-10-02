@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -674,4 +675,28 @@ func TestSlackEvents_UnsignedHugeBodyNotFullyReadThroughRouter(t *testing.T) {
 	e.router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
 	assert.LessOrEqual(t, body.n, int64(chatSlackEventsMaxBody+64<<10), "read %d bytes", body.n)
+}
+
+// ---- 终审修复：关闭竞态 ----
+
+// 读到会话时还是 open、落库前已关闭：以库为准——不落库，频道里提示"会话已关闭"。
+func TestSlackEvents_ClosedAfterLoadIsNotDelivered(t *testing.T) {
+	e := newSlackEventsEnv(t)
+	var fired atomic.Bool
+	chatAppendPreLock = func(id uint64) {
+		if id == e.conv.ID && fired.CompareAndSwap(false, true) {
+			require.NoError(t, db.Get().Model(&Conversation{}).Where("id = ?", id).
+				Updates(map[string]any{"status": ConvClosed, "closed_at": time.Now()}).Error)
+		}
+	}
+	t.Cleanup(func() { chatAppendPreLock = nil })
+
+	evt := e.msgEvent("刚好撞上关闭")
+	e.send(evt)
+	e.send(evt) // 重投不重复提示
+	require.True(t, fired.Load(), "对照：确实走到了追加")
+	assert.Empty(t, e.msgs(), "已关闭的会话不得再落客服发言")
+	posts := slackMsgPosts(e.f, e.channel)
+	require.Len(t, posts, 1)
+	assert.Equal(t, chatSlackWarnClosed, posts[0])
 }
