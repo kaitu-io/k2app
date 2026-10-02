@@ -44,7 +44,7 @@ function conv(over: Partial<ChatConversation> = {}): ChatConversation {
     uuid: 'u1',
     brand: 'kaitu',
     subjectKind: 'user',
-    subjectId: '11',
+    subjectId: 11,
     email: 'one@example.com',
     status: 'open',
     handler: 'human',
@@ -79,7 +79,7 @@ beforeEach(() => {
   brandState.current = undefined;
   routerState.current = { push: vi.fn(), replace: vi.fn() };
   searchParamsState.current = new URLSearchParams();
-  mockDetail.mockResolvedValue({ conversation: conv(), messages: msgs() });
+  mockDetail.mockResolvedValue({ conversation: conv(), messages: msgs(), truncated: false });
   mockClose.mockResolvedValue(undefined);
   rows([conv(), conv({ uuid: 'u2', email: 'two@example.com', slackPermalink: '' })]);
 });
@@ -170,14 +170,15 @@ describe('/manager/conversations', () => {
     mockList.mockResolvedValue({ items: [conv()], pagination: { page: 0, pageSize: 50, total: 200 } });
     const { rerender } = render(<ConversationsPage />);
     await screen.findByText('one@example.com');
+    expect(mockList.mock.calls[0][0].page).toBe(1);
     fireEvent.click(screen.getByRole('button', { name: '下一页' }));
-    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 })));
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 })));
     brandState.current = 'overleap';
     rerender(<ConversationsPage />);
     await waitFor(() =>
-      expect(mockList).toHaveBeenLastCalledWith(expect.objectContaining({ page: 0, brand: 'overleap' })),
+      expect(mockList).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, brand: 'overleap' })),
     );
-    expect(mockList.mock.calls.some((c) => c[0].page === 1 && c[0].brand === 'overleap')).toBe(false);
+    expect(mockList.mock.calls.some((c) => c[0].page === 2 && c[0].brand === 'overleap')).toBe(false);
   });
 
   it('邮箱防抖：窗口后只请求一次且为 trim 后的值', async () => {
@@ -207,6 +208,7 @@ describe('/manager/conversations', () => {
     searchParamsState.current = new URLSearchParams('c=u1');
     mockDetail.mockResolvedValue({
       conversation: conv(),
+      truncated: false,
       messages: [{ id: 9, senderType: 'visitor', senderName: '', kind: 'image', content: 'https://evil.example/a.png', createdAt: 1 }],
     });
     render(<ConversationsPage />);
@@ -220,5 +222,12 @@ describe('/manager/conversations', () => {
     render(<ConversationsPage />);
     await screen.findByText('one@example.com');
     expect(screen.queryByText('在 Slack 打开')).toBeNull();
+  });
+
+  it('truncated 为 true 时显示提示，否则不显示', async () => {
+    searchParamsState.current = new URLSearchParams('c=u1');
+    mockDetail.mockResolvedValue({ conversation: conv(), messages: msgs(), truncated: true });
+    render(<ConversationsPage />);
+    expect(await screen.findByText('消息过多，仅显示最新的 500 条')).toBeInTheDocument();
   });
 });

@@ -30,7 +30,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { api, ChatConversation, ChatMessage } from "@/lib/api";
+import { api, ChatConversation, ChatConversationDetail, ChatMessage } from "@/lib/api";
 import { BrandBadge, useManagerBrand } from "@/components/manager/brand";
 import { toast } from "sonner";
 import { Eye, ExternalLink } from "lucide-react";
@@ -139,7 +139,7 @@ export default function ConversationsPage() {
   // 详情：以 URL 的 ?c= 为准（Slack 深链），点行时本地先开、同步写回 URL
   const paramUuid = searchParams.get("c") || "";
   const [openUuid, setOpenUuid] = useState(paramUuid);
-  const [detail, setDetail] = useState<{ conversation: ChatConversation; messages: ChatMessage[] } | null>(null);
+  const [detail, setDetail] = useState<ChatConversationDetail | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [detailError, setDetailError] = useState(false);
@@ -168,7 +168,7 @@ export default function ConversationsPage() {
       setIsLoading(true);
       try {
         const res = await api.getChatConversations({
-          page,
+          page: page + 1, // 后端页码从 1 起；内部 page 为 0 基
           pageSize: PAGE_SIZE,
           status: (status || undefined) as "open" | "closed" | undefined,
           handler: (handler || undefined) as "ai" | "human" | undefined,
@@ -399,6 +399,9 @@ export default function ConversationsPage() {
                   </Button>
                 )}
               </div>
+              {detail.truncated && (
+                <p className="text-xs text-muted-foreground">{"消息过多，仅显示最新的 500 条"}</p>
+              )}
               <div className="space-y-3">
                 {detail.messages.map((m) => (
                   <MessageBubble key={m.id} m={m} />

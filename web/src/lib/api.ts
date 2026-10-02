@@ -3230,7 +3230,7 @@ export interface ChatConversation {
   uuid: string;
   brand: BrandId;
   subjectKind: 'guest' | 'user';
-  subjectId: string;
+  subjectId: number;
   email: string;
   status: 'open' | 'closed';
   handler: 'ai' | 'human';
@@ -3255,6 +3255,8 @@ export interface ChatMessage {
 export interface ChatConversationDetail {
   conversation: ChatConversation;
   messages: ChatMessage[];
+  /** 消息超过上限，只返回了最新的一部分。 */
+  truncated: boolean;
 }
 
 export interface ChatConversationListParams {
