@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	db "github.com/wordgate/qtoolkit/db"
@@ -27,7 +26,8 @@ func chatRouter() *gin.Engine {
 	return r
 }
 
-// chatSetup 重置限流并设置总开关，结束时还原。
+// chatSetup 重置限流并设置总开关，结束时还原。预览开关默认打开（enabled=false 的用例测的是"仅预览"），
+// 要测硬关的用例自己用 setChatViper 把 chat.preview_enabled 置 false。
 func chatSetup(t *testing.T, enabled bool) *gin.Engine {
 	t.Helper()
 	skipIfNoConfig(t)
@@ -41,9 +41,8 @@ func chatSetup(t *testing.T, enabled bool) *gin.Engine {
 	t.Cleanup(chatReadLimiter.reset)
 	t.Cleanup(chatGuestCreateLimiter.reset)
 	t.Cleanup(chatSendGlobalLimiter.reset)
-	old := viper.Get("chat.enabled")
-	viper.Set("chat.enabled", enabled)
-	t.Cleanup(func() { viper.Set("chat.enabled", old) })
+	setChatViper(t, "chat.enabled", enabled)
+	setChatViper(t, "chat.preview_enabled", true)
 	return chatRouter()
 }
 
@@ -345,7 +344,7 @@ func TestChatMessages_RejectsWhenDisabledWithoutPreview(t *testing.T) {
 	w, _ := chatOpenSession(t, r, "/", nil)
 	cid := chatCookie(w, CookieChatCid).Value
 	chatCleanupCID(t, cid)
-	viper.Set("chat.enabled", false)
+	setChatViper(t, "chat.enabled", false)
 
 	resp, _ := chatPostMessage(t, r, cid, "d-1", "hi")
 	assert.Equal(t, int(ErrorInvalidArgument), resp.Code)
@@ -761,4 +760,155 @@ func TestChatMessages_FallsBackToClosedAndHidesNotes(t *testing.T) {
 	_, body := chatGetMessages(t, r, cid)
 	assert.Contains(t, body, "before close", "无 open 会话时回落到最近关闭的那条")
 	assert.NotContains(t, body, "internal note ZZZ", "内部备注不外露")
+}
+
+// ---- 终审修复：总开关硬关 / 仅预览 / 品牌白名单 ----
+
+// chatVisitorCalls 对 session 以外的四个访客接口各打一次，返回 接口 → (code, message)。
+func chatVisitorCalls(t *testing.T, r *gin.Engine, cid, tag string, hdr map[string]string) map[string]chatResp {
+	t.Helper()
+	with := func(q *TestRequest) *TestRequest {
+		q = q.WithCookie(CookieChatCid, cid)
+		for k, v := range hdr {
+			q = q.WithHeader(k, v)
+		}
+		return q
+	}
+	out := map[string]chatResp{}
+	for name, req := range map[string]*TestRequest{
+		"messages": NewTestRequest("GET", "/api/chat/messages"),
+		"ws-token": NewTestRequest("GET", "/api/chat/ws-token"),
+		"email":    NewTestRequest("POST", "/api/chat/email").WithBody(map[string]any{"email": tag + "@example.com"}),
+		"send":     NewTestRequest("POST", "/api/chat/messages").WithBody(map[string]any{"kind": "text", "content": "gate " + tag, "clientId": tag}),
+	} {
+		resp, _ := chatDecode(t, with(req).Execute(r))
+		out[name] = resp
+	}
+	return out
+}
+
+func chatAssertAllRejected(t *testing.T, calls map[string]chatResp, why string) {
+	t.Helper()
+	require.Len(t, calls, 4)
+	for name, resp := range calls {
+		assert.Equal(t, int(ErrorInvalidArgument), resp.Code, "%s: %s", why, name)
+		assert.Equal(t, "chat is not available", resp.Message, "%s: %s", why, name)
+	}
+}
+
+func chatAssertAllOK(t *testing.T, calls map[string]chatResp, why string) {
+	t.Helper()
+	require.Len(t, calls, 4)
+	for name, resp := range calls {
+		assert.Equal(t, 0, resp.Code, "%s: %s (%s)", why, name, resp.Message)
+	}
+}
+
+func chatMsgCountByCID(t *testing.T, brand Brand, cid string) int64 {
+	t.Helper()
+	owner, err := findIdentityOwner(context.Background(), brand, IdentityCID, cid)
+	require.NoError(t, err)
+	require.NotNil(t, owner)
+	var n int64
+	require.NoError(t, db.Get().Model(&ConversationMessage{}).
+		Where("conversation_id IN (SELECT id FROM conversations WHERE subject_kind = ? AND subject_id = ?)", SubjectGuest, owner.GuestID).
+		Count(&n).Error)
+	return n
+}
+
+// 两个开关都关 = 硬关：请求体里的 preview、有效的 resume 令牌、已有 cookie 与 open 会话都进不来。
+func TestChatGate_HardOffRejectsEverything(t *testing.T) {
+	r := chatSetup(t, true)
+	w, _ := chatOpenSession(t, r, "/", nil)
+	cid := chatCookie(w, CookieChatCid).Value
+	chatCleanupCID(t, cid)
+	resp, md := chatPostMessage(t, r, cid, "off-0", "before the switch")
+	require.Equal(t, 0, resp.Code, resp.Message)
+	convUUID := md["conversation"].(map[string]any)["uuid"].(string)
+	// 对照：开着的时候四个接口都通
+	chatAssertAllOK(t, chatVisitorCalls(t, r, cid, "on", nil), "开关打开")
+	before := chatMsgCountByCID(t, BrandKaitu, cid)
+
+	setChatViper(t, "chat.enabled", false)
+	setChatViper(t, "chat.preview_enabled", false)
+
+	marker := chatLocaleMarker()
+	for name, body := range map[string]map[string]any{
+		"plain":   {"path": "/"},
+		"preview": {"path": "/", "preview": true},
+		"resume":  {"path": "/", "resume": signChatResumeToken(convUUID, time.Hour)},
+	} {
+		w := NewTestRequest("POST", "/api/chat/session").WithBody(body).WithHeader("Accept-Language", marker).Execute(r)
+		_, data := chatDecode(t, w)
+		assert.Equal(t, false, data["enabled"], name)
+		assert.Nil(t, chatCookie(w, CookieChatCid), "硬关不得种 cid: %s", name)
+	}
+	assert.Equal(t, int64(0), chatGuestsWithLocale(t, marker), "硬关不得建 guest")
+	// 已有 cookie + open 会话的访客：session 同样关闭，且不泄露会话
+	_, data := chatOpenSession(t, r, "/", func(q *TestRequest) *TestRequest {
+		return q.WithCookie(CookieChatCid, cid).WithBody(map[string]any{"path": "/", "preview": true})
+	})
+	assert.Equal(t, false, data["enabled"])
+	assert.Nil(t, data["conversation"])
+
+	chatAssertAllRejected(t, chatVisitorCalls(t, r, cid, "off", nil), "硬关")
+	assert.Equal(t, before, chatMsgCountByCID(t, BrandKaitu, cid), "硬关期间不得落消息")
+}
+
+// enabled=false 且 preview_enabled=true：只有走过 preview（或有效 resume）session 的访客能用其余接口。
+func TestChatGate_PreviewOnlyNeedsMarker(t *testing.T) {
+	r := chatSetup(t, true)
+	w, _ := chatOpenSession(t, r, "/", nil)
+	cid := chatCookie(w, CookieChatCid).Value
+	chatCleanupCID(t, cid)
+	resp, _ := chatPostMessage(t, r, cid, "pv-0", "opened while enabled")
+	require.Equal(t, 0, resp.Code, resp.Message)
+
+	setChatViper(t, "chat.enabled", false) // preview_enabled 由 chatSetup 置 true
+	chatAssertAllRejected(t, chatVisitorCalls(t, r, cid, "nomark", nil), "仅预览、无标记")
+
+	_, data := chatOpenSession(t, r, "/", func(q *TestRequest) *TestRequest {
+		return q.WithCookie(CookieChatCid, cid).WithBody(map[string]any{"path": "/", "preview": true})
+	})
+	require.Equal(t, true, data["enabled"])
+	chatAssertAllOK(t, chatVisitorCalls(t, r, cid, "marked", nil), "仅预览、有标记")
+}
+
+// 品牌不在 chat.brands：session 返回 enabled:false，其余访客接口拒绝；名单内的品牌不受影响。
+func TestChatGate_BrandAllowlist(t *testing.T) {
+	r := chatSetup(t, true)
+	other := map[string]string{"X-K2-Brand": string(BrandOverleap)}
+	asOther := func(q *TestRequest) *TestRequest { return q.WithHeader("X-K2-Brand", string(BrandOverleap)) }
+
+	// 两个品牌都开放时各开一个会话
+	w, _ := chatOpenSession(t, r, "/", nil)
+	cid := chatCookie(w, CookieChatCid).Value
+	chatCleanupCID(t, cid)
+	w, data := chatOpenSession(t, r, "/", asOther)
+	require.Equal(t, true, data["enabled"], "对照：名单内时该品牌可用")
+	otherCid := chatCookie(w, CookieChatCid).Value
+	chatCleanupCID(t, otherCid)
+	chatAssertAllOK(t, chatVisitorCalls(t, r, otherCid, "in", other), "名单内")
+	before := chatMsgCountByCID(t, BrandOverleap, otherCid)
+
+	setChatViper(t, "chat.brands", []string{string(BrandKaitu)})
+
+	marker := chatLocaleMarker()
+	w = NewTestRequest("POST", "/api/chat/session").WithBody(map[string]any{"path": "/", "preview": true}).
+		WithHeader("X-K2-Brand", string(BrandOverleap)).WithHeader("Accept-Language", marker).Execute(r)
+	_, data = chatDecode(t, w)
+	assert.Equal(t, false, data["enabled"])
+	assert.Nil(t, chatCookie(w, CookieChatCid))
+	assert.Equal(t, int64(0), chatGuestsWithLocale(t, marker))
+	chatAssertAllRejected(t, chatVisitorCalls(t, r, otherCid, "out", other), "名单外")
+	assert.Equal(t, before, chatMsgCountByCID(t, BrandOverleap, otherCid))
+
+	// 名单内的品牌照常
+	chatAssertAllOK(t, chatVisitorCalls(t, r, cid, "kept", nil), "名单内的品牌")
+
+	// 空名单 = 全部关闭
+	setChatViper(t, "chat.brands", []string{})
+	_, data = chatOpenSession(t, r, "/", func(q *TestRequest) *TestRequest { return q.WithCookie(CookieChatCid, cid) })
+	assert.Equal(t, false, data["enabled"])
+	chatAssertAllRejected(t, chatVisitorCalls(t, r, cid, "empty", nil), "空名单")
 }

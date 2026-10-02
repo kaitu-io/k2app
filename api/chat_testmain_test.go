@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/spf13/viper"
 	"github.com/wordgate/qtoolkit/openai/filesearch"
 )
 
@@ -17,6 +18,17 @@ func init() {
 	chatAIAsk = func(ctx context.Context, question string, history []filesearch.Message) (string, error) {
 		return "(test ai)", nil
 	}
+	// 品牌白名单默认放开全部注册品牌（生产默认是空 = 全关）；要测白名单的用例用 setChatViper 覆盖。
+	// viper.Set 是最高优先级的覆盖层，不受之后加载 config.yml 的影响。
+	viper.Set("chat.brands", chatAllBrandNames())
+}
+
+func chatAllBrandNames() []string {
+	var names []string
+	for _, b := range AllBrands() {
+		names = append(names, string(b))
+	}
+	return names
 }
 
 var (

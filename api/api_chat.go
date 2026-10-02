@@ -209,6 +209,30 @@ func chatSubjectSendAllow(ctx context.Context, s chatSubject) bool {
 	return n <= chatSendPerSubjectPerMin
 }
 
+// chatVisitorSubject 解析访客主体并过闸（session 以外的访客接口共用）；ok=false 时已写好响应。
+// 硬关 / 品牌未开放：一律拒绝，已有 cookie 的访客也不例外。
+// 仅预览：主体必须带预览标记（由 preview 或有效 resume 令牌的 session 请求写入）。
+// Redis 读失败按没有标记处理（fail closed）。
+func chatVisitorSubject(c *gin.Context) (chatSubject, bool) {
+	access := chatAccessFor(ReqBrand(c))
+	if access == chatAccessOff {
+		Error(c, ErrorInvalidArgument, "chat is not available")
+		return chatSubject{}, false
+	}
+	subj, ok := chatSubjectFromRequest(c, false)
+	if !ok {
+		Error(c, ErrorInvalidArgument, "no chat session")
+		return chatSubject{}, false
+	}
+	if access == chatAccessPreview {
+		if n, err := redis.Client().Exists(c.Request.Context(), chatPreviewKey(subj)).Result(); err != nil || n == 0 {
+			Error(c, ErrorInvalidArgument, "chat is not available")
+			return chatSubject{}, false
+		}
+	}
+	return subj, true
+}
+
 // ---- handlers ----
 
 type chatSessionReq struct {
@@ -231,12 +255,14 @@ func api_chat_session(c *gin.Context) {
 		Error(c, ErrorInvalidArgument, "invalid request")
 		return
 	}
-	// 有效的继续对话令牌（签名有效、未过期、会话存在且属于本请求品牌）等同 preview：
-	// 总开关关闭时，收到邮件链接的访客也能接上自己的对话。无效令牌什么都不改变。
-	if !chatEnabled() && !req.Preview && chatResumeTokenValid(ctx, ReqBrand(c), req.Resume) {
+	// 开放程度（品牌白名单 + 两个开关）。仅预览时，有效的继续对话令牌（签名有效、未过期、
+	// 会话存在且属于本请求品牌）等同 preview：收到邮件链接的访客也能接上自己的对话。
+	// 无效令牌什么都不改变；硬关 / 品牌未开放时 preview 与令牌都不放行。
+	access := chatAccessFor(ReqBrand(c))
+	if access == chatAccessPreview && !req.Preview && chatResumeTokenValid(ctx, ReqBrand(c), req.Resume) {
 		req.Preview = true
 	}
-	if !chatEnabled() && !req.Preview {
+	if access == chatAccessOff || (access == chatAccessPreview && !req.Preview) {
 		Success(c, &ChatSessionResp{Enabled: false, Messages: []ChatMsgDTO{}})
 		return
 	}
@@ -357,9 +383,8 @@ func api_chat_messages_list(c *gin.Context) {
 		Error(c, ErrorTooManyRequests, "too many requests")
 		return
 	}
-	subj, ok := chatSubjectFromRequest(c, false)
+	subj, ok := chatVisitorSubject(c)
 	if !ok {
-		Error(c, ErrorInvalidArgument, "no chat session")
 		return
 	}
 	after, _ := strconv.ParseUint(c.Query("after"), 10, 64)
@@ -416,9 +441,8 @@ func api_chat_messages_send(c *gin.Context) {
 		Error(c, ErrorInvalidArgument, "invalid clientId")
 		return
 	}
-	subj, ok := chatSubjectFromRequest(c, false)
+	subj, ok := chatVisitorSubject(c)
 	if !ok {
-		Error(c, ErrorInvalidArgument, "no chat session")
 		return
 	}
 	if !chatSubjectSendAllow(ctx, subj) {
@@ -433,15 +457,7 @@ func api_chat_messages_send(c *gin.Context) {
 		return
 	}
 	if conv == nil {
-		rdb := redis.Client()
-		// 开关关闭时，只有预览会话能开新会话
-		if !chatEnabled() {
-			if n, err := rdb.Exists(ctx, chatPreviewKey(subj)).Result(); err != nil || n == 0 {
-				Error(c, ErrorInvalidArgument, "chat is not available")
-				return
-			}
-		}
-		entry, _ := rdb.Get(ctx, chatEntryKey(subj)).Result()
+		entry, _ := redis.Client().Get(ctx, chatEntryKey(subj)).Result()
 		conv, _, err = ensureConversation(ctx, subj, entry)
 		if err != nil {
 			log.Errorf(ctx, "api_chat_messages_send: %v", err)
@@ -511,9 +527,8 @@ func api_chat_email(c *gin.Context) {
 		Error(c, ErrorInvalidArgument, "invalid email address")
 		return
 	}
-	subj, ok := chatSubjectFromRequest(c, false)
+	subj, ok := chatVisitorSubject(c)
 	if !ok {
-		Error(c, ErrorInvalidArgument, "no chat session")
 		return
 	}
 	if subj.Kind == SubjectGuest {
@@ -546,9 +561,8 @@ func api_chat_ws_token(c *gin.Context) {
 		Error(c, ErrorTooManyRequests, "too many requests")
 		return
 	}
-	subj, ok := chatSubjectFromRequest(c, false)
+	subj, ok := chatVisitorSubject(c)
 	if !ok {
-		Error(c, ErrorInvalidArgument, "no chat session")
 		return
 	}
 	tok := signChatWSToken(subj, chatWSTokenTTL)
