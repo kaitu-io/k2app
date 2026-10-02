@@ -521,6 +521,9 @@ func SetupRouter() *gin.Engine {
 		opsAdmin.POST("/feedback-tickets/:id/reply", RoleRequired(RoleSupport), api_admin_reply_ticket)
 		opsAdmin.GET("/feedback-tickets/:id/replies", RoleRequired(allOpsRoles), api_admin_list_ticket_replies)
 
+		// 访客会话（只读索引 + 关闭；Slack 是客服主界面）
+		registerAdminChatRoutes(opsAdmin)
+
 		// 分销商管理（Marketing 角色）
 		opsAdmin.GET("/retailers", RoleRequired(RoleMarketing), api_admin_list_retailers)
 		opsAdmin.GET("/retailers/todos", RoleRequired(RoleMarketing), api_admin_list_retailer_todos)
