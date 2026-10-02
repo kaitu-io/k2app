@@ -36,6 +36,7 @@ const (
 	chatGuestCreateGlobalPerMin = 600  // session 里新建 guest 的全局上限
 	chatSendGlobalPerMin        = 1200 // 访客发消息的全局上限
 	chatSendPerSubjectPerMin    = 20   // 每主体发消息
+	chatConvCreatePerMin        = 30   // 每实例新建会话（只限新建，已有 open 会话的访客不受影响）
 	chatEmailMaxPerCluster      = 3    // 每个 guest 簇最多留几个不同邮箱
 )
 
@@ -194,19 +195,37 @@ func chatLimitBody(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, chatMaxBodyBytes)
 }
 
+// chatSendCountScript 原子地计数并保证键带过期：INCR 与 EXPIRE 分两步时，后一步失败会留下
+// 永不过期的计数键，该主体从此永久限流。键没有过期时间（首次计数，或历史遗留）就补上；
+// 已有过期时间的不续期（固定窗口）。
+const chatSendCountScript = `local n = redis.call("incr", KEYS[1])
+if n == 1 or redis.call("pttl", KEYS[1]) < 0 then redis.call("pexpire", KEYS[1], ARGV[1]) end
+return n`
+
 // chatSubjectSendAllow 按主体限速（Redis 计数，60 秒窗口）。Redis 故障时放行并记日志——限流不应拖垮聊天。
 func chatSubjectSendAllow(ctx context.Context, s chatSubject) bool {
-	key := "chat:send:" + s.Channel()
-	rdb := redis.Client()
-	n, err := rdb.Incr(ctx, key).Result()
+	n, err := redis.Client().Eval(ctx, chatSendCountScript, []string{"chat:send:" + s.Channel()},
+		time.Minute.Milliseconds()).Int64()
 	if err != nil {
 		log.Warnf(ctx, "chat send limiter: %v", err)
 		return true
 	}
-	if n == 1 {
-		_ = rdb.Expire(ctx, key, time.Minute).Err()
-	}
 	return n <= chatSendPerSubjectPerMin
+}
+
+// errChatConvCreateLimited 本实例新建会话已达每分钟上限。
+var errChatConvCreateLimited = errors.New("chat conversation create limit reached")
+
+// chatNewConversation 给主体开新会话，受每实例新建上限约束（只限新建：调用方已确认主体没有 open 会话）。
+// 超限返回 errChatConvCreateLimited 并记 Error——正常流量远到不了这个数，触顶就是有人在刷。
+func chatNewConversation(ctx context.Context, subj chatSubject) (*Conversation, error) {
+	if !chatConvCreateLimiter.Allow("*") {
+		log.Errorf(ctx, "chat: new conversation limit reached (%d/min per instance), rejecting %s", chatConvCreatePerMin, subj.Channel())
+		return nil, errChatConvCreateLimited
+	}
+	entry, _ := redis.Client().Get(ctx, chatEntryKey(subj)).Result()
+	conv, _, err := ensureConversation(ctx, subj, entry)
+	return conv, err
 }
 
 // chatVisitorSubject 解析访客主体并过闸（session 以外的访客接口共用）；ok=false 时已写好响应。
@@ -419,7 +438,7 @@ type chatSendReq struct {
 // api_chat_messages_send: POST /api/chat/messages
 func api_chat_messages_send(c *gin.Context) {
 	ctx := c.Request.Context()
-	if !chatMessageLimiter.Allow(c.ClientIP()) || !chatSendGlobalLimiter.Allow("*") {
+	if !chatMessageLimiter.Allow(c.ClientIP()) {
 		Error(c, ErrorTooManyRequests, "too many requests")
 		return
 	}
@@ -445,7 +464,8 @@ func api_chat_messages_send(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if !chatSubjectSendAllow(ctx, subj) {
+	// 全局额度放在最后扣：校验失败、没有主体、被按主体限速的请求都不该消耗所有访客共用的额度
+	if !chatSubjectSendAllow(ctx, subj) || !chatSendGlobalLimiter.Allow("*") {
 		Error(c, ErrorTooManyRequests, "too many requests")
 		return
 	}
@@ -457,11 +477,8 @@ func api_chat_messages_send(c *gin.Context) {
 		return
 	}
 	if conv == nil {
-		entry, _ := redis.Client().Get(ctx, chatEntryKey(subj)).Result()
-		conv, _, err = ensureConversation(ctx, subj, entry)
-		if err != nil {
-			log.Errorf(ctx, "api_chat_messages_send: %v", err)
-			Error(c, ErrorSystemError, "failed to create conversation")
+		if conv, err = chatNewConversation(ctx, subj); err != nil {
+			chatSendNewConvError(c, err)
 			return
 		}
 	}
@@ -479,6 +496,16 @@ func api_chat_messages_send(c *gin.Context) {
 		Message      ChatMsgDTO   `json:"message"`
 		Conversation *ChatConvDTO `json:"conversation"`
 	}{dto, chatConversationDTO(conv)})
+}
+
+// chatSendNewConvError 把开新会话的失败写成响应：超限 429，其余 500。
+func chatSendNewConvError(c *gin.Context, err error) {
+	if errors.Is(err, errChatConvCreateLimited) {
+		Error(c, ErrorTooManyRequests, "too many requests")
+		return
+	}
+	log.Errorf(c.Request.Context(), "api_chat_messages_send: %v", err)
+	Error(c, ErrorSystemError, "failed to create conversation")
 }
 
 var errChatEmailCap = errors.New("chat email cap reached")

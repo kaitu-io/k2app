@@ -36,6 +36,8 @@ func chatSetup(t *testing.T, enabled bool) *gin.Engine {
 	chatReadLimiter.reset()
 	chatGuestCreateLimiter.reset()
 	chatSendGlobalLimiter.reset()
+	chatConvCreateLimiter.reset()
+	t.Cleanup(chatConvCreateLimiter.reset)
 	t.Cleanup(chatSessionLimiter.reset)
 	t.Cleanup(chatMessageLimiter.reset)
 	t.Cleanup(chatReadLimiter.reset)
@@ -911,4 +913,104 @@ func TestChatGate_BrandAllowlist(t *testing.T) {
 	_, data = chatOpenSession(t, r, "/", func(q *TestRequest) *TestRequest { return q.WithCookie(CookieChatCid, cid) })
 	assert.Equal(t, false, data["enabled"])
 	chatAssertAllRejected(t, chatVisitorCalls(t, r, cid, "empty", nil), "空名单")
+}
+
+// ---- 终审修复：滥用面 ----
+
+// 全局发言额度只在请求通过校验、主体解析与按主体限速之后才扣：
+// 否则任何人用无效请求就能把所有访客的发言额度耗光。
+func TestChatMessages_GlobalCapNotSpentByRejectedRequests(t *testing.T) {
+	r := chatSetup(t, true)
+	w, _ := chatOpenSession(t, r, "/", nil)
+	cid := chatCookie(w, CookieChatCid).Value
+	chatCleanupCID(t, cid)
+	oldLimit := chatSendGlobalLimiter.limit
+	chatSendGlobalLimiter.limit = 1
+	t.Cleanup(func() { chatSendGlobalLimiter.limit = oldLimit })
+
+	// 校验失败、没有主体：都不该动全局额度
+	resp, _ := chatDecode(t, NewTestRequest("POST", "/api/chat/messages").WithCookie(CookieChatCid, cid).
+		WithBody(map[string]any{"kind": "text", "content": "", "clientId": "bad"}).Execute(r))
+	require.Equal(t, int(ErrorInvalidArgument), resp.Code)
+	resp, _ = chatPostMessage(t, r, "AAAAAAAAAAAAAAAAAAAAAA", "nosubj", "x")
+	require.Equal(t, int(ErrorInvalidArgument), resp.Code)
+
+	resp, _ = chatPostMessage(t, r, cid, "g-ok", "the one allowed")
+	assert.Equal(t, 0, resp.Code, "被拒的请求不得耗掉全局额度: %s", resp.Message)
+	resp, _ = chatPostMessage(t, r, cid, "g-over", "over")
+	assert.Equal(t, int(ErrorTooManyRequests), resp.Code, "对照：额度确实只有 1")
+}
+
+// 按主体限速触顶的请求同样不扣全局额度。
+func TestChatMessages_GlobalCapNotSpentBySubjectLimited(t *testing.T) {
+	r := chatSetup(t, true)
+	var cids [2]string
+	for i := range cids {
+		w, _ := chatOpenSession(t, r, "/", nil)
+		cids[i] = chatCookie(w, CookieChatCid).Value
+		chatCleanupCID(t, cids[i])
+	}
+	owner, _ := findIdentityOwner(context.Background(), BrandKaitu, IdentityCID, cids[0])
+	key := "chat:send:" + chatSubject{Brand: BrandKaitu, Kind: SubjectGuest, ID: owner.GuestID}.Channel()
+	require.NoError(t, redis.Client().Set(context.Background(), key, chatSendPerSubjectPerMin, time.Minute).Err())
+	t.Cleanup(func() { redis.Client().Del(context.Background(), key) })
+	oldLimit := chatSendGlobalLimiter.limit
+	chatSendGlobalLimiter.limit = 1
+	t.Cleanup(func() { chatSendGlobalLimiter.limit = oldLimit })
+
+	resp, _ := chatPostMessage(t, r, cids[0], "sl-1", "spammer")
+	require.Equal(t, int(ErrorTooManyRequests), resp.Code)
+	resp, _ = chatPostMessage(t, r, cids[1], "sl-2", "innocent")
+	assert.Equal(t, 0, resp.Code, "别人被限速不得耗掉全局额度: %s", resp.Message)
+}
+
+// 计数键没有过期时间（INCR 成功而 EXPIRE 失败留下的）：下一次调用必须补上，否则该主体永久限流。
+func TestChatSubjectSendAllow_HealsKeyWithoutTTL(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	s := chatSubject{Brand: BrandKaitu, Kind: SubjectGuest, ID: uint64(time.Now().UnixNano())}
+	key := "chat:send:" + s.Channel()
+	t.Cleanup(func() { redis.Client().Del(ctx, key) })
+
+	require.NoError(t, redis.Client().Set(ctx, key, chatSendPerSubjectPerMin+5, 0).Err())
+	assert.False(t, chatSubjectSendAllow(ctx, s), "计数已超限")
+	ttl, err := redis.Client().TTL(ctx, key).Result()
+	require.NoError(t, err)
+	assert.Greater(t, ttl, time.Duration(0), "没有过期时间的键必须被补上过期")
+	assert.LessOrEqual(t, ttl, time.Minute)
+
+	// 正常路径：首次计数即带过期
+	require.NoError(t, redis.Client().Del(ctx, key).Err())
+	assert.True(t, chatSubjectSendAllow(ctx, s))
+	ttl, err = redis.Client().TTL(ctx, key).Result()
+	require.NoError(t, err)
+	assert.Greater(t, ttl, time.Duration(0))
+	// 已有过期时间的键不被续期（固定窗口）
+	require.NoError(t, redis.Client().Expire(ctx, key, 10*time.Second).Err())
+	assert.True(t, chatSubjectSendAllow(ctx, s))
+	ttl, _ = redis.Client().TTL(ctx, key).Result()
+	assert.LessOrEqual(t, ttl, 10*time.Second)
+}
+
+// 每实例新建会话上限：超限 429 且不建会话；已有 open 会话的访客照常发言。
+func TestChatMessages_NewConversationCap(t *testing.T) {
+	r := chatSetup(t, true)
+	var cids [2]string
+	for i := range cids {
+		w, _ := chatOpenSession(t, r, "/", nil)
+		cids[i] = chatCookie(w, CookieChatCid).Value
+		chatCleanupCID(t, cids[i])
+	}
+	oldLimit := chatConvCreateLimiter.limit
+	chatConvCreateLimiter.limit = 1
+	t.Cleanup(func() { chatConvCreateLimiter.limit = oldLimit })
+
+	resp, _ := chatPostMessage(t, r, cids[0], "nc-1", "first conversation")
+	require.Equal(t, 0, resp.Code, resp.Message)
+	resp, _ = chatPostMessage(t, r, cids[1], "nc-2", "second conversation")
+	assert.Equal(t, int(ErrorTooManyRequests), resp.Code)
+	assert.Equal(t, int64(0), chatConvCount(t, cids[1]), "超限不得建会话")
+
+	resp, _ = chatPostMessage(t, r, cids[0], "nc-3", "still talking")
+	assert.Equal(t, 0, resp.Code, "已有 open 会话的访客不受新建上限影响: %s", resp.Message)
 }

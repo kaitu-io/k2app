@@ -149,6 +149,7 @@ var (
 	chatReadLimiter        = newFunnelIPLimiter(chatReadPerIPPerMin)
 	chatGuestCreateLimiter = newFunnelIPLimiter(chatGuestCreateGlobalPerMin) // 键恒为 "*"
 	chatSendGlobalLimiter  = newFunnelIPLimiter(chatSendGlobalPerMin)        // 键恒为 "*"
+	chatConvCreateLimiter  = newFunnelIPLimiter(chatConvCreatePerMin)        // 键恒为 "*"，进程内 = 每实例
 )
 
 func setChatCidCookie(c *gin.Context, value string) {
