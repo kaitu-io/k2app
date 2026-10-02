@@ -3,6 +3,7 @@ package center
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -506,4 +507,69 @@ func TestSetHandler_StaleStructStillPersists(t *testing.T) {
 	// DB 已是目标值：不通知
 	require.NoError(t, setHandler(ctx, conv, HandlerAI))
 	assert.Len(t, *seen, 2)
+}
+
+// 并发 append 同一会话：任一消息 X 的钩子触发时，该会话 id < X 的消息必须都已对新读可见，
+// 否则按游标读取的访客会永久漏掉那条（提交顺序与 id 顺序颠倒）。
+func TestAppendMessage_ConcurrentCommitOrderMatchesIdOrder(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+
+	// 在插入与更新之间随机停顿，把竞态窗口放大到可稳定观察
+	chatAppendMidTx = func() { time.Sleep(time.Duration(rand.Intn(15)) * time.Millisecond) }
+	t.Cleanup(func() { chatAppendMidTx = nil })
+
+	for iter := 0; iter < 5; iter++ {
+		conv, _, err := ensureConversation(ctx, newChatSubject(t), "")
+		require.NoError(t, err)
+
+		type obs struct {
+			id      uint64
+			visible map[uint64]bool
+		}
+		var mu sync.Mutex
+		var observed []obs
+		orig := chatAfterAppend
+		chatAfterAppend = append(append([]func(*Conversation, *ConversationMessage){}, orig...),
+			func(c *Conversation, m *ConversationMessage) {
+				if c.ID != conv.ID {
+					return
+				}
+				var ids []uint64
+				db.Get().Model(&ConversationMessage{}).Where("conversation_id = ?", c.ID).Pluck("id", &ids)
+				vis := map[uint64]bool{}
+				for _, id := range ids {
+					vis[id] = true
+				}
+				mu.Lock()
+				observed = append(observed, obs{m.ID, vis})
+				mu.Unlock()
+			})
+
+		const n = 8
+		var wg sync.WaitGroup
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				c := *conv
+				_, _, err := appendMessage(ctx, &c, appendMessageInput{SenderType: SenderVisitor, Kind: MsgText, Content: "x"})
+				assert.NoError(t, err)
+			}()
+		}
+		wg.Wait()
+		chatAfterAppend = orig
+
+		var finalIDs []uint64
+		require.NoError(t, db.Get().Model(&ConversationMessage{}).Where("conversation_id = ?", conv.ID).Pluck("id", &finalIDs).Error)
+		require.Len(t, finalIDs, n)
+		require.Len(t, observed, n)
+		for _, o := range observed {
+			for _, id := range finalIDs {
+				if id < o.id {
+					assert.True(t, o.visible[id], "iter %d: hook for %d ran before lower id %d was visible", iter, o.id, id)
+				}
+			}
+		}
+	}
 }

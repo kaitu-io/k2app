@@ -12,6 +12,7 @@ import (
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/qtoolkit/redis"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
 
@@ -157,6 +158,9 @@ func ensureConversation(ctx context.Context, s chatSubject, entryPath string) (*
 	return conv, true, nil
 }
 
+// chatAppendMidTx 仅供测试：在 appendMessage 事务内插入之后、更新会话之前调用，用来放大并发窗口。
+var chatAppendMidTx func()
+
 // errChatSlackTSOtherConversation：slack_ts 已被另一个会话的消息占用。
 var errChatSlackTSOtherConversation = errors.New("slack_ts belongs to another conversation")
 
@@ -182,15 +186,31 @@ func appendMessage(ctx context.Context, conv *Conversation, in appendMessageInpu
 		by = in.SenderType
 		upd["last_message_by"] = by
 	}
-	// 插入与更新会话在同一事务：更新失败则消息一并回滚，重试不会被当成 dup 吞掉而漏掉钩子
+	// 插入与更新会话在同一事务：更新失败则消息一并回滚，重试不会被当成 dup 吞掉而漏掉钩子。
+	// 事务内先对会话行 SELECT ... FOR UPDATE，再分配消息 id：同一会话的 append 因此按
+	// "拿锁 → 分配 id → 提交" 串行，提交顺序 == id 顺序。否则 T1 先拿到 id 10、T2 拿到 11 并先提交，
+	// 钩子（推送/Slack 镜像）先看到 11，游标读取 afterID=11 的访客就永远漏掉 10。
+	// 保证：消息 X 的钩子触发时，该会话所有 id < X 的消息已提交（对新读可见）。
+	// 不保证：不同 goroutine 里钩子的调用顺序（锁在提交时释放，钩子在提交后跑），所以消费方按 id 排序/去重。
 	var dupKey bool
 	err := d.Transaction(func(tx *gorm.DB) error {
+		var locked Conversation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Take(&locked, conv.ID).Error; err != nil {
+			return err
+		}
+		// 时间戳在拿锁后取，保证 last_message_at 与 id 同序
+		now = time.Now()
+		msg.CreatedAt = now
+		upd["last_message_at"] = now
 		// 冲突是预期路径：静默 logger 避免把幂等重试刷成错误日志
 		if err := tx.Session(&gorm.Session{Logger: logger.Discard}).Create(msg).Error; err != nil {
 			if isDuplicateKeyErr(err) {
 				dupKey = true
 			}
 			return err
+		}
+		if chatAppendMidTx != nil {
+			chatAppendMidTx()
 		}
 		return tx.Model(&Conversation{}).Where("id = ?", conv.ID).Updates(upd).Error
 	})
