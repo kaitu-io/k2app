@@ -1,51 +1,94 @@
 /**
- * 会话挂件的"要不要出现"判定与页面内的开窗事件。
+ * 会话挂件的"要不要出现"判定、入口参数与页面内的开窗事件。
  * 独立成小文件：页面只为这点判断付体积，挂件本体与客户端库按需加载（ChatWidgetLazy）。
  */
+import { CHAT_RESUME_GLOBAL, CHAT_RESUME_HASH_PREFIX } from './resume-script';
 
 /** 本浏览器已经成功建过会话（服务端的访客 cookie 是 HttpOnly，前端看不到，所以另记一个标记）。 */
 export const CHAT_KNOWN_FLAG = 'chat:known';
 /** 本浏览器已经留过邮箱，不再弹留邮箱表单。 */
 export const CHAT_EMAIL_FLAG = 'chat:email';
+/** 本标签页见过 `?chat=preview`（sessionStorage）：预览身份跟着站内跳转走。 */
+export const CHAT_PREVIEW_FLAG = 'chat:preview';
 
 const OPEN_EVENT = 'k2chat:open';
 
-export function readFlag(key: string): boolean {
+function readStore(kind: 'localStorage' | 'sessionStorage', key: string): boolean {
   try {
-    return window.localStorage.getItem(key) === '1';
+    return window[kind].getItem(key) === '1';
   } catch {
     return false; // 存储被禁用（隐私模式等）按"没有"处理
   }
 }
 
-export function writeFlag(key: string): void {
+function writeStore(kind: 'localStorage' | 'sessionStorage', key: string): void {
   try {
-    window.localStorage.setItem(key, '1');
+    window[kind].setItem(key, '1');
   } catch {
     // 存不下只是下次多问一次，不影响聊天
   }
 }
 
-export type ChatParam = { kind: 'none' } | { kind: 'preview' } | { kind: 'resume'; token: string };
+export const readFlag = (key: string) => readStore('localStorage', key);
+export const writeFlag = (key: string) => writeStore('localStorage', key);
 
-/** `?chat=preview` 是预览开关；其余非空值是邮件回链里的继续对话令牌。 */
-export function parseChatParam(search: string): ChatParam {
-  const value = new URLSearchParams(search).get('chat');
-  if (!value) return { kind: 'none' };
-  return value === 'preview' ? { kind: 'preview' } : { kind: 'resume', token: value };
+/**
+ * 预览身份：URL 带 `?chat=preview`，或本标签页之前带过。
+ * `?chat=` 的其他取值一律忽略——继续对话令牌只从 URL 片段（#chat=）来。
+ */
+export function isPreview(): boolean {
+  if (new URLSearchParams(window.location.search).get('chat') === 'preview') {
+    writeStore('sessionStorage', CHAT_PREVIEW_FLAG);
+    return true;
+  }
+  return readStore('sessionStorage', CHAT_PREVIEW_FLAG);
+}
+
+type ResumeWindow = { [CHAT_RESUME_GLOBAL]?: unknown };
+
+function hashToken(): string {
+  const hash = window.location.hash;
+  return hash.startsWith(CHAT_RESUME_HASH_PREFIX) ? hash.slice(CHAT_RESUME_HASH_PREFIX.length) : '';
+}
+
+/** 有没有待用的继续对话令牌（不取走）。 */
+export function hasResumeToken(): boolean {
+  const stashed = (window as unknown as ResumeWindow)[CHAT_RESUME_GLOBAL];
+  return (typeof stashed === 'string' && stashed !== '') || hashToken() !== '';
+}
+
+/**
+ * 取走继续对话令牌（只能取一次）。正常由根布局的内联脚本在统计脚本之前挪到 window 上；
+ * 那段脚本没跑（被拦、站内跳转带片段）时自己从片段里读，并把片段从地址栏移除。
+ */
+export function takeResumeToken(): string | null {
+  const w = window as unknown as ResumeWindow;
+  let raw = typeof w[CHAT_RESUME_GLOBAL] === 'string' ? (w[CHAT_RESUME_GLOBAL] as string) : '';
+  delete w[CHAT_RESUME_GLOBAL];
+  const fromHash = hashToken();
+  if (fromHash) {
+    raw = raw || fromHash;
+    window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search);
+  }
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 }
 
 /**
  * 挂载时要不要去问服务端 `session`（问了才知道 `enabled`，才决定画不画入口按钮）。
  *
- * 暗发布阶段的规则：URL 带 `?chat=`（预览或继续对话令牌），或者本浏览器已经建过会话。
- * 两者都没有 = 不渲染、不发任何请求、不种 cookie。
+ * 暗发布阶段的规则：预览身份、带着继续对话令牌，或者本浏览器已经建过会话。
+ * 三者都没有 = 不渲染、不发任何请求、不种 cookie。
  *
  * 这是下一期唯一要改的地方：服务端开关打开后要"对所有访客显示入口"，需要一个便宜的公开
  * `enabled` 探测（或直接恒返回 true），改这里即可，挂件其余逻辑不动。
  */
-export function shouldProbeSession(search: string = window.location.search): boolean {
-  return parseChatParam(search).kind !== 'none' || readFlag(CHAT_KNOWN_FLAG);
+export function shouldProbeSession(): boolean {
+  return isPreview() || hasResumeToken() || readFlag(CHAT_KNOWN_FLAG);
 }
 
 /**

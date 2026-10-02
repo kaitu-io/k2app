@@ -11,8 +11,8 @@ import {
   CHAT_CONTENT_MAX,
   ChatError,
   createChatClient,
-  deriveConversation,
   type ChatClient,
+  type ChatConversation,
   type ChatMessage,
   type SessionState,
 } from '@/lib/chat-client';
@@ -21,12 +21,12 @@ import MessageList from './MessageList';
 import {
   CHAT_EMAIL_FLAG,
   CHAT_KNOWN_FLAG,
+  isPreview,
   onOpenChatRequest,
-  parseChatParam,
   readFlag,
   shouldProbeSession,
+  takeResumeToken,
   writeFlag,
-  type ChatParam,
 } from './gate';
 
 /** 转人工后这么久没有客服消息，就请访客留邮箱。 */
@@ -44,11 +44,28 @@ function setChatwootBubble(v: 'hide' | 'show') {
   }
 }
 
-/** 把继续对话令牌从地址栏拿掉，免得留在地址栏、历史记录和后续请求的 Referer 里。 */
-function stripChatParam() {
-  const url = new URL(window.location.href);
-  url.searchParams.delete('chat');
-  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+/**
+ * 正在等人工的那段：`at` 是转人工的时刻（留邮箱表单的计时起点，与面板开合无关），
+ * `afterId` 之后出现客服消息即视为已接入。按会话 uuid 记，换会话重新算。
+ */
+type HumanWait = { uuid: string; at: number; afterId: number };
+
+const isWaitingHuman = (c: ChatConversation | null): c is ChatConversation =>
+  c !== null && c.status === 'open' && c.handler === 'human';
+
+const maxId = (list: readonly ChatMessage[]) => list.reduce((max, m) => (m.id > max ? m.id : max), 0);
+
+/** 页面加载时会话已经在等人工：起点取最近一条转人工事件的时间（取不到或在未来就用现在）。 */
+function humanWaitFromHistory(conv: ChatConversation, history: readonly ChatMessage[]): HumanWait {
+  const now = Date.now();
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (m.kind === 'event' && m.meta?.event === 'transfer_human') {
+      const at = Date.parse(m.createdAt);
+      return { uuid: conv.uuid, at: Number.isFinite(at) && at <= now ? at : now, afterId: m.id };
+    }
+  }
+  return { uuid: conv.uuid, at: now, afterId: 0 };
 }
 
 /**
@@ -57,12 +74,15 @@ function stripChatParam() {
  * 出现条件（全部满足才渲染，否则返回 null）：
  * 1. 品牌注册表 `chatEnabled`；
  * 2. 不是 App 内嵌页（`?embed=true` / `#embed`，与旧客服挂件同一判定）；
- * 3. `shouldProbeSession()`——暗发布阶段只有 `?chat=` 或建过会话的浏览器才去问服务端，
- *    其余访客不渲染、不发请求、不种 cookie；
+ * 3. `shouldProbeSession()`——暗发布阶段只有预览身份、带继续对话令牌或建过会话的浏览器
+ *    才去问服务端，其余访客不渲染、不发请求、不种 cookie；
  * 4. 服务端 `session` 返回 `enabled: true`。
  *
- * `?chat=preview` 以预览身份建会话（参数保留）；`?chat=<其他值>` 是邮件回链的继续对话令牌：
- * 传给服务端、自动展开面板，并立刻从地址栏移除。
+ * `?chat=preview` 以预览身份建会话（本标签页内跟着站内跳转走）。邮件回链是 `#chat=<令牌>`：
+ * 令牌由根布局的内联脚本在统计脚本之前移出地址栏，这里取走、传给服务端并自动展开面板。
+ *
+ * 实时通道（WebSocket / 轮询）在访客第一次展开面板、或会话已存在时才建立。
+ * 会话状态（处理方、是否关闭）以服务端下发为准。
  *
  * 本挂件渲染期间隐藏旧客服气泡，避免两个入口叠在一起；卸载时恢复。
  */
@@ -72,6 +92,8 @@ export default function ChatWidget({ createClient = createChatClient }: { create
   const [create] = useState(() => createClient);
   const [session, setSession] = useState<SessionState | null>(null); // 非 null = 服务端已确认 enabled
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [conversation, setConversation] = useState<ChatConversation | null>(null);
+  const [humanWait, setHumanWait] = useState<HumanWait | null>(null);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<SendError | null>(null);
@@ -81,8 +103,9 @@ export default function ChatWidget({ createClient = createChatClient }: { create
   const [emailDue, setEmailDue] = useState(false);
 
   const clientRef = useRef<ChatClient | null>(null);
-  // URL 参数只读一次并存在 ref 里：令牌读完即从地址栏移除，严格模式的第二次挂载要靠它拿回来
-  const paramRef = useRef<ChatParam | null>(null);
+  // 入口参数只读一次并存在 ref 里：令牌只能取走一次，严格模式的第二次挂载要靠它拿回来
+  const entryRef = useRef<{ preview: boolean; resume: string | null } | null>(null);
+  const messagesRef = useRef<ChatMessage[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -90,28 +113,43 @@ export default function ChatWidget({ createClient = createChatClient }: { create
 
   useEffect(() => {
     if (!siteBrand().chatEnabled || isEmbeddedPage()) return;
-    if (paramRef.current === null) {
+    if (entryRef.current === null) {
       if (!shouldProbeSession()) return;
-      paramRef.current = parseChatParam(window.location.search);
-      if (paramRef.current.kind === 'resume') stripChatParam();
+      entryRef.current = { preview: isPreview(), resume: takeResumeToken() };
     }
-    const param = paramRef.current;
+    const entry = entryRef.current;
     const client = create();
     clientRef.current = client;
     let cancelled = false;
     const off = client.onMessages((list) => {
-      if (!cancelled) setMessages(list);
+      if (cancelled) return;
+      messagesRef.current = list;
+      setMessages(list);
     });
+    const offConv = client.onConversation((conv) => {
+      if (cancelled) return;
+      setConversation(conv);
+      // 运行中看到转人工：起点就是此刻，此后的客服消息才算"已接入"
+      setHumanWait((prev) =>
+        !isWaitingHuman(conv)
+          ? null
+          : prev?.uuid === conv.uuid
+            ? prev
+            : { uuid: conv.uuid, at: Date.now(), afterId: maxId(messagesRef.current) },
+      );
+    });
+    const opts: { preview?: boolean; resume?: string } = {};
+    if (entry.preview) opts.preview = true;
+    if (entry.resume) opts.resume = entry.resume;
     client
-      .start(
-        window.location.pathname,
-        param.kind === 'preview' ? { preview: true } : param.kind === 'resume' ? { resume: param.token } : {},
-      )
+      .start(window.location.pathname, opts)
       .then((state) => {
         if (cancelled || !state.enabled) return;
         writeFlag(CHAT_KNOWN_FLAG);
+        setConversation(state.conversation);
+        setHumanWait(isWaitingHuman(state.conversation) ? humanWaitFromHistory(state.conversation, state.messages) : null);
         setSession(state);
-        if (param.kind === 'resume') setOpen(true);
+        if (entry.resume) setOpen(true);
       })
       .catch(() => {
         // 会话建不起来：不出现入口，旧客服入口照常可用
@@ -119,6 +157,7 @@ export default function ChatWidget({ createClient = createChatClient }: { create
     return () => {
       cancelled = true;
       off();
+      offConv();
       client.stop();
       clientRef.current = null;
     };
@@ -140,6 +179,11 @@ export default function ChatWidget({ createClient = createChatClient }: { create
     };
   }, [visible]);
 
+  // 第一次展开才建实时通道：从没点开过的访客不占连接（已有会话的由客户端自己连）
+  useEffect(() => {
+    if (open && visible) clientRef.current?.activate();
+  }, [open, visible]);
+
   useEffect(() => {
     if (open) inputRef.current?.focus();
     else if (wasOpenRef.current) launcherRef.current?.focus();
@@ -150,22 +194,21 @@ export default function ChatWidget({ createClient = createChatClient }: { create
     if (open) endRef.current?.scrollIntoView?.({ block: 'end' });
   }, [open, messages, emailDue]);
 
-  const conversation = session ? deriveConversation(session.conversation, messages) : null;
-  // 最近一次转人工之后有没有客服消息（没有转人工事件时，看整段历史）
-  const lastTransfer = messages.findLastIndex((m) => m.kind === 'event' && m.meta?.event === 'transfer_human');
-  const staffReplied = messages.some((m, i) => i > lastTransfer && m.senderType === 'staff');
-  const waitingHuman = conversation?.status === 'open' && conversation.handler === 'human' && !staffReplied;
-  const wantsEmail = open && waitingHuman && emailState === 'idle';
+  // "客服已接入"仍看消息：转人工之后出现过客服消息
+  const staffReplied =
+    humanWait !== null && messages.some((m) => m.id > humanWait.afterId && m.senderType === 'staff');
+  const wantsEmail = humanWait !== null && !staffReplied && emailState === 'idle';
 
-  // 计时从"面板开着且在等人工"这一刻算起，即转人工与打开面板两者中较晚的那个
+  // 计时锚在转人工的时刻，与面板开合无关：过了 30 秒再打开面板，表单直接在
   useEffect(() => {
-    if (!wantsEmail) return;
-    const timer = setTimeout(() => setEmailDue(true), EMAIL_PROMPT_AFTER_MS);
+    if (!wantsEmail || !humanWait) return;
+    const remaining = Math.max(0, humanWait.at + EMAIL_PROMPT_AFTER_MS - Date.now());
+    const timer = setTimeout(() => setEmailDue(true), remaining);
     return () => {
       clearTimeout(timer);
       setEmailDue(false);
     };
-  }, [wantsEmail]);
+  }, [wantsEmail, humanWait]);
 
   if (!session) return null;
 
@@ -224,14 +267,15 @@ export default function ChatWidget({ createClient = createChatClient }: { create
   }
 
   const welcome = session.welcome;
-  const showWelcome = welcome !== null && messages.length === 0 && session.conversation === null;
+  const showWelcome = welcome !== null && messages.length === 0 && conversation === null;
 
   return (
     <div
       role="dialog"
       aria-label={t('title')}
       onKeyDown={(e) => {
-        if (e.key === 'Escape') setOpen(false);
+        // 输入法组字中的 Esc 是取消候选，不是关面板
+        if (e.key === 'Escape' && !e.nativeEvent.isComposing && e.keyCode !== 229) setOpen(false);
       }}
       className="fixed bottom-0 right-0 z-50 flex h-[32rem] max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-border bg-background shadow-2xl min-[480px]:bottom-4 min-[480px]:right-4 min-[480px]:w-[22rem] min-[480px]:rounded-2xl"
     >
@@ -242,7 +286,8 @@ export default function ChatWidget({ createClient = createChatClient }: { create
         </Button>
       </div>
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3" aria-live="polite">
+      {/* data-sentry-mask：对话内容不进会话回放 */}
+      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3" aria-live="polite" data-sentry-mask>
         {showWelcome && (
           <div className="space-y-2">
             <p className="max-w-[85%] rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-sm whitespace-pre-wrap text-foreground">

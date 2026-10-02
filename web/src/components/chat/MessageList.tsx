@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import type { ChatMessage, ChatWelcome } from '@/lib/chat-client';
 import { cn } from '@/lib/utils';
+import { linkParts } from './linkify';
 
 export interface MessageListLabels {
   ai: string;
@@ -10,35 +11,28 @@ export interface MessageListLabels {
   image: string;
 }
 
-const URL_RE = /https?:\/\/[^\s<>"']+/g;
-const TRAILING_PUNCT = /[.,;:!?)\]}，。；：！？）】》]+$/;
-
-/**
- * 纯文本渲染 + 只把 http(s) 链接变成 <a>。全程是 React 文本节点，不解析 HTML；
- * 其他协议（javascript: 等）原样当文字显示。
- */
+/** 纯文本渲染 + 只把 http(s) 链接变成 <a>。全程是 React 文本节点，不解析 HTML。 */
 function linkify(text: string): ReactNode[] {
-  const out: ReactNode[] = [];
-  let last = 0;
-  for (const match of text.matchAll(URL_RE)) {
-    const start = match.index ?? 0;
-    const url = match[0].replace(TRAILING_PUNCT, '');
-    if (start > last) out.push(text.slice(last, start));
-    out.push(
+  let offset = 0;
+  return linkParts(text).map((part) => {
+    const key = offset;
+    if (typeof part === 'string') {
+      offset += part.length;
+      return part;
+    }
+    offset += part.url.length;
+    return (
       <a
-        key={start}
-        href={url}
+        key={key}
+        href={part.url}
         target="_blank"
         rel="noopener noreferrer nofollow"
         className="underline underline-offset-2 break-all"
       >
-        {url}
-      </a>,
+        {part.url}
+      </a>
     );
-    last = start + url.length;
-  }
-  if (last < text.length) out.push(text.slice(last));
-  return out;
+  });
 }
 
 function Bubble({ mine, label, pending, children }: { mine: boolean; label?: string; pending?: boolean; children: ReactNode }) {

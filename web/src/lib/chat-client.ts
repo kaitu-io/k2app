@@ -7,6 +7,8 @@
  * - WebSocket 连 `session.ws.url`（另一个主机），只靠 `?token=` 鉴权；令牌 5 分钟有效，
  *   每次重连前换新。服务端忽略客户端发来的帧，所以这里只收不发。
  * - 消息先落库再广播：推送丢了不丢消息，每次（重）连成功后按最大 id 拉一次补齐。
+ * - 会话状态（status / handler）以服务端为准，四个来源：`session`、发消息的响应、
+ *   `GET /messages` 的响应、WebSocket 的 `state` 帧。客户端不从消息里推状态。
  *
  * 设计：docs/superpowers/specs/2026-10-01-support-console-chatwoot-replacement-design.md §5 / §6
  */
@@ -51,12 +53,20 @@ export interface SessionState {
 }
 
 export interface ChatClient {
+  /**
+   * 建立 / 恢复会话。只有响应里已经有会话时才会立刻建实时通道；否则等 `activate()`
+   * —— 从没点开过挂件的访客不占任何连接。重复调用会先关掉上一次的连接与定时器。
+   */
   start(path: string, opts?: { preview?: boolean; resume?: string }): Promise<SessionState>;
+  /** 访客第一次展开面板时调用：开始实时通道（WebSocket，或回落轮询）。幂等。 */
+  activate(): void;
   /** 自动生成 clientId；失败重试复用同一 clientId。 */
   send(kind: ChatSendKind, content: string): Promise<void>;
   leaveEmail(email: string): Promise<void>;
   /** 回调拿到的是全量列表：已确认的按 id 去重、升序，其后是未确认的乐观气泡。 */
   onMessages(cb: (msgs: ChatMessage[]) => void): () => void;
+  /** 会话状态变化（服务端下发）时回调；`null` = 当前没有会话。 */
+  onConversation(cb: (conv: ChatConversation | null) => void): () => void;
   stop(): void;
 }
 
@@ -87,6 +97,8 @@ export interface ChatClientOptions {
   fetch?: typeof fetch;
   WebSocket?: new (url: string) => ChatSocket;
   randomId?: () => string;
+  /** [0,1) 随机数，用于重连抖动；测试注入定值。 */
+  random?: () => number;
 }
 
 export const CHAT_CONTENT_MAX = 2000; // 与 api chatContentMaxRunes 一致（按字符数）
@@ -94,37 +106,31 @@ export const CHAT_CONTENT_MAX = 2000; // 与 api chatContentMaxRunes 一致（�
 const SEND_RETRY_DELAYS = [1000, 2000, 4000];
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30_000;
+/** 重连抖动 ±25%：服务端重启时不让所有访客在同一毫秒涌回来。 */
+const RECONNECT_JITTER = 0.25;
 /** 连上后撑过这么久才算"稳定"，退避归零；连上即断的抖动连接继续退避。 */
 const STABLE_AFTER_MS = 10_000;
 const MAX_CONNECT_FAILURES = 3;
 const POLL_INTERVAL_MS = 4000;
+const FETCH_TIMEOUT_MS = 15_000;
 
 const CODE_RATE_LIMITED = 429;
 const CODE_SERVER_ERROR = 500;
 
 /**
- * 由会话初值 + 消息流推出访客看到的会话状态。
- * 推送通道只下发消息、不下发状态，但每次状态变化服务端都会写一条 system 事件消息
- * （meta.event），所以按 id 顺序回放事件即可；关闭后访客再发消息，服务端自动开新会话（ai 接待）。
+ * 消息去重键（服务端上限 36 字符）。`crypto.randomUUID` 在 Chrome < 92 / Safari < 15.4 不存在，
+ * 退回用 `getRandomValues` 拼 v4；连它也没有时用时间 + Math.random（只求会话内唯一）。
  */
-export function deriveConversation(
-  initial: Pick<ChatConversation, 'status' | 'handler'> | null,
-  messages: readonly ChatMessage[],
-): Pick<ChatConversation, 'status' | 'handler'> | null {
-  let state = initial ? { status: initial.status, handler: initial.handler } : null;
-  for (const m of messages) {
-    if (m.pending) continue;
-    if (m.kind === 'event') {
-      const event = m.meta?.event;
-      if (!state) state = { status: 'open', handler: 'ai' };
-      if (event === 'transfer_human') state = { status: 'open', handler: 'human' };
-      else if (event === 'handed_to_ai') state = { status: 'open', handler: 'ai' };
-      else if (event === 'closed' || event === 'auto_closed') state = { ...state, status: 'closed' };
-    } else if (m.senderType === 'visitor' && (!state || state.status === 'closed')) {
-      state = { status: 'open', handler: 'ai' };
-    }
-  }
-  return state;
+export function newClientId(): string {
+  const c = typeof crypto !== 'undefined' ? crypto : undefined;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (c && typeof c.getRandomValues === 'function') c.getRandomValues(bytes);
+  else for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => (b + 0x100).toString(16).slice(1));
+  return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10).join('')}`;
 }
 
 function isChatMessage(v: unknown): v is ChatMessage {
@@ -133,26 +139,45 @@ function isChatMessage(v: unknown): v is ChatMessage {
   return typeof m.id === 'number' && m.id > 0 && typeof m.kind === 'string' && typeof m.senderType === 'string';
 }
 
+function asConversation(v: unknown): ChatConversation | null {
+  if (!v || typeof v !== 'object') return null;
+  const c = v as Record<string, unknown>;
+  if (typeof c.uuid !== 'string' || typeof c.status !== 'string' || typeof c.handler !== 'string') return null;
+  return { uuid: c.uuid, status: c.status as ChatConversation['status'], handler: c.handler as ChatConversation['handler'] };
+}
+
 export function createChatClient(options: ChatClientOptions = {}): ChatClient {
   const doFetch: typeof fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
   const SocketCtor = options.WebSocket ?? (globalThis.WebSocket as unknown as new (url: string) => ChatSocket);
-  const randomId = options.randomId ?? (() => crypto.randomUUID());
+  const randomId = options.randomId ?? newClientId;
+  const random = options.random ?? Math.random;
 
   let stopped = false;
   const listeners = new Set<(msgs: ChatMessage[]) => void>();
+  const convListeners = new Set<(conv: ChatConversation | null) => void>();
   const confirmed = new Map<number, ChatMessage>();
   let pending: ChatMessage[] = [];
   let cursor = 0; // 见过的最大 id
+  let conversation: ChatConversation | null = null;
 
-  let wsUrl = '';
+  let lastStart: { path: string; preview?: boolean } | null = null;
+  let wsInfo: SessionState['ws'] = null;
+  let sessionReady = false; // session 返回 enabled:true 之后
+  let activated = false; // 访客展开过面板，或会话已存在
+  let transportUp = false;
+  /** 每次重建通道 +1：旧通道的回调与定时器醒来后发现代数不符就作废。 */
+  let generation = 0;
   let socket: ChatSocket | null = null;
   let connectFailures = 0; // 连续"没连上就断"的次数
   let backoffAttempt = 0;
   let polling = false;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let watchingVisibility = false;
+  let pollResessioned = false; // 轮询遇到"没有会话主体"只重建一次，成功后复位
   /** 所有一次性定时器及其唤醒函数：stop() 清掉定时器并唤醒等待者，让它们自行发现已停止。 */
   const timers = new Map<ReturnType<typeof setTimeout>, () => void>();
+  /** 在途请求的超时器与中断器：stop() 一并清掉。 */
+  const inflight = new Map<ReturnType<typeof setTimeout>, AbortController>();
 
   function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => {
@@ -165,37 +190,55 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
   }
 
   async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
-    let res: Response;
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+    inflight.set(timeout, ctrl);
     try {
-      res = await doFetch(`/api/chat${path}`, {
-        method,
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'X-K2-Brand': siteBrand().id },
-        body: body === undefined ? undefined : JSON.stringify(body),
-      });
-    } catch {
-      throw new ChatError('network', 0);
+      let res: Response;
+      try {
+        res = await doFetch(`/api/chat${path}`, {
+          method,
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json', 'X-K2-Brand': siteBrand().id },
+          body: body === undefined ? undefined : JSON.stringify(body),
+          signal: ctrl.signal,
+        });
+      } catch {
+        throw new ChatError('network', 0); // 断网、超时中断都走这里
+      }
+      if (!res.ok) {
+        if (res.status === CODE_RATE_LIMITED) throw new ChatError('rate_limited', res.status);
+        throw new ChatError(res.status >= 500 ? 'network' : 'invalid', res.status);
+      }
+      let envelope: { code?: number; data?: T };
+      try {
+        envelope = await res.json();
+      } catch {
+        throw new ChatError('network', res.status);
+      }
+      const code = envelope.code ?? CODE_SERVER_ERROR;
+      if (code === 0) return envelope.data as T;
+      if (code === CODE_RATE_LIMITED) throw new ChatError('rate_limited', code);
+      throw new ChatError(code >= CODE_SERVER_ERROR && code < 600 ? 'network' : 'invalid', code);
+    } finally {
+      clearTimeout(timeout);
+      inflight.delete(timeout);
     }
-    if (!res.ok) {
-      if (res.status === CODE_RATE_LIMITED) throw new ChatError('rate_limited', res.status);
-      throw new ChatError(res.status >= 500 ? 'network' : 'invalid', res.status);
-    }
-    let envelope: { code?: number; data?: T };
-    try {
-      envelope = await res.json();
-    } catch {
-      throw new ChatError('network', res.status);
-    }
-    const code = envelope.code ?? CODE_SERVER_ERROR;
-    if (code === 0) return envelope.data as T;
-    if (code === CODE_RATE_LIMITED) throw new ChatError('rate_limited', code);
-    throw new ChatError(code >= CODE_SERVER_ERROR && code < 600 ? 'network' : 'invalid', code);
   }
 
   function emit() {
     if (stopped) return;
     const list = [...confirmed.values()].sort((a, b) => a.id - b.id).concat(pending);
     for (const cb of [...listeners]) cb(list);
+  }
+
+  /** 服务端下发的会话状态；有变化才通知。 */
+  function setConversation(next: ChatConversation | null) {
+    if (stopped) return;
+    const prev = conversation;
+    if (prev?.uuid === next?.uuid && prev?.status === next?.status && prev?.handler === next?.handler) return;
+    conversation = next;
+    for (const cb of [...convListeners]) cb(next);
   }
 
   /** 收下服务端消息：按 id 去重、推进游标、顺手对掉匹配的乐观气泡。有变化才通知。 */
@@ -217,13 +260,54 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
     if (changed) emit();
   }
 
+  async function session(path: string, preview: boolean | undefined, resume: string | undefined): Promise<SessionState> {
+    teardownTransport();
+    sessionReady = false;
+    const body: Record<string, unknown> = { path };
+    if (preview) body.preview = true;
+    if (resume) body.resume = resume;
+    const data = await call<Partial<SessionState>>('POST', '/session', body);
+    const state: SessionState = {
+      enabled: data?.enabled === true,
+      conversation: asConversation(data?.conversation),
+      messages: Array.isArray(data?.messages) ? data.messages : [],
+      welcome: data?.welcome ?? null,
+      ws: data?.ws ?? null,
+    };
+    if (stopped || !state.enabled) return state;
+    sessionReady = true;
+    wsInfo = state.ws;
+    setConversation(state.conversation);
+    ingest(state.messages);
+    if (state.conversation) activated = true;
+    if (activated) startTransport();
+    return state;
+  }
+
+  /** 访客主体丢了（cookie 被清、服务端不认）：用上次的入口页重建一次会话。成功返回 true。 */
+  async function resession(): Promise<boolean> {
+    if (stopped || !lastStart) return false;
+    try {
+      return (await session(lastStart.path, lastStart.preview, undefined)).enabled;
+    } catch {
+      return false;
+    }
+  }
+
   async function catchUp() {
     if (stopped) return;
     try {
-      const data = await call<{ messages: ChatMessage[] }>('GET', `/messages?after=${cursor}`);
+      const data = await call<{ messages?: ChatMessage[]; conversation?: unknown }>('GET', `/messages?after=${cursor}`);
+      pollResessioned = false;
       ingest(data?.messages);
-    } catch {
+      // 旧版服务端不带 conversation 字段：保持已知状态；带了（含 null）就以它为准
+      if (data && 'conversation' in data) setConversation(asConversation(data.conversation));
+    } catch (err) {
       // 补齐失败不影响已有内容：下一次轮询 / 重连 / 回到前台会再拉
+      if (err instanceof ChatError && err.kind === 'invalid' && !pollResessioned) {
+        pollResessioned = true;
+        void resession();
+      }
     }
   }
 
@@ -243,7 +327,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
   }
 
   function onVisibility() {
-    if (stopped) return;
+    if (stopped || !transportUp) return;
     if (document.hidden) {
       stopPollTimer(); // 后台标签页不轮询
       return;
@@ -252,11 +336,52 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
     if (polling) startPollTimer();
   }
 
+  function closeSocket() {
+    const ws = socket;
+    socket = null;
+    if (!ws) return;
+    // 先摘回调再关：主动关闭不该触发重连
+    ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+    try {
+      ws.close();
+    } catch {
+      // 关一个已经坏掉的连接出错无关紧要
+    }
+  }
+
+  function teardownTransport() {
+    generation++;
+    transportUp = false;
+    polling = false;
+    connectFailures = 0;
+    backoffAttempt = 0;
+    stopPollTimer();
+    closeSocket();
+  }
+
+  function startTransport() {
+    if (stopped || transportUp || !sessionReady) return;
+    transportUp = true;
+    if (!watchingVisibility) {
+      watchingVisibility = true;
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+    if (wsInfo && SocketCtor) connect(wsInfo.token);
+    else startPolling();
+  }
+
   function connect(token: string) {
-    if (stopped) return;
+    if (stopped || !wsInfo) return;
     let opened = false;
     let openedAt = 0;
-    const ws = new SocketCtor(`${wsUrl}/api/chat/ws?token=${encodeURIComponent(token)}`);
+    let ws: ChatSocket;
+    try {
+      ws = new SocketCtor(`${wsInfo.url.replace(/\/+$/, '')}/api/chat/ws?token=${encodeURIComponent(token)}`);
+    } catch {
+      // 地址不合法 / 环境不支持：按"没连上"处理，三次后回落轮询
+      connectFailed();
+      return;
+    }
     socket = ws;
     ws.onopen = () => {
       if (stopped || socket !== ws) return;
@@ -276,9 +401,14 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
       // 广播实现在外面包了一层 {channel,timestamp,payload}；两种形态都认
       const outer = frame as { payload?: unknown } | null;
       const payload = (outer && typeof outer === 'object' && outer.payload ? outer.payload : frame) as
-        | { type?: unknown; message?: unknown }
+        | { type?: unknown; message?: unknown; conversation?: unknown }
         | null;
-      if (payload && payload.type === 'message') ingest([payload.message]);
+      if (!payload || typeof payload !== 'object') return;
+      if (payload.type === 'message') ingest([payload.message]);
+      else if (payload.type === 'state') {
+        const conv = asConversation(payload.conversation);
+        if (conv) setConversation(conv);
+      }
     };
     ws.onerror = () => {
       // 浏览器在 error 之后必然触发 close，统一在 onclose 里处理
@@ -299,48 +429,35 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
   }
 
   function scheduleReconnect() {
-    const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** backoffAttempt);
+    const base = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** backoffAttempt);
+    const delay = Math.round(base * (1 - RECONNECT_JITTER + random() * 2 * RECONNECT_JITTER));
     backoffAttempt++;
+    const gen = generation;
     void (async () => {
       await sleep(delay);
-      if (stopped) return;
+      if (stopped || gen !== generation) return;
       let token: string;
       try {
         token = (await call<{ token: string }>('GET', '/ws-token')).token;
       } catch {
-        if (!stopped) connectFailed();
+        if (!stopped && gen === generation) connectFailed();
         return;
       }
-      connect(token);
+      if (gen === generation) connect(token);
     })();
   }
 
+  const hasBubble = (clientId: string) => pending.some((p) => p.clientId === clientId);
+
   return {
     async start(path, opts = {}) {
-      const body: Record<string, unknown> = { path };
-      if (opts.preview) body.preview = true;
-      if (opts.resume) body.resume = opts.resume;
-      const data = await call<Partial<SessionState>>('POST', '/session', body);
-      const state: SessionState = {
-        enabled: data?.enabled === true,
-        conversation: data?.conversation ?? null,
-        messages: Array.isArray(data?.messages) ? data.messages : [],
-        welcome: data?.welcome ?? null,
-        ws: data?.ws ?? null,
-      };
-      if (stopped || !state.enabled) return state;
-      ingest(state.messages);
-      if (!watchingVisibility) {
-        watchingVisibility = true;
-        document.addEventListener('visibilitychange', onVisibility);
-      }
-      if (state.ws && SocketCtor) {
-        wsUrl = state.ws.url.replace(/\/+$/, '');
-        connect(state.ws.token);
-      } else {
-        startPolling();
-      }
-      return state;
+      lastStart = { path, preview: opts.preview };
+      return session(path, opts.preview, opts.resume);
+    },
+
+    activate() {
+      activated = true;
+      startTransport();
     },
 
     async send(kind, content) {
@@ -361,27 +478,48 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
       ];
       emit();
       const dropBubble = () => {
-        const before = pending.length;
+        if (!hasBubble(clientId)) return;
         pending = pending.filter((p) => p.clientId !== clientId);
-        return pending.length !== before;
+        emit();
       };
-      for (let attempt = 0; ; attempt++) {
+      let resessioned = false;
+      for (let attempt = 0; ; ) {
         try {
-          const data = await call<{ message: ChatMessage }>('POST', '/messages', { kind, content, clientId });
-          const removed = dropBubble();
-          const before = confirmed.size;
+          const data = await call<{ message: ChatMessage; conversation?: unknown }>('POST', '/messages', {
+            kind,
+            content,
+            clientId,
+          });
+          // 先收消息（会顺手对掉气泡），再摘气泡兜底（消息已由推送先到时 ingest 不会动它）
           ingest([data?.message]);
-          // ingest 没发通知（消息已经由推送先到）但气泡刚被这里摘掉时，补一次通知
-          if (removed && confirmed.size === before) emit();
+          dropBubble();
+          const conv = asConversation(data?.conversation);
+          if (conv) setConversation(conv);
+          // 发出了第一条消息 = 会话已存在，实时通道该起来了（正常路径下面板早已展开过）
+          activated = true;
+          startTransport();
           return;
         } catch (err) {
-          const retry = err instanceof ChatError && err.retryable && attempt < SEND_RETRY_DELAYS.length && !stopped;
-          if (!retry) {
-            if (dropBubble()) emit();
-            throw err;
-          }
-          await sleep(SEND_RETRY_DELAYS[attempt]);
           if (stopped) throw err;
+          const kindOf = err instanceof ChatError ? err.kind : 'network';
+          if (kindOf === 'invalid' && !resessioned) {
+            // 多半是访客主体丢了：重建一次会话，再用同一 clientId 重发一次
+            resessioned = true;
+            if (await resession()) continue;
+          } else if (kindOf === 'network') {
+            if (attempt < SEND_RETRY_DELAYS.length) {
+              await sleep(SEND_RETRY_DELAYS[attempt++]);
+              if (stopped) throw err;
+              // 等待期间消息已经由推送确认（丢的只是响应）：不必再发
+              if (!hasBubble(clientId)) return;
+              continue;
+            }
+            // 重试用尽。可能请求其实到了、只是响应丢了：拉一次补齐，气泡被对掉就算发成功
+            await catchUp();
+            if (!hasBubble(clientId)) return;
+          }
+          dropBubble();
+          throw err;
         }
       }
     },
@@ -397,25 +535,31 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
       };
     },
 
+    onConversation(cb) {
+      convListeners.add(cb);
+      return () => {
+        convListeners.delete(cb);
+      };
+    },
+
     stop() {
       if (stopped) return;
       stopped = true;
       listeners.clear();
-      stopPollTimer();
+      convListeners.clear();
+      teardownTransport();
       const wake = [...timers];
       timers.clear();
       for (const [id, resolve] of wake) {
         clearTimeout(id);
         resolve();
       }
-      if (watchingVisibility) document.removeEventListener('visibilitychange', onVisibility);
-      const ws = socket;
-      socket = null;
-      if (ws) {
-        // 先摘回调再关：主动关闭不该触发重连
-        ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
-        ws.close();
+      for (const [id, ctrl] of [...inflight]) {
+        clearTimeout(id);
+        ctrl.abort();
       }
+      inflight.clear();
+      if (watchingVisibility) document.removeEventListener('visibilitychange', onVisibility);
     },
   };
 }
