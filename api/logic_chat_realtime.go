@@ -90,9 +90,11 @@ func chatSubjectOfConversation(ctx context.Context, conv *Conversation) (chatSub
 }
 
 // chatWirePayload 是 WebSocket 上的帧载荷（外层是 qtoolkit 的 {channel,timestamp,payload}）。
+// type=message 带 message；type=state 带 conversation（会话处理方/状态变化）。
 type chatWirePayload struct {
-	Type    string     `json:"type"`
-	Message ChatMsgDTO `json:"message"`
+	Type         string       `json:"type"`
+	Message      *ChatMsgDTO  `json:"message,omitempty"`
+	Conversation *ChatConvDTO `json:"conversation,omitempty"`
 }
 
 // chatPublish 把消息推给主体的在线连接。内部备注（note）永不下发。
@@ -101,7 +103,8 @@ func chatPublish(ctx context.Context, s chatSubject, msg *ConversationMessage) e
 	if msg.Kind == MsgNote {
 		return nil
 	}
-	return chatBroadcast().Pub(ctx, s.Channel(), chatWirePayload{Type: "message", Message: chatMessageDTO(msg)})
+	dto := chatMessageDTO(msg)
+	return chatBroadcast().Pub(ctx, s.Channel(), chatWirePayload{Type: "message", Message: &dto})
 }
 
 func init() {
@@ -123,6 +126,20 @@ func init() {
 		}
 	}
 	chatAfterAppend = append([]func(*Conversation, *ConversationMessage){hook}, chatAfterAppend...)
+
+	// 会话状态变化（handler / status）推给访客，widget 不必从 system 事件消息里推断。
+	chatAfterStateChange = append(chatAfterStateChange, func(conv *Conversation) {
+		ctx, cancel := context.WithTimeout(context.Background(), chatPublishTimeout)
+		defer cancel()
+		s, err := chatSubjectOfConversation(ctx, conv)
+		if err != nil {
+			log.Warnf(ctx, "chat state publish: %v", err)
+			return
+		}
+		if err := chatBroadcast().Pub(ctx, s.Channel(), chatWirePayload{Type: "state", Conversation: chatConversationDTO(conv)}); err != nil {
+			log.Warnf(ctx, "chat state publish %s: %v", s.Channel(), err)
+		}
+	})
 }
 
 // ---- 在线标记 ----

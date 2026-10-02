@@ -93,8 +93,9 @@ func (c *chatWSClient) Close() { c.conn.Close() }
 type chatWireFrame struct {
 	Channel string `json:"channel"`
 	Payload struct {
-		Type    string     `json:"type"`
-		Message ChatMsgDTO `json:"message"`
+		Type         string       `json:"type"`
+		Message      ChatMsgDTO   `json:"message"`
+		Conversation *ChatConvDTO `json:"conversation"`
 	} `json:"payload"`
 }
 
@@ -146,7 +147,7 @@ func TestChatWS_DeliversAcrossInstances(t *testing.T) {
 	chatWaitSubscribed(t, a, s, 1)
 
 	// 实例 B 没有 RunContext 也没有订阅者，只发布；A 经 Redis 收到
-	require.NoError(t, b.Pub(ctx, s.Channel(), chatWirePayload{Type: "message", Message: ChatMsgDTO{ID: 4242, Content: "hi"}}))
+	require.NoError(t, b.Pub(ctx, s.Channel(), chatWirePayload{Type: "message", Message: &ChatMsgDTO{ID: 4242, Content: "hi"}}))
 	f, ok := chatReadFrame(t, conn, 2*time.Second)
 	require.True(t, ok, "no frame within 2s")
 	assert.Equal(t, s.Channel(), f.Channel)
@@ -231,7 +232,7 @@ func TestChatWS_BrandFromTokenNotHost(t *testing.T) {
 	chatWaitSubscribed(t, chatBroadcast(), overleap, 1)
 
 	ctx := context.Background()
-	payload := chatWirePayload{Type: "message", Message: ChatMsgDTO{ID: 1}}
+	payload := chatWirePayload{Type: "message", Message: &ChatMsgDTO{ID: 1}}
 	require.NoError(t, chatBroadcast().Pub(ctx, kaituSame.Channel(), payload))
 	_, ok := chatReadFrame(t, conn, 300*time.Millisecond)
 	assert.False(t, ok, "kaitu subject with same id must not reach an overleap connection")
@@ -420,7 +421,7 @@ func TestChatWS_ThroughRealRouter(t *testing.T) {
 		chatWaitSubscribed(t, chatBroadcast(), s, 1)
 
 		require.NoError(t, chatBroadcast().Pub(context.Background(), s.Channel(),
-			chatWirePayload{Type: "message", Message: ChatMsgDTO{ID: 31337}}))
+			chatWirePayload{Type: "message", Message: &ChatMsgDTO{ID: 31337}}))
 		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		_, data, err := conn.ReadMessage()
 		require.NoError(t, err)
@@ -449,4 +450,136 @@ func TestChatVisitorOnline_RefreshedWhileConnected(t *testing.T) {
 		// 累计已快进 >2s，没有续期的话早已过期
 	}
 	assert.True(t, chatVisitorOnline(ctx, s), "marker must be refreshed while the socket stays connected")
+}
+
+// ---- R29：会话状态抵达访客 ----
+
+func chatMsgsGet(t *testing.T, r *gin.Engine, cid string) map[string]any {
+	t.Helper()
+	w := NewTestRequest("GET", "/api/chat/messages").WithCookie(CookieChatCid, cid).Execute(r)
+	_, data := chatDecode(t, w)
+	return data
+}
+
+func TestChatMessages_ReturnsConversationState(t *testing.T) {
+	r := chatSetup(t, true)
+	w, _ := chatOpenSession(t, r, "/pricing", nil)
+	ck := chatCookie(w, CookieChatCid)
+	require.NotNil(t, ck)
+	chatCleanupCID(t, ck.Value)
+
+	// 没有会话 -> null
+	data := chatMsgsGet(t, r, ck.Value)
+	assert.Nil(t, data["conversation"])
+	assert.Contains(t, data, "conversation")
+
+	resp, _ := chatPostMessage(t, r, ck.Value, "c-1", "hello")
+	require.Equal(t, 0, resp.Code, resp.Message)
+	conv := chatMsgsGet(t, r, ck.Value)["conversation"].(map[string]any)
+	assert.Equal(t, "open", conv["status"])
+	assert.Equal(t, HandlerAI, conv["handler"])
+	uuid := conv["uuid"].(string)
+
+	var c Conversation
+	require.NoError(t, db.Get().Where("uuid = ?", uuid).First(&c).Error)
+	require.NoError(t, setHandler(context.Background(), &c, HandlerHuman))
+	conv = chatMsgsGet(t, r, ck.Value)["conversation"].(map[string]any)
+	assert.Equal(t, HandlerHuman, conv["handler"])
+
+	require.NoError(t, closeConversation(context.Background(), &c))
+	conv = chatMsgsGet(t, r, ck.Value)["conversation"].(map[string]any)
+	assert.Equal(t, "closed", conv["status"])
+	assert.Equal(t, uuid, conv["uuid"])
+}
+
+func chatStateTestConv(t *testing.T) (*Conversation, *chatWSClient) {
+	t.Helper()
+	chatStartSingleton(t)
+	srv := chatWSServer(t, api_chat_ws)
+	s := chatRealGuestSubject(t)
+	conv, _, err := ensureConversation(context.Background(), s, "")
+	require.NoError(t, err)
+	conn := chatMustDial(t, srv, s, nil)
+	chatWaitSubscribed(t, chatBroadcast(), s, 1)
+	return conv, conn
+}
+
+func TestChatWS_PushesStateOnHandlerChange(t *testing.T) {
+	conv, conn := chatStateTestConv(t)
+	require.NoError(t, setHandler(context.Background(), conv, HandlerHuman))
+	f, ok := chatReadFrame(t, conn, 2*time.Second)
+	require.True(t, ok, "no state frame")
+	assert.Equal(t, "state", f.Payload.Type)
+	require.NotNil(t, f.Payload.Conversation)
+	assert.Equal(t, conv.UUID, f.Payload.Conversation.UUID)
+	assert.Equal(t, HandlerHuman, f.Payload.Conversation.Handler)
+	assert.Equal(t, "open", f.Payload.Conversation.Status)
+}
+
+func TestChatWS_PushesStateOnClose(t *testing.T) {
+	conv, conn := chatStateTestConv(t)
+	require.NoError(t, closeConversation(context.Background(), conv))
+	f, ok := chatReadFrame(t, conn, 2*time.Second)
+	require.True(t, ok, "no state frame")
+	assert.Equal(t, "state", f.Payload.Type)
+	require.NotNil(t, f.Payload.Conversation)
+	assert.Equal(t, "closed", f.Payload.Conversation.Status)
+}
+
+// ---- R30：有效的 resume 令牌等同 preview ----
+
+// chatConvOfBrand 建一个指定品牌的 guest 会话并清理，返回其 uuid。
+func chatConvOfBrand(t *testing.T, brand Brand) string {
+	t.Helper()
+	v := chatTestValues(t, 1)
+	id, err := resolveGuest(context.Background(), brand, v[0], "", "zh-CN", "CN")
+	require.NoError(t, err)
+	conv, _, err := ensureConversation(context.Background(), chatSubject{Brand: brand, Kind: SubjectGuest, ID: id}, "")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		db.Get().Where("conversation_id = ?", conv.ID).Delete(&ConversationMessage{})
+		db.Get().Where("id = ?", conv.ID).Delete(&Conversation{})
+	})
+	return conv.UUID
+}
+
+func TestChatSession_ValidResumeEnablesWhenDisabled(t *testing.T) {
+	r := chatSetup(t, false)
+	convUUID := chatConvOfBrand(t, BrandKaitu)
+	tok := signChatResumeToken(convUUID, time.Hour)
+	w := NewTestRequest("POST", "/api/chat/session").WithBody(map[string]any{"path": "/x", "resume": tok}).Execute(r)
+	_, data := chatDecode(t, w)
+	assert.Equal(t, true, data["enabled"])
+	ck := chatCookie(w, CookieChatCid)
+	require.NotNil(t, ck, "cookie must be planted")
+	chatCleanupCID(t, ck.Value)
+	owner, err := findIdentityOwner(context.Background(), BrandKaitu, IdentityCID, ck.Value)
+	require.NoError(t, err)
+	require.NotNil(t, owner)
+	root, err := guestRootID(context.Background(), owner.GuestID)
+	require.NoError(t, err)
+	subj := chatSubject{Brand: BrandKaitu, Kind: SubjectGuest, ID: root}
+	n, err := redis.Client().Exists(context.Background(), chatPreviewKey(subj)).Result()
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, n, "preview marker must be stored")
+	assert.NotNil(t, data["conversation"], "resume merge applied for the fresh guest")
+}
+
+func TestChatSession_InvalidResumeStaysDisabled(t *testing.T) {
+	r := chatSetup(t, false)
+	overleapConv := chatConvOfBrand(t, BrandOverleap)
+	cases := map[string]string{
+		"garbage":       "not-a-token",
+		"expired":       signChatResumeToken(chatConvOfBrand(t, BrandKaitu), -time.Minute),
+		"foreign brand": signChatResumeToken(overleapConv, time.Hour), // 请求品牌是 kaitu
+		"unknown conv":  signChatResumeToken("no-such-conversation", time.Hour),
+	}
+	for name, tok := range cases {
+		t.Run(name, func(t *testing.T) {
+			w := NewTestRequest("POST", "/api/chat/session").WithBody(map[string]any{"path": "/x", "resume": tok}).Execute(r)
+			_, data := chatDecode(t, w)
+			assert.Equal(t, false, data["enabled"])
+			assert.Nil(t, chatCookie(w, CookieChatCid), "no cookie")
+		})
+	}
 }

@@ -231,6 +231,11 @@ func api_chat_session(c *gin.Context) {
 		Error(c, ErrorInvalidArgument, "invalid request")
 		return
 	}
+	// 有效的继续对话令牌（签名有效、未过期、会话存在且属于本请求品牌）等同 preview：
+	// 总开关关闭时，收到邮件链接的访客也能接上自己的对话。无效令牌什么都不改变。
+	if !chatEnabled() && !req.Preview && chatResumeTokenValid(ctx, ReqBrand(c), req.Resume) {
+		req.Preview = true
+	}
 	if !chatEnabled() && !req.Preview {
 		Success(c, &ChatSessionResp{Enabled: false, Messages: []ChatMsgDTO{}})
 		return
@@ -283,6 +288,23 @@ func api_chat_session(c *gin.Context) {
 		}
 	}
 	Success(c, resp)
+}
+
+// chatResumeTokenValid 报告令牌是否有效：签名/有效期通过，且它指向的会话存在并属于该品牌。
+func chatResumeTokenValid(ctx context.Context, brand Brand, token string) bool {
+	if token == "" {
+		return false
+	}
+	convUUID, err := parseChatResumeToken(token, time.Now())
+	if err != nil {
+		return false
+	}
+	var n int64
+	if err := db.Get().WithContext(ctx).Model(&Conversation{}).
+		Where("uuid = ? AND brand = ?", convUUID, string(brand)).Count(&n).Error; err != nil {
+		return false
+	}
+	return n > 0
 }
 
 // chatApplyResume 处理邮件里的继续对话令牌：无效静默忽略。
@@ -358,8 +380,9 @@ func api_chat_messages_list(c *gin.Context) {
 		msgs = chatMessageDTOs(rows)
 	}
 	Success(c, &struct {
-		Messages []ChatMsgDTO `json:"messages"`
-	}{msgs})
+		Messages     []ChatMsgDTO `json:"messages"`
+		Conversation *ChatConvDTO `json:"conversation"`
+	}{msgs, chatConversationDTO(conv)})
 }
 
 type chatSendReq struct {
