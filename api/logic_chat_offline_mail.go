@@ -100,7 +100,9 @@ func chatMaybeSendOfflineMail(ctx context.Context, conv *Conversation, msg *Conv
 	}
 	// 邮箱是访客自报的：发信前再校验一次，绝不把能夹带多收件人 / 邮件头的串交给发信函数
 	if !chatMailAddrOK(to) {
-		log.Warnf(ctx, "chat offline mail: conv=%d refused malformed address %q", conv.ID, to)
+		// 不打印地址：原串是访客可控的（可含换行），而 hideEmail 假定输入是合法邮箱，
+		// 对 "a@.b" 这类串会越界 panic
+		log.Warnf(ctx, "chat offline mail: conv=%d refused malformed address (len=%d)", conv.ID, len(to))
 		return false, nil
 	}
 	if chatVisitorOnline(ctx, s) {

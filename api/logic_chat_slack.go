@@ -496,7 +496,7 @@ func chatSlackArchive(ctx context.Context, conv *Conversation) error {
 // chatSlackSweep 兜底实时路径，两遍，各最多 50 个会话，最旧的先来：
 //  1. 有未镜像消息（30 秒前、24 小时内）的会话：chatSlackMirror，成功后刷新状态卡
 //     （实时路径失败时卡片也停在旧状态，只补消息不够）；
-//  2. 已关闭（30 秒前、24 小时内）、有频道、还没归档成功的会话：chatSlackArchive。
+//  2. 已关闭（30 秒前、24 小时内）、有频道、已记关闭事件、还没归档成功的会话：chatSlackArchive。
 //
 // 返回成功处理的会话数（两遍都碰到的只算一次）；单个会话失败只记日志并汇总进返回的 error，不阻止后面的。
 func chatSlackSweep(ctx context.Context) (int, error) {
@@ -535,9 +535,15 @@ func chatSlackSweepIn(ctx context.Context, brand string) (int, error) {
 		done[id] = true
 	}
 
+	// 只归档已经记了关闭事件（closed / auto_closed）的会话：闲置关闭是先关后记，事件可能晚于关闭
+	// （一批里排在后面、或进程在两步之间被杀）。频道先归档的话，之后补记的事件就再也发不进去。
+	// 事件由 close-idle 任务补（chatAutoCloseRecord），补上后下一轮 sweep 归档；
+	// 尾巴是否发完由 chatSlackArchive 自己把关。
 	aq := db.Get().WithContext(ctx).Model(&Conversation{}).
 		Where("status = ? AND slack_channel_id <> '' AND slack_archived_at IS NULL AND closed_at > ? AND closed_at < ?",
-			ConvClosed, from, to)
+			ConvClosed, from, to).
+		Where("EXISTS (SELECT 1 FROM conversation_messages m WHERE m.conversation_id = conversations.id AND m.kind = ? AND m.meta IN ?)",
+			MsgEvent, chatCloseEventMetas())
 	if brand != "" {
 		aq = aq.Where("brand = ?", brand)
 	}

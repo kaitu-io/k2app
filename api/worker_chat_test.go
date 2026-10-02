@@ -208,15 +208,26 @@ func TestChatWorker_BackfillsMissingAutoCloseEvent(t *testing.T) {
 	stillOpen := slackConv(t, brand, "/support")
 	f := newFakeSlack(t)
 	lost = slackSetup(t, f, lost)
-	slackClose(t, lost.ID, 20*time.Minute)
+	// 真实前提：上一轮 close-idle 关了会话却没记成事件，离下一轮（每 10 分钟）还有几分钟；
+	// 其间每分钟的 sweep 已经跑过——没有关闭事件，它不归档。
+	slackClose(t, lost.ID, 5*time.Minute)
 	slackSeed(t, manual, SenderSystem, MsgEvent, "会话已关闭", func(m *ConversationMessage) { m.Meta = chatEventMeta(ChatEventClosed) })
-	slackClose(t, manual.ID, 20*time.Minute)
+	slackClose(t, manual.ID, 5*time.Minute)
 	slackClose(t, old.ID, 25*time.Hour)
 	ctx := context.Background()
 
-	n, err := chatCloseIdleRun(ctx, string(brand))
+	n, err := chatSlackSweepRun(ctx, string(brand))
+	require.NoError(t, err)
+	assert.Equal(t, 0, n)
+	require.Empty(t, f.CallsOf("conversations.archive"), "sweep must not archive before the close event exists")
+	require.Nil(t, slackReload(t, lost.ID).SlackArchivedAt)
+
+	n, err = chatCloseIdleRun(ctx, string(brand))
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
+	methods := f.Methods()
+	assert.Equal(t, "conversations.archive", methods[len(methods)-1], "archive comes after the event is posted")
+	assert.Len(t, f.CallsOf("conversations.archive"), 1)
 
 	ev := closeEvents(t, lost.ID)
 	require.Len(t, ev, 1)
@@ -353,4 +364,55 @@ func TestChatWorker_SweepQueryFailureClassified(t *testing.T) {
 	_, err = chatSlackSweepIn(context.Background(), string(brand))
 	require.Error(t, err)
 	assert.False(t, chatSweepQueryFailed(err), "per-conversation Slack failure is not a query failure: %v", err)
+}
+
+// 产品硬要求：每个状态变化都进 Slack 频道。真实顺序——会话已关闭、关闭事件还没记（进程在两步之间被杀，
+// 或一批里排在后面），每分钟的 sweep 先跑：它不得归档，否则补记的事件发进已归档频道会被静默丢弃。
+// close-idle 补记后事件进频道；归档由随后的 sweep 完成，且是最后一次调用。
+func TestChatWorker_SweepWaitsForCloseEventBeforeArchive(t *testing.T) {
+	brand := slackTestBrand()
+	conv := slackConv(t, brand, "/support")
+	f := newFakeSlack(t)
+	conv = slackSetup(t, f, conv)
+	slackBackdate(t, conv.ID, 2*time.Minute)
+	slackClose(t, conv.ID, time.Minute) // 已过 sweep 的 30 秒门槛，没有关闭事件
+	ctx := context.Background()
+
+	for i := 0; i < 2; i++ { // sweep 跑几轮都不归档
+		n, err := chatSlackSweepRun(ctx, string(brand))
+		require.NoError(t, err)
+		assert.Equal(t, 0, n)
+	}
+	require.Empty(t, f.CallsOf("conversations.archive"))
+	require.Nil(t, slackReload(t, conv.ID).SlackArchivedAt)
+
+	// close-idle 补记事件；它自己那次归档失败，留给 sweep
+	f.Script("conversations.archive", fakeSlackHTTP(500))
+	n, err := chatCloseIdleRun(ctx, string(brand))
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+	assert.Contains(t, strings.Join(slackMsgPosts(f, conv.SlackChannelID), "\n"), chatAutoCloseNotice)
+	assert.EqualValues(t, 0, slackUnmirrored(t, conv.ID))
+	require.Nil(t, slackReload(t, conv.ID).SlackArchivedAt)
+
+	// 事件已在频道里：sweep 现在归档，且归档是最后一次调用
+	n, err = chatSlackSweepRun(ctx, string(brand))
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+	assert.NotNil(t, slackReload(t, conv.ID).SlackArchivedAt)
+	calls := f.Calls()
+	require.NotEmpty(t, calls)
+	assert.Equal(t, "conversations.archive", calls[len(calls)-1].Method)
+	eventAt, archivedAt := -1, -1
+	for i, c := range calls {
+		if c.Method == "chat.postMessage" && strings.Contains(c.Str("text"), chatAutoCloseNotice) {
+			eventAt = i
+		}
+		if c.Method == "conversations.archive" {
+			archivedAt = i // 取最后一次（成功的那次）
+		}
+	}
+	require.GreaterOrEqual(t, eventAt, 0, "close event must reach the channel")
+	assert.Less(t, eventAt, archivedAt, "event is posted before the channel is archived")
+	assert.Len(t, closeEvents(t, conv.ID), 1)
 }
