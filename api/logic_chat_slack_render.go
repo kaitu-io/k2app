@@ -81,13 +81,17 @@ func chatSlackRender(ctx context.Context, conv *Conversation) chatSlackView {
 	if strings.HasPrefix(conv.EntryPath, "/pay-result") {
 		head += " · 🔥 支付结果页"
 	}
+	help := chatSlackCardHelp
+	// 未配置 manager.base_url 就不渲染后台链接
+	if base := managerBaseURL(); base != "" {
+		help = fmt.Sprintf("<%s/manager/conversations?c=%s|在后台查看> · ", base, conv.UUID) + help
+	}
 	card := strings.Join([]string{
 		head,
 		"入口: " + entry,
 		"访客: " + emailOrNone + " · " + who,
 		"此前会话: " + chatSlackHistory(ctx, conv, ids),
-		fmt.Sprintf("<%s/manager/conversations?c=%s|在后台查看> · 直接在此频道发言即回复访客；`!ai` 交还 AI，`!close` 关闭，其他 `!` 开头为内部备注",
-			managerBaseURL(), conv.UUID),
+		help,
 	}, "\n")
 	// 频道名不落库：重名加过 -2/-3 后缀的会话（同日 + uuid 前 6 位相同，极罕见）这里显示的是不带后缀的名字，链接仍正确
 	lobby := fmt.Sprintf("%s <%s|%s> · %s · %s · 入口 %s", emoji, chatSlackChannelURL(conv.SlackChannelID),
@@ -95,6 +99,9 @@ func chatSlackRender(ctx context.Context, conv *Conversation) chatSlackView {
 	topic := fmt.Sprintf("%s · %s · 入口 %s", brand, emailOrNone, entry)
 	return chatSlackView{card: card, lobby: lobby, topic: topic}
 }
+
+// chatSlackCardHelp 状态卡末行的操作说明（每张状态卡都有，测试据此识别状态卡）。
+const chatSlackCardHelp = "直接在此频道发言即回复访客；`!ai` 交还 AI，`!close` 关闭，其他 `!` 开头为内部备注"
 
 // chatSlackCardText 返回状态卡文案。
 func chatSlackCardText(ctx context.Context, conv *Conversation) string {

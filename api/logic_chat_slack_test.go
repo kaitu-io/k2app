@@ -51,7 +51,9 @@ func slackReload(t *testing.T, convID uint64) *Conversation {
 func slackMsgPosts(f *fakeSlack, channel string) []string {
 	var out []string
 	for _, text := range f.Posts(channel) {
-		if !strings.Contains(text, "在后台查看") {
+		// 状态卡靠末行的操作说明识别：用生产常量而不是抄一段文案（后台链接只在配了 manager.base_url 时才有，
+		// 曾经按链接文字识别，链接一变成可选，十几个测试在全量里才红）
+		if !strings.Contains(text, chatSlackCardHelp) {
 			out = append(out, text)
 		}
 	}
@@ -305,6 +307,15 @@ func TestSlackCard_HighPriorityAndHistory(t *testing.T) {
 	mk(ConvClosed, "/b", "COLD")
 	conv := mk(ConvOpen, "/pay-result/abc", "CNEW")
 
+	// 未配置 manager.base_url：不渲染后台链接（不回退到写死的域名），操作说明照常
+	setChatViper(t, "manager.base_url", "")
+	noLink := strings.Split(chatSlackCardText(ctx, conv), "\n")
+	require.Len(t, noLink, 5)
+	assert.Equal(t, "直接在此频道发言即回复访客；`!ai` 交还 AI，`!close` 关闭，其他 `!` 开头为内部备注", noLink[4])
+	assert.NotContains(t, strings.Join(noLink, "\n"), "在后台查看")
+	assert.NotContains(t, strings.Join(noLink, "\n"), "/manager/")
+
+	setChatViper(t, "manager.base_url", "https://manager.example/")
 	text := chatSlackCardText(ctx, conv)
 	lines := strings.Split(text, "\n")
 	require.Len(t, lines, 5)
@@ -312,7 +323,7 @@ func TestSlackCard_HighPriorityAndHistory(t *testing.T) {
 	assert.Equal(t, "入口: /pay-result/abc", lines[1])
 	assert.Equal(t, "访客: 未留邮箱 · 游客 #"+uintStr(gid), lines[2])
 	assert.Equal(t, "此前会话: 2 次 · 上次 10月01日 <https://slack.com/app_redirect?channel=COLD|打开>", lines[3])
-	assert.Equal(t, "<"+managerBaseURL()+"/manager/conversations?c="+conv.UUID+"|在后台查看> · 直接在此频道发言即回复访客；`!ai` 交还 AI，`!close` 关闭，其他 `!` 开头为内部备注", lines[4])
+	assert.Equal(t, "<https://manager.example/manager/conversations?c="+conv.UUID+"|在后台查看> · 直接在此频道发言即回复访客；`!ai` 交还 AI，`!close` 关闭，其他 `!` 开头为内部备注", lines[4])
 
 	email := vals[0] + "@example.com"
 	require.NoError(t, addGuestEmail(ctx, gid, BrandKaitu, email))

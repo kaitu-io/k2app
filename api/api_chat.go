@@ -93,7 +93,8 @@ type ChatSessionResp struct {
 	WS           *ChatWSInfo  `json:"ws"`
 }
 
-// chatMessageDTO 访客视图的消息（Meta 是合法 JSON 才原样输出，否则 null）。
+// chatMessageDTO 消息的完整 DTO（Meta 是合法 JSON 才原样输出，否则 null），含发送者真名——后台接口用。
+// 面向访客的出口一律用 chatVisitorMessageDTO。
 func chatMessageDTO(m *ConversationMessage) ChatMsgDTO {
 	d := ChatMsgDTO{ID: m.ID, SenderType: m.SenderType, SenderName: m.SenderName, Kind: m.Kind,
 		Content: m.Content, CreatedAt: m.CreatedAt}
@@ -103,10 +104,21 @@ func chatMessageDTO(m *ConversationMessage) ChatMsgDTO {
 	return d
 }
 
-func chatMessageDTOs(msgs []ConversationMessage) []ChatMsgDTO {
+// chatVisitorMessageDTO 面向访客的消息：访客不得知道客服是谁，客服消息的 senderName 一律输出空串
+// （AI 与系统消息照旧）。访客的 HTTP 接口与 WebSocket 帧都只走这一个出口；库里、后台接口、Slack 保留真名。
+func chatVisitorMessageDTO(m *ConversationMessage) ChatMsgDTO {
+	d := chatMessageDTO(m)
+	if m.SenderType == SenderStaff {
+		d.SenderName = ""
+	}
+	return d
+}
+
+// chatVisitorMessageDTOs 访客视图的消息列表。
+func chatVisitorMessageDTOs(msgs []ConversationMessage) []ChatMsgDTO {
 	out := make([]ChatMsgDTO, 0, len(msgs))
 	for i := range msgs {
-		out = append(out, chatMessageDTO(&msgs[i]))
+		out = append(out, chatVisitorMessageDTO(&msgs[i]))
 	}
 	return out
 }
@@ -319,7 +331,7 @@ func api_chat_session(c *gin.Context) {
 			Error(c, ErrorSystemError, "failed to load messages")
 			return
 		}
-		msgs = chatMessageDTOs(rows)
+		msgs = chatVisitorMessageDTOs(rows)
 	}
 	resp := &ChatSessionResp{
 		Enabled:      true,
@@ -421,7 +433,7 @@ func api_chat_messages_list(c *gin.Context) {
 			Error(c, ErrorSystemError, "failed to load messages")
 			return
 		}
-		msgs = chatMessageDTOs(rows)
+		msgs = chatVisitorMessageDTOs(rows)
 	}
 	Success(c, &struct {
 		Messages     []ChatMsgDTO `json:"messages"`
@@ -484,7 +496,7 @@ func api_chat_messages_send(c *gin.Context) {
 		chatSendNewConvError(c, err)
 		return
 	}
-	dto := chatMessageDTO(msg)
+	dto := chatVisitorMessageDTO(msg)
 	Success(c, &struct {
 		Message      ChatMsgDTO   `json:"message"`
 		Conversation *ChatConvDTO `json:"conversation"`
@@ -563,8 +575,9 @@ func api_chat_email(c *gin.Context) {
 		Error(c, ErrorInvalidArgument, "invalid request")
 		return
 	}
+	// 与发信前同一个校验（chatMailAddrOK）：入口放进来、发信时才拒的地址只会让访客白等一封收不到的邮件
 	email := strings.ToLower(strings.TrimSpace(req.Email))
-	if len(email) > 254 || !isValidEmail(email) {
+	if len(email) > 254 || !isValidEmail(email) || !chatMailAddrOK(email) {
 		Error(c, ErrorInvalidArgument, "invalid email address")
 		return
 	}

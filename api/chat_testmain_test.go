@@ -15,7 +15,7 @@ func init() {
 	// AI 钩子默认关闭：免得其它测试追加访客消息时多出 AI 回复；TestChatAI_* 用 enableChatAI(t) 开启
 	chatAIHookEnabled = false
 	// 任何测试追加访客消息都会触发 AI 钩子：默认换成固定文本，绝不打到真实 OpenAI
-	chatAIAsk = func(ctx context.Context, question string, history []filesearch.Message) (string, error) {
+	chatAIAsk = func(ctx context.Context, system, question string, history []filesearch.Message) (string, error) {
 		return "(test ai)", nil
 	}
 	// 品牌白名单默认放开全部注册品牌（生产默认是空 = 全关）；要测白名单的用例用 setChatViper 覆盖。

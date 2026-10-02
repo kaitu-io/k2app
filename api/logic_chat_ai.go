@@ -32,7 +32,8 @@ const (
 	// chatAIFallbackTimeout 转人工兜底路径的独立超时（不继承可能已过期的 ctx）。
 	chatAIFallbackTimeout = 10 * time.Second
 
-	chatWelcomeText = "您好！请问需要什么帮助？（遇到安装问题时，您可以直接发截图给我 📷）"
+	// 第 1 期不支持图片，欢迎语不承诺可以发截图
+	chatWelcomeText = "您好！请问需要什么帮助？"
 )
 
 // chatAIAskTimeout 单次 AI 调用超时；变量以便测试缩短。必须小于 chatAILockTTL。
@@ -41,9 +42,9 @@ var chatAIAskTimeout = 45 * time.Second
 // chatAILockFn 取锁函数；变量以便测试注入 Redis 故障。
 var chatAILockFn = chatAILock
 
-// chatAIAsk 调 OpenAI filesearch 取回复；测试里替换，避免打到真实 OpenAI。
-var chatAIAsk = func(ctx context.Context, question string, history []filesearch.Message) (string, error) {
-	opts := []filesearch.Option{filesearch.WithSystemPrompt(systemPrompt)}
+// chatAIAsk 调 OpenAI filesearch 取回复（system 是系统提示，见 chatAISystemPrompt）；测试里替换，避免打到真实 OpenAI。
+var chatAIAsk = func(ctx context.Context, system, question string, history []filesearch.Message) (string, error) {
+	opts := []filesearch.Option{filesearch.WithSystemPrompt(system)}
 	if len(history) > 0 {
 		opts = append(opts, filesearch.WithHistory(history))
 	}
@@ -52,6 +53,22 @@ var chatAIAsk = func(ctx context.Context, question string, history []filesearch.
 		return "", err
 	}
 	return result.Content, nil
+}
+
+// chatAIFormatRules 会话专用的输出约束，追加在共用系统提示（data/system_prompt.md，Chatwoot 机器人也在用，
+// 所以不改那个文件）之后。挂件把回复当纯文本原样显示，Markdown 语法会变成满屏的星号和井号。
+// %s 是品牌注册表里的 DisplayName。
+const chatAIFormatRules = `
+
+## 输出格式（网页聊天挂件，必须遵守，优先于上文任何格式示例）
+- 只输出纯文本。挂件原样显示文字，不渲染 Markdown，所以不要使用 Markdown 语法：不要 **加粗**、不要 # 标题、不要以 - 或 * 开头的列表、不要代码块、不要表格、不要 [文字](链接)。
+- 需要分点时用换行，每条前面写「1.」「2.」这样的序号，或者「·」。
+- 链接直接写完整网址。
+- 提到本产品的品牌时一律只写「%s」（中文回复也一样），不要换成别的语言的写法，也不要在后面用括号附注别名。`
+
+// chatAISystemPrompt 会话 AI 的系统提示：共用提示 + 会话专用的输出约束（品牌名取自该会话品牌的 DisplayName）。
+func chatAISystemPrompt(brand Brand) string {
+	return systemPrompt + fmt.Sprintf(chatAIFormatRules, brand.Config().DisplayName)
 }
 
 type chatOption struct{ Label, Value string }
@@ -246,7 +263,7 @@ func chatAIReply(ctx context.Context, conv *Conversation, q *ConversationMessage
 		question = chatOptionQuestion(question)
 	}
 	askCtx, cancel := context.WithTimeout(ctx, chatAIAskTimeout)
-	reply, err := chatAIAsk(askCtx, question, history)
+	reply, err := chatAIAsk(askCtx, chatAISystemPrompt(Brand(conv.Brand)), question, history)
 	cancel()
 	if err != nil || strings.TrimSpace(reply) == "" {
 		log.Errorf(ctx, "chat ai ask failed: conv=%d err=%v", conv.ID, err)

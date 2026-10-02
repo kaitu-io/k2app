@@ -24,15 +24,17 @@ import (
 // Slack 事件回调：客服在会话专属频道里发言即回复访客（设计 §8）。
 
 const (
-	chatSlackEventsMaxBody  = 1 << 20
-	chatSlackEventsTimeout  = 30 * time.Second
-	chatSlackWarnTimeout    = 10 * time.Second
-	chatSlackStaffKeyPrefix = "chat:slack:user:"
-	chatSlackStaffPosTTL    = time.Hour
-	chatSlackStaffNegTTL    = 5 * time.Minute
-	chatSlackStaffNegValue  = "0"
-	chatSlackStaffNoEmailV  = "0:noemail"
-	chatSlackWarnKeyPrefix  = "chat:slack:warn:"
+	chatSlackEventsMaxBody = 1 << 20
+	chatSlackEventsTimeout = 30 * time.Second
+	chatSlackWarnTimeout   = 10 * time.Second
+	// chatSlackCompensateTimeout 补偿删除（撤掉命令的幂等标记）的独立超时。
+	chatSlackCompensateTimeout = 5 * time.Second
+	chatSlackStaffKeyPrefix    = "chat:slack:user:"
+	chatSlackStaffPosTTL       = time.Hour
+	chatSlackStaffNegTTL       = 5 * time.Minute
+	chatSlackStaffNegValue     = "0"
+	chatSlackStaffNoEmailV     = "0:noemail"
+	chatSlackWarnKeyPrefix     = "chat:slack:warn:"
 )
 
 // 频道提示文案
@@ -322,7 +324,11 @@ func chatSlackCommand(ctx context.Context, conv *Conversation, in appendMessageI
 		return res.String()
 	}
 	fail := func() string {
-		if err := db.Get().WithContext(ctx).Delete(&ConversationMessage{}, marker.ID).Error; err != nil {
+		// 补偿删除不继承调用方的 ctx：动作往往正是因为 ctx 超时 / 取消才失败的，
+		// 沿用它删除也会失败，残留的标记会把之后的重发、重投都挡成"重复"。
+		dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), chatSlackCompensateTimeout)
+		defer cancel()
+		if err := db.Get().WithContext(dctx).Delete(&ConversationMessage{}, marker.ID).Error; err != nil {
 			log.Errorf(ctx, "slack events: remove command marker conv=%d: %v", conv.ID, err)
 		}
 		chatSlackWarnOnce(ctx, ch, ts, chatSlackWarnCmdFail)

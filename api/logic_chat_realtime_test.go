@@ -80,6 +80,7 @@ func chatMustDial(t *testing.T, srv *httptest.Server, s chatSubject, hdr http.He
 			}
 			var f chatWireFrame
 			if json.Unmarshal(data, &f) == nil {
+				f.raw = data
 				c.frames <- f
 			}
 		}
@@ -91,11 +92,13 @@ func chatMustDial(t *testing.T, srv *httptest.Server, s chatSubject, hdr http.He
 func (c *chatWSClient) Close() { c.conn.Close() }
 
 type chatWireFrame struct {
+	raw     []byte // 原始帧，用来断言某些内容根本没下发
 	Channel string `json:"channel"`
 	Payload struct {
-		Type         string       `json:"type"`
-		Message      ChatMsgDTO   `json:"message"`
-		Conversation *ChatConvDTO `json:"conversation"`
+		Type             string       `json:"type"`
+		ConversationUUID string       `json:"conversationUuid"`
+		Message          ChatMsgDTO   `json:"message"`
+		Conversation     *ChatConvDTO `json:"conversation"`
 	} `json:"payload"`
 }
 
@@ -261,6 +264,11 @@ func TestChatPublish_DeliversMessageAndSkipsNotes(t *testing.T) {
 	assert.Equal(t, msg.ID, f.Payload.Message.ID)
 	assert.Equal(t, "hello visitor", f.Payload.Message.Content)
 	assert.Equal(t, chatMessageDTO(msg).CreatedAt.UTC(), f.Payload.Message.CreatedAt.UTC())
+	assert.Equal(t, "message", f.Payload.Type)
+	assert.Equal(t, conv.UUID, f.Payload.ConversationUUID, "message 帧带会话 uuid，前端据此丢弃不属于当前会话的帧")
+	assert.Equal(t, SenderStaff, f.Payload.Message.SenderType)
+	assert.Empty(t, f.Payload.Message.SenderName, "客服真名不得下发给访客")
+	assert.NotContains(t, string(f.raw), "agent")
 }
 
 func TestChatPublish_SkipsNotes(t *testing.T) {
@@ -512,6 +520,7 @@ func TestChatWS_PushesStateOnHandlerChange(t *testing.T) {
 	assert.Equal(t, "state", f.Payload.Type)
 	require.NotNil(t, f.Payload.Conversation)
 	assert.Equal(t, conv.UUID, f.Payload.Conversation.UUID)
+	assert.Equal(t, conv.UUID, f.Payload.ConversationUUID, "state 帧同样在顶层带会话 uuid")
 	assert.Equal(t, HandlerHuman, f.Payload.Conversation.Handler)
 	assert.Equal(t, "open", f.Payload.Conversation.Status)
 }

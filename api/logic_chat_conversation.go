@@ -295,57 +295,73 @@ func messagesAfter(ctx context.Context, convID, afterID uint64, visitorView bool
 	return msgs, nil
 }
 
+// updateConversationLocked 是按条件改会话行（status / handler …）的唯一入口：事务里先按主键对会话行
+// FOR UPDATE，decide 看锁下读到的当前行决定改什么（返回 nil = 不改），UPDATE 只按主键。
+//
+// 条件不能写进 UPDATE 的 WHERE：加锁顺序必须与 appendMessage 相同（先锁主键行）。WHERE 里带上有二级索引的列
+// （status、last_message_at…），MariaDB 有时会改走二级索引——先锁索引记录再等主键行；而追加事务先锁主键行、
+// 提交前再改同一条索引记录，互等即死锁（实测 1213），被回滚的可能是访客那条消息。
+// TestConversationWrites_ByPrimaryKeyOnly 守着这条：对 conversations 的 UPDATE 一律 WHERE id = ?。
+func updateConversationLocked(d *gorm.DB, convID uint64, decide func(cur *Conversation) map[string]any) (changed bool, err error) {
+	err = d.Transaction(func(tx *gorm.DB) error {
+		var cur Conversation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id", "status", "handler", "last_message_at").Take(&cur, convID).Error; err != nil {
+			return err
+		}
+		upd := decide(&cur)
+		if len(upd) == 0 {
+			return nil
+		}
+		if err := tx.Model(&Conversation{}).Where("id = ?", convID).Updates(upd).Error; err != nil {
+			return err
+		}
+		changed = true
+		return nil
+	})
+	return changed, err
+}
+
 // setHandler 切换处理方（ai|human）；无变化时不写库、不通知。
 func setHandler(ctx context.Context, conv *Conversation, handler string) error {
 	if handler != HandlerAI && handler != HandlerHuman {
 		return fmt.Errorf("invalid handler %q", handler)
 	}
-	// 以 DB 为准：条件更新带 handler<>目标，未匹配（RowsAffected=0）即无变化。
-	// 不信任内存里的 conv.Handler（可能已陈旧）。
-	res := db.Get().WithContext(ctx).Model(&Conversation{}).
-		Where("id = ? AND handler <> ?", conv.ID, handler).Update("handler", handler)
-	if res.Error != nil {
-		return fmt.Errorf("set handler: %w", res.Error)
+	// 以 DB 为准：锁下读到的 handler 已是目标值即无变化。不信任内存里的 conv.Handler（可能已陈旧）。
+	changed, err := updateConversationLocked(db.Get().WithContext(ctx), conv.ID, func(cur *Conversation) map[string]any {
+		if cur.Handler == handler {
+			return nil
+		}
+		return map[string]any{"handler": handler}
+	})
+	if err != nil {
+		return fmt.Errorf("set handler: %w", err)
 	}
 	conv.Handler = handler
-	if res.RowsAffected == 0 {
-		return nil
+	if changed {
+		chatNotifyStateChange(conv)
 	}
-	chatNotifyStateChange(conv)
 	return nil
 }
 
 // closeConversationIf 把 open 会话置 closed；返回是否真的发生了关闭（已关闭、或不满足 eligible 则 false）。
-// 加锁顺序与 appendMessage 相同：事务里先按主键对会话行 FOR UPDATE，条件在锁下用读到的行判断，UPDATE 只按主键。
-// 不能把条件写进 UPDATE 的 WHERE：带上 status / last_message_at 这些有二级索引的列，MariaDB 有时会走二级索引
-// ——先锁索引记录再等主键行，而追加事务先锁主键行、提交前再改同一条索引记录，互等即死锁，
-// 被回滚的可能是访客那条消息。并发下只有一方得到 true（后到的在锁下看到已关闭）。
+// 条件在行锁之下判断（见 updateConversationLocked），并发下只有一方得到 true（后到的在锁下看到已关闭）。
 func closeConversationIf(d *gorm.DB, conv *Conversation, eligible func(cur *Conversation) bool) (bool, error) {
-	var closedAt *time.Time
-	err := d.Transaction(func(tx *gorm.DB) error {
-		var cur Conversation
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Select("id", "status", "handler", "last_message_at").Take(&cur, conv.ID).Error; err != nil {
-			return err
-		}
-		if cur.Status != ConvOpen || (eligible != nil && !eligible(&cur)) {
+	var closedAt time.Time
+	changed, err := updateConversationLocked(d, conv.ID, func(cur *Conversation) map[string]any {
+		if cur.Status != ConvOpen || (eligible != nil && !eligible(cur)) {
 			return nil
 		}
-		now := time.Now()
-		if err := tx.Model(&Conversation{}).Where("id = ?", conv.ID).
-			Updates(map[string]any{"status": ConvClosed, "closed_at": now}).Error; err != nil {
-			return err
-		}
-		closedAt = &now
-		return nil
+		closedAt = time.Now()
+		return map[string]any{"status": ConvClosed, "closed_at": closedAt}
 	})
 	if err != nil {
 		return false, fmt.Errorf("close conversation %d: %w", conv.ID, err)
 	}
-	if closedAt == nil {
+	if !changed {
 		return false, nil
 	}
-	conv.Status, conv.ClosedAt = ConvClosed, closedAt
+	conv.Status, conv.ClosedAt = ConvClosed, &closedAt
 	return true, nil
 }
 

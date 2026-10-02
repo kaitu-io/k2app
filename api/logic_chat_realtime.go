@@ -95,20 +95,23 @@ func chatSubjectOfConversation(ctx context.Context, conv *Conversation) (chatSub
 
 // chatWirePayload 是 WebSocket 上的帧载荷（外层是 qtoolkit 的 {channel,timestamp,payload}）。
 // type=message 带 message；type=state 带 conversation（会话处理方/状态变化）。
+// 两种帧都带 conversationUuid：频道是按主体的，访客撞上关闭后会换到新会话，
+// 前端据此丢弃不属于当前会话的帧。
 type chatWirePayload struct {
-	Type         string       `json:"type"`
-	Message      *ChatMsgDTO  `json:"message,omitempty"`
-	Conversation *ChatConvDTO `json:"conversation,omitempty"`
+	Type             string       `json:"type"`
+	ConversationUUID string       `json:"conversationUuid"`
+	Message          *ChatMsgDTO  `json:"message,omitempty"`
+	Conversation     *ChatConvDTO `json:"conversation,omitempty"`
 }
 
-// chatPublish 把消息推给主体的在线连接。内部备注（note）永不下发。
-// 与 HTTP 接口共用同一个 DTO 构造（chatMessageDTO），访客视图只有一份。
-func chatPublish(ctx context.Context, s chatSubject, msg *ConversationMessage) error {
+// chatPublish 把会话 conv 里的消息推给主体的在线连接。内部备注（note）永不下发。
+// 与访客的 HTTP 接口共用同一个 DTO 构造（chatVisitorMessageDTO），访客视图只有一份。
+func chatPublish(ctx context.Context, s chatSubject, conv *Conversation, msg *ConversationMessage) error {
 	if msg.Kind == MsgNote {
 		return nil
 	}
-	dto := chatMessageDTO(msg)
-	return chatBroadcast().Pub(ctx, s.Channel(), chatWirePayload{Type: "message", Message: &dto})
+	dto := chatVisitorMessageDTO(msg)
+	return chatBroadcast().Pub(ctx, s.Channel(), chatWirePayload{Type: "message", ConversationUUID: conv.UUID, Message: &dto})
 }
 
 func init() {
@@ -125,7 +128,7 @@ func init() {
 			log.Warnf(ctx, "chat publish: %v", err)
 			return
 		}
-		if err := chatPublish(ctx, s, msg); err != nil {
+		if err := chatPublish(ctx, s, conv, msg); err != nil {
 			log.Warnf(ctx, "chat publish %s: %v", s.Channel(), err)
 		}
 	}
@@ -140,7 +143,7 @@ func init() {
 			log.Warnf(ctx, "chat state publish: %v", err)
 			return
 		}
-		if err := chatBroadcast().Pub(ctx, s.Channel(), chatWirePayload{Type: "state", Conversation: chatConversationDTO(conv)}); err != nil {
+		if err := chatBroadcast().Pub(ctx, s.Channel(), chatWirePayload{Type: "state", ConversationUUID: conv.UUID, Conversation: chatConversationDTO(conv)}); err != nil {
 			log.Warnf(ctx, "chat state publish %s: %v", s.Channel(), err)
 		}
 	})

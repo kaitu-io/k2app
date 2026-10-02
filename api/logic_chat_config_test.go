@@ -44,8 +44,8 @@ func TestChatConfig(t *testing.T) {
 		if got := chatWSURL(BrandKaitu); got != "" {
 			t.Errorf("chatWSURL(kaitu) = %q, want empty", got)
 		}
-		if got := managerBaseURL(); got != "https://www.kaitu.io" {
-			t.Errorf("managerBaseURL() = %q", got)
+		if got := managerBaseURL(); got != "" {
+			t.Errorf("managerBaseURL() 未配置应为空（业务代码里不写品牌域名），got %q", got)
 		}
 		if got := chatSlackLobby(); got != "" {
 			t.Errorf("chatSlackLobby() = %q", got)

@@ -59,13 +59,10 @@ func chatWSURL(b Brand) string {
 	return viper.GetString("chat.ws_urls." + string(b))
 }
 
-// managerBaseURL 管理端基础地址（viper "manager.base_url"），去尾斜杠；未配返回默认值。
+// managerBaseURL 管理端基础地址（viper "manager.base_url"），去尾斜杠；未配返回 ""，
+// 调用方据此不渲染后台链接（业务代码里不写品牌域名做默认值）。
 func managerBaseURL() string {
-	u := strings.TrimRight(viper.GetString("manager.base_url"), "/")
-	if u == "" {
-		return "https://www.kaitu.io"
-	}
-	return u
+	return strings.TrimRight(viper.GetString("manager.base_url"), "/")
 }
 
 // chatSlackLobby 会话总览频道 ID（viper "slack.chat_lobby_channel_id"），其成员即客服名单。

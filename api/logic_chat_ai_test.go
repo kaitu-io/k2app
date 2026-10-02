@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,7 +23,7 @@ func withAIAsk(t *testing.T, fn aiAskFn) *atomic.Int32 {
 	t.Helper()
 	orig := chatAIAsk
 	var n atomic.Int32
-	chatAIAsk = func(ctx context.Context, q string, h []filesearch.Message) (string, error) {
+	chatAIAsk = func(ctx context.Context, _, q string, h []filesearch.Message) (string, error) {
 		n.Add(1)
 		return fn(ctx, q, h)
 	}
@@ -272,7 +273,8 @@ func TestChatAI_TransferOnlyOnce(t *testing.T) {
 
 func TestChatAIWelcome(t *testing.T) {
 	text, opts := chatAIWelcome()
-	assert.Equal(t, "您好！请问需要什么帮助？（遇到安装问题时，您可以直接发截图给我 📷）", text)
+	assert.Equal(t, "您好！请问需要什么帮助？", text)
+	assert.NotContains(t, text, "截图", "第 1 期不支持图片，欢迎语不得承诺可以发截图")
 	assert.Equal(t, []chatOption{
 		{"📱 安装问题", "install"}, {"💳 购买/续费", "purchase"}, {"❓ 使用问题", "usage"},
 	}, opts)
@@ -385,4 +387,33 @@ func TestChatAI_AppendDroppedWhenClosedInDB(t *testing.T) {
 
 	require.NoError(t, chatAppendAI(context.Background(), conv, "late reply"))
 	assert.Empty(t, convMessages(t, conv.ID))
+}
+
+// 会话 AI 的系统提示 = 共用提示 + 会话专用的输出约束：挂件按纯文本显示，不能回 Markdown；
+// 品牌名取自品牌注册表的 DisplayName，不附注别名。
+func TestChatAI_SystemPromptCarriesFormatRules(t *testing.T) {
+	conv := newAIConv(t)
+	var got atomic.Value
+	orig := chatAIAsk
+	t.Cleanup(func() { chatAIAsk = orig })
+	chatAIAsk = func(_ context.Context, system, _ string, _ []filesearch.Message) (string, error) {
+		got.Store(system)
+		return "好的", nil
+	}
+	visitorSays(t, conv, MsgText, "怎么安装")
+
+	system, _ := got.Load().(string)
+	require.NotEmpty(t, system, "对照：确实调用了模型")
+	assert.True(t, strings.HasPrefix(system, systemPrompt), "共用的系统提示原样保留在前面")
+	rules := strings.TrimPrefix(system, systemPrompt)
+	for _, want := range []string{"纯文本", "不要使用 Markdown", "**", "换行", "「1.」", "「·」",
+		"「" + BrandKaitu.Config().DisplayName + "」", "括号"} {
+		assert.Contains(t, rules, want)
+	}
+	assert.Equal(t, system, chatAISystemPrompt(BrandKaitu))
+
+	// 品牌名跟着会话的品牌走，不写死
+	other := strings.TrimPrefix(chatAISystemPrompt(BrandOverleap), systemPrompt)
+	assert.Contains(t, other, "「"+BrandOverleap.Config().DisplayName+"」")
+	assert.NotContains(t, other, BrandKaitu.Config().DisplayName)
 }

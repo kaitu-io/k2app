@@ -716,3 +716,23 @@ func TestSlackEvents_ClosedAfterLoadIsNotDelivered(t *testing.T) {
 	require.Len(t, posts, 1)
 	assert.Equal(t, chatSlackWarnClosed, posts[0])
 }
+
+// 命令失败时的补偿删除不继承调用方的 ctx：ctx 已取消 / 超时（正是容易失败的时候）也必须删掉幂等标记，
+// 否则客服重发、Slack 重投都会被这条残留的标记挡成"重复"。
+func TestSlackEvents_CommandMarkerRemovedEvenIfContextCancelled(t *testing.T) {
+	e := newSlackEventsEnv(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	orig := chatSlackAppendSystem
+	t.Cleanup(func() { chatSlackAppendSystem = orig })
+	chatSlackAppendSystem = func(context.Context, *Conversation, appendMessageInput) (*ConversationMessage, bool, error) {
+		cancel() // 动作失败的同时调用方的 ctx 也没了
+		return nil, false, errors.New("boom")
+	}
+	ts := "1700000000.000777"
+	res := chatSlackCommand(ctx, e.conv, appendMessageInput{
+		SenderType: SenderStaff, SenderID: e.staff.ID, SenderName: "s", Kind: MsgText, Content: "!close", SlackTS: &ts})
+	assert.Equal(t, "command_error", res)
+	assert.Empty(t, e.msgs(), "幂等标记必须被删掉")
+	assert.Equal(t, ConvOpen, e.reload().Status)
+}

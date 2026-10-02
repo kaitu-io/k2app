@@ -1179,3 +1179,79 @@ func TestChat_GuestLoginMidConversationKeepsGuestSubject(t *testing.T) {
 	assert.EqualValues(t, 1, userConvs())
 	assert.Equal(t, int64(1), chatConvCount(t, cid), "guest 簇没有新会话")
 }
+
+// ---- 终审修复：访客面 ----
+
+// 访客不得知道客服是谁：session / GET messages 里客服消息的 senderName 为空；AI 与系统消息照旧；库里不变。
+func TestChat_StaffNameHiddenFromVisitor(t *testing.T) {
+	r := chatSetup(t, true)
+	ctx := context.Background()
+	w, _ := chatOpenSession(t, r, "/", nil)
+	cid := chatCookie(w, CookieChatCid).Value
+	chatCleanupCID(t, cid)
+	resp, md := chatPostMessage(t, r, cid, "sn-0", "hi")
+	require.Equal(t, 0, resp.Code, resp.Message)
+	conv := chatConvByUUID(t, md["conversation"].(map[string]any)["uuid"].(string))
+	const realName = "zhang.san.realname"
+	staffMsg, _, err := appendMessage(ctx, conv, appendMessageInput{SenderType: SenderStaff, SenderID: 7, SenderName: realName, Kind: MsgText, Content: "客服回复"})
+	require.NoError(t, err)
+	_, _, err = appendMessage(ctx, conv, appendMessageInput{SenderType: SenderAI, SenderName: "AI", Kind: MsgText, Content: "AI 回复"})
+	require.NoError(t, err)
+
+	check := func(name, body string, msgs []any) {
+		assert.NotContains(t, body, realName, name)
+		var sawStaff, sawAI bool
+		for _, raw := range msgs {
+			m := raw.(map[string]any)
+			switch m["senderType"] {
+			case SenderStaff:
+				sawStaff = true
+				assert.Equal(t, "", m["senderName"], name)
+				assert.Equal(t, "客服回复", m["content"], name)
+			case SenderAI:
+				sawAI = true
+				assert.Equal(t, "AI", m["senderName"], name)
+			}
+		}
+		assert.True(t, sawStaff && sawAI, "%s: 对照——两条消息都在响应里", name)
+	}
+	withCid := func(q *TestRequest) *TestRequest { return q.WithCookie(CookieChatCid, cid) }
+	w, data := chatOpenSession(t, r, "/", withCid)
+	check("session", w.Body.String(), data["messages"].([]any))
+	w = withCid(NewTestRequest("GET", "/api/chat/messages")).Execute(r)
+	_, data = chatDecode(t, w)
+	check("messages", w.Body.String(), data["messages"].([]any))
+
+	// 库里与后台用的 DTO 保留真名
+	var stored ConversationMessage
+	require.NoError(t, db.Get().First(&stored, staffMsg.ID).Error)
+	assert.Equal(t, realName, stored.SenderName)
+	assert.Equal(t, realName, chatMessageDTO(&stored).SenderName, "后台接口用的 DTO 不变")
+}
+
+// 留邮箱入口与发信前用同一个校验（chatMailAddrOK）：能过旧的简单校验、但发信时会被拒的地址，入口就拒掉（422）。
+func TestChatEmail_RejectsAddressesTheMailerWouldRefuse(t *testing.T) {
+	r := chatSetup(t, true)
+	w, _ := chatOpenSession(t, r, "/", nil)
+	cid := chatCookie(w, CookieChatCid).Value
+	chatCleanupCID(t, cid)
+	for _, bad := range []string{
+		"a@b.co, c@d.co",        // 多收件人
+		"name <a@b.co>",         // 带显示名
+		"a b@c.co",              // 非法本地部分
+		"a@b.co\r\nbcc: x@y.co", // 头注入
+	} {
+		require.False(t, chatMailAddrOK(strings.ToLower(strings.TrimSpace(bad))), "对照：%q 发信前会被拒", bad)
+		resp, _ := chatDecode(t, NewTestRequest("POST", "/api/chat/email").WithCookie(CookieChatCid, cid).
+			WithBody(map[string]any{"email": bad}).Execute(r))
+		assert.Equal(t, 422, resp.Code, bad)
+	}
+	owner, err := findIdentityOwner(context.Background(), BrandKaitu, IdentityCID, cid)
+	require.NoError(t, err)
+	var n int64
+	require.NoError(t, db.Get().Model(&GuestIdentity{}).Where("guest_id = ? AND kind = ?", owner.GuestID, IdentityEmail).Count(&n).Error)
+	assert.Zero(t, n, "非法地址不得落库")
+	resp, _ := chatDecode(t, NewTestRequest("POST", "/api/chat/email").WithCookie(CookieChatCid, cid).
+		WithBody(map[string]any{"email": "ok@example.com"}).Execute(r))
+	assert.Equal(t, 0, resp.Code, "对照：合法地址通过")
+}

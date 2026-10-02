@@ -4,7 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"math/rand"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -542,7 +546,10 @@ func TestAppendMessage_ConcurrentCommitOrderMatchesIdOrder(t *testing.T) {
 		}
 		var mu sync.Mutex
 		var observed []obs
+		// 钩子用 t.Cleanup 还原：中途 require 失败退出时也不会把本轮的钩子留给后面的测试。
+		// 各轮的钩子因此叠到测试结束，靠 c.ID 过滤互不干扰。
 		orig := chatAfterAppend
+		t.Cleanup(func() { chatAfterAppend = orig })
 		chatAfterAppend = append(append([]func(*Conversation, *ConversationMessage){}, orig...),
 			func(c *Conversation, m *ConversationMessage) {
 				if c.ID != conv.ID {
@@ -571,7 +578,6 @@ func TestAppendMessage_ConcurrentCommitOrderMatchesIdOrder(t *testing.T) {
 			}()
 		}
 		wg.Wait()
-		chatAfterAppend = orig
 
 		var finalIDs []uint64
 		require.NoError(t, db.Get().Model(&ConversationMessage{}).Where("conversation_id = ?", conv.ID).Pluck("id", &finalIDs).Error)
@@ -902,5 +908,77 @@ func TestCloseConversation_UpdatesByPrimaryKeyOnly(t *testing.T) {
 			assert.Equal(t, 1, updates, "对照：确实抓到了 UPDATE: %v", capture.sqls)
 			assert.Equal(t, 1, locks, "对照：确实抓到了行锁: %v", capture.sqls)
 		})
+	}
+}
+
+// 结构性守卫：对 conversations 的每一处 UPDATE 都只许按主键（WHERE 恰为 "id = ?"）。
+//
+// 背景（见 TestCloseConversation_UpdatesByPrimaryKeyOnly）：WHERE 里带上有二级索引的列，MariaDB 可能改走二级索引，
+// 加锁顺序与 appendMessage（先锁主键行）相反而死锁。今天没有索引的列（如 handler）明天可能加上索引，
+// 所以不逐条判断"这一列有没有索引"，一律禁止：条件放到 updateConversationLocked 里、在行锁之下用 Go 判断。
+//
+// 盲区（守卫看不到的写法，评审时人工把关）：db.Save(&conv) / Model(conv) 这类以结构体变量为目标的写入、
+// 原生 SQL（Exec / Raw）、以及把 *gorm.DB 存进变量后分多条语句拼出来的链。
+func TestConversationWrites_ByPrimaryKeyOnly(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	require.NoError(t, err)
+	type site struct{ pos, where string }
+	var sites []site
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, file, nil, 0)
+		require.NoError(t, err)
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || !map[string]bool{"Update": true, "Updates": true, "UpdateColumn": true, "UpdateColumns": true}[sel.Sel.Name] {
+				return true
+			}
+			// 沿方法链往回走：找 Model(&Conversation{}) 与全部 Where 的第一个实参
+			onConversation := false
+			var wheres []string
+			for x := sel.X; ; {
+				c, ok := x.(*ast.CallExpr)
+				if !ok {
+					break
+				}
+				s, ok := c.Fun.(*ast.SelectorExpr)
+				if !ok {
+					break
+				}
+				switch s.Sel.Name {
+				case "Model":
+					if u, ok := c.Args[0].(*ast.UnaryExpr); ok {
+						if lit, ok := u.X.(*ast.CompositeLit); ok {
+							if id, ok := lit.Type.(*ast.Ident); ok && id.Name == "Conversation" {
+								onConversation = true
+							}
+						}
+					}
+				case "Where":
+					if lit, ok := c.Args[0].(*ast.BasicLit); ok {
+						wheres = append(wheres, lit.Value)
+					} else {
+						wheres = append(wheres, "<non-literal>")
+					}
+				}
+				x = s.X
+			}
+			if onConversation {
+				sites = append(sites, site{fset.Position(call.Pos()).String(), strings.Join(wheres, " + ")})
+			}
+			return true
+		})
+	}
+	// 对照：守卫确实看到了已知的写入点（追加、关闭 / 交接、Slack 字段 ×2），不是空转
+	require.GreaterOrEqual(t, len(sites), 4, "守卫本身失效了: %v", sites)
+	for _, s := range sites {
+		assert.Equal(t, `"id = ?"`, s.where, "%s: conversations 的 UPDATE 只许按主键，条件放进 updateConversationLocked", s.pos)
 	}
 }
