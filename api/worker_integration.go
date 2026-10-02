@@ -113,6 +113,9 @@ func InitWorker() {
 	// 注册云同步 worker
 	RegisterCloudWorker()
 
+	// 注册客服聊天 worker：每分钟 Slack 镜像兜底、每 10 分钟关闭空闲会话
+	RegisterChatWorker()
+
 	// 审批执行 handler
 	asynq.Handle(TaskTypeApprovalExecute, ExecuteApproval)
 
