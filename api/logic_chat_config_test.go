@@ -114,3 +114,75 @@ func TestChatAccessFor(t *testing.T) {
 		})
 	}
 }
+
+// 配置组合校验：功能开着却缺关键配置时逐条报出来（启动时记 Error）。
+func TestChatConfigProblems(t *testing.T) {
+	set := func(t *testing.T, enabled, preview bool, brands []string, lobby, secret, token string) {
+		setChatViper(t, "chat.enabled", enabled)
+		setChatViper(t, "chat.preview_enabled", preview)
+		setChatViper(t, "chat.brands", brands)
+		setChatViper(t, "slack.chat_lobby_channel_id", lobby)
+		setChatViper(t, "slack.signing_secret", secret)
+		setChatViper(t, "slack.bot_token", token)
+	}
+	all := chatAllBrandNames()
+	has := func(problems []string, key string) bool {
+		for _, p := range problems {
+			if strings.Contains(p, key) {
+				return true
+			}
+		}
+		return false
+	}
+
+	t.Run("两个开关都关：不检查", func(t *testing.T) {
+		set(t, false, false, []string{}, "", "", "")
+		if p := chatConfigProblems(); len(p) != 0 {
+			t.Errorf("关闭时不该报问题: %v", p)
+		}
+	})
+	t.Run("配置齐全：没有问题", func(t *testing.T) {
+		set(t, true, false, all, "C1", "sec", "xoxb-1")
+		if p := chatConfigProblems(); len(p) != 0 {
+			t.Errorf("配置齐全不该报问题: %v", p)
+		}
+	})
+	for _, mode := range []struct {
+		name             string
+		enabled, preview bool
+	}{{"enabled", true, false}, {"仅预览", false, true}} {
+		t.Run(mode.name+"：四项全缺逐条报", func(t *testing.T) {
+			set(t, mode.enabled, mode.preview, []string{}, "", "", "")
+			p := chatConfigProblems()
+			if len(p) != 4 {
+				t.Fatalf("want 4 problems, got %d: %v", len(p), p)
+			}
+			for _, key := range []string{"chat.brands", "slack.chat_lobby_channel_id", "slack.signing_secret", "slack.bot_token"} {
+				if !has(p, key) {
+					t.Errorf("缺 %s 没报: %v", key, p)
+				}
+			}
+		})
+	}
+	for key, mod := range map[string]func(t *testing.T){
+		"chat.brands":                 func(t *testing.T) { set(t, true, false, []string{}, "C1", "sec", "xoxb-1") },
+		"slack.chat_lobby_channel_id": func(t *testing.T) { set(t, true, false, all, "", "sec", "xoxb-1") },
+		"slack.signing_secret":        func(t *testing.T) { set(t, true, false, all, "C1", "", "xoxb-1") },
+		"slack.bot_token":             func(t *testing.T) { set(t, true, false, all, "C1", "sec", "") },
+	} {
+		t.Run("只缺 "+key, func(t *testing.T) {
+			mod(t)
+			p := chatConfigProblems()
+			if len(p) != 1 || !has(p, key) {
+				t.Errorf("want exactly the %s problem, got %v", key, p)
+			}
+		})
+	}
+	t.Run("名单里有未注册的品牌", func(t *testing.T) {
+		set(t, true, false, append([]string{"no-such-brand"}, all...), "C1", "sec", "xoxb-1")
+		p := chatConfigProblems()
+		if len(p) != 1 || !has(p, "no-such-brand") {
+			t.Errorf("want the unknown brand problem, got %v", p)
+		}
+	})
+}

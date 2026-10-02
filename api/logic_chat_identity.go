@@ -476,3 +476,23 @@ func guestEmail(ctx context.Context, rootID uint64) string {
 	}
 	return ident.Value
 }
+
+// linkGuestUser 记一行 guest ↔ 登录用户的关联（幂等：同一 guest / user / 证据只有一行）。
+// 先查后插：这条路径每个请求都会走到，直接 INSERT ... ON DUPLICATE 会白白烧掉自增 id；
+// 并发下两个请求都没查到时由唯一索引兜底（冲突即忽略）。
+func linkGuestUser(ctx context.Context, guestID, userID uint64, brand Brand, evidence string) error {
+	d := db.Get().WithContext(ctx)
+	var n int64
+	if err := d.Model(&GuestUserLink{}).
+		Where("guest_id = ? AND user_id = ? AND evidence = ?", guestID, userID, evidence).Count(&n).Error; err != nil {
+		return fmt.Errorf("lookup guest user link: %w", err)
+	}
+	if n > 0 {
+		return nil
+	}
+	link := &GuestUserLink{GuestID: guestID, UserID: userID, Brand: string(brand), Evidence: evidence, CreatedAt: time.Now()}
+	if err := d.Clauses(clause.OnConflict{DoNothing: true}).Create(link).Error; err != nil {
+		return fmt.Errorf("create guest user link: %w", err)
+	}
+	return nil
+}

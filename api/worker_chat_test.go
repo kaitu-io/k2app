@@ -416,3 +416,113 @@ func TestChatWorker_SweepWaitsForCloseEventBeforeArchive(t *testing.T) {
 	assert.Less(t, eventAt, archivedAt, "event is posted before the channel is archived")
 	assert.Len(t, closeEvents(t, conv.ID), 1)
 }
+
+// ---- 终审修复：失败可见性 ----
+
+func slackStuckCleanup(t *testing.T, convIDs ...uint64) {
+	t.Helper()
+	t.Cleanup(func() {
+		for _, id := range convIDs {
+			redis.Client().Del(context.Background(), chatSlackStuckKeyPrefix+uintStr(id))
+		}
+	})
+}
+
+func slackStuckAlerts(f *fakeSlack) []string {
+	var out []string
+	for _, p := range f.Posts(fakeSlackLobbyID) {
+		if strings.Contains(p, "仍未同步到 Slack") {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// 超过 10 分钟仍未镜像的消息：sweep 汇总报出来，并往总览频道发一行告警；同一会话 30 分钟内只告警一次。
+func TestChatWorker_SweepAlertsOnStuckMessages(t *testing.T) {
+	brand := slackTestBrand()
+	stuck := slackConv(t, brand, "/support")
+	recent := slackConv(t, brand, "/support")
+	f := newFakeSlack(t)
+	slackStuckCleanup(t, stuck.ID, recent.ID)
+	slackSeed(t, stuck, SenderVisitor, MsgText, "卡住的第一条")
+	slackSeed(t, stuck, SenderVisitor, MsgText, "卡住的第二条")
+	slackBackdate(t, stuck.ID, 11*time.Minute)
+	slackSeed(t, recent, SenderVisitor, MsgText, "才 5 分钟")
+	slackBackdate(t, recent.ID, 5*time.Minute)
+	// 建频道一直失败：两个会话的消息都发不出去
+	for i := 0; i < 20; i++ {
+		f.Script("conversations.create", fakeSlackErr("boom"))
+	}
+	ctx := context.Background()
+
+	_, err := chatSlackSweepRun(ctx, string(brand))
+	require.NoError(t, err)
+	require.EqualValues(t, 2, slackUnmirrored(t, stuck.ID), "对照：消息确实没发出去")
+	alerts := slackStuckAlerts(f)
+	require.Len(t, alerts, 1)
+	assert.Contains(t, alerts[0], "1 个会话")
+	assert.Contains(t, alerts[0], "2 条消息")
+	assert.Contains(t, alerts[0], "#"+uintStr(stuck.ID))
+	assert.NotContains(t, alerts[0], "#"+uintStr(recent.ID), "不到 10 分钟的不算卡住")
+	assert.NotContains(t, alerts[0], "卡住的第一条", "告警不带消息正文")
+
+	// 下一分钟再扫：仍然卡着，但 30 分钟内不重复告警
+	_, err = chatSlackSweepRun(ctx, string(brand))
+	require.NoError(t, err)
+	assert.Len(t, slackStuckAlerts(f), 1)
+	convs, msgs, alerted := chatSlackStuckCheck(ctx, string(brand))
+	assert.Equal(t, 1, convs, "汇总数字每轮都报（Error 日志），只是不再往频道发")
+	assert.Equal(t, 2, msgs)
+	assert.False(t, alerted)
+
+	// 又一个会话卡住：只为新卡住的会话告警一次
+	slackBackdate(t, recent.ID, 12*time.Minute)
+	convs, msgs, alerted = chatSlackStuckCheck(ctx, string(brand))
+	assert.Equal(t, 2, convs)
+	assert.Equal(t, 3, msgs)
+	assert.True(t, alerted)
+	alerts = slackStuckAlerts(f)
+	require.Len(t, alerts, 2)
+	assert.Contains(t, alerts[1], "#"+uintStr(recent.ID))
+}
+
+// 没有卡住的消息：不告警。
+func TestChatWorker_SweepNoAlertWhenHealthy(t *testing.T) {
+	brand := slackTestBrand()
+	conv := slackConv(t, brand, "/support")
+	f := newFakeSlack(t)
+	slackStuckCleanup(t, conv.ID)
+	slackSeed(t, conv, SenderVisitor, MsgText, "晚了 11 分钟但这轮能发出去")
+	slackBackdate(t, conv.ID, 11*time.Minute)
+
+	_, err := chatSlackSweepRun(context.Background(), string(brand))
+	require.NoError(t, err)
+	require.EqualValues(t, 0, slackUnmirrored(t, conv.ID))
+	assert.Empty(t, slackStuckAlerts(f))
+}
+
+// 告警发不出去（Slack 整体不可用）：不占去重窗口，Slack 恢复后的下一轮还能告警。
+func TestChatWorker_StuckAlertFailureDoesNotConsumeDedupe(t *testing.T) {
+	brand := slackTestBrand()
+	conv := slackConv(t, brand, "/support")
+	f := newFakeSlack(t)
+	slackStuckCleanup(t, conv.ID)
+	slackSeed(t, conv, SenderVisitor, MsgText, "卡住")
+	slackBackdate(t, conv.ID, 11*time.Minute)
+	ctx := context.Background()
+
+	f.FailAll(500)
+	convs, _, alerted := chatSlackStuckCheck(ctx, string(brand))
+	assert.Equal(t, 1, convs)
+	assert.False(t, alerted)
+	f.FailAll(0)
+	_, _, alerted = chatSlackStuckCheck(ctx, string(brand))
+	assert.True(t, alerted)
+}
+
+// 接线守卫：sweep 任务必须做卡住检查；启动时必须校验配置。
+func TestChatWorker_VisibilityWired(t *testing.T) {
+	assert.True(t, goFuncCalls(t, "worker_chat.go", "chatSlackSweepRun")["chatSlackStuckCheck"])
+	assert.True(t, goFuncCalls(t, "logic_chat_realtime.go", "StartChatBroadcast")["chatLogConfigProblems"])
+}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	hibikenAsynq "github.com/hibiken/asynq"
@@ -11,10 +13,12 @@ import (
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/qtoolkit/redis"
+	"github.com/wordgate/qtoolkit/slack"
 )
 
 // 客服聊天的定时任务：
 //   - 每分钟 chatSlackSweep：补镜像实时路径漏发的消息、补刷状态卡、补归档；
+//     扫完仍有超过 10 分钟没镜像的消息则记 Error 并往总览频道告警；
 //   - 每 10 分钟关闭空闲会话（AI 处理中 24 小时、人工处理中 72 小时无消息），
 //     各追加一条 system 事件并归档 Slack 频道；上一轮没记成事件的这一轮补。
 
@@ -79,6 +83,8 @@ func chatSlackSweepRun(ctx context.Context, brand string) (int, error) {
 	case n > 0:
 		log.Infof(ctx, "[CHAT] slack sweep: handled=%d", n)
 	}
+	// 这一轮扫完还卡着的（超过 10 分钟）单独报出来
+	chatSlackStuckCheck(ctx, brand)
 	return n, nil
 }
 
@@ -179,4 +185,83 @@ func chatAutoCloseRecordOne(ctx context.Context, conv *Conversation) (recorded b
 		return false, fmt.Errorf("append event: %w", err)
 	}
 	return true, nil
+}
+
+const (
+	// chatSlackStuckAge 消息落库这么久还没镜像到 Slack 就算卡住（实时路径与每分钟的 sweep 都没发出去）。
+	chatSlackStuckAge = 10 * time.Minute
+	// chatSlackStuckAlertTTL 同一会话在这段时间内只往总览频道告警一次。
+	chatSlackStuckAlertTTL  = 30 * time.Minute
+	chatSlackStuckKeyPrefix = "chat:slack:stuck:"
+	chatSlackStuckLimit     = 200
+	chatSlackStuckListMax   = 10
+)
+
+// chatSlackStuckCheck 找出超过 10 分钟（24 小时内）仍未镜像到 Slack 的消息：有就记一条 Error 汇总
+// （会话数与消息数），并尽力往总览频道发一行告警。镜像失败平时只是每分钟一条 Warn，没人会看；
+// 而产品要求是任何消息都要进 Slack——卡住了必须有人知道。
+// 告警按会话去重：同一会话 30 分钟内只告警一次（alerted=本轮是否发出了告警）；告警没发出去不占去重窗口。
+// brand 非空时只看该品牌（测试隔离用，生产传空）。总览频道未配置 = 镜像关闭，不检查。
+func chatSlackStuckCheck(ctx context.Context, brand string) (convs, msgs int, alerted bool) {
+	if chatSlackLobby() == "" {
+		return 0, 0, false
+	}
+	now := time.Now()
+	q := db.Get().WithContext(ctx).Table("conversation_messages AS m").
+		Select("m.conversation_id AS conversation_id, COUNT(*) AS n").
+		Where("m.slack_mirrored_at IS NULL AND m.created_at > ? AND m.created_at < ?",
+			now.Add(-chatSlackSweepMaxAge), now.Add(-chatSlackStuckAge))
+	if brand != "" {
+		q = q.Joins("JOIN conversations AS c ON c.id = m.conversation_id").Where("c.brand = ?", brand)
+	}
+	var rows []struct {
+		ConversationID uint64
+		N              int
+	}
+	if err := q.Group("m.conversation_id").Order("m.conversation_id").Limit(chatSlackStuckLimit).Scan(&rows).Error; err != nil {
+		log.Errorf(ctx, "[CHAT] slack stuck check: %v", err)
+		return 0, 0, false
+	}
+	if len(rows) == 0 {
+		return 0, 0, false
+	}
+	for _, r := range rows {
+		msgs += r.N
+	}
+	convs = len(rows)
+	log.Errorf(ctx, "[CHAT] slack mirror stuck: %d messages in %d conversations still not mirrored after %s",
+		msgs, convs, chatSlackStuckAge)
+
+	rdb := redis.Client()
+	var fresh []uint64 // 本轮新占到去重窗口的会话
+	for _, r := range rows {
+		key := chatSlackStuckKeyPrefix + strconv.FormatUint(r.ConversationID, 10)
+		if ok, err := rdb.SetNX(ctx, key, "1", chatSlackStuckAlertTTL).Result(); err == nil && ok {
+			fresh = append(fresh, r.ConversationID)
+		}
+	}
+	if len(fresh) == 0 {
+		return convs, msgs, false
+	}
+	names := make([]string, 0, chatSlackStuckListMax)
+	for _, id := range fresh {
+		if len(names) == chatSlackStuckListMax {
+			names = append(names, "…")
+			break
+		}
+		names = append(names, "#"+strconv.FormatUint(id, 10))
+	}
+	text := fmt.Sprintf("⚠️ %d 个会话共 %d 条消息超过 %d 分钟仍未同步到 Slack（新增：会话 %s）。访客的消息客服现在看不到，请查 Center 日志。",
+		convs, msgs, int(chatSlackStuckAge.Minutes()), strings.Join(names, " "))
+	if err := chatSlackDo(ctx, nil, func(c context.Context) error {
+		_, err := slack.PostMessage(c, chatSlackLobby(), text, nil)
+		return err
+	}); err != nil {
+		log.Warnf(ctx, "[CHAT] slack stuck alert not delivered: %v", err)
+		for _, id := range fresh {
+			_ = rdb.Del(context.WithoutCancel(ctx), chatSlackStuckKeyPrefix+strconv.FormatUint(id, 10)).Err()
+		}
+		return convs, msgs, false
+	}
+	return convs, msgs, true
 }

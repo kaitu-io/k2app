@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/wordgate/qtoolkit/log"
 )
 
 // 访客聊天令牌与主体解析。
@@ -170,7 +171,8 @@ func chatAcceptLocale(c *gin.Context) string {
 }
 
 // chatSubjectFromRequest 从请求得到会话主体。
-// 已登录（funnelSilentUserID>0，已校验品牌一致）→ user；否则按 cid cookie 找 guest 簇根。
+// 已登录（funnelSilentUserID>0，已校验品牌一致）→ user，除非请求带的 cid 对应的 guest 簇还有 open 会话
+// （游客聊到一半登录，见 chatLoggedInGuestSubject）；否则按 cid cookie 找 guest 簇根。
 // allowCreate：无合法 cid 时种 cookie，并按 cid 新建 guest（含 sid 归并）；
 // 否则只读：cid 缺失 / 本品牌下不存在都返回 false，不种 cookie、不写库。
 func chatSubjectFromRequest(c *gin.Context, allowCreate bool) (chatSubject, bool) {
@@ -183,6 +185,9 @@ func chatSubjectFromRequest(c *gin.Context, allowCreate bool) (chatSubject, bool
 func chatResolveSubject(c *gin.Context, allowCreate bool) (subj chatSubject, ok, limited bool) {
 	brand := ReqBrand(c)
 	if uid := funnelSilentUserID(c); uid > 0 {
+		if g, ok := chatLoggedInGuestSubject(c, brand, uid); ok {
+			return g, true, false
+		}
 		return chatSubject{Brand: brand, Kind: SubjectUser, ID: uid}, true, false
 	}
 	ctx := c.Request.Context()
@@ -229,4 +234,32 @@ func chatResolveSubject(c *gin.Context, allowCreate bool) (subj chatSubject, ok,
 		return chatSubject{}, false, false
 	}
 	return chatSubject{Brand: brand, Kind: SubjectGuest, ID: root}, true, false
+}
+
+// chatLoggedInGuestSubject 处理"游客聊到一半登录"：已登录、且请求带的 cid 对应的 guest 簇有 open 会话时，
+// 继续用该 guest 主体——否则登录那一刻主体换成 user，访客的历史消失，客服的回复被推到没人订阅的频道。
+// 同时记一行 guest_user_links（session_login，幂等），后台据此知道这个游客是谁。
+// 簇里没有 open 会话（从没聊过、或会话已关闭）返回 false，调用方照旧用 user 主体。只读 cid，不建 guest。
+func chatLoggedInGuestSubject(c *gin.Context, brand Brand, uid uint64) (chatSubject, bool) {
+	ctx := c.Request.Context()
+	cid, _ := c.Cookie(CookieChatCid)
+	if !validFunnelSid(cid) {
+		return chatSubject{}, false
+	}
+	owner, err := findIdentityOwner(ctx, brand, IdentityCID, cid)
+	if err != nil || owner == nil {
+		return chatSubject{}, false
+	}
+	root, err := guestRootID(ctx, owner.GuestID)
+	if err != nil {
+		return chatSubject{}, false
+	}
+	s := chatSubject{Brand: brand, Kind: SubjectGuest, ID: root}
+	if conv, err := findOpenChatConversation(ctx, s); err != nil || conv == nil {
+		return chatSubject{}, false
+	}
+	if err := linkGuestUser(ctx, root, uid, brand, LinkSessionLogin); err != nil {
+		log.Warnf(ctx, "chat: link guest %d to user %d: %v", root, uid, err)
+	}
+	return s, true
 }

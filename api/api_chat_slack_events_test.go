@@ -451,11 +451,12 @@ func TestSlackEvents_UnsignedHugeBodyNotFullyRead(t *testing.T) {
 
 func TestSlackEvents_RecordErrorWarnsOnce(t *testing.T) {
 	e := newSlackEventsEnv(t)
-	// 同一个 slack_ts 已被另一个会话占用：appendMessage 返回错误
-	other := slackConv(t, "", "/other")
+	orig := chatSlackAppend
+	t.Cleanup(func() { chatSlackAppend = orig })
+	chatSlackAppend = func(context.Context, *Conversation, appendMessageInput) (*ConversationMessage, bool, error) {
+		return nil, false, errors.New("boom")
+	}
 	evt := e.msgEvent("会落库失败")
-	ts := evt["ts"].(string)
-	slackSeed(t, other, SenderStaff, MsgText, "占位", func(m *ConversationMessage) { m.SlackTS = &ts })
 
 	e.send(evt)
 	e.send(evt) // 重投不重复提示
@@ -465,6 +466,21 @@ func TestSlackEvents_RecordErrorWarnsOnce(t *testing.T) {
 	assert.Contains(t, posts[0], "这条没有发给访客，请重发")
 	// 客服一开口 AI 就停了（先交接再落消息）
 	assert.Equal(t, HandlerHuman, e.reload().Handler)
+}
+
+// 另一个会话（另一个频道）里有相同 ts 的消息：不影响本会话落库（Slack 的 ts 只在频道内唯一）。
+func TestSlackEvents_SameTSInAnotherConversationStillDelivered(t *testing.T) {
+	e := newSlackEventsEnv(t)
+	other := slackConv(t, "", "/other")
+	evt := e.msgEvent("两个频道撞了 ts")
+	ts := evt["ts"].(string)
+	slackSeed(t, other, SenderStaff, MsgText, "占位", func(m *ConversationMessage) { m.SlackTS = &ts })
+
+	e.send(evt)
+	msgs := e.msgs()
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "两个频道撞了 ts", msgs[0].Content)
+	assert.Empty(t, slackMsgPosts(e.f, e.channel), "不该有任何提示")
 }
 
 func TestSlackEvents_IgnoresOwnBotUser(t *testing.T) {

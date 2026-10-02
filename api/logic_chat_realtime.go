@@ -68,7 +68,11 @@ func startChatBroadcast(ctx context.Context) {
 }
 
 // StartChatBroadcast 供 cmd/main.go 在启动 HTTP 服务前调用一次。
-func StartChatBroadcast(ctx context.Context) { startChatBroadcast(ctx) }
+// 顺带校验一次客服聊天的配置组合：功能开着却缺关键配置时逐条记 Error（见 chatConfigProblems）。
+func StartChatBroadcast(ctx context.Context) {
+	chatLogConfigProblems(ctx)
+	startChatBroadcast(ctx)
+}
 
 // chatSubjectOfConversation 返回会话当前应推送/通知的主体：brand + kind + 簇根。
 // 会话的 subject_id 可能是后来被并入别的根的 guest id，而访客令牌携带的是当前根，

@@ -161,9 +161,6 @@ func ensureConversation(ctx context.Context, s chatSubject, entryPath string) (*
 // chatAppendMidTx 仅供测试：在 appendMessage 事务内插入之后、更新会话之前调用，用来放大并发窗口。
 var chatAppendMidTx func()
 
-// errChatSlackTSOtherConversation：slack_ts 已被另一个会话的消息占用。
-var errChatSlackTSOtherConversation = errors.New("slack_ts belongs to another conversation")
-
 // errChatConversationClosed：RequireOpen / CloseConversation 的追加撞上了已关闭的会话，消息没有落库。
 var errChatConversationClosed = errors.New("conversation is closed")
 
@@ -183,7 +180,7 @@ type appendMessageInput struct {
 var chatAppendPreLock func(convID uint64)
 
 // appendMessage 落库并更新会话 last_message_at/by（DB 与传入的 conv 都更新）。
-// ClientID 或 SlackTS 与已有消息冲突时返回已存在的那条且 dup=true，不触发钩子。
+// ClientID 或 SlackTS 与本会话已有消息冲突时返回已存在的那条且 dup=true，不触发钩子。
 // 幂等靠唯一索引冲突后回查，不靠先查后插。默认不检查会话状态（关闭后仍可追加 system 事件）；
 // 发言类消息带 RequireOpen，人工关闭的事件带 CloseConversation，见 appendMessageInput。
 func appendMessage(ctx context.Context, conv *Conversation, in appendMessageInput) (*ConversationMessage, bool, error) {
@@ -242,7 +239,7 @@ func appendMessage(ctx context.Context, conv *Conversation, in appendMessageInpu
 		// 重试一条早已落在本会话里的消息（会话后来关了）仍是重复，不是"撞上关闭"
 		if in.ClientID != nil || in.SlackTS != nil {
 			quiet := d.Session(&gorm.Session{Logger: logger.Discard})
-			if existing, ferr := findDuplicateMessage(quiet, conv.ID, in); ferr == nil && existing.ConversationID == conv.ID {
+			if existing, ferr := findDuplicateMessage(quiet, conv.ID, in); ferr == nil {
 				return existing, true, nil
 			}
 		}
@@ -252,10 +249,6 @@ func appendMessage(ctx context.Context, conv *Conversation, in appendMessageInpu
 		existing, err := findDuplicateMessage(d, conv.ID, in)
 		if err != nil {
 			return nil, false, err
-		}
-		// slack_ts 全局唯一：冲突的可能是别的会话的消息，不能当作本会话的 dup
-		if existing.ConversationID != conv.ID {
-			return nil, false, errChatSlackTSOtherConversation
 		}
 		return existing, true, nil
 	}
@@ -273,14 +266,14 @@ func appendMessage(ctx context.Context, conv *Conversation, in appendMessageInpu
 	return msg, false, nil
 }
 
-// findDuplicateMessage 回查唯一索引冲突的那条已有消息。
+// findDuplicateMessage 回查唯一索引冲突的那条已有消息。两个幂等键都只在会话内唯一，所以只在本会话里找。
 func findDuplicateMessage(d *gorm.DB, convID uint64, in appendMessageInput) (*ConversationMessage, error) {
 	q := d.Where("1 = 0")
 	if in.ClientID != nil {
 		q = q.Or("conversation_id = ? AND client_id = ?", convID, *in.ClientID)
 	}
 	if in.SlackTS != nil {
-		q = q.Or("slack_ts = ?", *in.SlackTS)
+		q = q.Or("conversation_id = ? AND slack_ts = ?", convID, *in.SlackTS)
 	}
 	var existing ConversationMessage
 	if err := d.Where(q).Order("id").First(&existing).Error; err != nil {
@@ -322,41 +315,56 @@ func setHandler(ctx context.Context, conv *Conversation, handler string) error {
 	return nil
 }
 
-// closeConversationIn 把 open 会话置 closed；返回是否真的发生了关闭（已关闭则 false）。
-// 条件更新带 status=open，并发下只有一方得到 true。
-func closeConversationIn(d *gorm.DB, conv *Conversation) (bool, error) {
-	now := time.Now()
-	res := d.Model(&Conversation{}).Where("id = ? AND status = ?", conv.ID, ConvOpen).
-		Updates(map[string]any{"status": ConvClosed, "closed_at": now})
-	if res.Error != nil {
-		return false, fmt.Errorf("close conversation: %w", res.Error)
+// closeConversationIf 把 open 会话置 closed；返回是否真的发生了关闭（已关闭、或不满足 eligible 则 false）。
+// 加锁顺序与 appendMessage 相同：事务里先按主键对会话行 FOR UPDATE，条件在锁下用读到的行判断，UPDATE 只按主键。
+// 不能把条件写进 UPDATE 的 WHERE：带上 status / last_message_at 这些有二级索引的列，MariaDB 有时会走二级索引
+// ——先锁索引记录再等主键行，而追加事务先锁主键行、提交前再改同一条索引记录，互等即死锁，
+// 被回滚的可能是访客那条消息。并发下只有一方得到 true（后到的在锁下看到已关闭）。
+func closeConversationIf(d *gorm.DB, conv *Conversation, eligible func(cur *Conversation) bool) (bool, error) {
+	var closedAt *time.Time
+	err := d.Transaction(func(tx *gorm.DB) error {
+		var cur Conversation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id", "status", "handler", "last_message_at").Take(&cur, conv.ID).Error; err != nil {
+			return err
+		}
+		if cur.Status != ConvOpen || (eligible != nil && !eligible(&cur)) {
+			return nil
+		}
+		now := time.Now()
+		if err := tx.Model(&Conversation{}).Where("id = ?", conv.ID).
+			Updates(map[string]any{"status": ConvClosed, "closed_at": now}).Error; err != nil {
+			return err
+		}
+		closedAt = &now
+		return nil
+	})
+	if err != nil {
+		return false, fmt.Errorf("close conversation %d: %w", conv.ID, err)
 	}
-	if res.RowsAffected == 0 {
+	if closedAt == nil {
 		return false, nil
 	}
-	conv.Status, conv.ClosedAt = ConvClosed, &now
+	conv.Status, conv.ClosedAt = ConvClosed, closedAt
 	return true, nil
+}
+
+// closeConversationIn 把 open 会话置 closed；返回是否真的发生了关闭（已关闭则 false）。
+func closeConversationIn(d *gorm.DB, conv *Conversation) (bool, error) {
+	return closeConversationIf(d, conv, nil)
 }
 
 // chatCloseIdleOne 关闭一个闲置会话；包级变量只是测试接缝（在候选查询与关闭之间插入动作 / 注入失败）。
 var chatCloseIdleOne = closeIdleConversationIn
 
-// closeIdleConversationIn 闲置关闭一个候选会话：条件 UPDATE 除 status=open 外还带上判定它闲置的依据
+// closeIdleConversationIn 闲置关闭一个候选会话：除了仍是 open，判定它闲置的依据也必须还成立
 // （handler 没变、last_message_at 仍早于 cutoff）。候选查询之后被唤醒（来了新消息）或被人工接手的会话
-// 匹配不上，返回 false。
+// 不关，返回 false。
 func closeIdleConversationIn(d *gorm.DB, conv *Conversation, cutoff time.Time) (bool, error) {
-	now := time.Now()
-	res := d.Model(&Conversation{}).
-		Where("id = ? AND status = ? AND handler = ? AND last_message_at < ?", conv.ID, ConvOpen, conv.Handler, cutoff).
-		Updates(map[string]any{"status": ConvClosed, "closed_at": now})
-	if res.Error != nil {
-		return false, fmt.Errorf("close idle conversation %d: %w", conv.ID, res.Error)
-	}
-	if res.RowsAffected == 0 {
-		return false, nil
-	}
-	conv.Status, conv.ClosedAt = ConvClosed, &now
-	return true, nil
+	handler := conv.Handler
+	return closeConversationIf(d, conv, func(cur *Conversation) bool {
+		return cur.Handler == handler && cur.LastMessageAt.Before(cutoff)
+	})
 }
 
 // closeConversation 关闭会话并通知；已关闭时无操作。

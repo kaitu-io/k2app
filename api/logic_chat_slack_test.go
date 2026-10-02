@@ -569,7 +569,7 @@ func TestSlackSweep_IgnoresOldBacklog(t *testing.T) {
 
 func TestSlackSweep_IndexExists(t *testing.T) {
 	skipIfNoConfig(t)
-	require.NoError(t, Migrate())
+	chatMigrated(t)
 	assert.True(t, db.Get().Migrator().HasIndex(&ConversationMessage{}, "idx_msg_unmirrored"))
 	assert.True(t, db.Get().Migrator().HasColumn(&Conversation{}, "slack_archived_at"))
 	var name, ddl string

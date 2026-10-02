@@ -65,34 +65,36 @@ func (GuestUserLink) TableName() string { return "guest_user_links" }
 
 // Conversation：一次客服会话。主体是 guest 或 user（SubjectKind/SubjectID）。
 type Conversation struct {
-	ID             uint64 `gorm:"primarykey"`
-	UUID           string `gorm:"type:varchar(36);not null;uniqueIndex"`
-	Brand          string `gorm:"type:varchar(16);not null;index:idx_conv_subject,priority:1"`
-	SubjectKind    string `gorm:"type:varchar(8);not null;index:idx_conv_subject,priority:2"` // guest|user
-	SubjectID      uint64 `gorm:"not null;index:idx_conv_subject,priority:3"`
-	Status         string `gorm:"type:varchar(8);not null;index:idx_conv_subject,priority:4"` // open|closed
-	Handler        string `gorm:"type:varchar(8);not null"`                                   // ai|human
+	ID          uint64 `gorm:"primarykey"`
+	UUID        string `gorm:"type:varchar(36);not null;uniqueIndex"`
+	Brand       string `gorm:"type:varchar(16);not null;index:idx_conv_subject,priority:1"`
+	SubjectKind string `gorm:"type:varchar(8);not null;index:idx_conv_subject,priority:2"` // guest|user
+	SubjectID   uint64 `gorm:"not null;index:idx_conv_subject,priority:3"`
+	// idx_conv_status_closed / idx_conv_status_last_msg 服务定时任务：按 status 扫已关闭（归档、补记关闭事件）与闲置的会话
+	Status         string `gorm:"type:varchar(8);not null;index:idx_conv_subject,priority:4;index:idx_conv_status_closed,priority:1;index:idx_conv_status_last_msg,priority:1"` // open|closed
+	Handler        string `gorm:"type:varchar(8);not null"`                                                                                                                     // ai|human
 	AssigneeID     *uint64
 	EntryPath      string `gorm:"type:varchar(255)"`
 	TicketID       *uint64
-	LastMessageAt  time.Time
-	LastMessageBy  string `gorm:"type:varchar(8)"`
-	SlackChannelID string `gorm:"type:varchar(32);index"` // 专属频道 id
-	SlackCardTS    string `gorm:"type:varchar(32)"`       // 频道内状态卡的消息 ts
-	SlackLobbyTS   string `gorm:"type:varchar(32)"`       // 总览频道里那一行的消息 ts
+	LastMessageAt  time.Time `gorm:"index:idx_conv_status_last_msg,priority:2"`
+	LastMessageBy  string    `gorm:"type:varchar(8)"`
+	SlackChannelID string    `gorm:"type:varchar(32);index"` // 专属频道 id
+	SlackCardTS    string    `gorm:"type:varchar(32)"`       // 频道内状态卡的消息 ts
+	SlackLobbyTS   string    `gorm:"type:varchar(32)"`       // 总览频道里那一行的消息 ts
 	// SlackArchivedAt 专属频道归档成功的时间；为空且会话已关闭 = 还欠一次归档（chatSlackSweep 补）
 	SlackArchivedAt *time.Time
 	CreatedAt       time.Time
-	ClosedAt        *time.Time
+	ClosedAt        *time.Time `gorm:"index:idx_conv_status_closed,priority:2"`
 }
 
 func (Conversation) TableName() string { return "conversations" }
 
-// ConversationMessage：会话内消息。ClientID 是客户端幂等键，SlackTS 是 Slack 镜像回写键，均可空；
-// MySQL 唯一索引允许多个 NULL，所以无键的消息可共存。
+// ConversationMessage：会话内消息。ClientID 是客户端幂等键，SlackTS 是客服在 Slack 频道里发言的消息 ts，均可空；
+// MySQL 唯一索引允许多个 NULL，所以无键的消息可共存。两个键都只在会话内唯一（Slack 的 ts 只在频道内唯一，
+// 一个会话一个频道）。conversation_id 不另建单列索引：两个复合唯一索引都以它开头。
 type ConversationMessage struct {
 	ID             uint64 `gorm:"primarykey"`
-	ConversationID uint64 `gorm:"not null;index;uniqueIndex:uniq_conv_client,priority:1"`
+	ConversationID uint64 `gorm:"not null;uniqueIndex:uniq_conv_client,priority:1;uniqueIndex:uniq_conv_slack_ts,priority:1"`
 	SenderType     string `gorm:"type:varchar(8);not null"` // visitor|ai|staff|system
 	SenderID       uint64
 	SenderName     string  `gorm:"type:varchar(64)"`
@@ -100,7 +102,7 @@ type ConversationMessage struct {
 	Content        string  `gorm:"type:text"`
 	Meta           string  `gorm:"type:text"` // JSON
 	ClientID       *string `gorm:"type:varchar(36);uniqueIndex:uniq_conv_client,priority:2"`
-	SlackTS        *string `gorm:"type:varchar(32);uniqueIndex"`
+	SlackTS        *string `gorm:"type:varchar(32);uniqueIndex:uniq_conv_slack_ts,priority:2"`
 	// idx_msg_unmirrored 服务 chatSlackSweep：slack_mirrored_at IS NULL 且 created_at 在窗口内
 	SlackMirroredAt *time.Time `gorm:"index:idx_msg_unmirrored,priority:1"`
 	CreatedAt       time.Time  `gorm:"index:idx_msg_unmirrored,priority:2"`
@@ -119,6 +121,9 @@ const (
 	MergeSameSID    = "same_sid"
 	MergeResumeLink = "resume_link"
 	MergeManual     = "manual"
+
+	// LinkSessionLogin：guest_user_links 的证据——游客带着 open 会话登录，同一浏览器的 cid 与登录态同时出现。
+	LinkSessionLogin = "session_login"
 
 	SubjectGuest = "guest"
 	SubjectUser  = "user"

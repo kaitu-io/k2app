@@ -57,6 +57,9 @@ var errChatSlackNoEmail = errors.New("slack user has no visible email")
 // chatSlackAppendSystem 追加 system 事件；包级变量只是测试接缝（注入追加失败）。
 var chatSlackAppendSystem = appendMessage
 
+// chatSlackAppend 追加客服发言 / 备注 / 命令标记；同样只是测试接缝。
+var chatSlackAppend = appendMessage
+
 type slackEventEnvelope struct {
 	Type      string          `json:"type"`
 	Challenge string          `json:"challenge"`
@@ -266,10 +269,10 @@ func (r chatRecordResult) String() string {
 	return [...]string{"recorded", "dup", "record_error", "closed"}[r]
 }
 
-// chatSlackRecord 追加一条带 SlackTS 的消息，区分首次送达 / 重复 / 出错。
-// 出错（含 slack_ts 属于别的会话）时在频道提示"没有发给访客"，Slack 不会重投，只能让客服重发。
+// chatSlackRecord 追加一条带 SlackTS 的消息，区分首次送达 / 重复 / 出错 / 会话已关闭。
+// 出错时在频道提示"没有发给访客"，Slack 不会重投，只能让客服重发。
 func chatSlackRecord(ctx context.Context, conv *Conversation, in appendMessageInput) (*ConversationMessage, chatRecordResult) {
-	msg, dup, err := appendMessage(ctx, conv, in)
+	msg, dup, err := chatSlackAppend(ctx, conv, in)
 	if errors.Is(err, errChatConversationClosed) {
 		return nil, recordClosed
 	}
@@ -284,8 +287,7 @@ func chatSlackRecord(ctx context.Context, conv *Conversation, in appendMessageIn
 	return msg, recordOK
 }
 
-// chatSlackSeen：该 Slack ts 是否已在本会话落库。别的会话占用同一 ts 不算"已见"，
-// 交给 appendMessage 报 errChatSlackTSOtherConversation 并提示客服。
+// chatSlackSeen：该 Slack ts 是否已在本会话落库（ts 只在频道内唯一，别的会话里的同一 ts 与此无关）。
 func chatSlackSeen(ctx context.Context, convID uint64, ts string) bool {
 	if ts == "" {
 		return false

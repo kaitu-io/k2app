@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -14,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	db "github.com/wordgate/qtoolkit/db"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 var chatSubjectSeq atomic.Uint64
@@ -462,7 +465,8 @@ func TestChatHooks_PanicIsolated(t *testing.T) {
 	assert.EqualValues(t, 2, stateRan.Load())
 }
 
-func TestAppendMessage_SlackTSOtherConversation(t *testing.T) {
+// Slack 的 ts 只在频道内唯一：两个会话（两个频道）出现相同的 ts 各自落库，互不当作重复。
+func TestAppendMessage_SlackTSUniquePerConversation(t *testing.T) {
 	skipIfNoConfig(t)
 	ctx := context.Background()
 	c1, _, err := ensureConversation(ctx, newChatSubject(t), "")
@@ -472,14 +476,21 @@ func TestAppendMessage_SlackTSOtherConversation(t *testing.T) {
 	hook := withAppendHook(t)
 
 	ts := strp(generateId("ts"))
-	_, _, err = appendMessage(ctx, c1, appendMessageInput{SenderType: SenderStaff, Kind: MsgText, Content: "a", SlackTS: ts})
+	m1, dup, err := appendMessage(ctx, c1, appendMessageInput{SenderType: SenderStaff, Kind: MsgText, Content: "a", SlackTS: ts})
 	require.NoError(t, err)
-	before := hook.Load()
-	msg, dup, err := appendMessage(ctx, c2, appendMessageInput{SenderType: SenderStaff, Kind: MsgText, Content: "b", SlackTS: ts})
-	assert.ErrorIs(t, err, errChatSlackTSOtherConversation)
-	assert.Nil(t, msg)
 	assert.False(t, dup)
-	assert.Equal(t, before, hook.Load())
+	m2, dup, err := appendMessage(ctx, c2, appendMessageInput{SenderType: SenderStaff, Kind: MsgText, Content: "b", SlackTS: ts})
+	require.NoError(t, err)
+	assert.False(t, dup, "别的会话里的同一 ts 不是重复")
+	assert.NotEqual(t, m1.ID, m2.ID)
+	assert.Equal(t, c2.ID, m2.ConversationID)
+	assert.EqualValues(t, 2, hook.Load())
+
+	// 各自会话内仍幂等，且回查到的是本会话那条
+	again, dup, err := appendMessage(ctx, c2, appendMessageInput{SenderType: SenderStaff, Kind: MsgText, Content: "b", SlackTS: ts})
+	require.NoError(t, err)
+	assert.True(t, dup)
+	assert.Equal(t, m2.ID, again.ID)
 }
 
 func TestSetHandler_StaleStructStillPersists(t *testing.T) {
@@ -832,6 +843,64 @@ func TestChatVisitorAppend_ConcurrentWithClose(t *testing.T) {
 					}
 				}
 			}
+		})
+	}
+}
+
+// sqlCapture 是只记 SQL 文本的 gorm logger。
+type sqlCapture struct {
+	logger.Interface
+	mu   sync.Mutex
+	sqls []string
+}
+
+func (c *sqlCapture) LogMode(logger.LogLevel) logger.Interface { return c }
+func (c *sqlCapture) Trace(_ context.Context, _ time.Time, fc func() (string, int64), _ error) {
+	sql, _ := fc()
+	c.mu.Lock()
+	c.sqls = append(c.sqls, sql)
+	c.mu.Unlock()
+}
+
+var chatConvUpdateByPK = regexp.MustCompile("^UPDATE `conversations` SET .* WHERE id = \\d+$")
+
+// 关闭与追加的加锁顺序必须一致：都先锁会话主键行。关闭的 UPDATE 若在 WHERE 里带 status / last_message_at
+// 这些有二级索引的列，MariaDB 有时会走二级索引（idx_conv_status_*）——先锁索引记录再等主键行；而追加事务
+// 先锁主键行、提交前再改同一条索引记录。两边互等即死锁（实测 InnoDB 报 1213，被回滚的可能是访客那条消息）。
+// 走不走二级索引由优化器按统计信息定，复现不稳定，所以这里直接锁死语句形状：
+// 条件在事务里对主键行 FOR UPDATE 之后用 Go 判断，UPDATE 只许按主键。
+// 并发压测 TestChatVisitorAppend_ConcurrentWithClose 是另一道网（约七次里红一次）。
+func TestCloseConversation_UpdatesByPrimaryKeyOnly(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	closers := map[string]func(d *gorm.DB, c *Conversation) (bool, error){
+		"close": closeConversationIn,
+		"idle": func(d *gorm.DB, c *Conversation) (bool, error) {
+			return closeIdleConversationIn(d, c, time.Now().Add(-24*time.Hour))
+		},
+	}
+	for name, closer := range closers {
+		t.Run(name, func(t *testing.T) {
+			_, conv := chatIdleConv(t, chatTestBrand(), HandlerAI, 25*time.Hour)
+			capture := &sqlCapture{Interface: logger.Discard}
+			changed, err := closer(db.Get().WithContext(ctx).Session(&gorm.Session{Logger: capture}), conv)
+			require.NoError(t, err)
+			require.True(t, changed)
+
+			var updates, locks int
+			for _, sql := range capture.sqls {
+				if strings.HasPrefix(sql, "UPDATE") {
+					updates++
+					assert.Regexp(t, chatConvUpdateByPK, sql, "关闭的 UPDATE 只许按主键")
+				}
+				if strings.Contains(sql, "FOR UPDATE") {
+					locks++
+					assert.Contains(t, sql, "WHERE `conversations`.`id` = ", "先按主键锁行")
+					assert.NotContains(t, sql, " AND ")
+				}
+			}
+			assert.Equal(t, 1, updates, "对照：确实抓到了 UPDATE: %v", capture.sqls)
+			assert.Equal(t, 1, locks, "对照：确实抓到了行锁: %v", capture.sqls)
 		})
 	}
 }

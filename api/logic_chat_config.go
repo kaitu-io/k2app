@@ -1,9 +1,11 @@
 package center
 
 import (
+	"context"
 	"strings"
 
 	"github.com/spf13/viper"
+	"github.com/wordgate/qtoolkit/log"
 )
 
 // chatEnabled 访客会话功能总开关（viper "chat.enabled"），未配置为 false。
@@ -74,4 +76,40 @@ func chatSlackLobby() string {
 // slackSigningSecret Slack 回调验签密钥（viper "slack.signing_secret"）。
 func slackSigningSecret() string {
 	return viper.GetString("slack.signing_secret")
+}
+
+// chatConfigProblems 校验客服聊天的配置组合，返回问题列表（空 = 没问题）。
+// 只在功能开着（chat.enabled 或 chat.preview_enabled）时检查：这些缺口都不会让启动失败，
+// 只会让功能静默地半残——访客能发消息、客服却看不到或回不了。
+func chatConfigProblems() []string {
+	if !chatEnabled() && !chatPreviewEnabled() {
+		return nil
+	}
+	var problems []string
+	brands := viper.GetStringSlice("chat.brands")
+	if len(brands) == 0 {
+		problems = append(problems, "chat.brands 为空：所有品牌的访客会话都处于关闭")
+	}
+	for _, v := range brands {
+		if !Brand(strings.ToLower(strings.TrimSpace(v))).Valid() {
+			problems = append(problems, "chat.brands 里有未注册的品牌 \""+v+"\"")
+		}
+	}
+	if chatSlackLobby() == "" {
+		problems = append(problems, "slack.chat_lobby_channel_id 未配置：Slack 镜像整体关闭，客服看不到任何会话")
+	}
+	if slackSigningSecret() == "" {
+		problems = append(problems, "slack.signing_secret 未配置：Slack 事件回调一律被拒，客服在频道里的回复到不了访客")
+	}
+	if viper.GetString("slack.bot_token") == "" {
+		problems = append(problems, "slack.bot_token 未配置：建频道、发消息等 Slack 调用全部失败")
+	}
+	return problems
+}
+
+// chatLogConfigProblems 启动时把配置问题逐条记成 Error。
+func chatLogConfigProblems(ctx context.Context) {
+	for _, p := range chatConfigProblems() {
+		log.Errorf(ctx, "[CHAT] config: %s", p)
+	}
 }

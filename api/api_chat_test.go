@@ -1094,3 +1094,88 @@ func TestChatSend_ReopenAfterCloseRespectsNewConversationCap(t *testing.T) {
 	require.NoError(t, db.Get().Model(&ConversationMessage{}).Where("content = ? AND client_id = ?", "sent while closing", "cap-1").Count(&n).Error)
 	assert.Zero(t, n)
 }
+
+// ---- 终审修复：访客中途登录 ----
+
+// 游客聊到一半登录：继续用原来的 guest 主体（历史不消失、客服回复推到访客订阅着的频道），
+// 并记一行 guest_user_links（session_login，幂等）。guest 没有 open 会话时照旧用 user 主体。
+func TestChat_GuestLoginMidConversationKeepsGuestSubject(t *testing.T) {
+	r := chatSetup(t, true)
+	ctx := context.Background()
+	w, _ := chatOpenSession(t, r, "/", nil)
+	cid := chatCookie(w, CookieChatCid).Value
+	chatCleanupCID(t, cid)
+	resp, md := chatPostMessage(t, r, cid, "gl-0", "asked as guest")
+	require.Equal(t, 0, resp.Code, resp.Message)
+	convUUID := md["conversation"].(map[string]any)["uuid"].(string)
+	owner, err := findIdentityOwner(ctx, BrandKaitu, IdentityCID, cid)
+	require.NoError(t, err)
+
+	user := CreateTestUser(t)
+	tok := GenerateTestToken(user.ID, "", time.Hour)
+	loggedIn := func(q *TestRequest) *TestRequest {
+		return q.WithCookie(CookieChatCid, cid).WithCookie(CookieAccessToken, tok)
+	}
+	t.Cleanup(func() {
+		db.Get().Where("user_id = ?", user.ID).Delete(&GuestUserLink{})
+		var ids []uint64
+		db.Get().Model(&Conversation{}).Where("subject_kind = ? AND subject_id = ?", SubjectUser, user.ID).Pluck("id", &ids)
+		if len(ids) > 0 {
+			db.Get().Where("conversation_id IN ?", ids).Delete(&ConversationMessage{})
+			db.Get().Where("id IN ?", ids).Delete(&Conversation{})
+		}
+	})
+	userConvs := func() int64 {
+		var n int64
+		require.NoError(t, db.Get().Model(&Conversation{}).Where("subject_kind = ? AND subject_id = ?", SubjectUser, user.ID).Count(&n).Error)
+		return n
+	}
+
+	// session：同一会话、历史还在
+	_, data := chatOpenSession(t, r, "/", loggedIn)
+	c, _ := data["conversation"].(map[string]any)
+	require.NotNil(t, c, "登录后历史不得消失")
+	assert.Equal(t, convUUID, c["uuid"])
+	assert.Contains(t, fmt.Sprint(data["messages"]), "asked as guest")
+	// ws 令牌仍是 guest 主体：客服回复才推得到访客订阅的频道
+	ws, _ := data["ws"].(map[string]any)
+	if ws != nil {
+		got, err := parseChatWSToken(ws["token"].(string), time.Now())
+		require.NoError(t, err)
+		assert.Equal(t, chatSubject{Brand: BrandKaitu, Kind: SubjectGuest, ID: owner.GuestID}, got)
+	}
+	resp, data = chatDecode(t, loggedIn(NewTestRequest("GET", "/api/chat/ws-token")).Execute(r))
+	require.Equal(t, 0, resp.Code, resp.Message)
+	got, err := parseChatWSToken(data["token"].(string), time.Now())
+	require.NoError(t, err)
+	assert.Equal(t, chatSubject{Brand: BrandKaitu, Kind: SubjectGuest, ID: owner.GuestID}, got)
+
+	// messages：同一会话
+	resp, data = chatDecode(t, loggedIn(NewTestRequest("GET", "/api/chat/messages")).Execute(r))
+	require.Equal(t, 0, resp.Code, resp.Message)
+	assert.Contains(t, fmt.Sprint(data["messages"]), "asked as guest")
+	// send：续在同一会话
+	resp, data = chatDecode(t, loggedIn(NewTestRequest("POST", "/api/chat/messages")).
+		WithBody(map[string]any{"kind": "text", "content": "after login", "clientId": "gl-1"}).Execute(r))
+	require.Equal(t, 0, resp.Code, resp.Message)
+	assert.Equal(t, convUUID, data["conversation"].(map[string]any)["uuid"])
+	assert.Zero(t, userConvs(), "不得另开 user 主体的会话")
+
+	var links []GuestUserLink
+	require.NoError(t, db.Get().Where("user_id = ?", user.ID).Find(&links).Error)
+	require.Len(t, links, 1, "多次请求只写一行")
+	assert.Equal(t, owner.GuestID, links[0].GuestID)
+	assert.Equal(t, LinkSessionLogin, links[0].Evidence)
+	assert.Equal(t, string(BrandKaitu), links[0].Brand)
+
+	// guest 会话关闭后：没有 open 的 guest 会话，行为不变——用 user 主体
+	conv := chatConvByUUID(t, convUUID)
+	require.NoError(t, closeConversation(ctx, conv))
+	_, data = chatOpenSession(t, r, "/", loggedIn)
+	assert.Nil(t, data["conversation"])
+	resp, _ = chatDecode(t, loggedIn(NewTestRequest("POST", "/api/chat/messages")).
+		WithBody(map[string]any{"kind": "text", "content": "as user now", "clientId": "gl-2"}).Execute(r))
+	require.Equal(t, 0, resp.Code, resp.Message)
+	assert.EqualValues(t, 1, userConvs())
+	assert.Equal(t, int64(1), chatConvCount(t, cid), "guest 簇没有新会话")
+}
