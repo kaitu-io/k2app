@@ -1,4 +1,10 @@
-import type { Breadcrumb, ErrorEvent } from '@sentry/nextjs';
+import type { Breadcrumb, ErrorEvent, init } from '@sentry/nextjs';
+
+// `@sentry/nextjs` does not re-export these two; take them from the option
+// signatures so they always match the installed SDK's hooks.
+type SentryInitOptions = NonNullable<Parameters<typeof init>[0]>;
+export type SpanJSON = Parameters<NonNullable<SentryInitOptions['beforeSendSpan']>>[0];
+export type TransactionEvent = Parameters<NonNullable<SentryInitOptions['beforeSendTransaction']>>[0];
 import { detectBrowser } from './browser-detection';
 
 const LOOKBEHIND_SYNTAX_ERROR = /invalid group specifier name/i;
@@ -226,8 +232,8 @@ function scrubStrings<T extends Record<string, unknown>>(record: T): T {
  * on such a URL), this keeps the token out of breadcrumbs — navigation
  * `from`/`to`, fetch/xhr `url`, console messages.
  *
- * Never drops a breadcrumb, only rewrites strings. Session Replay is NOT
- * covered by these hooks — it relies on the strip alone.
+ * Never drops a breadcrumb, only rewrites strings. Transactions, standalone
+ * spans and Session Replay have their own hooks below.
  */
 export function scrubChatResumeBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb {
   const message =
@@ -251,4 +257,71 @@ export function scrubChatResumeEvent(event: ErrorEvent): ErrorEvent {
     : event.request;
   const breadcrumbs = event.breadcrumbs?.map(scrubChatResumeBreadcrumb);
   return { ...event, request, breadcrumbs };
+}
+
+const SCRUB_MAX_DEPTH = 8;
+
+/**
+ * Walk plain objects / arrays and scrub every string. Returns the SAME
+ * reference when nothing changed, so untouched payloads are not copied.
+ * Depth-limited; non-plain objects (Date, Error, DOM nodes) are left alone.
+ */
+function scrubChatResumeDeep<T>(value: T, depth = 0): T {
+  if (typeof value === 'string') return scrubChatResumeToken(value) as T;
+  if (value === null || typeof value !== 'object' || depth >= SCRUB_MAX_DEPTH) return value;
+  if (Array.isArray(value)) {
+    let out: unknown[] | null = null;
+    value.forEach((item, i) => {
+      const clean = scrubChatResumeDeep(item, depth + 1);
+      if (clean !== item) (out ??= value.slice())[i] = clean;
+    });
+    return (out ?? value) as T;
+  }
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return value;
+  let out: Record<string, unknown> | null = null;
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    const clean = scrubChatResumeDeep(item, depth + 1);
+    if (clean !== item) (out ??= { ...(value as Record<string, unknown>) })[key] = clean;
+  }
+  return (out ?? value) as T;
+}
+
+/**
+ * `history.replaceState` cannot rewrite `PerformanceNavigationTiming.name`:
+ * the navigation entry keeps the URL the document was loaded with, fragment
+ * included, for the life of the page. The SDK reads that entry in places the
+ * error/breadcrumb hooks never see, so the pre-init strip is not enough:
+ *
+ *  - pageload transaction: browser-utils builds the `browser.*` request /
+ *    response / DNS / cache spans from `entry.name`;
+ *  - standalone spans (web vitals, INP) sent outside a transaction;
+ *  - Session Replay: the navigation entry becomes a `performanceSpan` whose
+ *    `description` is that URL.
+ *
+ * `beforeSendSpan` hook — every string in the span (description, data.*).
+ */
+export function scrubChatResumeSpan(span: SpanJSON): SpanJSON {
+  return scrubChatResumeDeep(span);
+}
+
+/**
+ * `beforeSendTransaction` hook — the whole event: transaction name, request,
+ * `contexts.trace` (root span data), every child span, tags, breadcrumbs.
+ * Never drops the transaction.
+ */
+export function scrubChatResumeTransaction(event: TransactionEvent): TransactionEvent {
+  return scrubChatResumeDeep(event);
+}
+
+/**
+ * Replay `beforeAddRecordingEvent` hook. The SDK calls it for its custom
+ * recording events only (`performanceSpan`, `breadcrumb`, `options`): this
+ * scrubs every string in the payload — a span's `description` and `data`, a
+ * breadcrumb's `message` / `data.url` / `from` / `to`. rrweb DOM snapshots are
+ * not passed through this hook; their `href` is read after the strip.
+ * Generic over the event so the replay package's types are not imported here.
+ */
+export function scrubChatResumeRecordingEvent<T>(event: T): T {
+  return scrubChatResumeDeep(event);
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { ErrorEvent } from '@sentry/nextjs';
+import type { SpanJSON, TransactionEvent } from '../sentry-filters';
 import {
   dropChatwootSdkErrors,
   dropFailedFormDataParseFromBotProbes,
@@ -10,7 +11,10 @@ import {
   dropRscNavigationFallbackRejections,
   scrubChatResumeBreadcrumb,
   scrubChatResumeEvent,
+  scrubChatResumeRecordingEvent,
+  scrubChatResumeSpan,
   scrubChatResumeToken,
+  scrubChatResumeTransaction,
 } from '../sentry-filters';
 
 const originalUA = window.navigator.userAgent;
@@ -583,5 +587,120 @@ describe('chat-resume token scrubbing', () => {
     expect(event.exception?.values?.[0].value).toBe('boom');
     expect(event.request).toBeUndefined();
     expect(event.breadcrumbs).toBeUndefined();
+  });
+});
+
+// PerformanceNavigationTiming.name 保留加载时的完整地址（replaceState 改不了），
+// SDK 用它生成下面这些形状的数据——钩子直接吃这些形状。
+describe('chat-resume token scrubbing: navigation-timing paths (spans, transactions, replay)', () => {
+  const LEAK = 'https://kaitu.io/zh-CN/support?utm=1#chat=abc.DEF-123';
+  const CLEAN = 'https://kaitu.io/zh-CN/support?utm=1';
+  const span = (over: Partial<SpanJSON> = {}): SpanJSON => ({
+    span_id: 's1',
+    trace_id: 't1',
+    start_timestamp: 1,
+    timestamp: 2,
+    op: 'browser.request',
+    description: LEAK,
+    data: { 'sentry.op': 'browser.request', 'http.url': LEAK, 'http.response_content_length': 123 },
+    ...over,
+  });
+
+  it('scrubChatResumeSpan cleans description and every string in data, keeps the rest', () => {
+    const out = scrubChatResumeSpan(span());
+    expect(JSON.stringify(out)).not.toContain('chat=');
+    expect(out.description).toBe(CLEAN);
+    expect(out.data).toEqual({ 'sentry.op': 'browser.request', 'http.url': CLEAN, 'http.response_content_length': 123 });
+    expect(out.span_id).toBe('s1');
+    expect(out.start_timestamp).toBe(1);
+  });
+
+  it('scrubChatResumeSpan returns the very same span when there is nothing to scrub', () => {
+    const clean = span({ description: CLEAN, data: { 'http.url': '/a#contact' } });
+    expect(scrubChatResumeSpan(clean)).toBe(clean);
+  });
+
+  it('scrubChatResumeTransaction cleans the transaction name, request, root-span context, child spans, tags and breadcrumbs', () => {
+    const event = {
+      type: 'transaction',
+      transaction: '/zh-CN/support#chat=abc.DEF-123',
+      request: { url: LEAK, headers: { Referer: LEAK } },
+      contexts: { trace: { op: 'pageload', span_id: 'r', trace_id: 't1', data: { 'sentry.source': 'url', url: LEAK } } },
+      tags: { url: LEAK, locale: 'zh-CN' },
+      breadcrumbs: [{ category: 'navigation', data: { from: LEAK, to: CLEAN } }],
+      spans: [
+        span({ op: 'browser.request' }),
+        span({ op: 'browser.response', span_id: 's2' }),
+        span({ op: 'browser.DNS', span_id: 's3' }),
+        span({ op: 'browser.cache', span_id: 's4' }),
+        span({ op: 'resource.script', span_id: 's5', description: '/_next/static/chunk.js', data: {} }),
+      ],
+    } as unknown as TransactionEvent;
+    const out = scrubChatResumeTransaction(event);
+    expect(JSON.stringify(out)).not.toContain('chat=');
+    expect(out.type).toBe('transaction');
+    expect(out.transaction).toBe('/zh-CN/support');
+    expect(out.request?.url).toBe(CLEAN);
+    expect(out.contexts?.trace?.data).toEqual({ 'sentry.source': 'url', url: CLEAN });
+    expect(out.tags).toEqual({ url: CLEAN, locale: 'zh-CN' });
+    expect(out.spans).toHaveLength(5);
+    expect(out.spans!.map((s) => s.description)).toEqual([CLEAN, CLEAN, CLEAN, CLEAN, '/_next/static/chunk.js']);
+    // 没动过的 span 不复制
+    expect(out.spans![4]).toBe(event.spans![4]);
+    const untouched = { type: 'transaction', transaction: '/a', spans: [span({ description: CLEAN, data: {} })] } as unknown as TransactionEvent;
+    expect(scrubChatResumeTransaction(untouched)).toBe(untouched);
+  });
+
+  it('scrubChatResumeRecordingEvent cleans a replay performanceSpan built from the navigation entry', () => {
+    const event = {
+      type: 5,
+      timestamp: 1700000000,
+      data: {
+        tag: 'performanceSpan',
+        payload: {
+          op: 'navigation.navigate',
+          description: LEAK,
+          startTimestamp: 1,
+          endTimestamp: 2,
+          data: { size: 1234, duration: 80, domInteractive: 30 },
+        },
+      },
+    };
+    const out = scrubChatResumeRecordingEvent(event);
+    expect(JSON.stringify(out)).not.toContain('chat=');
+    expect(out.data.payload.description).toBe(CLEAN);
+    expect(out.data.payload.data).toBe(event.data.payload.data);
+    expect(out.type).toBe(5);
+    expect(out.data.tag).toBe('performanceSpan');
+  });
+
+  it('scrubChatResumeRecordingEvent also cleans replay breadcrumbs and history spans; clean events pass through by reference', () => {
+    const crumb = {
+      type: 5,
+      timestamp: 1,
+      data: { tag: 'breadcrumb', payload: { type: 'default', category: 'navigation', timestamp: 1, message: LEAK, data: { from: LEAK, to: CLEAN, url: LEAK } } },
+    };
+    const outCrumb = scrubChatResumeRecordingEvent(crumb);
+    expect(JSON.stringify(outCrumb)).not.toContain('chat=');
+    expect(outCrumb.data.payload.data).toEqual({ from: CLEAN, to: CLEAN, url: CLEAN });
+
+    const history = {
+      type: 5,
+      timestamp: 1,
+      data: { tag: 'performanceSpan', payload: { op: 'navigation.push', description: LEAK, startTimestamp: 1, endTimestamp: 1, data: { previous: LEAK } } },
+    };
+    expect(JSON.stringify(scrubChatResumeRecordingEvent(history))).not.toContain('chat=');
+
+    const options = { type: 5, timestamp: 1, data: { tag: 'options', payload: { maskAllText: false, sessionSampleRate: 1 } } };
+    expect(scrubChatResumeRecordingEvent(options)).toBe(options);
+  });
+
+  it('leaves non-plain objects alone and survives cycles via the depth limit', () => {
+    const when = new Date(0);
+    const loop: Record<string, unknown> = { url: LEAK, when };
+    loop.self = loop;
+    const out = scrubChatResumeRecordingEvent(loop);
+    expect(out.url).toBe(CLEAN);
+    expect(out.when).toBe(when);
   });
 });

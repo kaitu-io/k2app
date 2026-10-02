@@ -131,7 +131,10 @@ const CODE_INVALID_ARGUMENT = 422;
  * 后果是不再自动重建会话（退化为报"发送失败"），不会误重建。
  */
 const MSG_NO_SUBJECT = 'no chat session';
-/** 重建会话失败后的后台重试：1s 起翻倍、上限 30s，试这么多次后放弃（等访客下次操作或刷新）。 */
+/**
+ * 重建会话失败后的后台重试：1s 起翻倍、上限 30s，一轮最多这么多次。一轮用尽后本轮结束、通道照旧；
+ * 之后只要再收到一次"没有访客主体"（下一次轮询 / 补齐 / 发消息），就会开启新的一轮。
+ */
 const RESESSION_RETRY_BASE_MS = 1000;
 const RESESSION_RETRY_MAX_MS = 30_000;
 const RESESSION_MAX_RETRIES = 8;

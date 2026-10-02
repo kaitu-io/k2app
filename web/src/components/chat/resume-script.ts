@@ -1,6 +1,12 @@
 /**
- * 邮件回链 `/…#chat=<令牌>` 的继续对话令牌：页面一加载就把它从地址栏挪到 `window.__chatResume`，
- * 让它不进错误监控与会话回放、不进统计上报、不进历史记录、不进 Referer。
+ * 邮件回链 `/…#chat=<令牌>` 的继续对话令牌：页面一加载就把它从地址栏挪到 `window.__chatResume`。
+ *
+ * 这一步管得住的：之后读 `location` 的一切——统计脚本、历史记录、后续请求的 Referer、
+ * 监控 SDK 在 init 时记下的初始地址与导航面包屑。
+ * 这一步管不住的：浏览器的导航性能条目（PerformanceNavigationTiming.name）永远保留加载时的
+ * 完整地址，`replaceState` 改不了它。监控 SDK 的页面加载事务、独立 span 与会话回放的
+ * performanceSpan 会读它——那几条路径靠 `lib/sentry-filters.ts` 的 scrubChatResume* 钩子擦除
+ *（在 instrumentation-client.ts 里接入），不是靠这里。
  *
  * 同一段逻辑用在两处（只有这一份源）：
  * 1. `src/instrumentation-client.ts` 的第一条语句直接调用——它先于监控 SDK 的 init 执行，是主路径；

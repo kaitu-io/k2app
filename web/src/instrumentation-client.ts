@@ -7,6 +7,9 @@ import {
   dropRscNavigationFallbackRejections,
   scrubChatResumeBreadcrumb,
   scrubChatResumeEvent,
+  scrubChatResumeRecordingEvent,
+  scrubChatResumeSpan,
+  scrubChatResumeTransaction,
 } from '@/lib/sentry-filters';
 import { stripChatResume } from '@/components/chat/resume-script';
 
@@ -19,6 +22,10 @@ import { stripChatResume } from '@/components/chat/resume-script';
 // evaluated first: the SDK reads `location` and patches `history` inside
 // `init()` (Replay's initialUrl, the history breadcrumb instrumentation), not
 // at import time — so neither the token nor our own replaceState is observed.
+// What the strip CANNOT fix: `PerformanceNavigationTiming.name` keeps the
+// original URL. The pageload transaction, standalone spans and Replay's
+// performance spans read it, hence the beforeSendTransaction / beforeSendSpan /
+// beforeAddRecordingEvent scrubbers below — they are load-bearing, not spare.
 if (typeof window !== 'undefined') stripChatResume(window);
 
 const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
@@ -32,6 +39,8 @@ if (dsn) {
     sendDefaultPii: true,
     debug: false,
     beforeBreadcrumb: scrubChatResumeBreadcrumb,
+    beforeSendTransaction: scrubChatResumeTransaction,
+    beforeSendSpan: scrubChatResumeSpan,
     beforeSend: (rawEvent) => {
       const event = scrubChatResumeEvent(rawEvent);
       const afterChatwoot = dropChatwootSdkErrors(event);
@@ -51,6 +60,7 @@ if (dsn) {
         // <input>/<textarea>/<select> regardless of maskAllText.
         maskAllText: false,
         blockAllMedia: true,
+        beforeAddRecordingEvent: scrubChatResumeRecordingEvent,
       }),
     ],
   });
