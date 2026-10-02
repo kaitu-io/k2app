@@ -21,6 +21,8 @@ func init() {
 	// 品牌白名单默认放开全部注册品牌（生产默认是空 = 全关）；要测白名单的用例用 setChatViper 覆盖。
 	// viper.Set 是最高优先级的覆盖层，不受之后加载 config.yml 的影响。
 	viper.Set("chat.brands", chatAllBrandNames())
+	// 总开关默认打开：不经 chatSetup 的测试（WebSocket 等）也要过闸；要测关闭的用例自己覆盖
+	viper.Set("chat.enabled", true)
 }
 
 func chatAllBrandNames() []string {

@@ -592,3 +592,102 @@ func TestChatSession_InvalidResumeStaysDisabled(t *testing.T) {
 		})
 	}
 }
+
+// ---- 收尾：WebSocket 握手过闸 / 预览标记跨刷新 ----
+
+// 握手与其它访客接口同一道闸：开放放行；硬关、品牌不在白名单 403；仅预览要主体带预览标记。
+func TestChatWS_HandshakeGate(t *testing.T) {
+	skipIfNoConfig(t)
+	chatStartSingleton(t)
+	srv := chatWSServer(t, api_chat_ws)
+	s := chatRealGuestSubject(t)
+	tok := signChatWSToken(s, time.Minute)
+	dial := func() int {
+		conn, resp, err := chatDialWS(t, srv, tok, nil)
+		if err == nil {
+			conn.Close()
+			return http.StatusSwitchingProtocols
+		}
+		require.NotNil(t, resp, "握手失败应有 HTTP 响应: %v", err)
+		return resp.StatusCode
+	}
+	set := func(t *testing.T, enabled, preview bool, brands []string) {
+		setChatViper(t, "chat.enabled", enabled)
+		setChatViper(t, "chat.preview_enabled", preview)
+		setChatViper(t, "chat.brands", brands)
+	}
+	all := chatAllBrandNames()
+
+	t.Run("开放", func(t *testing.T) {
+		set(t, true, false, all)
+		assert.Equal(t, http.StatusSwitchingProtocols, dial())
+	})
+	t.Run("硬关", func(t *testing.T) {
+		set(t, false, false, all)
+		assert.Equal(t, http.StatusForbidden, dial())
+	})
+	t.Run("品牌不在白名单", func(t *testing.T) {
+		set(t, true, true, []string{string(BrandOverleap)})
+		assert.Equal(t, http.StatusForbidden, dial())
+	})
+	t.Run("仅预览", func(t *testing.T) {
+		set(t, false, true, all)
+		assert.Equal(t, http.StatusForbidden, dial(), "没有预览标记")
+		ctx := context.Background()
+		require.NoError(t, redis.Client().Set(ctx, chatPreviewKey(s), "1", time.Minute).Err())
+		t.Cleanup(func() { redis.Client().Del(ctx, chatPreviewKey(s)) })
+		assert.Equal(t, http.StatusSwitchingProtocols, dial(), "有预览标记")
+	})
+}
+
+// 仅预览模式下，回链 / preview 进来过的访客刷新页面（session 不再带任何标记）仍然可用，标记被续期；
+// 硬关时不行；从未有过标记的访客不行。
+func TestChatSession_PreviewMarkerSurvivesReload(t *testing.T) {
+	r := chatSetup(t, false) // enabled=false, preview_enabled=true
+	ctx := context.Background()
+	tok := signChatResumeToken(chatConvOfBrand(t, BrandKaitu), time.Hour)
+	w := NewTestRequest("POST", "/api/chat/session").WithBody(map[string]any{"path": "/x", "resume": tok}).Execute(r)
+	_, data := chatDecode(t, w)
+	require.Equal(t, true, data["enabled"])
+	cid := chatCookie(w, CookieChatCid).Value
+	chatCleanupCID(t, cid)
+	owner, err := findIdentityOwner(ctx, BrandKaitu, IdentityCID, cid)
+	require.NoError(t, err)
+	root, err := guestRootID(ctx, owner.GuestID)
+	require.NoError(t, err)
+	key := chatPreviewKey(chatSubject{Brand: BrandKaitu, Kind: SubjectGuest, ID: root})
+	t.Cleanup(func() { redis.Client().Del(ctx, key) })
+	plain := func(c string) map[string]any {
+		q := NewTestRequest("POST", "/api/chat/session").WithBody(map[string]any{"path": "/x"})
+		if c != "" {
+			q = q.WithCookie(CookieChatCid, c)
+		}
+		_, d := chatDecode(t, q.Execute(r))
+		return d
+	}
+
+	// 刷新：不带 preview / resume，标记快过期了 → 仍可用且被续期
+	require.NoError(t, redis.Client().Expire(ctx, key, time.Minute).Err())
+	assert.Equal(t, true, plain(cid)["enabled"])
+	ttl, err := redis.Client().TTL(ctx, key).Result()
+	require.NoError(t, err)
+	assert.Greater(t, ttl, time.Hour, "标记应被续期")
+
+	// 从未有过标记的访客（有 cid、没标记；以及完全陌生的）仍关闭
+	setChatViper(t, "chat.enabled", true)
+	w2, _ := chatOpenSession(t, r, "/", nil)
+	stranger := chatCookie(w2, CookieChatCid).Value
+	chatCleanupCID(t, stranger)
+	setChatViper(t, "chat.enabled", false)
+	assert.Equal(t, false, plain(stranger)["enabled"])
+	assert.Equal(t, false, plain("")["enabled"])
+
+	// 硬关：有标记也不行
+	setChatViper(t, "chat.preview_enabled", false)
+	assert.Equal(t, false, plain(cid)["enabled"])
+
+	// 标记没了：回到关闭
+	setChatViper(t, "chat.preview_enabled", true)
+	require.NoError(t, redis.Client().Del(ctx, key).Err())
+	assert.Equal(t, false, plain(cid)["enabled"])
+}

@@ -255,13 +255,29 @@ func chatVisitorSubject(c *gin.Context) (chatSubject, bool) {
 		Error(c, ErrorInvalidArgument, "no chat session")
 		return chatSubject{}, false
 	}
-	if access == chatAccessPreview {
-		if n, err := redis.Client().Exists(c.Request.Context(), chatPreviewKey(subj)).Result(); err != nil || n == 0 {
-			Error(c, ErrorInvalidArgument, "chat is not available")
-			return chatSubject{}, false
-		}
+	if access == chatAccessPreview && !chatHasPreviewMarker(c.Request.Context(), subj) {
+		Error(c, ErrorInvalidArgument, "chat is not available")
+		return chatSubject{}, false
 	}
 	return subj, true
+}
+
+// chatHasPreviewMarker 主体是否带预览标记。Redis 读失败按没有处理（fail closed）。
+func chatHasPreviewMarker(ctx context.Context, s chatSubject) bool {
+	n, err := redis.Client().Exists(ctx, chatPreviewKey(s)).Result()
+	return err == nil && n > 0
+}
+
+// chatSubjectAdmitted 该主体此刻能否使用访客会话（WebSocket 握手用，规则与 chatVisitorSubject 相同）：
+// 关闭 / 品牌未开放一律不行；仅预览要求带预览标记。
+func chatSubjectAdmitted(ctx context.Context, s chatSubject) bool {
+	switch chatAccessFor(s.Brand) {
+	case chatAccessOn:
+		return true
+	case chatAccessPreview:
+		return chatHasPreviewMarker(ctx, s)
+	}
+	return false
 }
 
 // ---- handlers ----
@@ -292,6 +308,13 @@ func api_chat_session(c *gin.Context) {
 	access := chatAccessFor(ReqBrand(c))
 	if access == chatAccessPreview && !req.Preview && chatResumeTokenValid(ctx, ReqBrand(c), req.Resume) {
 		req.Preview = true
+	}
+	// 预览 / 回链进来过的访客刷新页面后不再带 preview 或 resume：预览标记还在就视同预览
+	// （下面会照常续期标记）。只读解析主体，不建 guest、不种 cookie。
+	if access == chatAccessPreview && !req.Preview {
+		if s, ok := chatSubjectFromRequest(c, false); ok && chatHasPreviewMarker(ctx, s) {
+			req.Preview = true
+		}
 	}
 	if access == chatAccessOff || (access == chatAccessPreview && !req.Preview) {
 		Success(c, &ChatSessionResp{Enabled: false, Messages: []ChatMsgDTO{}})

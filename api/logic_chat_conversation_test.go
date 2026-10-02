@@ -917,8 +917,11 @@ func TestCloseConversation_UpdatesByPrimaryKeyOnly(t *testing.T) {
 // 加锁顺序与 appendMessage（先锁主键行）相反而死锁。今天没有索引的列（如 handler）明天可能加上索引，
 // 所以不逐条判断"这一列有没有索引"，一律禁止：条件放到 updateConversationLocked 里、在行锁之下用 Go 判断。
 //
-// 盲区（守卫看不到的写法，评审时人工把关）：db.Save(&conv) / Model(conv) 这类以结构体变量为目标的写入、
-// 原生 SQL（Exec / Raw）、以及把 *gorm.DB 存进变量后分多条语句拼出来的链。
+// 盲区（守卫看不到的写法，评审时人工把关）：
+//   - Model(conv) / Model(&conv)：以结构体变量为目标（守卫只认字面量 Model(&Conversation{})）；db.Save(&conv) 同理
+//   - Table("conversations")：按表名而不是模型
+//   - 原生 SQL（Exec / Raw）
+//   - 把 *gorm.DB 存进变量后分多条语句拼出来的链
 func TestConversationWrites_ByPrimaryKeyOnly(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	require.NoError(t, err)

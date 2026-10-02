@@ -194,7 +194,7 @@ func chatWSOriginAllowed(brand Brand, origin string) bool {
 }
 
 // api_chat_ws: GET /api/chat/ws?token= —— 访客 WebSocket。
-// 品牌与主体完全取自令牌（不读 Host / ReqBrand）。握手前拒绝：令牌无效 401、Origin 不符 403、
+// 品牌与主体完全取自令牌（不读 Host / ReqBrand）。握手前拒绝：令牌无效 401、Origin 不符 403、功能关闭（chatSubjectAdmitted）403、
 // 本实例该频道已有 chatWSMaxPerChannel 个连接 429。客户端发来的帧一律忽略。
 // 心跳由 qtoolkit 的广播实现负责：每 30s ping（低于 CloudFront/ALB 的 60s 空闲，足以保活），
 // 70s 收不到 pong 即断（约两次丢失）。其间隔不可配置，与"25s ping"的设想相差 5s，见任务报告。
@@ -208,6 +208,12 @@ func chatWSHandler(bcFn func() *redis.Broadcast) gin.HandlerFunc {
 			return
 		}
 		if !chatWSOriginAllowed(s.Brand, c.GetHeader("Origin")) {
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
+		// 过闸：硬关 / 品牌未开放 / 仅预览而主体没有预览标记，都不让握手（令牌可能是关之前签的）。
+		// 已建立的连接不在这里踢。
+		if !chatSubjectAdmitted(c.Request.Context(), s) {
 			c.AbortWithStatus(http.StatusForbidden)
 			return
 		}
