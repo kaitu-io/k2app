@@ -38,8 +38,9 @@ func SetupRouter() *gin.Engine {
 	r.POST("/webhook/stripe", log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), api_stripe_webhook)
 	// NextPay webhook（kaitu 一次性购买入账：order.paid 单一入账事件，2026-09-22 起）
 	r.POST("/webhook/nextpay", log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), api_nextpay_webhook)
-	// Slack Events API：客服在会话频道里发言即回复访客（自带签名校验，与 Host/品牌无关，故不挂 BrandResolver）
-	r.POST("/webhook/slack/events", log.MiddlewareRequestLog(true), MiddleRecovery(), api_slack_events)
+	// Slack Events API：客服在会话频道里发言即回复访客（自带签名校验，与 Host/品牌无关，故不挂 BrandResolver；
+	// 也不挂请求日志：它会在验签前整体读入并记录 body，handler 自己限 1MB 并只记不含正文的结构化日志）
+	r.POST("/webhook/slack/events", MiddleRecovery(), api_slack_events)
 
 	// Chatwoot → FastGPT AI bridge
 	chatwootWebhook := r.Group("/webhook")

@@ -1,11 +1,14 @@
 package center
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -386,4 +389,48 @@ func TestAdminChat_CloseArchivesSlackChannel(t *testing.T) {
 	require.Len(t, arch, 1)
 	assert.Equal(t, "C0ADMINCLOSE", arch[0].Str("channel"))
 	assert.NotNil(t, slackReload(t, conv.ID).SlackArchivedAt)
+}
+
+// 事件追加失败：不关闭、不写审计，返回系统错误（T10 补偿判据依赖"人工关闭必有 closed 事件"）。
+func TestAdminChat_CloseEventFailureKeepsOpenNoAudit(t *testing.T) {
+	skipIfNoConfig(t)
+	r := adminChatRouter()
+	key := acSupportKey(t)
+	conv, _ := acConv(t, BrandKaitu, nil)
+	oldFn := chatSlackAppendSystem
+	chatSlackAppendSystem = func(ctx context.Context, c *Conversation, in appendMessageInput) (*ConversationMessage, bool, error) {
+		return nil, false, errors.New("boom")
+	}
+	t.Cleanup(func() { chatSlackAppendSystem = oldFn })
+
+	resp := acDo(t, r, "PUT", key, "/app/chat/conversations/"+conv.UUID+"/close")
+	assert.Equal(t, int(ErrorSystemError), resp.Code)
+	assert.Equal(t, ConvOpen, slackReload(t, conv.ID).Status)
+	time.Sleep(500 * time.Millisecond) // 审计异步写入：给它机会写出来
+	assert.EqualValues(t, 0, acAuditCount(t, conv.UUID))
+}
+
+// 并发两次后台关闭：只落一条 closed 事件。
+func TestAdminChat_ConcurrentCloseOneEvent(t *testing.T) {
+	skipIfNoConfig(t)
+	r := adminChatRouter()
+	key := acSupportKey(t)
+	conv, _ := acConv(t, BrandKaitu, nil)
+	t.Cleanup(func() {
+		db.Get().Where("action = ? AND target_id = ?", "chat_conversation_close", conv.UUID).Delete(&AdminAuditLog{})
+	})
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			resp := acDo(t, r, "PUT", key, "/app/chat/conversations/"+conv.UUID+"/close")
+			assert.Equal(t, int(ErrorNone), resp.Code, resp.Message)
+		}()
+	}
+	wg.Wait()
+	var n int64
+	db.Get().Model(&ConversationMessage{}).Where("conversation_id = ? AND kind = ?", conv.ID, MsgEvent).Count(&n)
+	assert.EqualValues(t, 1, n)
+	assert.Equal(t, ConvClosed, slackReload(t, conv.ID).Status)
 }

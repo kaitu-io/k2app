@@ -233,24 +233,18 @@ func api_admin_chat_detail(c *gin.Context) {
 }
 
 // api_admin_chat_close PUT /app/chat/conversations/:uuid/close —— 与 Slack `!close` 同一套：
-// 记 system 事件、关闭、归档频道（归档失败只记日志，chatSlackSweep 会补），并写审计日志。幂等。
+// 走 chatCloseByStaff（closed 事件→关闭→归档；事件失败不关闭、不写审计），成功后写审计日志。幂等。
 func api_admin_chat_close(c *gin.Context) {
 	conv, ok := adminChatLoad(c)
 	if !ok {
 		return
 	}
 	ctx := c.Request.Context()
-	wasOpen := conv.Status == ConvOpen
-	if wasOpen {
-		chatSlackSystemEvent(ctx, conv, "会话已关闭", ChatEventClosed)
-	}
-	if err := closeConversation(ctx, conv); err != nil {
+	wasOpen, err := chatCloseByStaff(ctx, conv)
+	if err != nil {
 		log.Errorf(c, "admin chat close conv=%d: %v", conv.ID, err)
 		Error(c, ErrorSystemError, "failed to close conversation")
 		return
-	}
-	if err := chatSlackArchive(ctx, conv); err != nil {
-		log.Warnf(c, "admin chat close: archive channel conv=%d: %v", conv.ID, err)
 	}
 	WriteAuditLog(c, "chat_conversation_close", "conversation", conv.UUID, map[string]any{
 		"conversationId": conv.ID, "brand": conv.Brand, "wasOpen": wasOpen,
