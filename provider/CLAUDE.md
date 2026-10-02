@@ -173,6 +173,75 @@ connection). Misses inside the throttle window return `""` — fail-open, the
 known blind spot above, acceptable only because this path now serves exotic
 environments where the sysctl path failed.
 
+### Windows: who is the system resolver asking for (`dnsclient_etw*.go`)
+
+A native Windows app never sends its own DNS packet — getaddrinfo / DnsQuery
+hand the lookup to the Dnscache service, so the query that reaches the tunnel
+is svchost.exe's, and the socket table has no "on behalf of" field (macOS's
+`so_e_pid` has no Windows counterpart). The requesting process is visible in
+exactly one place: the DNS client's ETW provider
+(`Microsoft-Windows-DNS-Client`), event **3006**, logged by dnsapi.dll
+*inside the calling process* — header pid = the app, payload leads with the
+query name. Event 3009 (query on the wire) is logged by svchost and is no use.
+
+`WindowsProcessSearcher` implements `DNSClientSearcher`: a private real-time
+trace session (`k2-dns-client`) feeds a 3-second `qname → pid` table, and
+`engine/dns_handler.go metaForQuery` consults it per query — only when the
+flow's socket owner is `svchost.exe`. Things that are not obvious:
+
+- **The event arrives AFTER the query.** Measured on Win11 25H2: the wire
+  query is ~1 ms behind the event at the source, but ETW delivers to a
+  real-time consumer in batches — a steady **26–30 ms** (max seen 42) with
+  the millisecond flush timer (`EVENT_TRACE_USE_MS_FLUSH_TIMER`; flush
+  periods of 1 ms and 10 ms measure the same, 100 ms measures ~213 ms, and
+  without the flag the unit is seconds). So `FindDNSClient` **waits** — up to
+  `dnsClientWait` (60 ms) for a record made after the query arrived, falling
+  back to an older live record only for retransmissions. That is ~27 ms added
+  to every system-resolver lookup that misses Dnscache's cache, paid only
+  while a process rule is loaded. Flows owned by anything other than svchost
+  (Chromium's own resolver) return at once.
+- **Who pays**: anyone on Windows with process criteria loaded — and
+  `match.region` counts (it expands to an app-glob entry), so that is every
+  smart-mode user, not just App Bypass users. Measured end to end
+  (`Resolve-DnsName`, 15 fresh names, watch off → on): p50 193 → 217 ms on
+  Win11 25H2, 192 → 236 ms on Win10 22H2. A and AAAA are held back equally
+  and before any connection attempt exists, so Happy Eyeballs is unaffected;
+  apps that race their own resolution (Chromium) use their own socket and
+  never enter this path.
+- **`dnsClientFresh` (500 ms) is not a skew allowance.** The handler serves
+  one flow's queries one at a time; when the resolver sends A and AAAA down
+  one socket, the second is examined only after the first's upstream round
+  trip, and the event they share is already that old. Shrink the window and
+  that second query sits out the whole 60 ms for nothing.
+- **Slow-delivery guard** (`dnsClientTable.slow`): if the latest event took
+  longer than `dnsClientWait` to arrive — a Windows that ignores the
+  millisecond flag batches per SECOND — lookups stop waiting until delivery
+  is fast again (`DIAG: dns-client-watch state=slow|recovered`). Otherwise
+  such a machine would pay 60 ms per lookup and still attribute nothing.
+- **Needs administrator** (creating a session). The desktop daemon is SYSTEM.
+  Refused → `DIAG: dns-client-watch state=unavailable`, attribution stays
+  socket-only.
+- **Sessions outlive their process.** The name is fixed so the next start
+  stops an orphan left by a crashed daemon (`ERROR_ALREADY_EXISTS` → stop →
+  retry). Check with `logman query -ets`.
+- **Start and stop are serialized** (`dnsLifeMu`), and holds are counted
+  (`StartDNSClientWatch` returns a release func; the engine releases through
+  its context). Both matter on reconnect: the old engine's release races the
+  new engine's start, both address the session by the same name, and the
+  kernel recycles session handles — an unserialized late stop can land on
+  the new session.
+- The callback recovers from panics: it runs on the trace thread, called
+  from C, where a panic would kill the daemon.
+- **What it cannot fix**: a lookup Dnscache answers from its cache sends no
+  wire query, so the app gets whatever view the earlier asker got (same as
+  mDNSResponder on macOS); two processes asking for one name inside the
+  window are indistinguishable (latest wins); a name the resolver rewrites
+  (suffix search list) does not join.
+- Struct layouts are hand-mirrored 64-bit SDK layouts handed to the kernel as
+  raw memory — `TestETWLayouts` pins them on every OS;
+  `TestRealKernelDNSClientWatch` (Windows, elevated; skips otherwise) proves
+  pid, payload and delivery delay against the live provider.
+
 ### proc_name / lsof COMMAND is not `ps`'s comm
 
 Verified on production macOS: Claude Code reports as `claude` under

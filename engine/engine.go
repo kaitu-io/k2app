@@ -498,6 +498,7 @@ func (e *Engine) Start(cfg Config) error {
 		// searcher: same gated instance the tunnel got — nil unless a loaded
 		// rule actually needs process attribution (zero cost otherwise).
 		dh = &dnsHandler{inner: tunnel, dns: dnsMW, ctx: ctx, engine: e, forward: cfg.DNSForwardUpstream, searcher: processSearcher}
+		dh.startDNSClientWatch(ctx)
 		if err := tunnel.StartWithHandler(ctx, dh); err != nil {
 			if cfg.NetworkMonitor != nil {
 				cfg.NetworkMonitor.Close()
