@@ -8,9 +8,11 @@
  * performanceSpan 会读它——那几条路径靠 `lib/sentry-filters.ts` 的 scrubChatResume* 钩子擦除
  *（在 instrumentation-client.ts 里接入），不是靠这里。
  *
- * 同一段逻辑用在两处（只有这一份源）：
- * 1. `src/instrumentation-client.ts` 的第一条语句直接调用——它先于监控 SDK 的 init 执行，是主路径；
- * 2. 根布局的内联脚本（下面由函数源码拼出的字符串）——兜底，片段已被移除时什么都不做。
+ * 同一段逻辑用在两处，谁先跑都安全（后跑的那个发现片段已被移除，什么都不做）：
+ * 1. `src/instrumentation-client.ts` 的第一条语句调用 `stripChatResume`——必定先于监控 SDK 的 init；
+ * 2. 根布局的内联脚本 `CHAT_RESUME_SCRIPT`——不经打包转译、直接进 HTML，所以是手写的 ES5，
+ *    不能由函数源码拼出来（那会把 const、无绑定 catch 原样带给老浏览器，整段脚本解析失败）。
+ * 两份实现由 ChatWidget 的测试逐用例比对，改一处必须改另一处。
  *
  * 值按原样存（不解码），由 gate.ts 的 takeResumeToken() 取走并删除。
  */
@@ -22,10 +24,7 @@ type ResumeHost = {
   history: { replaceState(data: unknown, unused: string, url: string): void };
 };
 
-/**
- * 必须自包含：函数体不能引用任何模块级绑定（上面两个常量在这里写成字面量），
- * 因为内联脚本就是它的源码字符串。gate 的测试锁住字面量与常量一致。
- */
+/** 字面量（'#chat='、6、__chatResume）与内联脚本保持逐字一致；测试锁住它们与上面两个常量相符。 */
 export function stripChatResume(w: ResumeHost): void {
   try {
     const h = w.location.hash;
@@ -38,4 +37,6 @@ export function stripChatResume(w: ResumeHost): void {
   }
 }
 
-export const CHAT_RESUME_SCRIPT = `(${stripChatResume.toString()})(window);`;
+/** 手写 ES5，行为与 `stripChatResume` 一致（见文件头）。 */
+export const CHAT_RESUME_SCRIPT =
+  '(function(w){try{var h=w.location.hash;if(h.indexOf("#chat=")===0){w.__chatResume=h.slice(6);w.history.replaceState(null,"",w.location.pathname+w.location.search);}}catch(e){}})(window);';

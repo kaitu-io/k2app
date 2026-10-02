@@ -85,6 +85,9 @@ function humanWaitFromHistory(conv: ChatConversation, history: readonly ChatMess
  * 会话状态（处理方、是否关闭）以服务端下发为准。
  *
  * 本挂件渲染期间隐藏旧客服气泡，避免两个入口叠在一起；卸载时恢复。
+ *
+ * 位置：入口与面板的底边都垫在 `--cookie-banner-offset` 之上（lib/cookie-banner.ts）——
+ * Cookie 同意横幅显示时它们停在横幅上方，不被盖住也不去盖横幅的按钮；横幅消失后落回角上。
  */
 export default function ChatWidget({ createClient = createChatClient }: { createClient?: () => ChatClient }) {
   const t = useTranslations('chat');
@@ -259,7 +262,7 @@ export default function ChatWidget({ createClient = createChatClient }: { create
         type="button"
         aria-label={t('launcher')}
         onClick={() => setOpen(true)}
-        className="fixed bottom-4 right-4 z-50 flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="fixed right-4 bottom-[calc(var(--cookie-banner-offset,0px)+1rem)] z-50 flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <MessageCircle className="size-6" aria-hidden />
       </button>
@@ -277,7 +280,7 @@ export default function ChatWidget({ createClient = createChatClient }: { create
         // 输入法组字中的 Esc 是取消候选，不是关面板
         if (e.key === 'Escape' && !e.nativeEvent.isComposing && e.keyCode !== 229) setOpen(false);
       }}
-      className="fixed bottom-0 right-0 z-50 flex h-[32rem] max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-border bg-background shadow-2xl min-[480px]:bottom-4 min-[480px]:right-4 min-[480px]:w-[22rem] min-[480px]:rounded-2xl"
+      className="fixed right-0 bottom-[var(--cookie-banner-offset,0px)] z-50 flex h-[32rem] max-h-[calc(85dvh-var(--cookie-banner-offset,0px))] w-full flex-col overflow-hidden rounded-t-2xl border border-border bg-background shadow-2xl min-[480px]:right-4 min-[480px]:bottom-[calc(var(--cookie-banner-offset,0px)+1rem)] min-[480px]:w-[22rem] min-[480px]:rounded-2xl"
     >
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <span className="text-sm font-semibold text-foreground">{t('title')}</span>

@@ -84,8 +84,12 @@ export function takeResumeToken(): string | null {
  * 暗发布阶段的规则：预览身份、带着继续对话令牌，或者本浏览器已经建过会话。
  * 三者都没有 = 不渲染、不发任何请求、不种 cookie。
  *
- * 这是下一期唯一要改的地方：服务端开关打开后要"对所有访客显示入口"，需要一个便宜的公开
- * `enabled` 探测（或直接恒返回 true），改这里即可，挂件其余逻辑不动。
+ * 正式上线（对所有访客显示入口）不能只把这里改成恒返回 true：现在"问服务端"就是 `start()`，
+ * 它会新建访客主体并种 cookie——对每个路过的访客都这么做不可接受。需要三件事一起改：
+ * 1. 服务端加一个不建主体、可缓存的 `enabled` 探测接口；
+ * 2. 挂件按探测结果先画入口，此时不调 `start()`；
+ * 3. `start()`（会建访客、种 cookie）推迟到访客第一次展开面板，或本浏览器已有
+ *    `chat:known` 标记（建过会话，要恢复它）时才调。
  */
 export function shouldProbeSession(): boolean {
   return isPreview() || hasResumeToken() || readFlag(CHAT_KNOWN_FLAG);

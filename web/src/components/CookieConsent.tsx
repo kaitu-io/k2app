@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Cookie, X } from "lucide-react";
 import { safeStorage } from "@/lib/safeStorage";
 import { useBrand } from "@/hooks/useBrand";
+import { COOKIE_BANNER_OFFSET_VAR } from "@/lib/cookie-banner";
 
 export const COOKIE_CONSENT_KEY = "kaitu_cookie_consent";
 // Increment when the cookie policy or the banner copy changes, so visitors who
@@ -36,6 +37,32 @@ export default function CookieConsent() {
   const [show, setShow] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  const bannerRef = useRef<HTMLDivElement>(null);
+
+  // While the banner is on screen, publish how much of the bottom edge it
+  // covers (its height + the gap below it) so other bottom-corner overlays —
+  // the chat launcher — can sit above it instead of underneath. See
+  // lib/cookie-banner.ts. Uses layout height + CSS `bottom`, not the bounding
+  // rect: the entrance animation translates the box and would skew the rect.
+  useEffect(() => {
+    if (!show) return;
+    const el = bannerRef.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const publish = () => {
+      const gap = parseFloat(window.getComputedStyle(el).bottom) || 0;
+      root.style.setProperty(COOKIE_BANNER_OFFSET_VAR, `${Math.round(el.offsetHeight + gap)}px`);
+    };
+    publish();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish);
+    observer?.observe(el);
+    window.addEventListener('resize', publish);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', publish);
+      root.style.removeProperty(COOKIE_BANNER_OFFSET_VAR);
+    };
+  }, [show]);
 
   useEffect(() => {
     setIsClient(true);
@@ -82,6 +109,7 @@ export default function CookieConsent() {
 
   return (
     <div
+      ref={bannerRef}
       className={`fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 z-[9999] max-w-md transition-all duration-300 ease-out ${
         isVisible
           ? 'opacity-100 translate-y-0'

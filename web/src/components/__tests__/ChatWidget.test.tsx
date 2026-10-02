@@ -12,6 +12,7 @@ import {
   type ChatMessage,
   type SessionState,
 } from '@/lib/chat-client';
+import { COOKIE_BANNER_OFFSET_VAR } from '@/lib/cookie-banner';
 import { FakeWS, fakeFetch, msg, session, setHidden } from '@/lib/__tests__/chat-test-fakes';
 
 const flush = (ms = 0) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
@@ -237,8 +238,48 @@ describe('ChatWidget', () => {
         expect(stash()).toBeUndefined();
       });
 
-      it('is built from stripChatResume itself (one source), whose literals match the exported constants', () => {
-        expect(CHAT_RESUME_SCRIPT).toBe(`(${stripChatResume.toString()})(window);`);
+      // 内联脚本不经转译，直接进 HTML：必须是老浏览器也能解析的写法，并与 TS 版行为一致。
+      it('is hand-written ES5 (no const/let, arrow functions or optional catch binding)', () => {
+        expect(CHAT_RESUME_SCRIPT).not.toMatch(/\b(const|let)\b|=>|catch\s*\{|`/);
+        expect(CHAT_RESUME_SCRIPT).toContain(`"${CHAT_RESUME_HASH_PREFIX}"`);
+        expect(CHAT_RESUME_SCRIPT).toContain(`.${CHAT_RESUME_GLOBAL}=`);
+        expect(CHAT_RESUME_SCRIPT).toContain(`.slice(${CHAT_RESUME_HASH_PREFIX.length})`);
+      });
+
+      it.each([
+        ['#chat=t.1', '/p', '?a=1', false],
+        ['#chat=abc.DEF-123_x%2B', '/zh-CN/support', '', false],
+        ['#chat=', '/p', '', false],
+        ['#contact', '/p', '?chat=tok', false],
+        ['', '/p', '', false],
+        ['#x#chat=t', '/p', '', false],
+        ['#chat=t', '/p', '?a=1', true],
+      ])('behaves exactly like stripChatResume for hash %j (path %s%s, history throws: %s)', (hash, pathname, search, throws) => {
+        const host = () => {
+          const calls: unknown[][] = [];
+          const h = {
+            location: { hash, pathname, search },
+            history: {
+              replaceState: (...args: unknown[]) => {
+                calls.push(args);
+                if (throws) throw new Error('SecurityError');
+              },
+            },
+          };
+          return { h, calls };
+        };
+        const ts = host();
+        stripChatResume(ts.h);
+        const inline = host();
+        expect(() => new Function('window', CHAT_RESUME_SCRIPT)(inline.h)).not.toThrow();
+        expect(inline.calls).toEqual(ts.calls);
+        expect((inline.h as unknown as Record<string, unknown>)[CHAT_RESUME_GLOBAL]).toEqual(
+          (ts.h as unknown as Record<string, unknown>)[CHAT_RESUME_GLOBAL],
+        );
+        expect(Object.keys(inline.h).sort()).toEqual(Object.keys(ts.h).sort());
+      });
+
+      it('stripChatResume literals match the exported constants', () => {
         const calls: unknown[][] = [];
         const host = {
           location: { hash: `${CHAT_RESUME_HASH_PREFIX}t.1`, pathname: '/p', search: '?a=1' },
@@ -264,6 +305,37 @@ describe('ChatWidget', () => {
         expect(stash()).toBeUndefined();
         expect(window.location.href).toBe(before);
       });
+    });
+  });
+
+  // Cookie 同意横幅（z-[9999]）占着同一个角：入口与面板都以它公布的高度为底边，不被它盖住，也不盖它。
+  describe('stays clear of the cookie-consent banner', () => {
+    const lifted = (el: Element) => el.className.split(/\s+/).filter((c) => c.includes(`var(${COOKIE_BANNER_OFFSET_VAR},0px)`));
+
+    it('the launcher is positioned above the banner offset, with no fixed bottom of its own', async () => {
+      const fc = fakeClient();
+      render(<ChatWidget createClient={fc.create} />);
+      await flush();
+      const classes = launcher()!.className.split(/\s+/);
+      expect(lifted(launcher()!)).toEqual([`bottom-[calc(var(${COOKIE_BANNER_OFFSET_VAR},0px)+1rem)]`]);
+      expect(classes.filter((c) => /^bottom-\d/.test(c))).toEqual([]);
+      // 层级不动：不靠盖过横幅来解决
+      expect(classes).toContain('z-50');
+    });
+
+    it('the open panel rests on the banner too and gives up that much height', async () => {
+      const fc = fakeClient();
+      await mountOpen(fc);
+      const classes = dialog()!.className.split(/\s+/);
+      expect(lifted(dialog()!).sort()).toEqual(
+        [
+          `bottom-[var(${COOKIE_BANNER_OFFSET_VAR},0px)]`,
+          `max-h-[calc(85dvh-var(${COOKIE_BANNER_OFFSET_VAR},0px))]`,
+          `min-[480px]:bottom-[calc(var(${COOKIE_BANNER_OFFSET_VAR},0px)+1rem)]`,
+        ].sort(),
+      );
+      expect(classes.filter((c) => /(^|:)bottom-\d/.test(c))).toEqual([]);
+      expect(classes).toContain('z-50');
     });
   });
 

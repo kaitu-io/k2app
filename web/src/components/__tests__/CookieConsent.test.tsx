@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import CookieConsent, { COOKIE_CONSENT_KEY, COOKIE_CONSENT_VERSION } from '../CookieConsent';
+import { COOKIE_BANNER_OFFSET_VAR } from '@/lib/cookie-banner';
 
 const brandState = vi.hoisted(() => ({ gaMeasurementId: '' }));
 vi.mock('@/hooks/useBrand', () => ({ useBrand: () => brandState }));
@@ -87,5 +88,44 @@ describe('CookieConsent', () => {
     show();
     expect(screen.getByText('discovery.cookieConsent.details')).toBeTruthy();
     expect(screen.queryByText('discovery.cookieConsent.detailsThirdParty')).toBeNull();
+  });
+  // The chat launcher sits in the same corner; it reads this variable to stay above the banner.
+  describe('publishes how much of the bottom edge it covers', () => {
+    const offset = () => document.documentElement.style.getPropertyValue(COOKIE_BANNER_OFFSET_VAR);
+    let height: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(212);
+    });
+    afterEach(() => {
+      height.mockRestore();
+      document.documentElement.style.removeProperty(COOKIE_BANNER_OFFSET_VAR);
+    });
+
+    it('nothing before the banner appears; its height + bottom gap while shown; cleared once answered', () => {
+      render(<CookieConsent />);
+      expect(offset()).toBe('');
+      act(() => { vi.advanceTimersByTime(1600); });
+      const banner = screen.getByText('discovery.cookieConsent.details').closest('.fixed') as HTMLElement;
+      banner.style.bottom = '24px';
+      act(() => { window.dispatchEvent(new Event('resize')); });
+      expect(offset()).toBe('236px');
+      fireEvent.click(screen.getByText('discovery.cookieConsent.accept'));
+      settle();
+      expect(offset()).toBe('');
+    });
+
+    it('never set when the banner does not show (already answered)', () => {
+      window.localStorage.setItem(COOKIE_CONSENT_KEY, COOKIE_CONSENT_VERSION);
+      show();
+      expect(offset()).toBe('');
+    });
+
+    it('cleared when the banner unmounts while still showing', () => {
+      const { unmount } = render(<CookieConsent />);
+      act(() => { vi.advanceTimersByTime(1600); });
+      expect(offset()).toBe('212px');
+      unmount();
+      expect(offset()).toBe('');
+    });
   });
 });
