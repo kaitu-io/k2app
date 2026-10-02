@@ -1,0 +1,20 @@
+{
+  "launcher": "線上查詢",
+  "title": "線上查詢",
+  "close": "關閉",
+  "placeholder": "輸入訊息…",
+  "send": "傳送",
+  "senderAi": "智能助手",
+  "senderStaff": "客服",
+  "imagePlaceholder": "[圖片]",
+  "closed": "對話已結束。傳送新訊息即可開始新的對話。",
+  "rateLimited": "傳送太頻密，請稍後再試。",
+  "sendFailed": "傳送失敗，請檢查網絡後重試。",
+  "tooLong": "訊息太長，請精簡後再傳送。",
+  "emailPrompt": "客服暫時未能接入。留下電郵，我們回覆後會以電郵通知您。",
+  "emailPlaceholder": "您的電郵",
+  "emailSubmit": "提交",
+  "emailInvalid": "請輸入有效的電郵地址。",
+  "emailFailed": "提交失敗，請稍後再試。",
+  "emailSaved": "已收到。客服回覆後會以電郵通知您。"
+}

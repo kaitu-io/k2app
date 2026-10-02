@@ -7,6 +7,7 @@ import FAQSection from '@/components/home/FAQSection';
 import AppPlansGrid from '@/components/pricing/AppPlansGrid';
 import RouterPlanCard from '@/components/pricing/RouterPlanCard';
 import FunnelEvent from '@/components/FunnelEvent';
+import ChatWidgetLazy from '@/components/chat/ChatWidgetLazy';
 import { getBrand } from '@/lib/brand-server';
 import { siteConfig } from '@/lib/site';
 import { formatUsd, routerOffer } from '@/lib/router-edition';
@@ -131,6 +132,7 @@ export default async function PricingPage({
       <FAQSection sectionTitle={t('pricing.faq.title')} sectionSubtitle="" items={faqItems} />
 
       <Footer />
+      <ChatWidgetLazy />
     </div>
   );
 }
