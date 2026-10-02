@@ -356,7 +356,7 @@ describe('chat-client', () => {
     await tick(0);
     expect(f.of('GET /api/chat/messages')).toHaveLength(1);
     setHidden(true);
-    await tick(60000);
+    await tick(30000);
     expect(f.of('GET /api/chat/messages')).toHaveLength(1);
     setHidden(false);
     await tick(0);
@@ -364,7 +364,7 @@ describe('chat-client', () => {
     client.stop();
   });
 
-  it('three consecutive failed connects (1s, 2s apart) fall back to polling for good', async () => {
+  it('three consecutive failed connects (1s, 2s apart) fall back to polling', async () => {
     const { client, f } = make({
       'POST /api/chat/session': () => session(),
       'GET /api/chat/ws-token': () => ({ token: 't' }),
@@ -863,6 +863,326 @@ describe('chat-client', () => {
       expect(FakeWS.last().url).toContain('token=tok-s2');
       await tick(60000);
       expect(FakeWS.instances).toHaveLength(2);
+      client.stop();
+    });
+  });
+  describe('a hidden tab releases its socket (so the server stops counting the visitor as online)', () => {
+    const conv = { uuid: 'u1', status: 'open', handler: 'human' };
+    const routes = () => {
+      let tok = 0;
+      return {
+        'POST /api/chat/session': () => session({ conversation: conv }),
+        'GET /api/chat/ws-token': () => ({ token: `tok-${++tok}` }),
+        'GET /api/chat/messages': () => ({ messages: [] }),
+      };
+    };
+
+    it('closes after 60s hidden without counting a failure; back in the foreground it refreshes the token, reconnects and catches up', async () => {
+      const { client, f } = make(routes());
+      await client.start('/p');
+      FakeWS.last().open();
+      await tick(0);
+      expect(f.of('GET /api/chat/messages')).toHaveLength(1);
+      setHidden(true);
+      await tick(59_999);
+      expect(FakeWS.live()).toHaveLength(1);
+      await tick(1);
+      expect(FakeWS.live()).toHaveLength(0);
+      // 后台期间什么都不做：不重连、不换令牌、不轮询
+      await tick(600_000);
+      expect(FakeWS.instances).toHaveLength(1);
+      expect(f.of('GET /api/chat/ws-token')).toHaveLength(0);
+      expect(f.of('GET /api/chat/messages')).toHaveLength(1);
+
+      setHidden(false);
+      await tick(0);
+      expect(f.of('GET /api/chat/ws-token')).toHaveLength(1);
+      expect(FakeWS.instances).toHaveLength(2);
+      expect(FakeWS.last().url).toContain('token=tok-1');
+      expect(f.of('GET /api/chat/messages')).toHaveLength(2);
+
+      // 主动关闭没记成失败：紧接着真的握手失败两次，仍在重连而不是回落轮询（三次才回落）
+      FakeWS.last().drop(); // 握手失败 1
+      await tick(1000);
+      expect(FakeWS.instances).toHaveLength(3);
+      FakeWS.last().drop(); // 握手失败 2
+      await tick(2000);
+      expect(FakeWS.instances).toHaveLength(4);
+      FakeWS.last().open();
+      await tick(0);
+      expect(f.of('GET /api/chat/messages')).toHaveLength(3);
+      client.stop();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('coming back within 60s keeps the same socket', async () => {
+      const { client, f } = make(routes());
+      await client.start('/p');
+      FakeWS.last().open();
+      await tick(0);
+      setHidden(true);
+      await tick(59_000);
+      setHidden(false);
+      await tick(120_000);
+      expect(FakeWS.instances).toHaveLength(1);
+      expect(FakeWS.live()).toHaveLength(1);
+      expect(f.of('GET /api/chat/ws-token')).toHaveLength(0);
+      client.stop();
+    });
+
+    it('a reconnect that was waiting when the tab was released does not fire in the background', async () => {
+      const { client, f } = make(routes());
+      await client.start('/p');
+      const flap = async (wait: number) => {
+        FakeWS.last().open();
+        FakeWS.last().drop();
+        await tick(wait);
+      };
+      for (const wait of [1000, 2000, 4000, 8000, 16000, 30000]) await flap(wait);
+      FakeWS.last().open();
+      setHidden(true);
+      FakeWS.last().drop(); // 下一次重连排在 30s 之后
+      const n = FakeWS.instances.length;
+      await tick(29_999);
+      setHidden(false); // 回前台：隐藏计时取消，原来排着的重连照常
+      await tick(1);
+      expect(FakeWS.instances).toHaveLength(n + 1);
+      FakeWS.last().open();
+      setHidden(true);
+      await tick(59_999);
+      FakeWS.last().drop(); // 重连排在 30s 之后，但 1ms 后标签页被释放
+      await tick(1);
+      const tokens = f.of('GET /api/chat/ws-token').length;
+      await tick(300_000);
+      expect(FakeWS.instances).toHaveLength(n + 1);
+      expect(f.of('GET /api/chat/ws-token')).toHaveLength(tokens);
+      client.stop();
+    });
+  });
+
+  describe('polling is a fallback, not a one-way door', () => {
+    const online = () => window.dispatchEvent(new Event('online'));
+
+    it('a short network outage never degrades: failed token refreshes are not connect failures, and the socket comes back', async () => {
+      let offline = false;
+      let tok = 0;
+      const { client, f } = make({
+        'POST /api/chat/session': () => session(),
+        'GET /api/chat/ws-token': () => {
+          if (offline) throw new Error('offline');
+          return { token: `tok-${++tok}` };
+        },
+        'GET /api/chat/messages': () => {
+          if (offline) throw new Error('offline');
+          return { messages: [] };
+        },
+      });
+      await client.start('/p');
+      client.activate();
+      FakeWS.last().open();
+      await tick(0);
+      offline = true;
+      FakeWS.last().drop();
+      await tick(10_000); // 换令牌在 1s / 3s / 7s 各失败一次
+      expect(f.of('GET /api/chat/ws-token')).toHaveLength(3);
+      expect(FakeWS.instances).toHaveLength(1);
+      offline = false;
+      await tick(5000); // 第四次在 15s：成功
+      expect(f.of('GET /api/chat/ws-token')).toHaveLength(4);
+      expect(FakeWS.instances).toHaveLength(2);
+      expect(FakeWS.last().url).toContain('token=tok-1');
+      FakeWS.last().open();
+      await tick(0);
+      // 回到 WebSocket：期间用来顶班的轮询停掉
+      const polls = f.of('GET /api/chat/messages').length;
+      await tick(60_000);
+      expect(f.of('GET /api/chat/messages')).toHaveLength(polls);
+      expect(FakeWS.live()).toHaveLength(1);
+      client.stop();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('while token refreshes keep failing, messages still arrive by polling from the third failure on', async () => {
+      const { client, f } = make({
+        'POST /api/chat/session': () => session(),
+        'GET /api/chat/ws-token': () => { throw { status: 500 }; },
+        'GET /api/chat/messages': () => ({ messages: [] }),
+      });
+      await client.start('/p');
+      client.activate();
+      FakeWS.last().open();
+      await tick(0);
+      FakeWS.last().drop();
+      await tick(7000);
+      expect(f.of('GET /api/chat/ws-token')).toHaveLength(3);
+      expect(f.of('GET /api/chat/messages')).toHaveLength(1);
+      await tick(4000);
+      expect(f.of('GET /api/chat/messages')).toHaveLength(2);
+      // 换令牌仍按退避继续试（第 4 次在 15s）
+      await tick(4000);
+      expect(f.of('GET /api/chat/ws-token')).toHaveLength(4);
+      client.stop();
+    });
+
+    it('three real handshake failures → polling; an `online` event retries the WebSocket and success stops the polling', async () => {
+      const { client, f } = make({
+        'POST /api/chat/session': () => session(),
+        'GET /api/chat/ws-token': () => ({ token: 't' }),
+        'GET /api/chat/messages': () => ({ messages: [] }),
+      });
+      await client.start('/p');
+      client.activate();
+      FakeWS.last().drop();
+      await tick(1000);
+      FakeWS.last().drop();
+      await tick(2000);
+      FakeWS.last().drop();
+      await tick(4000);
+      expect(FakeWS.instances).toHaveLength(3);
+      expect(f.of('GET /api/chat/messages')).toHaveLength(1); // 已在轮询
+
+      online();
+      await tick(0);
+      expect(f.of('GET /api/chat/ws-token')).toHaveLength(3);
+      expect(FakeWS.instances).toHaveLength(4);
+      online(); // 握手还没结果时再来一次：不重复建连接
+      await tick(0);
+      expect(FakeWS.instances).toHaveLength(4);
+      FakeWS.last().open();
+      await tick(0);
+      const polls = f.of('GET /api/chat/messages').length;
+      await tick(600_000);
+      expect(f.of('GET /api/chat/messages')).toHaveLength(polls);
+      expect(FakeWS.live()).toHaveLength(1);
+      client.stop();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('degraded polling also retries on return to the foreground and every 5 minutes; a failed retry just stays on polling', async () => {
+      const { client, f } = make({
+        'POST /api/chat/session': () => session(),
+        'GET /api/chat/ws-token': () => ({ token: 't' }),
+        'GET /api/chat/messages': () => ({ messages: [] }),
+      });
+      await client.start('/p');
+      client.activate();
+      FakeWS.last().drop();
+      await tick(1000);
+      FakeWS.last().drop();
+      await tick(2000);
+      FakeWS.last().drop();
+      expect(FakeWS.instances).toHaveLength(3);
+
+      await tick(299_999);
+      expect(FakeWS.instances).toHaveLength(3);
+      await tick(1);
+      expect(FakeWS.instances).toHaveLength(4); // 5 分钟到
+      FakeWS.last().drop(); // 还是连不上：留在轮询，不排新的重连
+      const polls = f.of('GET /api/chat/messages').length;
+      await tick(8000);
+      expect(f.of('GET /api/chat/messages')).toHaveLength(polls + 2);
+      expect(FakeWS.instances).toHaveLength(4);
+
+      setHidden(true);
+      await tick(1000);
+      setHidden(false);
+      await tick(0);
+      expect(FakeWS.instances).toHaveLength(5); // 回到前台
+      FakeWS.last().open();
+      await tick(0);
+      const after = f.of('GET /api/chat/messages').length;
+      await tick(600_000);
+      expect(f.of('GET /api/chat/messages')).toHaveLength(after);
+      expect(FakeWS.instances).toHaveLength(5);
+      client.stop();
+    });
+
+    it('a session without a WebSocket endpoint never tries to restore one', async () => {
+      const { client, f } = make({
+        'POST /api/chat/session': () => session({ ws: null }),
+        'GET /api/chat/messages': () => ({ messages: [] }),
+      });
+      await client.start('/p');
+      client.activate();
+      online();
+      await tick(600_000);
+      expect(FakeWS.instances).toHaveLength(0);
+      expect(f.of('GET /api/chat/ws-token')).toHaveLength(0);
+      client.stop();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+  });
+
+  describe('frames carry the conversation they belong to', () => {
+    const u1 = { uuid: 'u1', status: 'open', handler: 'ai' };
+    const u2 = { uuid: 'u2', status: 'open', handler: 'ai' };
+
+    it('a frame for another conversation is dropped and triggers a catch-up that finds the new one; frames without the field work as before', async () => {
+      let current: unknown = u1;
+      const { client, f, last, convs } = make({
+        'POST /api/chat/session': () => session({ conversation: u1 }),
+        'GET /api/chat/messages': () => ({ messages: [], conversation: current }),
+      });
+      await client.start('/p');
+      const ws = FakeWS.last();
+      ws.open();
+      await tick(0);
+      expect(f.of('GET /api/chat/messages')).toHaveLength(1);
+
+      ws.recv({ type: 'message', conversationUuid: 'u1', message: msg(5) });
+      ws.recv({ type: 'message', message: msg(6) }); // 旧版服务端：没有归属字段
+      expect(last().map((m) => m.id)).toEqual([5, 6]);
+      await tick(0);
+      expect(f.of('GET /api/chat/messages')).toHaveLength(1);
+
+      current = u2;
+      ws.recv({ channel: 'c', timestamp: 1, payload: { type: 'message', conversationUuid: 'u2', message: msg(7) } });
+      expect(last().map((m) => m.id)).toEqual([5, 6]);
+      await tick(0);
+      expect(f.of('GET /api/chat/messages')).toHaveLength(2);
+      expect(convs[convs.length - 1]).toEqual(u2);
+      // 现在 u2 是当前会话：它的帧照收
+      ws.recv({ type: 'message', conversationUuid: 'u2', message: msg(8) });
+      expect(last().map((m) => m.id)).toEqual([5, 6, 8]);
+      client.stop();
+    });
+
+    it('state frames: a late "closed" for the previous conversation must not overwrite the current one', async () => {
+      const { client, f, convs } = make({
+        'POST /api/chat/session': () => session({ conversation: u2 }),
+        'GET /api/chat/messages': () => ({ messages: [], conversation: u2 }),
+      });
+      await client.start('/p');
+      const ws = FakeWS.last();
+      ws.open();
+      await tick(0);
+      const base = f.of('GET /api/chat/messages').length;
+      // 只有 conversation.uuid（现有帧形状）
+      ws.recv({ type: 'state', conversation: { ...u1, status: 'closed' } });
+      // 两个字段都带
+      ws.recv({ type: 'state', conversationUuid: 'u1', conversation: { ...u1, status: 'closed' } });
+      // 顶层归属与当前会话不符，即便 conversation 自称是当前会话也不收
+      ws.recv({ type: 'state', conversationUuid: 'u1', conversation: { ...u2, status: 'closed' } });
+      expect(convs).toEqual([u2]);
+      await tick(0);
+      expect(f.of('GET /api/chat/messages')).toHaveLength(base + 3);
+      ws.recv({ type: 'state', conversationUuid: 'u2', conversation: { ...u2, handler: 'human' } });
+      expect(convs).toEqual([u2, { ...u2, handler: 'human' }]);
+      client.stop();
+    });
+
+    it('with no current conversation there is nothing to compare against: frames are accepted', async () => {
+      const { client, last, convs } = make({
+        'POST /api/chat/session': () => session(),
+        'GET /api/chat/messages': () => ({ messages: [] }),
+      });
+      await client.start('/p');
+      client.activate();
+      const ws = FakeWS.last();
+      ws.recv({ type: 'message', conversationUuid: 'u1', message: msg(3) });
+      ws.recv({ type: 'state', conversationUuid: 'u1', conversation: u1 });
+      expect(last().map((m) => m.id)).toEqual([3]);
+      expect(convs).toEqual([u1]);
       client.stop();
     });
   });

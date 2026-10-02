@@ -9,6 +9,9 @@
  * - 消息先落库再广播：推送丢了不丢消息，每次（重）连成功后按最大 id 拉一次补齐。
  * - 会话状态（status / handler）以服务端为准，四个来源：`session`、发消息的响应、
  *   `GET /messages` 的响应、WebSocket 的 `state` 帧。客户端不从消息里推状态。
+ * - 推送频道按访客分，不按会话分：帧带着所属会话的 uuid，不是当前会话的帧不收（改为拉一次补齐）。
+ * - 服务端凭 WebSocket 在线标记决定要不要发离线邮件：标签页在后台超过 1 分钟就主动断开，
+ *   回到前台再连。轮询只是连不上时的顶班，会在联网、回前台与每 5 分钟各试一次回到 WebSocket。
  *
  * 设计：docs/superpowers/specs/2026-10-01-support-console-chatwoot-replacement-design.md §5 / §6
  */
@@ -120,6 +123,10 @@ const RECONNECT_JITTER = 0.25;
 const STABLE_AFTER_MS = 10_000;
 const MAX_CONNECT_FAILURES = 3;
 const POLL_INTERVAL_MS = 4000;
+/** 标签页在后台这么久就主动断开 WebSocket：服务端不再把这个访客算作在线，客服回复会走离线邮件。 */
+const HIDDEN_RELEASE_MS = 60_000;
+/** 回落轮询后每隔这么久试一次回到 WebSocket（另有联网、回前台两个时机）。 */
+const WS_RESTORE_INTERVAL_MS = 5 * 60_000;
 const FETCH_TIMEOUT_MS = 15_000;
 
 const CODE_RATE_LIMITED = 429;
@@ -190,7 +197,14 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
   /** 每次重建通道 +1：旧通道的回调与定时器醒来后发现代数不符就作废。 */
   let generation = 0;
   let socket: ChatSocket | null = null;
-  let connectFailures = 0; // 连续"没连上就断"的次数
+  let connectFailures = 0; // 连续"没连上就断"的次数（只算握手 / 建连失败，不算换令牌的网络失败）
+  let tokenFailures = 0; // 连续换令牌网络失败的次数
+  /** 已排了一次重连（在等退避或在换令牌）：其他触发点不再另起一次。 */
+  let reconnecting = false;
+  /** 标签页在后台待久了，WebSocket 已主动断开；回到前台才恢复。 */
+  let suspended = false;
+  let hiddenTimer: ReturnType<typeof setTimeout> | null = null;
+  let restoreTimer: ReturnType<typeof setInterval> | null = null;
   let backoffAttempt = 0;
   let polling = false;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -385,19 +399,72 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
     pollTimer = null;
   }
 
+  /** 本会话有 WebSocket 可用（服务端给了地址、环境支持）。没有的话轮询就是唯一通道，不存在"恢复"。 */
+  const wsCapable = () => wsInfo !== null && Boolean(SocketCtor);
+
   function startPolling() {
     polling = true;
     startPollTimer();
+    if (wsCapable() && restoreTimer === null) {
+      restoreTimer = setInterval(() => {
+        if (!document.hidden) reconnectNow();
+      }, WS_RESTORE_INTERVAL_MS);
+    }
+  }
+
+  /** WebSocket 连上了：顶班的轮询与定时恢复都停掉。 */
+  function stopPolling() {
+    polling = false;
+    stopPollTimer();
+    if (restoreTimer !== null) clearInterval(restoreTimer);
+    restoreTimer = null;
+  }
+
+  function clearHiddenTimer() {
+    if (hiddenTimer !== null) clearTimeout(hiddenTimer);
+    hiddenTimer = null;
+  }
+
+  function armHiddenTimer() {
+    if (hiddenTimer !== null || suspended || !wsCapable()) return;
+    hiddenTimer = setTimeout(() => {
+      hiddenTimer = null;
+      if (stopped || !transportUp || !document.hidden) return;
+      // 主动断开：不是连接失败，不动 connectFailures。排着的重连随代数作废，回前台时重新换令牌连
+      suspended = true;
+      generation++;
+      reconnecting = false;
+      closeSocket();
+    }, HIDDEN_RELEASE_MS);
+  }
+
+  /**
+   * 立刻试一次 WebSocket（换新令牌再连）。已经连着、正在重连、后台挂起中或本会话没有
+   * WebSocket 时什么都不做，所以各个触发点可以放心重复调用。
+   */
+  function reconnectNow() {
+    if (stopped || !transportUp || !wsCapable() || socket || reconnecting || suspended) return;
+    reconnecting = true;
+    void refreshAndConnect(generation);
   }
 
   function onVisibility() {
     if (stopped || !transportUp) return;
     if (document.hidden) {
       stopPollTimer(); // 后台标签页不轮询
+      armHiddenTimer();
       return;
     }
+    clearHiddenTimer();
     void catchUp(); // 回到前台：两种模式都立刻补一次
     if (polling) startPollTimer();
+    suspended = false;
+    reconnectNow(); // 挂起过 / 已回落轮询：试着回到 WebSocket；连着的不受影响
+  }
+
+  function onOnline() {
+    if (stopped || !transportUp || document.hidden) return;
+    reconnectNow();
   }
 
   function closeSocket() {
@@ -416,10 +483,13 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
   function teardownTransport() {
     generation++;
     transportUp = false;
-    polling = false;
     connectFailures = 0;
+    tokenFailures = 0;
     backoffAttempt = 0;
-    stopPollTimer();
+    reconnecting = false;
+    suspended = false;
+    clearHiddenTimer();
+    stopPolling();
     closeSocket();
   }
 
@@ -429,9 +499,11 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
     if (!watchingVisibility) {
       watchingVisibility = true;
       document.addEventListener('visibilitychange', onVisibility);
+      window.addEventListener('online', onOnline);
     }
-    if (wsInfo && SocketCtor) connect(wsInfo.token);
+    if (wsCapable() && wsInfo) connect(wsInfo.token);
     else startPolling();
+    if (document.hidden) armHiddenTimer(); // 在后台建起来的通道同样受 1 分钟限制
   }
 
   function connect(token: string) {
@@ -452,6 +524,8 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
       opened = true;
       openedAt = Date.now();
       connectFailures = 0;
+      tokenFailures = 0;
+      if (polling) stopPolling(); // 回到 WebSocket：轮询只是连不上期间的顶班
       void catchUp();
     };
     ws.onmessage = (ev) => {
@@ -465,14 +539,22 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
       // 广播实现在外面包了一层 {channel,timestamp,payload}；两种形态都认
       const outer = frame as { payload?: unknown } | null;
       const payload = (outer && typeof outer === 'object' && outer.payload ? outer.payload : frame) as
-        | { type?: unknown; message?: unknown; conversation?: unknown }
+        | { type?: unknown; message?: unknown; conversation?: unknown; conversationUuid?: unknown }
         | null;
       if (!payload || typeof payload !== 'object') return;
-      if (payload.type === 'message') ingest([payload.message]);
-      else if (payload.type === 'state') {
-        const conv = asConversation(payload.conversation);
-        if (conv) setConversation(conv);
+      if (payload.type !== 'message' && payload.type !== 'state') return;
+      const conv = payload.type === 'state' ? asConversation(payload.conversation) : null;
+      // 帧归属：频道按访客分，上一条会话的迟到帧也会送到这里。带了所属会话 uuid（顶层
+      // conversationUuid，或 state 帧的 conversation.uuid）且不是当前会话的，一律不收；
+      // 拉一次补齐，由它发现新会话。旧版服务端不带该字段、或当前还没有会话：照旧处理。
+      const current = conversation?.uuid;
+      const owners = [payload.conversationUuid, conv?.uuid].filter((u): u is string => typeof u === 'string' && u !== '');
+      if (current !== undefined && owners.some((u) => u !== current)) {
+        void catchUp();
+        return;
       }
+      if (payload.type === 'message') ingest([payload.message]);
+      else if (conv) setConversation(conv);
     };
     ws.onerror = () => {
       // 浏览器在 error 之后必然触发 close，统一在 onclose 里处理
@@ -486,6 +568,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
     };
   }
 
+  /** 握手 / 建连失败。连续三次回落轮询（不再排重连，由联网、回前台与定时恢复再试）。 */
   function connectFailed() {
     connectFailures++;
     if (connectFailures >= MAX_CONNECT_FAILURES) startPolling();
@@ -497,22 +580,38 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
     const delay = Math.round(base * (1 - RECONNECT_JITTER + random() * 2 * RECONNECT_JITTER));
     backoffAttempt++;
     const gen = generation;
+    reconnecting = true;
     void (async () => {
       await sleep(delay);
       if (stopped || gen !== generation) return;
-      let token: string;
-      try {
-        token = (await call<{ token: string }>('GET', '/ws-token')).token;
-        resessionUnproven = false;
-      } catch (err) {
-        if (stopped || gen !== generation) return;
-        connectFailed();
-        // 主体丢了换不到令牌：重建会话（成功后会用新令牌重连，这条旧通道的重试随代数作废）
-        if (err instanceof ChatError && err.subjectLost) void resession();
+      await refreshAndConnect(gen);
+    })();
+  }
+
+  /** 换新令牌再连。调用方已把 `reconnecting` 置位；这里在有结果时清掉。 */
+  async function refreshAndConnect(gen: number) {
+    let token: string;
+    try {
+      token = (await call<{ token: string }>('GET', '/ws-token')).token;
+      resessionUnproven = false;
+    } catch (err) {
+      if (stopped || gen !== generation) return;
+      reconnecting = false;
+      if (err instanceof ChatError && err.kind === 'network') {
+        // 断网 / 服务端重启：不是"WebSocket 连不上"，不计入回落轮询的次数，按退避一直试下去。
+        // 连续几次都换不到时先让轮询顶班（HTTP 也许只是这一个接口有问题），连上后自动停。
+        if (++tokenFailures >= MAX_CONNECT_FAILURES && !polling) startPolling();
+        scheduleReconnect();
         return;
       }
-      if (gen === generation) connect(token);
-    })();
+      connectFailed();
+      // 主体丢了换不到令牌：重建会话（成功后会用新令牌重连，这条旧通道的重试随代数作废）
+      if (err instanceof ChatError && err.subjectLost) void resession();
+      return;
+    }
+    if (stopped || gen !== generation) return;
+    reconnecting = false;
+    connect(token);
   }
 
   const hasBubble = (clientId: string) => pending.some((p) => p.clientId === clientId);
@@ -628,7 +727,10 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
         ctrl.abort();
       }
       inflight.clear();
-      if (watchingVisibility) document.removeEventListener('visibilitychange', onVisibility);
+      if (watchingVisibility) {
+        document.removeEventListener('visibilitychange', onVisibility);
+        window.removeEventListener('online', onOnline);
+      }
     },
   };
 }
