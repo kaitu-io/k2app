@@ -1319,7 +1319,7 @@ func (s *QUICServer) acceptLoop() {
 		// The sender is handed to handleConn so the connection's cc-summary
 		// loop can read its Summary() — before this, the server-side (download)
 		// sender was unobservable.
-		sender := k2cc.NewCCSenderGFWMode(k2cc.DefaultMaxRate)
+		sender := k2cc.NewCCSenderVariant(pickCCVariant(), k2cc.DefaultMaxRate)
 		conn.SetCongestionControl(sender)
 		go func() {
 			defer func() {

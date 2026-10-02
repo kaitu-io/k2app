@@ -81,6 +81,10 @@ func ccSummaryAttrs(win, cur k2cc.CCSummary, seq int, final bool, windowS, uptim
 		lossAgg = min(1.0, float64(win.BytesLost)/float64(win.BytesSent)) * 100
 	}
 	pct := func(edge float64, of bool) string { return k2cc.FormatBucket(edge, of) }
+	variant := cur.Variant
+	if variant == "" {
+		variant = k2cc.VariantControl
+	}
 	const mb = 1024 * 1024
 	return []any{
 		"udid", udid,
@@ -115,5 +119,35 @@ func ccSummaryAttrs(win, cur k2cc.CCSummary, seq int, final bool, windowS, uptim
 		"bgLoss", fmt.Sprintf("%.1f", cur.BGLoss*100),
 		"epsilon", fmt.Sprintf("%.3f", cur.Epsilon),
 		"mode", cur.Mode.String(),
+		// Appended 2026-10 (loss-attribution A/B). variant is the arm;
+		// declLoss is the loss QUIC declared in the window (event-time, the
+		// same definition in every arm — compare arms on THIS, not lossAgg,
+		// which is what the arm's controller saw); staleLoss is the share of
+		// declared loss bytes the stale filter dropped; resolved is the share
+		// of sent bytes whose fate was known when their MI was judged;
+		// loss{Cruise,Probe,Drain} are own-packet loss of the MIs that RAN at
+		// that BW-anchored gain ("-" = no such MI resolved a packet).
+		"variant", variant,
+		"declLoss", fmt.Sprintf("%.1f", win.DeclaredLoss()*100),
+		"staleLoss", fmt.Sprintf("%.0f", ratioPct(win.StaleLostBytes, win.DeclaredLostBytes)),
+		"resolved", fmt.Sprintf("%.0f", ratioPct(win.ResolvedBytes, win.BytesSent)),
+		"lossCruise", phasePct(win, 1),
+		"lossProbe", phasePct(win, 2),
+		"lossDrain", phasePct(win, 3),
 	}
+}
+
+func ratioPct(a, b uint64) float64 {
+	if b == 0 {
+		return 0
+	}
+	return min(1.0, float64(a)/float64(b)) * 100
+}
+
+func phasePct(win k2cc.CCSummary, phase int) string {
+	loss, ok := win.PhaseLoss(phase)
+	if !ok {
+		return "-"
+	}
+	return fmt.Sprintf("%.1f", loss*100)
 }

@@ -22,28 +22,78 @@ import (
 // packets. With the filter as written, every completed MI reports exactly the
 // first-half losses: 2/N instead of 4/N.
 func TestLossAttribution_LateDeclaredLossIsCountedNowhere(t *testing.T) {
+	sender := NewCCSenderGFWMode(100_000_000)
+	recs, declared, declaredLate := runLateLossConstruction(t, sender)
+
+	var sumLost uint64
+	for i, r := range recs {
+		sumLost += r.lost
+		// PINNED LEGACY BEHAVIOUR (control arm): only the two in-time losses
+		// are counted, so LossRate = 5 % where 10 % of the MI's packets were lost.
+		if want := uint64(2 * lateLossPktSize); r.lost != want {
+			t.Errorf("MI %d BytesLost = %d, want %d (2 in-time losses; the 2 late ones are dropped)", i, r.lost, want)
+		}
+		if r.lossRate < 0.049 || r.lossRate > 0.051 {
+			t.Errorf("MI %d legacy LossRate = %.3f, want 0.050", i, r.lossRate)
+		}
+	}
+	t.Logf("declared=%d B (late %d B), counted in any MI=%d B → visibility %.2f",
+		declared, declaredLate, sumLost, float64(sumLost)/float64(declared))
+	if sumLost+declaredLate != declared {
+		t.Errorf("counted %d + late %d != declared %d: a late loss was counted somewhere", sumLost, declaredLate, declared)
+	}
+	// The event-time counters see every declared loss, late or not.
+	sum := sender.Summary()
+	if sum.DeclaredLostBytes != declared || sum.StaleLostBytes != declaredLate {
+		t.Errorf("summary declared=%d stale=%d, want %d / %d", sum.DeclaredLostBytes, sum.StaleLostBytes, declared, declaredLate)
+	}
+}
+
+// Same construction, resolved attribution: the late losses are still dropped
+// (the stale filter stays), but the denominator is the MI's own RESOLVED
+// packets — 18 acked + 2 lost in the first half — so every MI reports the
+// true 10 %.
+func TestLossAttribution_ResolvedDenominatorSeesTrueRate(t *testing.T) {
+	sender := NewCCSenderVariant(VariantFixA3, 100_000_000)
+	recs, _, _ := runLateLossConstruction(t, sender)
+	for i, r := range recs {
+		if r.lossRate < 0.099 || r.lossRate > 0.101 {
+			t.Errorf("MI %d resolved LossRate = %.3f, want 0.100", i, r.lossRate)
+		}
+		if want := uint64(20 * lateLossPktSize); r.resolved != want {
+			t.Errorf("MI %d resolved bytes = %d, want %d (first half of the MI)", i, r.resolved, want)
+		}
+	}
+}
+
+const lateLossPktSize = 1472
+
+type lateLossRec struct {
+	id, sent, lost, resolved uint64
+	lossRate                 float64
+}
+
+// runLateLossConstruction: 12 MIs × 40 packets, every 10th packet lost (two
+// per half); first-half fates arrive in time, second-half fates after the MI
+// rotated. Returns one record per completed MI plus declared / late-declared
+// loss bytes.
+func runLateLossConstruction(t *testing.T, sender *K2CCSender) (recs []lateLossRec, declared, declaredLate uint64) {
+	t.Helper()
 	const (
 		N       = 40
-		pktSize = 1472
+		pktSize = lateLossPktSize
 		mis     = 12
 	)
 	lost := func(pn int) bool { return pn%10 == 3 }
-
-	sender := NewCCSenderGFWMode(100_000_000)
 	sender.SetRTTStatsProvider(&mockRTTStatsProvider{smoothedRTT: 50 * time.Millisecond})
 
-	type rec struct{ id, sent, lost uint64 }
-	var (
-		mu   sync.Mutex
-		recs []rec
-	)
+	var mu sync.Mutex
 	sender.SetMICompletedHook(func(mi *MonitorInterval, _ float64, _ bool) {
 		mu.Lock()
-		recs = append(recs, rec{mi.ID, mi.BytesSent, mi.BytesLost})
+		recs = append(recs, lateLossRec{mi.ID, mi.BytesSent, mi.BytesLost, mi.AckedOwnBytes + mi.BytesLost, mi.LossRate()})
 		mu.Unlock()
 	})
 
-	var declared, declaredLate uint64
 	for k := 0; k < mis; k++ {
 		base := k * N
 		// 1. The MI sends its packets.
@@ -72,15 +122,21 @@ func TestLossAttribution_LateDeclaredLossIsCountedNowhere(t *testing.T) {
 				declared += pktSize
 			}
 		}
-		// 4. MinDuration elapses; the first-half ACKs complete the MI.
+		// 4. The first-half ACKs arrive during the MI's second RTT; the last
+		//    of them lands once MinDuration has elapsed and completes the MI.
+		var own []int
+		for pn := base; pn < base+N/2; pn++ {
+			if !lost(pn) {
+				own = append(own, pn)
+			}
+		}
+		for _, pn := range own[:len(own)-1] {
+			sender.OnPacketAcked(congestion.PacketNumber(pn), pktSize, 0, 0)
+		}
 		sender.mu.Lock()
 		sender.state.CurrentMI.StartTime = time.Now().Add(-200 * time.Millisecond)
 		sender.mu.Unlock()
-		for pn := base; pn < base+N/2; pn++ {
-			if !lost(pn) {
-				sender.OnPacketAcked(congestion.PacketNumber(pn), pktSize, 0, 0)
-			}
-		}
+		sender.OnPacketAcked(congestion.PacketNumber(own[len(own)-1]), pktSize, 0, 0)
 	}
 
 	mu.Lock()
@@ -88,21 +144,40 @@ func TestLossAttribution_LateDeclaredLossIsCountedNowhere(t *testing.T) {
 	if len(recs) != mis {
 		t.Fatalf("completed MIs = %d, want %d (harness did not rotate once per round)", len(recs), mis)
 	}
-	var sumLost uint64
 	for i, r := range recs {
 		if r.sent != N*pktSize {
 			t.Fatalf("MI %d BytesSent = %d, want %d (MI boundaries drifted from the construction)", i, r.sent, N*pktSize)
 		}
-		sumLost += r.lost
-		// PINNED CURRENT BEHAVIOUR: only the two in-time losses are counted,
-		// so LossRate = 5 % where 10 % of the MI's packets were lost.
-		if want := uint64(2 * pktSize); r.lost != want {
-			t.Errorf("MI %d BytesLost = %d, want %d (2 in-time losses; the 2 late ones are dropped)", i, r.lost, want)
-		}
 	}
-	t.Logf("declared=%d B (late %d B), counted in any MI=%d B → visibility %.2f",
-		declared, declaredLate, sumLost, float64(sumLost)/float64(declared))
-	if sumLost+declaredLate != declared {
-		t.Errorf("counted %d + late %d != declared %d: a late loss was counted somewhere", sumLost, declaredLate, declared)
+	return recs, declared, declaredLate
+}
+
+// Below minResolvedPkts the resolved sample is too small to trust; LossRate
+// falls back to the legacy formula instead of reporting 1 lost / 2 resolved = 50 %.
+func TestLossAttribution_ResolvedFallsBackOnTinySample(t *testing.T) {
+	mi := &MonitorInterval{lossAttr: LossAttrResolved, BytesSent: 100_000, BytesLost: 1000, AckedOwnBytes: 1000, ResolvedPkts: 2}
+	if got := mi.LossRate(); got != 0.01 {
+		t.Errorf("tiny sample LossRate = %v, want legacy 0.01", got)
+	}
+	mi.ResolvedPkts = minResolvedPkts
+	if got := mi.LossRate(); got != 0.5 {
+		t.Errorf("at minResolvedPkts LossRate = %v, want resolved 0.5", got)
+	}
+}
+
+// kuic reports an ECN congestion signal as OnCongestionEvent(pn, 0, …): it is
+// not a lost packet and must not count as a declared loss or a resolved packet.
+func TestLossAttribution_ECNEventIsNotALoss(t *testing.T) {
+	for _, v := range []string{VariantControl, VariantFixA3} {
+		sender := NewCCSenderVariant(v, 100_000_000)
+		sender.OnPacketSent(0, 0, 0, 1472, true)
+		sender.OnCongestionEvent(0, 0, 0)
+		sum := sender.Summary()
+		sender.mu.RLock()
+		resolved := sender.state.CurrentMI.ResolvedPkts
+		sender.mu.RUnlock()
+		if sum.DeclaredLostPkts != 0 || sum.DeclaredLostBytes != 0 || resolved != 0 {
+			t.Errorf("%s: ECN event counted (declaredPkts=%d bytes=%d resolvedPkts=%d)", v, sum.DeclaredLostPkts, sum.DeclaredLostBytes, resolved)
+		}
 	}
 }

@@ -166,7 +166,47 @@ type K2CCConfig struct {
 	Alpha   float64 // Loss penalty coefficient
 	Beta    float64 // Latency penalty coefficient
 	Epsilon float64 // Probing rate change step size
+
+	// LossAttribution selects how an MI's loss rate is computed (see
+	// MonitorInterval.LossRate). Zero value = legacy.
+	LossAttribution LossAttribution
+	// AlignBWPhases evaluates each BW-anchored MI under the phase it actually
+	// RAN at instead of the phase label of the rate about to be set (see
+	// processBWAnchored). Zero value = legacy (off by one MI).
+	AlignBWPhases bool
+	// Variant is the A/B arm name, surfaced in cc-summary. "" = control.
+	Variant string
 }
+
+// LossAttribution is the per-MI loss accounting mode.
+type LossAttribution int
+
+const (
+	// LossAttrLegacy: BytesLost / BytesSent. Losses declared after the MI
+	// rotated are dropped, and the denominator includes packets whose fate is
+	// not known yet, so it reports roughly half of the real loss
+	// (loss_attribution_test.go).
+	LossAttrLegacy LossAttribution = iota
+	// LossAttrResolved: BytesLost / (AckedOwnBytes + BytesLost) — only the
+	// MI's own packets whose fate is known when the MI completes.
+	LossAttrResolved
+)
+
+// minResolvedPkts is the fewest resolved own packets for LossAttrResolved to
+// trust its sample; below it LossRate falls back to the legacy formula.
+const minResolvedPkts = uint64(5)
+
+// miPhase is the BW-anchored phase an MI actually ran at (the gain that set
+// its TargetRate). miPhaseNone: not a BW-anchored rate (PCC, slow start,
+// app-limited anchor, first anchored MI).
+type miPhase int8
+
+const (
+	miPhaseNone miPhase = iota
+	miPhaseCruise
+	miPhaseProbeUp
+	miPhaseDrain
+)
 
 // ============================================================================
 // Monitor Interval
@@ -199,6 +239,16 @@ type MonitorInterval struct {
 	// IsAppLimited indicates if this MI was application-limited
 	// (application not sending at full rate, e.g., idle period)
 	IsAppLimited bool
+
+	// Own-packet resolution (packets with number >= FirstPacketNumber whose
+	// fate is known). BytesLost is already own-only (stale filter), so
+	// AckedOwnBytes + BytesLost is the resolved byte count.
+	AckedOwnBytes uint64
+	ResolvedPkts  uint64
+
+	lossAttr LossAttribution
+	// ranPhase is the BW-anchored phase whose gain set this MI's rate.
+	ranPhase miPhase
 }
 
 // NewMonitorInterval creates a new Monitor Interval
@@ -291,6 +341,11 @@ func (mi *MonitorInterval) appLimited() bool {
 // MI boundary artifacts can produce BytesLost > BytesSent when stale loss
 // events from a previous MI are attributed to a new MI with few bytes sent.
 func (mi *MonitorInterval) LossRate() float64 {
+	if mi.lossAttr == LossAttrResolved && mi.ResolvedPkts >= minResolvedPkts {
+		// Own packets with a known fate only: no unresolved tail in the
+		// denominator, no non-ack-eliciting packets, bounded by construction.
+		return float64(mi.BytesLost) / float64(mi.AckedOwnBytes+mi.BytesLost)
+	}
 	if mi.BytesSent == 0 {
 		return 0.0
 	}
@@ -527,6 +582,12 @@ type K2CCState struct {
 
 	// Slow start: throughput from previous MI for saturation detection
 	lastSlowStartThroughput float64
+
+	// Stamped onto every MI this state creates.
+	lossAttr LossAttribution
+	// nextRanPhase is the BW-anchored phase whose gain set CurrentRate — it
+	// becomes the next MI's ranPhase.
+	nextRanPhase miPhase
 }
 
 // ensureCurrentMI ensures there's a current MI.
@@ -538,6 +599,8 @@ func (s *K2CCState) ensureCurrentMI(rate float64, rtt time.Duration) *MonitorInt
 	if s.CurrentMI == nil {
 		s.CurrentMI = NewMonitorInterval(s.NextMIID, rate)
 		s.CurrentMI.MinDuration = 2 * rtt
+		s.CurrentMI.lossAttr = s.lossAttr
+		s.CurrentMI.ranPhase = s.nextRanPhase
 		s.NextMIID++
 	}
 	return s.CurrentMI
@@ -564,6 +627,8 @@ func (s *K2CCState) startNewMI(rate float64, rtt time.Duration) *MonitorInterval
 		StartTime:   time.Now(),
 		RTTSamples:  rttBuf,
 		MinDuration: 2 * rtt,
+		lossAttr:    s.lossAttr,
+		ranPhase:    s.nextRanPhase,
 	}
 	s.NextMIID++
 	return s.CurrentMI
@@ -648,6 +713,7 @@ func NewK2CCSenderWithConfig(maxRate int64, config *K2CCConfig) *K2CCSender {
 			CurrentRate: rate,
 			Epsilon:     config.Epsilon,
 			Mode:        K2CCModeSlowStart,
+			lossAttr:    config.LossAttribution,
 		},
 		utility:   NewUtilityFunction(config.Alpha, config.Beta),
 		maxRate:   maxRate,
@@ -656,7 +722,7 @@ func NewK2CCSenderWithConfig(maxRate int64, config *K2CCConfig) *K2CCSender {
 		rtt:       initialRTT,
 		noiseEWMA: coldStartNoise,
 		ackRate:   newAckRateTracker(),
-		stats:     CCSummary{SenderID: senderSeq.Add(1)},
+		stats:     CCSummary{SenderID: senderSeq.Add(1), Variant: config.Variant},
 	}
 }
 
@@ -744,6 +810,9 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 	// Decide app-limited exactly once, here — Throughput() is pure.
 	mi.IsAppLimited = mi.appLimited()
 	throughput := mi.Throughput()
+	// Only processBWAnchored sets a BW-anchored rate; every other exit leaves
+	// the next MI un-phased.
+	p.state.nextRanPhase = miPhaseNone
 
 	// Observability: record what the controller SAW before it acts (mode
 	// residency is the mode this MI ran under). recordMIOutcome runs on every
@@ -1044,8 +1113,27 @@ func (p *K2CCSender) processBWAnchored(mi *MonitorInterval, throughput float64) 
 	}
 	p.stats.BWAnchoredMIs++
 
-	switch p.bwPhase {
-	case bwPhaseCruise:
+	// Evaluation: which phase's measurement does this MI carry?
+	// Legacy: the label of the rate about to be set — one MI ahead of the MI
+	// that just completed (bw_phase_alignment_test.go): bgLoss is sampled on
+	// the MI that ran at the probe-up rate, BW-rise on a cruise MI.
+	// Aligned: the phase the MI actually ran at.
+	evalPhase := miPhaseNone
+	if p.config.AlignBWPhases {
+		evalPhase = mi.ranPhase
+	} else {
+		switch p.bwPhase {
+		case bwPhaseCruise:
+			evalPhase = miPhaseCruise
+		case bwPhaseProbeUp:
+			evalPhase = miPhaseProbeUp
+		case bwPhaseDrain:
+			evalPhase = miPhaseDrain
+		}
+	}
+
+	switch evalPhase {
+	case miPhaseCruise:
 		// BW decrease detection: throughput much lower than expected
 		expectedThroughput := bw * bwCruiseGain
 		if p.bgLossEWMA > 0.01 {
@@ -1066,13 +1154,7 @@ func (p *K2CCSender) processBWAnchored(mi *MonitorInterval, throughput float64) 
 			)
 		}
 
-		p.bwCruiseRemain--
-		if p.bwCruiseRemain <= 0 {
-			p.bwPhase = bwPhaseProbeUp
-		}
-		p.setRateAnchored(bw * bwCruiseGain)
-
-	case bwPhaseProbeUp:
+	case miPhaseProbeUp:
 		// BW increase detection
 		correctedBW := bw
 		if p.bgLossEWMA > 0.01 {
@@ -1088,20 +1170,36 @@ func (p *K2CCSender) processBWAnchored(mi *MonitorInterval, throughput float64) 
 			)
 		}
 
-		p.bwPhase = bwPhaseDrain
-		p.setRateAnchored(bw * bwProbeUpGain)
-
-	case bwPhaseDrain:
+	case miPhaseDrain:
 		// BG loss measurement: rate well below BW → any loss is background
 		if lossRate := mi.LossRate(); lossRate > 0.005 {
 			p.bgLossEWMA = p.bgLossEWMA*(1-bgLossAlpha) + lossRate*bgLossAlpha
 		} else if p.bgLossEWMA > 0.001 {
 			p.bgLossEWMA *= (1 - bgLossAlpha)
 		}
+	}
 
+	// Scheduling: set the next MI's rate and advance the cycle. Unchanged
+	// between modes — 6 × cruise, 1 × probe-up, 1 × drain.
+	switch p.bwPhase {
+	case bwPhaseCruise:
+		p.bwCruiseRemain--
+		if p.bwCruiseRemain <= 0 {
+			p.bwPhase = bwPhaseProbeUp
+		}
+		p.setRateAnchored(bw * bwCruiseGain)
+		p.state.nextRanPhase = miPhaseCruise
+
+	case bwPhaseProbeUp:
+		p.bwPhase = bwPhaseDrain
+		p.setRateAnchored(bw * bwProbeUpGain)
+		p.state.nextRanPhase = miPhaseProbeUp
+
+	case bwPhaseDrain:
 		p.bwPhase = bwPhaseCruise
 		p.bwCruiseRemain = bwCruiseLength
 		p.setRateAnchored(bw * bwDrainGain)
+		p.state.nextRanPhase = miPhaseDrain
 	}
 
 	slog.Debug("k2cc: bw-anchor",
@@ -1131,6 +1229,11 @@ func (p *K2CCSender) recordCompletedMI(mi *MonitorInterval, throughput float64) 
 	st.BytesSent += mi.BytesSent
 	st.BytesAcked += mi.BytesAcked
 	st.BytesLost += mi.BytesLost
+	st.ResolvedBytes += mi.AckedOwnBytes + mi.BytesLost
+	// Per ran-phase loss: what each BW-anchored gain actually costs.
+	st.PhaseMIs[mi.ranPhase]++
+	st.PhaseLostBytes[mi.ranPhase] += mi.BytesLost
+	st.PhaseResolvedBytes[mi.ranPhase] += mi.AckedOwnBytes + mi.BytesLost
 
 	loss := mi.LossRate()
 	histAdd(st.LossHist[:], lossHistEdges[:], loss*100)
@@ -1297,6 +1400,11 @@ func (p *K2CCSender) OnPacketAcked(
 	mi.BytesAcked += uint64(ackedBytes)
 	mi.PacketsAcked++
 	mi.RTTSamples = append(mi.RTTSamples, p.rtt)
+	if mi.PacketsSent > 0 && int64(number) >= mi.FirstPacketNumber {
+		mi.AckedOwnBytes += uint64(ackedBytes)
+		mi.ResolvedPkts++
+	}
+	p.stats.EventAckedBytes += uint64(ackedBytes)
 
 	// Check if MI is complete
 	if mi.IsComplete() {
@@ -1333,14 +1441,27 @@ func (p *K2CCSender) OnCongestionEvent(
 	// Without filtering: BytesLost >> BytesSent → LossRate 300-900% → false CRITICAL.
 	mi := p.state.ensureCurrentMI(p.state.CurrentRate, p.rtt)
 
+	// ECN congestion signals arrive here with lostBytes == 0 (kuic
+	// sent_packet_handler); they are not a lost packet. Checked after
+	// ensureCurrentMI so the MI lifecycle stays identical to the pre-variant code.
+	if lostBytes == 0 {
+		return
+	}
+	// Variant-independent ground truth: every loss QUIC declares, before any
+	// MI attribution. declLoss in cc-summary is built from these.
+	p.stats.DeclaredLostBytes += uint64(lostBytes)
+	p.stats.DeclaredLostPkts++
+
 	// Stale loss filter: skip losses from previous MI.
 	// PacketsSent == 0: no packets sent in this MI yet, ALL losses are stale.
 	// number < FirstPacketNumber: packet belongs to a previous MI.
 	if mi.PacketsSent == 0 || int64(number) < mi.FirstPacketNumber {
+		p.stats.StaleLostBytes += uint64(lostBytes)
 		return
 	}
 
 	mi.BytesLost += uint64(lostBytes)
+	mi.ResolvedPkts++
 
 	// In aggressive/GFW mode, we mostly ignore loss
 	// The utility function handles this via low alpha
@@ -1360,7 +1481,13 @@ func (p *K2CCSender) OnCongestionEventEx(
 	// concurrency:allow — pure arithmetic on struct fields, no I/O or external calls
 	defer p.mu.Unlock()
 
-	filteredLosses := p.countFreshLossesLocked(lostPackets)
+	// The ack-rate tracker is a time-window quantity with no MI ownership, so
+	// the stale filter has no meaning for it; legacy keeps the filter only to
+	// stay bit-identical for the control arm.
+	filteredLosses := uint64(len(lostPackets))
+	if p.config.LossAttribution == LossAttrLegacy {
+		filteredLosses = p.countFreshLossesLocked(lostPackets)
+	}
 	acks := uint64(len(ackedPackets))
 	if acks == 0 && filteredLosses == 0 {
 		return
