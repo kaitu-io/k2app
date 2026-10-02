@@ -14,7 +14,7 @@ import (
 // chatTestValues 返回 n 个唯一标识值，并在测试结束时清掉这些值牵出的 guest 及其簇、合并记录。
 func chatTestValues(t *testing.T, n int) []string {
 	t.Helper()
-	require.NoError(t, Migrate())
+	chatMigrated(t)
 	vals := make([]string, n)
 	for i := range vals {
 		vals[i] = generateId("idt")

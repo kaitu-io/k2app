@@ -24,7 +24,7 @@ func newChatSubject(t *testing.T) chatSubject {
 
 func newChatSubjectBrand(t *testing.T, brand Brand) chatSubject {
 	t.Helper()
-	require.NoError(t, Migrate())
+	chatMigrated(t)
 	// 真实 guest 行：发布钩子要把 guest 解析到簇根，伪造的 id 会让每条消息都记一条警告
 	id, err := resolveGuest(context.Background(), brand, generateId("nsj")+fmt.Sprint(chatSubjectSeq.Add(1)), "", "zh-CN", "CN")
 	require.NoError(t, err)
