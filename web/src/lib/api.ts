@@ -2757,6 +2757,28 @@ export const api = {
     return this.request<{ items: FeedbackTicketReply[] }>(`/app/feedback-tickets/${id}/replies`);
   },
 
+  // ==================== 访客会话（只读后台，Slack 是主界面） ====================
+
+  async getChatConversations(params: ChatConversationListParams = {}): Promise<ListResult<ChatConversation>> {
+    const q = new URLSearchParams();
+    if (params.status) q.set('status', params.status);
+    if (params.handler) q.set('handler', params.handler);
+    if (params.brand) q.set('brand', params.brand);
+    if (params.email) q.set('email', params.email);
+    if (params.page !== undefined) q.set('page', params.page.toString());
+    if (params.pageSize !== undefined) q.set('pageSize', params.pageSize.toString());
+    const query = q.toString();
+    return this.request<ListResult<ChatConversation>>(`/app/chat/conversations${query ? '?' + query : ''}`);
+  },
+
+  async getChatConversation(uuid: string): Promise<ChatConversationDetail> {
+    return this.request<ChatConversationDetail>(`/app/chat/conversations/${encodeURIComponent(uuid)}`);
+  },
+
+  async closeChatConversation(uuid: string): Promise<void> {
+    return this.request<void>(`/app/chat/conversations/${encodeURIComponent(uuid)}/close`, { method: 'PUT' });
+  },
+
   // ==================== Approval Management ====================
 
   async getApprovals(params: { status?: string; page?: number; pageSize?: number } = {}): Promise<ListResult<AdminApproval>> {
@@ -3196,6 +3218,52 @@ export interface FeedbackTicketReply {
   senderName: string;
   content: string;
   createdAt: number;
+}
+
+/**
+ * 访客会话时间戳：假定与工单等其它 admin 接口一致，为 unix 秒（number）。
+ * 若后端改为 ISO 字符串，只需改这一行与页面的 formatChatTime。
+ */
+export type ChatTimestamp = number;
+
+export interface ChatConversation {
+  uuid: string;
+  brand: BrandId;
+  subjectKind: 'guest' | 'user';
+  subjectId: string;
+  email: string;
+  status: 'open' | 'closed';
+  handler: 'ai' | 'human';
+  entryPath: string;
+  lastMessageAt: ChatTimestamp;
+  lastMessageBy: 'visitor' | 'ai' | 'staff' | '';
+  /** Slack 线程链接；没有频道时为空串。 */
+  slackPermalink: string;
+  createdAt: ChatTimestamp;
+}
+
+export interface ChatMessage {
+  id: number;
+  senderType: 'visitor' | 'ai' | 'staff' | 'system';
+  senderName: string;
+  kind: 'text' | 'image' | 'options' | 'option_reply' | 'event' | 'note';
+  content: string;
+  meta?: unknown;
+  createdAt: ChatTimestamp;
+}
+
+export interface ChatConversationDetail {
+  conversation: ChatConversation;
+  messages: ChatMessage[];
+}
+
+export interface ChatConversationListParams {
+  status?: 'open' | 'closed';
+  handler?: 'ai' | 'human';
+  brand?: BrandId;
+  email?: string;
+  page?: number;
+  pageSize?: number;
 }
 
 export interface FeedbackTicketListParams {
