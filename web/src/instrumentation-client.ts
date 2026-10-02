@@ -16,8 +16,10 @@ import { stripChatResume } from '@/components/chat/resume-script';
 // MUST stay the first statement of this module. An emailed chat-resume link
 // carries its token in the URL fragment (#chat=…); this moves it to
 // window.__chatResume and rewrites the address bar before Sentry can see it.
-// Next runs this file before `beforeInteractive` scripts, so the inline copy
-// in the root layout is too late for Sentry and is only a fallback.
+// The root layout also inlines the same strip as a `beforeInteractive` script.
+// Nothing here depends on which of the two runs first — both orders are safe:
+// whichever runs second finds no fragment and does nothing, and this call
+// always precedes `Sentry.init` below.
 // Why "before Sentry.init" is enough even though the imports above are
 // evaluated first: the SDK reads `location` and patches `history` inside
 // `init()` (Replay's initialUrl, the history breadcrumb instrumentation), not

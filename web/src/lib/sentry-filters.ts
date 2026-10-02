@@ -262,17 +262,17 @@ export function scrubChatResumeEvent(event: ErrorEvent): ErrorEvent {
 const SCRUB_MAX_DEPTH = 8;
 
 /**
- * Walk plain objects / arrays and scrub every string. Returns the SAME
- * reference when nothing changed, so untouched payloads are not copied.
+ * Walk plain objects / arrays and rewrite every string with `fn`. Returns the
+ * SAME reference when nothing changed, so untouched payloads are not copied.
  * Depth-limited; non-plain objects (Date, Error, DOM nodes) are left alone.
  */
-function scrubChatResumeDeep<T>(value: T, depth = 0): T {
-  if (typeof value === 'string') return scrubChatResumeToken(value) as T;
+function mapStringsDeep<T>(value: T, fn: (s: string) => string, depth = 0): T {
+  if (typeof value === 'string') return fn(value) as T;
   if (value === null || typeof value !== 'object' || depth >= SCRUB_MAX_DEPTH) return value;
   if (Array.isArray(value)) {
     let out: unknown[] | null = null;
     value.forEach((item, i) => {
-      const clean = scrubChatResumeDeep(item, depth + 1);
+      const clean = mapStringsDeep(item, fn, depth + 1);
       if (clean !== item) (out ??= value.slice())[i] = clean;
     });
     return (out ?? value) as T;
@@ -281,10 +281,14 @@ function scrubChatResumeDeep<T>(value: T, depth = 0): T {
   if (proto !== Object.prototype && proto !== null) return value;
   let out: Record<string, unknown> | null = null;
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    const clean = scrubChatResumeDeep(item, depth + 1);
+    const clean = mapStringsDeep(item, fn, depth + 1);
     if (clean !== item) (out ??= { ...(value as Record<string, unknown>) })[key] = clean;
   }
   return (out ?? value) as T;
+}
+
+function scrubChatResumeDeep<T>(value: T): T {
+  return mapStringsDeep(value, scrubChatResumeToken);
 }
 
 /**
@@ -324,4 +328,107 @@ export function scrubChatResumeTransaction(event: TransactionEvent): Transaction
  */
 export function scrubChatResumeRecordingEvent<T>(event: T): T {
   return scrubChatResumeDeep(event);
+}
+
+// ---------------------------------------------------------------------------
+// Server / edge runtime: the Next proxy of `/api/chat/*`.
+//
+// `/api/*` is a Next rewrite, so the request passes through the Next server and
+// the server SDK (sendDefaultPii) records it: `request.data` (the resume token
+// on `POST /session`, the visitor's message text on `POST /messages`, the
+// address on `POST /email`), `request.cookies` and the Cookie header (the
+// HttpOnly visitor credential). None of that may leave for chat routes.
+// Scope is deliberately `/api/chat/` only — other routes keep the SDK's
+// existing behaviour.
+// ---------------------------------------------------------------------------
+
+const CHAT_API_PATH = /\/api\/chat\//;
+const TOKEN_QUERY_PARAM = /([?&]token=)[^&#\s"'<>]*/g;
+const BARE_TOKEN_QUERY = /^(token=)[^&#]*/;
+const SENSITIVE_HEADERS = new Set(['cookie', 'authorization']);
+const FILTERED = '[Filtered]';
+
+const isChatApiString = (v: unknown): boolean => typeof v === 'string' && CHAT_API_PATH.test(v);
+
+/** `?token=` on a chat URL is the WebSocket credential (`/api/chat/ws?token=…`). */
+function filterChatTokenParam(value: string): string {
+  if (!value.includes('token=')) return value;
+  return value.replace(TOKEN_QUERY_PARAM, `$1${FILTERED}`).replace(BARE_TOKEN_QUERY, `$1${FILTERED}`);
+}
+
+const scrubChatString = (value: string) => scrubChatResumeToken(filterChatTokenParam(value));
+
+/** Only a URL that is itself a chat route gets its `token=` filtered; the `#chat=` fragment always goes. */
+const scrubChatUrlString = (value: string) => (CHAT_API_PATH.test(value) ? scrubChatString(value) : scrubChatResumeToken(value));
+
+type ChatScrubbable = {
+  transaction?: string;
+  request?: {
+    url?: string;
+    data?: unknown;
+    cookies?: unknown;
+    query_string?: unknown;
+    headers?: Record<string, string>;
+  };
+  contexts?: { trace?: { description?: unknown; data?: Record<string, unknown> } };
+};
+
+function isChatApiEvent(event: ChatScrubbable): boolean {
+  if (isChatApiString(event.transaction) || isChatApiString(event.request?.url)) return true;
+  const trace = event.contexts?.trace;
+  if (!trace) return false;
+  if (isChatApiString(trace.description)) return true;
+  return Object.values(trace.data ?? {}).some(isChatApiString);
+}
+
+function dropTokenFromQuery(query: unknown): unknown {
+  if (typeof query === 'string') return filterChatTokenParam(query);
+  if (Array.isArray(query)) return query.filter((pair) => !(Array.isArray(pair) && pair[0] === 'token'));
+  if (query && typeof query === 'object') {
+    const rest = { ...(query as Record<string, unknown>) };
+    delete rest.token;
+    return rest;
+  }
+  return query;
+}
+
+/**
+ * `beforeSend` / `beforeSendTransaction` hook for the server and edge runtimes.
+ *
+ * An event that belongs to a chat route (transaction name, `request.url` or the
+ * root span's data mentions `/api/chat/`) loses `request.data`,
+ * `request.cookies`, the Cookie / Authorization headers and any `token=` query
+ * value, wherever it appears in the event. Every event, chat route or not, also
+ * gets the `#chat=` fragment scrub.
+ *
+ * Never drops the event. Returns the same reference when nothing changed.
+ */
+export function scrubChatApiEvent<T extends ErrorEvent | TransactionEvent>(event: T): T {
+  const loose = event as unknown as ChatScrubbable;
+  if (!isChatApiEvent(loose)) return scrubChatResumeDeep(event);
+  let next: ChatScrubbable = loose;
+  if (loose.request) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { data, cookies, ...request } = loose.request;
+    if (request.headers) {
+      request.headers = Object.fromEntries(
+        Object.entries(request.headers).filter(([name]) => !SENSITIVE_HEADERS.has(name.toLowerCase())),
+      );
+    }
+    if ('query_string' in request) request.query_string = dropTokenFromQuery(request.query_string);
+    next = { ...loose, request };
+  }
+  return mapStringsDeep(next, scrubChatString) as unknown as T;
+}
+
+/** `beforeSendSpan` twin: a span whose description / data names a chat route. */
+export function scrubChatApiSpan(span: SpanJSON): SpanJSON {
+  const isChat =
+    isChatApiString(span.description) || Object.values((span.data ?? {}) as Record<string, unknown>).some(isChatApiString);
+  return mapStringsDeep(span, isChat ? scrubChatString : scrubChatResumeToken);
+}
+
+/** `beforeBreadcrumb` twin: outgoing-request breadcrumbs carry the proxied URL. */
+export function scrubChatApiBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb {
+  return mapStringsDeep(breadcrumb, scrubChatUrlString);
 }

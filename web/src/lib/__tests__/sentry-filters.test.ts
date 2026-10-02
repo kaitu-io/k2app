@@ -9,6 +9,9 @@ import {
   dropNativePostMessageRejections,
   dropOutdatedBrowserSyntaxErrors,
   dropRscNavigationFallbackRejections,
+  scrubChatApiBreadcrumb,
+  scrubChatApiEvent,
+  scrubChatApiSpan,
   scrubChatResumeBreadcrumb,
   scrubChatResumeEvent,
   scrubChatResumeRecordingEvent,
@@ -702,5 +705,115 @@ describe('chat-resume token scrubbing: navigation-timing paths (spans, transacti
     const out = scrubChatResumeRecordingEvent(loop);
     expect(out.url).toBe(CLEAN);
     expect(out.when).toBe(when);
+  });
+});
+
+// 形状取自真实浏览器验证（task-14 D1）：`/api/*` 经 rewrites 由 Next 服务端代理，
+// 服务端 SDK 把请求体、cookie 一并采进事务。
+describe('server-side chat API scrubbing (Next proxy of /api/chat/*)', () => {
+  const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJjIjoiYWJjIn0.c2lnbmF0dXJl';
+  const sessionTx = () =>
+    ({
+      type: 'transaction',
+      platform: 'node',
+      transaction: 'POST http://127.0.0.1:5811/api/chat/session',
+      sdk: { name: 'sentry.javascript.nextjs' },
+      request: {
+        method: 'POST',
+        url: 'http://localhost:3411/api/chat/session',
+        data: { path: '/zh-CN/support', resume: TOKEN },
+        cookies: { sid: 'sid-secret', cid: 'cid-secret' },
+        headers: {
+          cookie: 'sid=sid-secret; cid=cid-secret',
+          Authorization: 'Bearer auth-secret',
+          'user-agent': 'UA',
+          'x-k2-brand': 'kaitu',
+        },
+      },
+      contexts: { trace: { trace_id: 't', span_id: 's', op: 'http.client', data: { 'http.method': 'POST', url: 'http://127.0.0.1:5811/api/chat/session' } } },
+      spans: [],
+    }) as unknown as TransactionEvent;
+
+  it('session transaction: drops request body, cookies, cookie/authorization headers; keeps the rest', () => {
+    const out = scrubChatApiEvent(sessionTx());
+    const json = JSON.stringify(out);
+    for (const secret of [TOKEN, 'sid-secret', 'cid-secret', 'auth-secret']) expect(json).not.toContain(secret);
+    expect(out.request).toEqual({
+      method: 'POST',
+      url: 'http://localhost:3411/api/chat/session',
+      headers: { 'user-agent': 'UA', 'x-k2-brand': 'kaitu' },
+    });
+    expect(out.transaction).toBe('POST http://127.0.0.1:5811/api/chat/session');
+    expect(out.contexts?.trace?.op).toBe('http.client');
+  });
+
+  it('messages transaction: visitor message text (string body) never leaves', () => {
+    const ev = sessionTx();
+    ev.transaction = 'POST http://127.0.0.1:5811/api/chat/messages';
+    ev.request = { url: 'http://localhost:3411/api/chat/messages', data: '{"kind":"text","content":"我的订单号是 12345","clientId":"c"}', cookies: { cid: 'cid-secret' } };
+    const json = JSON.stringify(scrubChatApiEvent(ev));
+    expect(json).not.toContain('订单号');
+    expect(json).not.toContain('cid-secret');
+  });
+
+  it('matches on any of: transaction name, request.url, root span data — one is enough', () => {
+    const byName = { type: 'transaction', transaction: 'POST /api/chat/email', request: { data: 'a@b.c' } } as unknown as TransactionEvent;
+    expect(scrubChatApiEvent(byName).request).toEqual({});
+    const byUrl = { request: { url: 'https://kaitu.io/api/chat/email', data: 'a@b.c' } } as unknown as ErrorEvent;
+    expect(scrubChatApiEvent(byUrl).request).toEqual({ url: 'https://kaitu.io/api/chat/email' });
+    const bySpan = {
+      type: 'transaction',
+      transaction: 'POST',
+      request: { data: 'a@b.c' },
+      contexts: { trace: { trace_id: 't', span_id: 's', data: { 'http.target': '/api/chat/email' } } },
+    } as unknown as TransactionEvent;
+    expect(scrubChatApiEvent(bySpan).request).toEqual({});
+  });
+
+  it('filters ?token= wherever it appears in a chat event (url, query_string in all three shapes, spans)', () => {
+    const ev = {
+      type: 'transaction',
+      transaction: 'GET /api/chat/ws',
+      request: { url: 'https://kaitu.io/api/chat/ws?token=ws-secret&x=1', query_string: 'token=ws-secret&x=1' },
+      spans: [{ span_id: 'a', trace_id: 't', start_timestamp: 1, description: 'GET https://ws.kaitu.io/api/chat/ws?x=1&token=ws-secret', data: { 'http.query': '?token=ws-secret' } }],
+    } as unknown as TransactionEvent;
+    const out = scrubChatApiEvent(ev);
+    expect(JSON.stringify(out)).not.toContain('ws-secret');
+    expect(out.request?.url).toBe('https://kaitu.io/api/chat/ws?token=[Filtered]&x=1');
+    expect(out.request?.query_string).toBe('token=[Filtered]&x=1');
+    const obj = scrubChatApiEvent({ ...ev, request: { url: '/api/chat/ws', query_string: { token: 'ws-secret', x: '1' } } } as unknown as TransactionEvent);
+    expect(obj.request?.query_string).toEqual({ x: '1' });
+    const pairs = scrubChatApiEvent({ ...ev, request: { url: '/api/chat/ws', query_string: [['token', 'ws-secret'], ['x', '1']] } } as unknown as TransactionEvent);
+    expect(pairs.request?.query_string).toEqual([['x', '1']]);
+  });
+
+  it('other routes are left exactly as they are (scope is /api/chat/ only), same reference', () => {
+    const other = {
+      type: 'transaction',
+      transaction: 'POST /api/user/login',
+      request: { url: 'https://kaitu.io/api/user/login?token=keep', data: { email: 'a@b.c' }, cookies: { sid: 's' }, headers: { cookie: 'sid=s' } },
+    } as unknown as TransactionEvent;
+    expect(scrubChatApiEvent(other)).toBe(other);
+    // 路径只是以 chat 开头的别的路由不算
+    const lookalike = { transaction: 'GET /api/chatter/x', request: { data: 'keep' } } as unknown as TransactionEvent;
+    expect(scrubChatApiEvent(lookalike)).toBe(lookalike);
+  });
+
+  it('still removes a #chat= fragment from any event, chat route or not', () => {
+    const page = { type: 'transaction', transaction: 'GET /zh-CN/support', request: { url: 'https://kaitu.io/zh-CN/support#chat=tok', data: 'keep' } } as unknown as TransactionEvent;
+    expect(scrubChatApiEvent(page).request).toEqual({ url: 'https://kaitu.io/zh-CN/support', data: 'keep' });
+  });
+
+  it('scrubChatApiSpan / scrubChatApiBreadcrumb filter the ws token on chat URLs only', () => {
+    const span = scrubChatApiSpan({ span_id: 'a', trace_id: 't', start_timestamp: 1, description: 'GET /api/chat/ws?token=ws-secret', data: { url: 'https://h/api/chat/ws?token=ws-secret' } } as SpanJSON);
+    expect(JSON.stringify(span)).not.toContain('ws-secret');
+    const keep = { span_id: 'a', trace_id: 't', start_timestamp: 1, description: 'GET /api/x?token=keep' } as SpanJSON;
+    expect(scrubChatApiSpan(keep)).toBe(keep);
+    expect(scrubChatApiBreadcrumb({ category: 'http', data: { url: 'https://h/api/chat/ws?token=ws-secret', status_code: 200 } }).data).toEqual({
+      url: 'https://h/api/chat/ws?token=[Filtered]',
+      status_code: 200,
+    });
+    const crumb = { category: 'http', data: { url: 'https://h/api/x?token=keep' } };
+    expect(scrubChatApiBreadcrumb(crumb)).toBe(crumb);
   });
 });
