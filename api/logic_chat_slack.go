@@ -42,9 +42,14 @@ const (
 	chatSlackStaffKey = "chat:slack:staff"
 	chatSlackStaffTTL = 5 * time.Minute
 
-	// chatSlackSweepAge sweep 只碰早于它的未镜像消息，不与实时路径抢。
-	chatSlackSweepAge   = 30 * time.Second
-	chatSlackSweepLimit = 50
+	// chatSlackSweepAge sweep 只碰早于它的未镜像消息 / 已关闭会话，不与实时路径抢。
+	chatSlackSweepAge = 30 * time.Second
+	// chatSlackSweepMaxAge sweep 的下界：更早的未镜像消息、更早关闭的会话不再碰。
+	// 这样在已有历史数据的库上打开镜像不会给每个旧会话建频道、刷爆 Slack。
+	chatSlackSweepMaxAge = 24 * time.Hour
+	chatSlackSweepLimit  = 50
+	// chatSlackUnlockTimeout 放锁的独立超时。
+	chatSlackUnlockTimeout = 2 * time.Second
 )
 
 var (
@@ -130,7 +135,9 @@ func (l *chatSlackLock) refresh(ctx context.Context) error {
 
 func (l *chatSlackLock) release() {
 	const script = `if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end`
-	_ = redis.Client().Eval(context.Background(), script, []string{l.key}, l.token).Err()
+	ctx, cancel := context.WithTimeout(context.Background(), chatSlackUnlockTimeout)
+	defer cancel()
+	_ = redis.Client().Eval(ctx, script, []string{l.key}, l.token).Err()
 }
 
 // chatSlackDo 执行一步 Slack 调用：单次 10 秒超时；遇限流等 max(Retry-After, 1s) 后重试这一步，最多 3 次。
@@ -238,6 +245,13 @@ func chatSlackSetup(ctx context.Context, lock *chatSlackLock, conv *Conversation
 			}
 		}
 		if err := chatSlackSave(ctx, conv.ID, "slack_channel_id", id); err != nil {
+			// 频道已建但没记下来：下轮会再建一个。记下 id 并尽力归档这个孤儿，免得客服看到空频道
+			log.Errorf(ctx, "chat slack: channel %s created but not saved, archiving orphan: conv=%d err=%v", id, conv.ID, err)
+			if aerr := chatSlackDo(ctx, lock, func(c context.Context) error {
+				return slack.ArchiveChannel(c, id)
+			}); aerr != nil {
+				log.Errorf(ctx, "chat slack: archive orphan channel %s: conv=%d err=%v", id, conv.ID, aerr)
+			}
 			return err
 		}
 		conv.SlackChannelID = id
@@ -431,10 +445,18 @@ func chatSlackRefreshCard(ctx context.Context, conv *Conversation) error {
 	return errors.Join(errs...)
 }
 
-// chatSlackArchive 会话关闭后调用：先把尾巴发完，再刷新状态卡，最后归档频道。
-// 尾巴没发完（发送失败，或别的调用正持锁在发）就返回 error 不归档——归档后再也发不进去。
+// chatSlackArchive 会话关闭后调用：先把尾巴发完，再刷新状态卡，最后归档频道并记下 slack_archived_at。
+// 幂等：已记过归档时间就什么都不做。尾巴没发完（发送失败，或别的调用正持锁在发）返回 error 不归档——
+// 归档后再也发不进去；这种情况由 chatSlackSweep 的第二遍重试。刷卡失败只记日志，不挡归档。
 func chatSlackArchive(ctx context.Context, conv *Conversation) error {
 	if chatSlackLobby() == "" || conv == nil {
+		return nil
+	}
+	fresh, err := chatLoadConversation(ctx, conv.ID)
+	if err != nil {
+		return fmt.Errorf("load conversation: %w", err)
+	}
+	if fresh.SlackArchivedAt != nil {
 		return nil
 	}
 	if err := chatSlackMirror(ctx, conv.ID); err != nil {
@@ -446,22 +468,35 @@ func chatSlackArchive(ctx context.Context, conv *Conversation) error {
 		return errChatSlackBusy
 	}
 	if err := chatSlackRefreshCard(ctx, conv); err != nil {
-		return err
+		log.Errorf(ctx, "chat slack archive: refresh card: conv=%d err=%v", conv.ID, err)
 	}
-	fresh, err := chatLoadConversation(ctx, conv.ID)
-	if err != nil {
+	// 镜像可能刚建了频道：重读拿频道 id
+	if fresh, err = chatLoadConversation(ctx, conv.ID); err != nil {
 		return fmt.Errorf("load conversation: %w", err)
 	}
 	if fresh.SlackChannelID == "" {
 		return nil
 	}
-	return chatSlackDo(ctx, nil, func(c context.Context) error {
-		return slack.ArchiveChannel(c, fresh.SlackChannelID)
-	})
+	if err := chatSlackDo(ctx, nil, func(c context.Context) error {
+		return slack.ArchiveChannel(c, fresh.SlackChannelID) // already_archived 视作成功
+	}); err != nil {
+		return fmt.Errorf("archive channel: %w", err)
+	}
+	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), chatSlackSaveTimeout)
+	defer cancel()
+	if err := db.Get().WithContext(sctx).Model(&Conversation{}).Where("id = ?", conv.ID).
+		Update("slack_archived_at", time.Now()).Error; err != nil {
+		return fmt.Errorf("save slack_archived_at: %w", err)
+	}
+	return nil
 }
 
-// chatSlackSweep 找出有未镜像消息（早于 30 秒）的会话，最旧的先来，每次最多 50 个，逐个 chatSlackMirror。
-// 返回成功处理的会话数；单个会话失败只记日志并汇总进返回的 error，不阻止后面的。
+// chatSlackSweep 兜底实时路径，两遍，各最多 50 个会话，最旧的先来：
+//  1. 有未镜像消息（30 秒前、24 小时内）的会话：chatSlackMirror，成功后刷新状态卡
+//     （实时路径失败时卡片也停在旧状态，只补消息不够）；
+//  2. 已关闭（30 秒前、24 小时内）、有频道、还没归档成功的会话：chatSlackArchive。
+//
+// 返回成功处理的会话数（两遍都碰到的只算一次）；单个会话失败只记日志并汇总进返回的 error，不阻止后面的。
 func chatSlackSweep(ctx context.Context) (int, error) {
 	return chatSlackSweepIn(ctx, "")
 }
@@ -471,8 +506,13 @@ func chatSlackSweepIn(ctx context.Context, brand string) (int, error) {
 	if chatSlackLobby() == "" {
 		return 0, nil
 	}
+	now := time.Now()
+	from, to := now.Add(-chatSlackSweepMaxAge), now.Add(-chatSlackSweepAge)
+	done := map[uint64]bool{}
+	var errs []error
+
 	q := db.Get().WithContext(ctx).Table("conversation_messages AS m").
-		Where("m.slack_mirrored_at IS NULL AND m.created_at < ?", time.Now().Add(-chatSlackSweepAge))
+		Where("m.slack_mirrored_at IS NULL AND m.created_at > ? AND m.created_at < ?", from, to)
 	if brand != "" {
 		q = q.Joins("JOIN conversations AS c ON c.id = m.conversation_id").Where("c.brand = ?", brand)
 	}
@@ -481,14 +521,35 @@ func chatSlackSweepIn(ctx context.Context, brand string) (int, error) {
 		Pluck("m.conversation_id", &ids).Error; err != nil {
 		return 0, fmt.Errorf("list conversations to sweep: %w", err)
 	}
-	n := 0
-	var errs []error
 	for _, id := range ids {
 		if err := chatSlackMirror(ctx, id); err != nil {
 			errs = append(errs, fmt.Errorf("conv %d: %w", id, err))
 			continue
 		}
-		n++
+		if err := chatSlackRefreshCard(ctx, &Conversation{ID: id}); err != nil {
+			errs = append(errs, fmt.Errorf("conv %d: refresh card: %w", id, err))
+			continue
+		}
+		done[id] = true
 	}
-	return n, errors.Join(errs...)
+
+	aq := db.Get().WithContext(ctx).Model(&Conversation{}).
+		Where("status = ? AND slack_channel_id <> '' AND slack_archived_at IS NULL AND closed_at > ? AND closed_at < ?",
+			ConvClosed, from, to)
+	if brand != "" {
+		aq = aq.Where("brand = ?", brand)
+	}
+	var closed []uint64
+	if err := aq.Order("id").Limit(chatSlackSweepLimit).Pluck("id", &closed).Error; err != nil {
+		return len(done), errors.Join(append(errs, fmt.Errorf("list conversations to archive: %w", err))...)
+	}
+	for _, id := range closed {
+		if err := chatSlackArchive(ctx, &Conversation{ID: id}); err != nil {
+			delete(done, id)
+			errs = append(errs, fmt.Errorf("conv %d: archive: %w", id, err))
+			continue
+		}
+		done[id] = true
+	}
+	return len(done), errors.Join(errs...)
 }

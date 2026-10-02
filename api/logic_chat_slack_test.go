@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	db "github.com/wordgate/qtoolkit/db"
+	"github.com/wordgate/qtoolkit/redis"
 )
 
 // ---- 测试辅助 ----
@@ -267,7 +268,8 @@ func TestSlackStatus(t *testing.T) {
 		{ConvOpen, HandlerAI, SenderVisitor, "🤖", "AI 接待中"},
 		{ConvOpen, HandlerHuman, SenderVisitor, "🔴", "等待人工"},
 		{ConvOpen, HandlerHuman, SenderStaff, "🟡", "已回复待访客"},
-		{ConvOpen, HandlerHuman, "", "🟡", "已回复待访客"},
+		{ConvOpen, HandlerHuman, SenderAI, "🔴", "等待人工"}, // AI 带告别语转人工：最后一条是 AI，仍在等人
+		{ConvOpen, HandlerHuman, "", "🔴", "等待人工"},
 	}
 	for _, c := range cases {
 		emoji, label := chatSlackStatus(&Conversation{Status: c.status, Handler: c.handler, LastMessageBy: c.by})
@@ -513,4 +515,194 @@ func TestSlackSweep_SkipsFreshMessages(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
 	assert.EqualValues(t, 0, slackUnmirrored(t, conv.ID))
+}
+
+// ---- 评审修复（第 1 轮） ----
+
+// slackBackdate 把会话的消息挪到 age 之前（sweep 只碰 30 秒前、24 小时内的消息）。
+func slackBackdate(t *testing.T, convID uint64, age time.Duration) {
+	t.Helper()
+	require.NoError(t, db.Get().Model(&ConversationMessage{}).Where("conversation_id = ?", convID).
+		Update("created_at", time.Now().Add(-age)).Error)
+}
+
+// slackClose 直接把会话置为已关闭（不经钩子），closed_at 为 age 之前。
+func slackClose(t *testing.T, convID uint64, age time.Duration) {
+	t.Helper()
+	require.NoError(t, db.Get().Model(&Conversation{}).Where("id = ?", convID).
+		Updates(map[string]any{"status": ConvClosed, "closed_at": time.Now().Add(-age)}).Error)
+}
+
+func TestSlackSweep_RefreshesCardAfterMirror(t *testing.T) {
+	brand := slackTestBrand()
+	conv := slackConv(t, brand, "/support")
+	f := newFakeSlack(t)
+	conv = slackSetup(t, f, conv)
+	// 实时路径失败过：消息没发出去，卡片也停在旧状态（AI 接待中），而库里已是等待人工
+	require.NoError(t, db.Get().Model(&Conversation{}).Where("id = ?", conv.ID).
+		Updates(map[string]any{"handler": HandlerHuman, "last_message_by": SenderVisitor}).Error)
+	slackSeed(t, conv, SenderVisitor, MsgText, "补发")
+	slackBackdate(t, conv.ID, time.Minute)
+
+	n, err := chatSlackSweepIn(context.Background(), string(brand))
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+	assert.Equal(t, []string{"chat.postMessage", "chat.update", "chat.update"}, f.Methods())
+	ups := f.CallsOf("chat.update")
+	require.Len(t, ups, 2)
+	assert.Contains(t, ups[0].Str("text"), "🔴 *等待人工*")
+}
+
+func TestSlackSweep_IgnoresOldBacklog(t *testing.T) {
+	brand := slackTestBrand()
+	conv := slackConv(t, brand, "/support")
+	f := newFakeSlack(t)
+	slackSeed(t, conv, SenderVisitor, MsgText, "开启镜像之前的历史消息")
+	slackBackdate(t, conv.ID, 25*time.Hour)
+
+	n, err := chatSlackSweepIn(context.Background(), string(brand))
+	require.NoError(t, err)
+	assert.Zero(t, n, "超过 24 小时的积压不碰：在有历史的库上打开镜像不能刷爆 Slack")
+	assert.Empty(t, f.Calls())
+	assert.EqualValues(t, 1, slackUnmirrored(t, conv.ID))
+}
+
+func TestSlackSweep_IndexExists(t *testing.T) {
+	skipIfNoConfig(t)
+	require.NoError(t, Migrate())
+	assert.True(t, db.Get().Migrator().HasIndex(&ConversationMessage{}, "idx_msg_unmirrored"))
+	assert.True(t, db.Get().Migrator().HasColumn(&Conversation{}, "slack_archived_at"))
+	var name, ddl string
+	require.NoError(t, db.Get().Raw("SHOW CREATE TABLE conversation_messages").Row().Scan(&name, &ddl))
+	for _, line := range strings.Split(ddl, "\n") {
+		if strings.Contains(line, "idx_msg_unmirrored") {
+			t.Log(strings.TrimSpace(line))
+		}
+	}
+}
+
+func TestSlackArchive_RetriedBySweep(t *testing.T) {
+	brand := slackTestBrand()
+	conv := slackConv(t, brand, "/support")
+	f := newFakeSlack(t)
+	ctx := context.Background()
+	conv = slackSetup(t, f, conv)
+	slackSeed(t, conv, SenderSystem, MsgEvent, "会话已关闭", func(m *ConversationMessage) { m.Meta = chatEventMeta(ChatEventClosed) })
+	slackBackdate(t, conv.ID, time.Minute)
+	slackClose(t, conv.ID, time.Minute)
+
+	f.Script("chat.postMessage", fakeSlackHTTP(500))
+	require.Error(t, chatSlackArchive(ctx, conv))
+	assert.Empty(t, f.CallsOf("conversations.archive"), "尾巴没发完不得归档")
+	assert.Nil(t, slackReload(t, conv.ID).SlackArchivedAt)
+
+	f.Reset()
+	n, err := chatSlackSweepIn(ctx, string(brand))
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+	assert.Equal(t, []string{"ℹ️ 会话已关闭"}, f.Posts(conv.SlackChannelID))
+	arch := f.CallsOf("conversations.archive")
+	require.Len(t, arch, 1)
+	assert.Equal(t, conv.SlackChannelID, arch[0].Str("channel"))
+	assert.NotNil(t, slackReload(t, conv.ID).SlackArchivedAt)
+
+	f.Reset()
+	n, err = chatSlackSweepIn(ctx, string(brand))
+	require.NoError(t, err)
+	assert.Zero(t, n)
+	assert.Empty(t, f.Calls(), "归档成功后 sweep 不再碰它")
+}
+
+func TestSlackArchive_CardRefreshFailureDoesNotBlock(t *testing.T) {
+	conv := slackConv(t, "", "/support")
+	f := newFakeSlack(t)
+	conv = slackSetup(t, f, conv)
+	slackClose(t, conv.ID, 0)
+	f.Script("chat.update", fakeSlackHTTP(500), fakeSlackHTTP(500))
+
+	require.NoError(t, chatSlackArchive(context.Background(), conv))
+	assert.Len(t, f.CallsOf("chat.update"), 2)
+	assert.Len(t, f.CallsOf("conversations.archive"), 1)
+	assert.NotNil(t, slackReload(t, conv.ID).SlackArchivedAt)
+}
+
+func TestSlackArchive_Idempotent(t *testing.T) {
+	conv := slackConv(t, "", "/support")
+	f := newFakeSlack(t)
+	ctx := context.Background()
+	conv = slackSetup(t, f, conv)
+	slackClose(t, conv.ID, 0)
+
+	require.NoError(t, chatSlackArchive(ctx, conv))
+	require.Len(t, f.CallsOf("conversations.archive"), 1)
+	f.Reset()
+	require.NoError(t, chatSlackArchive(ctx, conv)) // 传入的 conv 是旧对象：以库里的 slack_archived_at 为准
+	assert.Empty(t, f.Calls())
+}
+
+func TestSlackMirror_OrphanChannelArchivedWhenSaveFails(t *testing.T) {
+	conv := slackConv(t, "", "/support")
+	f := newFakeSlack(t)
+	slackSeed(t, conv, SenderVisitor, MsgText, "你好")
+	// slack_channel_id 是 varchar(32)：返回一个超长 id，让"建成功但落库失败"真实发生
+	orphan := "C" + strings.Repeat("X", 40)
+	f.Script("conversations.create", fakeSlackResp{Body: `{"ok":true,"channel":{"id":"` + orphan + `"}}`})
+
+	require.Error(t, chatSlackMirror(context.Background(), conv.ID))
+	assert.Empty(t, slackReload(t, conv.ID).SlackChannelID)
+	arch := f.CallsOf("conversations.archive")
+	require.Len(t, arch, 1, "没记下来的频道要尽力归档，免得留孤儿")
+	assert.Equal(t, orphan, arch[0].Str("channel"))
+	assert.Empty(t, f.CallsOf("chat.postMessage"))
+}
+
+func TestSlackRender_EscapesVisitorControlledText(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	vals := chatTestValues(t, 1)
+	gid, err := resolveGuest(ctx, BrandKaitu, vals[0], "", "zh-CN", "CN")
+	require.NoError(t, err)
+	require.NoError(t, addGuestEmail(ctx, gid, BrandKaitu, "a<b>&"+vals[0]+"@e.com"))
+	conv := &Conversation{ID: 1 << 60, UUID: "u", Brand: string(BrandKaitu), SubjectKind: SubjectGuest, SubjectID: gid,
+		Status: ConvOpen, Handler: HandlerAI, EntryPath: "/x<!channel>&y", SlackChannelID: "C1"}
+
+	view := chatSlackRender(ctx, conv)
+	for name, text := range map[string]string{"card": view.card, "lobby": view.lobby, "topic": view.topic} {
+		assert.NotContains(t, text, "<!channel>", name)
+		assert.Contains(t, text, "/x&lt;!channel&gt;&amp;y", name)
+		assert.NotContains(t, text, "a<b>", name)
+		assert.Contains(t, text, "a&lt;b&gt;&amp;"+vals[0]+"@e.com", name)
+	}
+
+	text, post := chatSlackMessageText(&ConversationMessage{SenderType: SenderStaff, SenderName: "<@U1>&", Kind: MsgText, Content: "hi"})
+	assert.True(t, post)
+	assert.Equal(t, "🧑‍💼 &lt;@U1&gt;&amp;: hi", text)
+}
+
+func TestSlackMirror_LockLostMidRoundStops(t *testing.T) {
+	conv := slackConv(t, "", "/support")
+	f := newFakeSlack(t)
+	ctx := context.Background()
+	conv = slackSetup(t, f, conv)
+	for _, s := range []string{"1", "2", "3"} {
+		slackSeed(t, conv, SenderVisitor, MsgText, s)
+	}
+	key := "chat:slack:lock:" + uintStr(conv.ID)
+	t.Cleanup(func() { redis.Client().Del(ctx, key) })
+	f.OnCall(func(c fakeSlackCall) {
+		if c.Str("text") == "👤 1" { // 发第 1 条时锁过期并被别的实例拿走
+			require.NoError(t, redis.Client().Set(ctx, key, "someone-else", time.Minute).Err())
+		}
+	})
+
+	err := chatSlackMirror(ctx, conv.ID)
+	require.ErrorIs(t, err, errChatSlackLockLost)
+	assert.Equal(t, []string{"👤 1"}, f.Posts(conv.SlackChannelID), "锁丢了就停，不与新持锁者并发发消息")
+	assert.EqualValues(t, 2, slackUnmirrored(t, conv.ID))
+	assert.Equal(t, "someone-else", redis.Client().Get(ctx, key).Val(), "放锁不得删掉别人的锁")
+
+	f.OnCall(nil)
+	require.NoError(t, redis.Client().Del(ctx, key).Err())
+	require.NoError(t, chatSlackMirror(ctx, conv.ID))
+	assert.Equal(t, []string{"👤 1", "👤 2", "👤 3"}, f.Posts(conv.SlackChannelID))
 }

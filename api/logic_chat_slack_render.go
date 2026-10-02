@@ -44,10 +44,11 @@ func chatSlackStatus(conv *Conversation) (emoji, label string) {
 		return "⚪", "已关闭"
 	case conv.Handler == HandlerAI:
 		return "🤖", "AI 接待中"
-	case conv.LastMessageBy == SenderVisitor:
-		return "🔴", "等待人工"
+	case conv.LastMessageBy == SenderStaff:
+		return "🟡", "已回复待访客"
 	}
-	return "🟡", "已回复待访客"
+	// 人工处理中、最后一条不是客服说的（访客、AI 的转人工告别语、或还没有消息）：都在等人
+	return "🔴", "等待人工"
 }
 
 // chatSlackView 一个会话在 Slack 里的三段文案。

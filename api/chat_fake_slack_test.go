@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -20,9 +19,9 @@ import (
 
 // 假 Slack（客服聊天各任务的测试共用）：
 //   - qtoolkit/slack 的 Web API 基址是包内未导出变量，改不到；它的 http.Client 没设 Transport，
-//     所以走 http.DefaultTransport。这里一次性把 DefaultTransport 换成一层转发：
-//     发往 slack.com 的请求改写到当前活动的假服务；没有活动的假服务时直接报错（绝不打到真 Slack）。
-//     其他主机的请求原样放行。
+//     所以走 http.DefaultTransport。newFakeSlack 把 DefaultTransport 包一层转发（t.Cleanup 还原）：
+//     发往 slack.com 的请求改写到这个假服务，其他主机原样放行。
+//     假服务不在时 bot token 为空，slack 包自己就拒绝调用（ErrNoBotToken），不会打到真 Slack。
 //   - newFakeSlack 同时配好 bot token 与总览频道（slack.chat_lobby_channel_id），测试结束全部还原，
 //     所以不调用它的测试里 chatSlackLobby()=="" → Slack 镜像整体关闭。
 //
@@ -80,24 +79,18 @@ type fakeSlack struct {
 	seq     int
 }
 
-var (
-	fakeSlackTransportOnce sync.Once
-	fakeSlackActive        atomic.Pointer[url.URL]
-)
-
-// fakeSlackTransport 把 slack.com 的请求改写到活动的假服务。
-type fakeSlackTransport struct{ next http.RoundTripper }
+// fakeSlackTransport 把 slack.com 的请求改写到所属的假服务，其余主机原样放行。
+type fakeSlackTransport struct {
+	next   http.RoundTripper
+	target *url.URL
+}
 
 func (tr fakeSlackTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.URL.Hostname() != "slack.com" {
 		return tr.next.RoundTrip(req)
 	}
-	target := fakeSlackActive.Load()
-	if target == nil {
-		return nil, fmt.Errorf("fake slack: no active fake, refusing to call real Slack (%s)", req.URL.Path)
-	}
 	r2 := req.Clone(req.Context())
-	r2.URL.Scheme, r2.URL.Host, r2.Host = target.Scheme, target.Host, target.Host
+	r2.URL.Scheme, r2.URL.Host, r2.Host = tr.target.Scheme, tr.target.Host, tr.target.Host
 	return tr.next.RoundTrip(r2)
 }
 
@@ -107,13 +100,11 @@ func (tr fakeSlackTransport) RoundTrip(req *http.Request) (*http.Response, error
 func newFakeSlack(t *testing.T) *fakeSlack {
 	t.Helper()
 	testInitConfig()
-	fakeSlackTransportOnce.Do(func() {
-		http.DefaultTransport = fakeSlackTransport{next: http.DefaultTransport}
-	})
 	f := &fakeSlack{t: t, scripts: map[string][]fakeSlackResp{}, members: []string{fakeSlackBotID, "U1", "U2"}}
 	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
 	u, _ := url.Parse(f.server.URL)
-	fakeSlackActive.Store(u)
+	prevTransport := http.DefaultTransport
+	http.DefaultTransport = fakeSlackTransport{next: prevTransport, target: u}
 
 	webhooks := viper.GetStringMapString("slack.webhooks")
 	// 每个假服务一个唯一 token：slack.BotUserID 按 token 缓存，这样每个测试都会真的调一次 auth.test
@@ -124,7 +115,7 @@ func newFakeSlack(t *testing.T) *fakeSlack {
 	t.Cleanup(func() {
 		viper.Set("slack.chat_lobby_channel_id", "")
 		slack.SetConfig(&slack.Config{Webhooks: webhooks})
-		fakeSlackActive.Store(nil)
+		http.DefaultTransport = prevTransport
 		f.server.Close()
 		redis.Client().Del(context.Background(), "chat:slack:staff")
 	})

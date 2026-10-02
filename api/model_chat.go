@@ -80,8 +80,10 @@ type Conversation struct {
 	SlackChannelID string `gorm:"type:varchar(32);index"` // 专属频道 id
 	SlackCardTS    string `gorm:"type:varchar(32)"`       // 频道内状态卡的消息 ts
 	SlackLobbyTS   string `gorm:"type:varchar(32)"`       // 总览频道里那一行的消息 ts
-	CreatedAt      time.Time
-	ClosedAt       *time.Time
+	// SlackArchivedAt 专属频道归档成功的时间；为空且会话已关闭 = 还欠一次归档（chatSlackSweep 补）
+	SlackArchivedAt *time.Time
+	CreatedAt       time.Time
+	ClosedAt        *time.Time
 }
 
 func (Conversation) TableName() string { return "conversations" }
@@ -89,18 +91,19 @@ func (Conversation) TableName() string { return "conversations" }
 // ConversationMessage：会话内消息。ClientID 是客户端幂等键，SlackTS 是 Slack 镜像回写键，均可空；
 // MySQL 唯一索引允许多个 NULL，所以无键的消息可共存。
 type ConversationMessage struct {
-	ID              uint64 `gorm:"primarykey"`
-	ConversationID  uint64 `gorm:"not null;index;uniqueIndex:uniq_conv_client,priority:1"`
-	SenderType      string `gorm:"type:varchar(8);not null"` // visitor|ai|staff|system
-	SenderID        uint64
-	SenderName      string  `gorm:"type:varchar(64)"`
-	Kind            string  `gorm:"type:varchar(16);not null"` // text|image|options|option_reply|event|note
-	Content         string  `gorm:"type:text"`
-	Meta            string  `gorm:"type:text"` // JSON
-	ClientID        *string `gorm:"type:varchar(36);uniqueIndex:uniq_conv_client,priority:2"`
-	SlackTS         *string `gorm:"type:varchar(32);uniqueIndex"`
-	SlackMirroredAt *time.Time
-	CreatedAt       time.Time
+	ID             uint64 `gorm:"primarykey"`
+	ConversationID uint64 `gorm:"not null;index;uniqueIndex:uniq_conv_client,priority:1"`
+	SenderType     string `gorm:"type:varchar(8);not null"` // visitor|ai|staff|system
+	SenderID       uint64
+	SenderName     string  `gorm:"type:varchar(64)"`
+	Kind           string  `gorm:"type:varchar(16);not null"` // text|image|options|option_reply|event|note
+	Content        string  `gorm:"type:text"`
+	Meta           string  `gorm:"type:text"` // JSON
+	ClientID       *string `gorm:"type:varchar(36);uniqueIndex:uniq_conv_client,priority:2"`
+	SlackTS        *string `gorm:"type:varchar(32);uniqueIndex"`
+	// idx_msg_unmirrored 服务 chatSlackSweep：slack_mirrored_at IS NULL 且 created_at 在窗口内
+	SlackMirroredAt *time.Time `gorm:"index:idx_msg_unmirrored,priority:1"`
+	CreatedAt       time.Time  `gorm:"index:idx_msg_unmirrored,priority:2"`
 }
 
 func (ConversationMessage) TableName() string { return "conversation_messages" }
