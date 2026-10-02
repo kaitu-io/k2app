@@ -17,6 +17,12 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => searchParamsState.current,
 }));
 
+const brandState = vi.hoisted(() => ({ current: undefined as string | undefined }));
+vi.mock('@/components/manager/brand', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/components/manager/brand')>();
+  return { ...actual, useManagerBrand: () => ({ brand: brandState.current ?? 'all', brandParam: brandState.current, setBrand: () => {} }) };
+});
+
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -70,6 +76,7 @@ beforeEach(() => {
   mockList.mockReset();
   mockDetail.mockReset();
   mockClose.mockReset();
+  brandState.current = undefined;
   routerState.current = { push: vi.fn(), replace: vi.fn() };
   searchParamsState.current = new URLSearchParams();
   mockDetail.mockResolvedValue({ conversation: conv(), messages: msgs() });
@@ -156,5 +163,62 @@ describe('/manager/conversations', () => {
     await waitFor(() =>
       expect(mockList).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'open', handler: 'ai' })),
     );
+  });
+
+  it('品牌切换时页码回到 0', async () => {
+    rows([conv()]);
+    mockList.mockResolvedValue({ items: [conv()], pagination: { page: 0, pageSize: 50, total: 200 } });
+    const { rerender } = render(<ConversationsPage />);
+    await screen.findByText('one@example.com');
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 })));
+    brandState.current = 'overleap';
+    rerender(<ConversationsPage />);
+    await waitFor(() =>
+      expect(mockList).toHaveBeenLastCalledWith(expect.objectContaining({ page: 0, brand: 'overleap' })),
+    );
+    expect(mockList.mock.calls.some((c) => c[0].page === 1 && c[0].brand === 'overleap')).toBe(false);
+  });
+
+  it('邮箱防抖：窗口后只请求一次且为 trim 后的值', async () => {
+    render(<ConversationsPage />);
+    await screen.findByText('one@example.com');
+    const before = mockList.mock.calls.length;
+    const input = screen.getByLabelText('邮箱');
+    fireEvent.change(input, { target: { value: ' a' } });
+    fireEvent.change(input, { target: { value: ' ab@x.com ' } });
+    expect(mockList.mock.calls.length).toBe(before);
+    await waitFor(() =>
+      expect(mockList).toHaveBeenLastCalledWith(expect.objectContaining({ email: 'ab@x.com' })),
+    );
+    expect(mockList.mock.calls.length).toBe(before + 1);
+  });
+
+  it('详情加载失败显示重试，重试成功后展示消息', async () => {
+    searchParamsState.current = new URLSearchParams('c=u1');
+    mockDetail.mockRejectedValueOnce(new Error('boom'));
+    render(<ConversationsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: '重试' }));
+    expect(await screen.findByText('hello there')).toBeInTheDocument();
+    expect(mockDetail).toHaveBeenCalledTimes(2);
+  });
+
+  it('图片消息不渲染 img，URL 以纯文本展示', async () => {
+    searchParamsState.current = new URLSearchParams('c=u1');
+    mockDetail.mockResolvedValue({
+      conversation: conv(),
+      messages: [{ id: 9, senderType: 'visitor', senderName: '', kind: 'image', content: 'https://evil.example/a.png', createdAt: 1 }],
+    });
+    render(<ConversationsPage />);
+    expect(await screen.findByText('https://evil.example/a.png')).toBeInTheDocument();
+    expect(screen.getByText('[图片]')).toBeInTheDocument();
+    expect(document.querySelector('img')).toBeNull();
+  });
+
+  it('非 https 的 slackPermalink 不渲染链接', async () => {
+    rows([conv({ slackPermalink: 'javascript:alert(1)' })]);
+    render(<ConversationsPage />);
+    await screen.findByText('one@example.com');
+    expect(screen.queryByText('在 Slack 打开')).toBeNull();
   });
 });

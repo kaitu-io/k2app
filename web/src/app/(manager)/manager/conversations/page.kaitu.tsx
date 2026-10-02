@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Table,
@@ -55,7 +55,7 @@ function statusOf(c: ChatConversation): { label: string; variant: StatusVariant 
 }
 
 function SlackLink({ url }: { url: string }) {
-  if (!url) return null;
+  if (!url.startsWith("https://")) return null;
   return (
     <a
       href={url}
@@ -98,8 +98,11 @@ function MessageBubble({ m }: { m: ChatMessage }) {
           <span>{formatChatTime(m.createdAt)}</span>
         </div>
         {m.kind === "image" ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={m.content} alt="" className="max-h-64 rounded" />
+          // 访客提供的 URL 不可信：不渲染图片（避免管理员浏览器被动请求），只以纯文本展示
+          <div>
+            <div className="text-xs text-muted-foreground">{"[图片]"}</div>
+            <div className="break-all text-xs">{m.content}</div>
+          </div>
         ) : (
           <div className="whitespace-pre-wrap break-words">{m.content}</div>
         )}
@@ -124,6 +127,14 @@ export default function ConversationsPage() {
   const [handler, setHandler] = useState("");
   const [emailInput, setEmailInput] = useState("");
   const [email, setEmail] = useState("");
+  const emailRef = useRef("");
+
+  // 全局品牌切换后回到第一页（否则可能请求越界页）；在渲染期调整，避免多发一次越界请求
+  const [prevBrand, setPrevBrand] = useState(brandParam);
+  if (prevBrand !== brandParam) {
+    setPrevBrand(brandParam);
+    setPage(0);
+  }
 
   // 详情：以 URL 的 ?c= 为准（Slack 深链），点行时本地先开、同步写回 URL
   const paramUuid = searchParams.get("c") || "";
@@ -131,6 +142,8 @@ export default function ConversationsPage() {
   const [detail, setDetail] = useState<{ conversation: ChatConversation; messages: ChatMessage[] } | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  const [detailError, setDetailError] = useState(false);
+  const [detailTry, setDetailTry] = useState(0);
 
   useEffect(() => {
     setOpenUuid(paramUuid);
@@ -139,11 +152,12 @@ export default function ConversationsPage() {
   // 邮箱输入防抖
   useEffect(() => {
     const t = setTimeout(() => {
-      setEmail((prev) => {
-        const next = emailInput.trim();
-        if (prev !== next) setPage(0);
-        return next;
-      });
+      const next = emailInput.trim();
+      if (next !== emailRef.current) {
+        emailRef.current = next;
+        setEmail(next);
+        setPage(0);
+      }
     }, 300);
     return () => clearTimeout(t);
   }, [emailInput]);
@@ -182,10 +196,9 @@ export default function ConversationsPage() {
   }, [page, status, handler, email, brandParam, refreshKey]);
 
   useEffect(() => {
-    if (!openUuid) {
-      setDetail(null);
-      return;
-    }
+    setDetail(null);
+    setDetailError(false);
+    if (!openUuid) return;
     let cancelled = false;
     api
       .getChatConversation(openUuid)
@@ -195,12 +208,12 @@ export default function ConversationsPage() {
       .catch((error) => {
         if (cancelled) return;
         console.error("Failed to fetch conversation:", error);
-        toast.error("加载会话详情失败");
+        setDetailError(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [openUuid, refreshKey]);
+  }, [openUuid, refreshKey, detailTry]);
 
   const openDetail = useCallback(
     (uuid: string) => {
@@ -364,9 +377,17 @@ export default function ConversationsPage() {
           <DialogHeader>
             <DialogTitle>{"会话详情"}</DialogTitle>
             <DialogDescription>
-              {conv ? `${conv.email || (conv.subjectKind === "guest" ? "匿名访客" : `用户 ${conv.subjectId}`)} · 创建于 ${formatChatTime(conv.createdAt)}` : "加载中…"}
+              {conv ? `${conv.email || (conv.subjectKind === "guest" ? "匿名访客" : `用户 ${conv.subjectId}`)} · 创建于 ${formatChatTime(conv.createdAt)}` : detailError ? "" : "加载中…"}
             </DialogDescription>
           </DialogHeader>
+          {detailError && (
+            <div className="space-y-2 text-sm">
+              <p className="text-destructive">{"加载会话详情失败"}</p>
+              <Button variant="outline" size="sm" onClick={() => setDetailTry((k) => k + 1)}>
+                {"重试"}
+              </Button>
+            </div>
+          )}
           {conv && detail && (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-3">
