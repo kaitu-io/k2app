@@ -74,7 +74,15 @@ export interface ChatClient {
 export type ChatErrorKind = 'rate_limited' | 'invalid' | 'network';
 
 export class ChatError extends Error {
-  constructor(public readonly kind: ChatErrorKind, public readonly code: number) {
+  constructor(
+    public readonly kind: ChatErrorKind,
+    public readonly code: number,
+    /**
+     * 服务端不认这个访客了（cookie 被清 / 过期）。只有它才值得重建会话——
+     * 同一个 422 也用于内容、邮箱等校验错误，那些重建了也没用。
+     */
+    public readonly subjectLost = false,
+  ) {
     super(`chat ${kind} (${code})`);
     this.name = 'ChatError';
   }
@@ -116,6 +124,17 @@ const FETCH_TIMEOUT_MS = 15_000;
 
 const CODE_RATE_LIMITED = 429;
 const CODE_SERVER_ERROR = 500;
+const CODE_INVALID_ARGUMENT = 422;
+/**
+ * api/api_chat.go 在没有访客主体时返回的信封：code 422 + 这条 message。422 同时用于各种校验错误，
+ * 只有 message 能区分，所以这里与服务端文案绑定（仅用于判断，不展示）。服务端改了这句话，
+ * 后果是不再自动重建会话（退化为报"发送失败"），不会误重建。
+ */
+const MSG_NO_SUBJECT = 'no chat session';
+/** 重建会话失败后的后台重试：1s 起翻倍、上限 30s，试这么多次后放弃（等访客下次操作或刷新）。 */
+const RESESSION_RETRY_BASE_MS = 1000;
+const RESESSION_RETRY_MAX_MS = 30_000;
+const RESESSION_MAX_RETRIES = 8;
 
 /**
  * 消息去重键（服务端上限 36 字符）。`crypto.randomUUID` 在 Chrome < 92 / Safari < 15.4 不存在，
@@ -173,7 +192,10 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
   let polling = false;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let watchingVisibility = false;
-  let pollResessioned = false; // 轮询遇到"没有会话主体"只重建一次，成功后复位
+  let resessionRun: Promise<boolean> | null = null; // 进行中的那次重建（并发调用共用）
+  let resessionRetrying = false; // 后台重试循环在跑
+  /** 重建成功后还没有任何带主体的请求成功过。此时再报"主体丢失"说明 cookie 根本存不住，不再重建，免得每次轮询都新建一个访客。 */
+  let resessionUnproven = false;
   /** 所有一次性定时器及其唤醒函数：stop() 清掉定时器并唤醒等待者，让它们自行发现已停止。 */
   const timers = new Map<ReturnType<typeof setTimeout>, () => void>();
   /** 在途请求的超时器与中断器：stop() 一并清掉。 */
@@ -210,7 +232,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
         if (res.status === CODE_RATE_LIMITED) throw new ChatError('rate_limited', res.status);
         throw new ChatError(res.status >= 500 ? 'network' : 'invalid', res.status);
       }
-      let envelope: { code?: number; data?: T };
+      let envelope: { code?: number; data?: T; message?: string };
       try {
         envelope = await res.json();
       } catch {
@@ -219,7 +241,8 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
       const code = envelope.code ?? CODE_SERVER_ERROR;
       if (code === 0) return envelope.data as T;
       if (code === CODE_RATE_LIMITED) throw new ChatError('rate_limited', code);
-      throw new ChatError(code >= CODE_SERVER_ERROR && code < 600 ? 'network' : 'invalid', code);
+      if (code >= CODE_SERVER_ERROR && code < 600) throw new ChatError('network', code);
+      throw new ChatError('invalid', code, code === CODE_INVALID_ARGUMENT && envelope.message === MSG_NO_SUBJECT);
     } finally {
       clearTimeout(timeout);
       inflight.delete(timeout);
@@ -260,9 +283,20 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
     if (changed) emit();
   }
 
-  async function session(path: string, preview: boolean | undefined, resume: string | undefined): Promise<SessionState> {
-    teardownTransport();
-    sessionReady = false;
+  /**
+   * `keepTransport`（重建会话时为 true）：新会话拿到手之前不动现有通道——
+   * 重建失败时访客还能继续靠原来的 WebSocket / 轮询收消息。
+   */
+  async function session(
+    path: string,
+    preview: boolean | undefined,
+    resume: string | undefined,
+    keepTransport = false,
+  ): Promise<SessionState> {
+    if (!keepTransport) {
+      teardownTransport();
+      sessionReady = false;
+    }
     const body: Record<string, unknown> = { path };
     if (preview) body.preview = true;
     if (resume) body.resume = resume;
@@ -275,6 +309,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
       ws: data?.ws ?? null,
     };
     if (stopped || !state.enabled) return state;
+    if (keepTransport) teardownTransport();
     sessionReady = true;
     wsInfo = state.ws;
     setConversation(state.conversation);
@@ -284,30 +319,56 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
     return state;
   }
 
-  /** 访客主体丢了（cookie 被清、服务端不认）：用上次的入口页重建一次会话。成功返回 true。 */
-  async function resession(): Promise<boolean> {
+  async function attemptResession(): Promise<boolean> {
     if (stopped || !lastStart) return false;
     try {
-      return (await session(lastStart.path, lastStart.preview, undefined)).enabled;
+      const state = await session(lastStart.path, lastStart.preview, undefined, true);
+      if (stopped || !state.enabled) return false;
+      resessionUnproven = true;
+      return true;
     } catch {
       return false;
     }
+  }
+
+  async function retryResession() {
+    if (resessionRetrying) return;
+    resessionRetrying = true;
+    for (let i = 0; i < RESESSION_MAX_RETRIES && !stopped; i++) {
+      await sleep(Math.min(RESESSION_RETRY_MAX_MS, RESESSION_RETRY_BASE_MS * 2 ** i));
+      if (stopped || (await attemptResession())) break;
+    }
+    resessionRetrying = false;
+  }
+
+  /**
+   * 访客主体丢了：用上次的入口页重建会话（不重放继续对话令牌）。返回第一次尝试的结果；
+   * 失败时现有通道原样保留，并在后台按退避继续重试。
+   */
+  function resession(): Promise<boolean> {
+    if (stopped || !lastStart || resessionUnproven) return Promise.resolve(false);
+    if (resessionRun) return resessionRun;
+    if (resessionRetrying) return Promise.resolve(false);
+    const run = attemptResession().then((ok) => {
+      resessionRun = null;
+      if (!ok) void retryResession();
+      return ok;
+    });
+    resessionRun = run;
+    return run;
   }
 
   async function catchUp() {
     if (stopped) return;
     try {
       const data = await call<{ messages?: ChatMessage[]; conversation?: unknown }>('GET', `/messages?after=${cursor}`);
-      pollResessioned = false;
+      resessionUnproven = false;
       ingest(data?.messages);
       // 旧版服务端不带 conversation 字段：保持已知状态；带了（含 null）就以它为准
       if (data && 'conversation' in data) setConversation(asConversation(data.conversation));
     } catch (err) {
       // 补齐失败不影响已有内容：下一次轮询 / 重连 / 回到前台会再拉
-      if (err instanceof ChatError && err.kind === 'invalid' && !pollResessioned) {
-        pollResessioned = true;
-        void resession();
-      }
+      if (err instanceof ChatError && err.subjectLost) void resession();
     }
   }
 
@@ -439,8 +500,12 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
       let token: string;
       try {
         token = (await call<{ token: string }>('GET', '/ws-token')).token;
-      } catch {
-        if (!stopped && gen === generation) connectFailed();
+        resessionUnproven = false;
+      } catch (err) {
+        if (stopped || gen !== generation) return;
+        connectFailed();
+        // 主体丢了换不到令牌：重建会话（成功后会用新令牌重连，这条旧通道的重试随代数作废）
+        if (err instanceof ChatError && err.subjectLost) void resession();
         return;
       }
       if (gen === generation) connect(token);
@@ -491,6 +556,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
             clientId,
           });
           // 先收消息（会顺手对掉气泡），再摘气泡兜底（消息已由推送先到时 ingest 不会动它）
+          resessionUnproven = false;
           ingest([data?.message]);
           dropBubble();
           const conv = asConversation(data?.conversation);
@@ -502,8 +568,8 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
         } catch (err) {
           if (stopped) throw err;
           const kindOf = err instanceof ChatError ? err.kind : 'network';
-          if (kindOf === 'invalid' && !resessioned) {
-            // 多半是访客主体丢了：重建一次会话，再用同一 clientId 重发一次
+          if (err instanceof ChatError && err.subjectLost && !resessioned) {
+            // 访客主体丢了：重建一次会话，再用同一 clientId 重发一次。校验类 422 不走这里
             resessioned = true;
             if (await resession()) continue;
           } else if (kindOf === 'network') {

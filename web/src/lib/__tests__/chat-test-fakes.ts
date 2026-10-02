@@ -56,7 +56,7 @@ export interface FakeCall {
 
 /**
  * 假 fetch：按 "METHOD /path"（不含 query）路由。handler 返回值作为信封里的 data；
- * 抛 `{ code }` 表示业务错误信封；抛 Error 表示网络失败。
+ * 抛 `{ code, message? }` 表示业务错误信封；抛 `{ status }` 表示非 2xx；抛 Error 表示网络失败。
  */
 export function fakeFetch(routes: Record<string, Handler>) {
   const calls: FakeCall[] = [];
@@ -73,9 +73,9 @@ export function fakeFetch(routes: Record<string, Handler>) {
       data = handler(body, url);
     } catch (e) {
       if (e instanceof Error) throw e;
-      const err = e as { code?: number; status?: number };
+      const err = e as { code?: number; status?: number; message?: string };
       if (err.status) return { ok: false, status: err.status, json: async () => ({}) } as Response;
-      return { ok: true, status: 200, json: async () => ({ code: err.code, message: 'debug text' }) } as Response;
+      return { ok: true, status: 200, json: async () => ({ code: err.code, message: err.message ?? 'debug text' }) } as Response;
     }
     return { ok: true, status: 200, json: async () => ({ code: 0, data }) } as Response;
   });
@@ -107,3 +107,6 @@ export function setHidden(v: boolean) {
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
   document.dispatchEvent(new Event('visibilitychange'));
 }
+
+/** 服务端"没有访客主体"的信封（api/api_chat.go）。 */
+export const NO_SUBJECT = { code: 422, message: 'no chat session' };

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ChatError, createChatClient, newClientId, type ChatConversation, type ChatMessage } from '../chat-client';
-import { FakeWS, fakeFetch, msg, session, setHidden } from './chat-test-fakes';
+import { FakeWS, NO_SUBJECT, fakeFetch, msg, session, setHidden } from './chat-test-fakes';
 
 const tick = (ms = 0) => vi.advanceTimersByTimeAsync(ms);
 
@@ -127,7 +127,7 @@ describe('chat-client', () => {
       'POST /api/chat/session': () => session({ ws: null }),
       'GET /api/chat/messages': () => ({ messages: [] }),
       'POST /api/chat/messages': () => {
-        if (++sends === 1) throw { code: 422 };
+        if (++sends === 1) throw NO_SUBJECT;
         return { message: msg(7, { senderType: 'visitor', content: 'hi' }), conversation: { uuid: 'u', status: 'open', handler: 'ai' } };
       },
     });
@@ -143,11 +143,31 @@ describe('chat-client', () => {
     client.stop();
   });
 
-  it('a 422 that persists after the re-session is reported as invalid, with no further attempts', async () => {
+  it.each(['invalid content', 'chat is not available', 'invalid clientId'])(
+    'a validation 422 on send (%s) is reported at once and never triggers a re-session',
+    async (message) => {
+      const { client, f, last } = make({
+        'POST /api/chat/session': () => session({ ws: null }),
+        'GET /api/chat/messages': () => ({ messages: [] }),
+        'POST /api/chat/messages': () => { throw { code: 422, message }; },
+      });
+      await client.start('/p');
+      const err = await client.send('text', 'hi').catch((e) => e);
+      expect((err as ChatError).kind).toBe('invalid');
+      expect((err as ChatError).subjectLost).toBe(false);
+      await tick(120000);
+      expect(f.of('POST /api/chat/messages')).toHaveLength(1);
+      expect(f.of('POST /api/chat/session')).toHaveLength(1);
+      expect(last()).toEqual([]);
+      client.stop();
+    },
+  );
+
+  it('a lost-subject 422 that persists after the re-session is reported as invalid, with no further attempts', async () => {
     const { client, f, last } = make({
       'POST /api/chat/session': () => session({ ws: null }),
       'GET /api/chat/messages': () => ({ messages: [] }),
-      'POST /api/chat/messages': () => { throw { code: 422 }; },
+      'POST /api/chat/messages': () => { throw NO_SUBJECT; },
     });
     await client.start('/p');
     const err = await client.send('text', 'hi').catch((e) => e);
@@ -674,11 +694,11 @@ describe('chat-client', () => {
       client.stop();
     });
 
-    it('polling that hits 422 (subject lost) re-runs the session exactly once until a poll succeeds again', async () => {
+    it('polling that hits the lost-subject 422 re-runs the session exactly once until a poll succeeds again (cookies that never stick must not loop)', async () => {
       let broken = true;
       const { client, f } = make({
         'POST /api/chat/session': () => session({ ws: null, conversation: open }),
-        'GET /api/chat/messages': () => { if (broken) throw { code: 422 }; return { messages: [] }; },
+        'GET /api/chat/messages': () => { if (broken) throw NO_SUBJECT; return { messages: [] }; },
       });
       await client.start('/p');
       await tick(4000);
@@ -725,6 +745,124 @@ describe('chat-client', () => {
       await client.start('/p');
       await client.send('text', 'hi');
       expect(String(f.of('POST /api/chat/messages')[0].body!.clientId)).toMatch(V4);
+      client.stop();
+    });
+  });
+
+  describe('a failed re-session must not kill the realtime channel', () => {
+    const conv = { uuid: 'u1', status: 'open', handler: 'human' };
+
+    it('polling: keeps polling while the re-session fails, retries it with 1s/2s/4s backoff, stops retrying once it succeeds', async () => {
+      let sessions = 0;
+      let lost = true;
+      const { client, f } = make({
+        'POST /api/chat/session': () => {
+          sessions++;
+          if (sessions >= 2 && sessions <= 4) throw new Error('offline');
+          return session({ ws: null, conversation: conv });
+        },
+        'GET /api/chat/messages': () => { if (lost) { lost = false; throw NO_SUBJECT; } return { messages: [] }; },
+      });
+      await client.start('/p');
+      await tick(4000); // 第一次轮询：主体丢失 → 重建（失败）
+      expect(sessions).toBe(2);
+      await tick(999);
+      expect(sessions).toBe(2);
+      await tick(1); // +1s
+      expect(sessions).toBe(3);
+      await tick(2000); // +2s
+      expect(sessions).toBe(4);
+      expect(f.of('GET /api/chat/messages')).toHaveLength(1);
+      await tick(1000); // t=8s：重建一直失败，轮询照常
+      expect(f.of('GET /api/chat/messages')).toHaveLength(2);
+      await tick(3000); // +4s：这次成功
+      expect(sessions).toBe(5);
+      await tick(120000);
+      expect(sessions).toBe(5);
+      // 成功重建后仍然只有一个轮询定时器在跑
+      const polls = f.of('GET /api/chat/messages').length;
+      await tick(4000);
+      expect(f.of('GET /api/chat/messages')).toHaveLength(polls + 1);
+      client.stop();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('websocket: the live socket survives a re-session that comes back enabled:false; a later success swaps it for a new one', async () => {
+      let sessions = 0;
+      const { client, last } = make({
+        'POST /api/chat/session': () => {
+          sessions++;
+          if (sessions === 2) return { enabled: false, messages: [] };
+          return session({ conversation: conv, ws: { url: 'wss://ws.example.test', token: `tok-s${sessions}` } });
+        },
+        'GET /api/chat/messages': () => { if (sessions === 1) throw NO_SUBJECT; return { messages: [] }; },
+      });
+      await client.start('/p');
+      const first = FakeWS.last();
+      first.open(); // 连上后的补齐：主体丢失 → 重建 → enabled:false
+      await tick(0);
+      expect(sessions).toBe(2);
+      expect(first.closed).toBe(false);
+      first.recv({ type: 'message', message: msg(5, { senderType: 'staff' }) });
+      expect(last().map((m) => m.id)).toEqual([5]); // 旧通道还在收消息
+
+      await tick(1000);
+      expect(sessions).toBe(3);
+      expect(first.closed).toBe(true);
+      expect(FakeWS.live()).toHaveLength(1);
+      expect(FakeWS.last().url).toContain('token=tok-s3');
+      client.stop();
+    });
+
+    it('gives up after a bounded number of retries and leaves the channel as it was', async () => {
+      let sessions = 0;
+      let polls = 0;
+      const { client, f } = make({
+        'POST /api/chat/session': () => { if (++sessions > 1) throw new Error('offline'); return session({ ws: null, conversation: conv }); },
+        'GET /api/chat/messages': () => { if (++polls === 1) throw NO_SUBJECT; return { messages: [] }; },
+      });
+      await client.start('/p');
+      await tick(10 * 60 * 1000);
+      expect(sessions).toBe(1 + 1 + 8);
+      const before = f.of('GET /api/chat/messages').length;
+      await tick(4000);
+      expect(f.of('GET /api/chat/messages')).toHaveLength(before + 1);
+      client.stop();
+    });
+
+    it('stop() ends the retry loop', async () => {
+      let sessions = 0;
+      const { client } = make({
+        'POST /api/chat/session': () => { if (++sessions > 1) throw new Error('offline'); return session({ ws: null, conversation: conv }); },
+        'GET /api/chat/messages': () => { throw NO_SUBJECT; },
+      });
+      await client.start('/p');
+      await tick(5000);
+      const n = sessions;
+      expect(n).toBeGreaterThan(1);
+      client.stop();
+      expect(vi.getTimerCount()).toBe(0);
+      await tick(120000);
+      expect(sessions).toBe(n);
+    });
+
+    it('a lost subject on the ws-token refresh also re-sessions and reconnects with the new token', async () => {
+      let sessions = 0;
+      const { client } = make({
+        'POST /api/chat/session': () => session({ conversation: conv, ws: { url: 'wss://ws.example.test', token: `tok-s${++sessions}` } }),
+        'GET /api/chat/ws-token': () => { throw NO_SUBJECT; },
+        'GET /api/chat/messages': () => ({ messages: [] }),
+      });
+      await client.start('/p');
+      FakeWS.last().open();
+      await tick(0);
+      FakeWS.last().drop();
+      await tick(1000);
+      expect(sessions).toBe(2);
+      expect(FakeWS.live()).toHaveLength(1);
+      expect(FakeWS.last().url).toContain('token=tok-s2');
+      await tick(60000);
+      expect(FakeWS.instances).toHaveLength(2);
       client.stop();
     });
   });

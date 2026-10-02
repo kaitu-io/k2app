@@ -1,4 +1,4 @@
-import type { ErrorEvent } from '@sentry/nextjs';
+import type { Breadcrumb, ErrorEvent } from '@sentry/nextjs';
 import { detectBrowser } from './browser-detection';
 
 const LOOKBEHIND_SYNTAX_ERROR = /invalid group specifier name/i;
@@ -200,4 +200,55 @@ export function dropRscNavigationFallbackRejections(event: ErrorEvent): ErrorEve
       RSC_FETCH_FAILURE_CONSOLE_MESSAGE.test(b.message)
   );
   return fromRscFetchFallback ? null : event;
+}
+
+const CHAT_RESUME_FRAGMENT = /#chat=[^\s"'<>]*/g;
+
+/** Remove a chat-resume token fragment (`#chat=…`) from a URL-bearing string. */
+export function scrubChatResumeToken(value: string): string {
+  return value.includes('#chat=') ? value.replace(CHAT_RESUME_FRAGMENT, '') : value;
+}
+
+function scrubStrings<T extends Record<string, unknown>>(record: T): T {
+  let out: Record<string, unknown> | null = null;
+  for (const [key, value] of Object.entries(record)) {
+    if (typeof value !== 'string') continue;
+    const clean = scrubChatResumeToken(value);
+    if (clean !== value) (out ??= { ...record })[key] = clean;
+  }
+  return (out ?? record) as T;
+}
+
+/**
+ * Defense in depth for the emailed chat-resume link (`/…#chat=<token>`).
+ * `instrumentation-client.ts` strips the fragment before `Sentry.init`, so the
+ * SDK should never see it; if that ever regresses (or a soft navigation lands
+ * on such a URL), this keeps the token out of breadcrumbs — navigation
+ * `from`/`to`, fetch/xhr `url`, console messages.
+ *
+ * Never drops a breadcrumb, only rewrites strings. Session Replay is NOT
+ * covered by these hooks — it relies on the strip alone.
+ */
+export function scrubChatResumeBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb {
+  const message =
+    typeof breadcrumb.message === 'string' ? scrubChatResumeToken(breadcrumb.message) : breadcrumb.message;
+  const data = breadcrumb.data ? scrubStrings(breadcrumb.data) : breadcrumb.data;
+  if (message === breadcrumb.message && data === breadcrumb.data) return breadcrumb;
+  return { ...breadcrumb, message, data };
+}
+
+/**
+ * Event-level twin of `scrubChatResumeBreadcrumb`: `request.url`, request
+ * headers (Referer) and any breadcrumbs already attached to the event.
+ */
+export function scrubChatResumeEvent(event: ErrorEvent): ErrorEvent {
+  const request = event.request
+    ? {
+        ...event.request,
+        url: typeof event.request.url === 'string' ? scrubChatResumeToken(event.request.url) : event.request.url,
+        headers: event.request.headers ? scrubStrings(event.request.headers) : event.request.headers,
+      }
+    : event.request;
+  const breadcrumbs = event.breadcrumbs?.map(scrubChatResumeBreadcrumb);
+  return { ...event, request, breadcrumbs };
 }

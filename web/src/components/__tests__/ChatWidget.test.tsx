@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import ChatWidget from '../chat/ChatWidget';
 import { CHAT_EMAIL_FLAG, CHAT_KNOWN_FLAG, hasResumeToken, requestOpenChat, shouldProbeSession, takeResumeToken } from '../chat/gate';
-import { CHAT_RESUME_SCRIPT } from '../chat/resume-script';
+import { CHAT_RESUME_GLOBAL, CHAT_RESUME_HASH_PREFIX, CHAT_RESUME_SCRIPT, stripChatResume } from '../chat/resume-script';
 import {
   ChatError,
   createChatClient,
@@ -235,6 +235,26 @@ describe('ChatWidget', () => {
         expect(window.location.href).not.toContain('abc.DEF-123');
         expect(takeResumeToken()).toBe('abc.DEF-123');
         expect(stash()).toBeUndefined();
+      });
+
+      it('is built from stripChatResume itself (one source), whose literals match the exported constants', () => {
+        expect(CHAT_RESUME_SCRIPT).toBe(`(${stripChatResume.toString()})(window);`);
+        const calls: unknown[][] = [];
+        const host = {
+          location: { hash: `${CHAT_RESUME_HASH_PREFIX}t.1`, pathname: '/p', search: '?a=1' },
+          history: { replaceState: (...args: unknown[]) => { calls.push(args); } },
+        };
+        stripChatResume(host);
+        expect((host as unknown as Record<string, unknown>)[CHAT_RESUME_GLOBAL]).toBe('t.1');
+        expect(calls).toEqual([[null, '', '/p?a=1']]);
+      });
+
+      it('stripChatResume never throws when the history API refuses', () => {
+        const host = {
+          location: { hash: '#chat=t', pathname: '/p', search: '' },
+          history: { replaceState: () => { throw new Error('SecurityError'); } },
+        };
+        expect(() => stripChatResume(host)).not.toThrow();
       });
 
       it.each(['/zh-CN/support', '/zh-CN/support#contact', '/zh-CN/support?chat=tok#embed'])('leaves %s alone', (url) => {

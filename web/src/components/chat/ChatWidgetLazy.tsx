@@ -11,12 +11,20 @@ const ChatWidget = dynamic(() => import('./ChatWidget'), { ssr: false });
 
 /**
  * 挂件自己的错误边界：渲染出错或代码块加载失败时整块变空。
- * 聊天坏了绝不能把定价 / 结账页带到全局错误页。
+ * 聊天坏了绝不能把定价 / 结账页带到全局错误页。吞掉不等于不知道：出错时上报一次
+ *（边界进入 failed 后不再渲染子树，所以每次挂载至多一条）。
  */
 export class ChatErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+  componentDidCatch(error: unknown) {
+    // 监控 SDK 按需引入：它在浏览器里早已由 instrumentation-client 加载，这里不再让每个
+    // 挂了本组件的页面模块（含服务端渲染与单测）静态背上整个 SDK。上报失败不再抛。
+    import('@sentry/nextjs')
+      .then((Sentry) => Sentry.captureException(error, { tags: { component: 'chat-widget' } }))
+      .catch(() => {});
   }
   render() {
     return this.state.failed ? null : this.props.children;

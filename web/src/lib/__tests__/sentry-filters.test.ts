@@ -8,6 +8,9 @@ import {
   dropNativePostMessageRejections,
   dropOutdatedBrowserSyntaxErrors,
   dropRscNavigationFallbackRejections,
+  scrubChatResumeBreadcrumb,
+  scrubChatResumeEvent,
+  scrubChatResumeToken,
 } from '../sentry-filters';
 
 const originalUA = window.navigator.userAgent;
@@ -530,5 +533,55 @@ describe('dropRscNavigationFallbackRejections', () => {
       },
     } as unknown as ErrorEvent;
     expect(dropRscNavigationFallbackRejections(event)).toBe(event);
+  });
+});
+
+describe('chat-resume token scrubbing', () => {
+  it('scrubChatResumeToken removes only the #chat= fragment', () => {
+    expect(scrubChatResumeToken('https://x.test/zh-CN/support?utm=1#chat=abc.DEF-123_x')).toBe('https://x.test/zh-CN/support?utm=1');
+    expect(scrubChatResumeToken('/support#chat=tok')).toBe('/support');
+    expect(scrubChatResumeToken('GET "/support#chat=tok" failed, then /a#chat=t2 too')).toBe('GET "/support" failed, then /a too');
+    for (const untouched of ['/support#contact', '/support?chat=preview', 'https://x.test/', '']) {
+      expect(scrubChatResumeToken(untouched)).toBe(untouched);
+    }
+  });
+
+  it('scrubChatResumeBreadcrumb cleans navigation from/to, fetch url and message; keeps everything else', () => {
+    const nav = scrubChatResumeBreadcrumb({
+      category: 'navigation',
+      data: { from: '/zh-CN/support#chat=tok', to: '/zh-CN/support', status: 200 },
+    });
+    expect(nav).toEqual({ category: 'navigation', message: undefined, data: { from: '/zh-CN/support', to: '/zh-CN/support', status: 200 } });
+    expect(scrubChatResumeBreadcrumb({ category: 'fetch', data: { url: 'https://x.test/p#chat=tok', method: 'GET' } }).data).toEqual({
+      url: 'https://x.test/p',
+      method: 'GET',
+    });
+    expect(scrubChatResumeBreadcrumb({ category: 'console', message: 'at /p#chat=tok' }).message).toBe('at /p');
+  });
+
+  it('returns the very same breadcrumb when there is nothing to scrub', () => {
+    const b = { category: 'navigation', message: 'hi', data: { from: '/a#contact', to: '/b' } };
+    expect(scrubChatResumeBreadcrumb(b)).toBe(b);
+    const bare = { category: 'ui.click' };
+    expect(scrubChatResumeBreadcrumb(bare)).toBe(bare);
+  });
+
+  it('scrubChatResumeEvent cleans request.url, the Referer header and attached breadcrumbs', () => {
+    const event = scrubChatResumeEvent({
+      request: { url: 'https://x.test/support#chat=tok', headers: { Referer: 'https://x.test/a#chat=tok', 'User-Agent': 'ua' } },
+      breadcrumbs: [{ category: 'navigation', data: { from: '/a#chat=tok', to: '/a' } }, { category: 'ui.click' }],
+      exception: { values: [{ type: 'Error', value: 'boom' }] },
+    } as unknown as ErrorEvent);
+    expect(JSON.stringify(event)).not.toContain('chat=');
+    expect(event.request).toEqual({ url: 'https://x.test/support', headers: { Referer: 'https://x.test/a', 'User-Agent': 'ua' } });
+    expect(event.breadcrumbs).toHaveLength(2);
+    expect(event.exception?.values?.[0].value).toBe('boom');
+  });
+
+  it('scrubChatResumeEvent tolerates events with no request and no breadcrumbs', () => {
+    const event = scrubChatResumeEvent({ exception: { values: [{ type: 'Error', value: 'boom' }] } } as ErrorEvent);
+    expect(event.exception?.values?.[0].value).toBe('boom');
+    expect(event.request).toBeUndefined();
+    expect(event.breadcrumbs).toBeUndefined();
   });
 });

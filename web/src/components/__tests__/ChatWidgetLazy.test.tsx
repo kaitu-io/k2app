@@ -8,6 +8,9 @@ vi.mock('../chat/ChatWidget', () => {
   return { default: () => widget.impl() };
 });
 
+const sentry = vi.hoisted(() => ({ captureException: vi.fn() }));
+vi.mock('@sentry/nextjs', () => sentry);
+
 import ChatWidgetLazy, { ChatErrorBoundary } from '../chat/ChatWidgetLazy';
 import { CHAT_KNOWN_FLAG } from '../chat/gate';
 
@@ -18,6 +21,7 @@ describe('ChatWidgetLazy', () => {
     localStorage.clear();
     sessionStorage.clear();
     widget.impl = () => <div data-testid="chat-widget" />;
+    sentry.captureException.mockClear();
   });
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -47,6 +51,7 @@ describe('ChatWidgetLazy', () => {
     render(<ChatWidgetLazy />);
     await waitFor(() => expect(screen.getByTestId('chat-widget')).toBeInTheDocument());
     expect(widget.loads).toBe(1);
+    expect(sentry.captureException).not.toHaveBeenCalled();
   });
 
   it('a widget that throws while rendering is swallowed: the page around it keeps rendering', async () => {
@@ -62,9 +67,16 @@ describe('ChatWidgetLazy', () => {
     await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
     expect(screen.getByText('checkout')).toBeInTheDocument();
     expect(screen.queryByTestId('chat-widget')).toBeNull();
+    // 吞掉但要上报，且只报一次
+    await waitFor(() => expect(sentry.captureException).toHaveBeenCalled());
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(sentry.captureException).toHaveBeenCalledTimes(1);
+    const [error, hint] = sentry.captureException.mock.calls[0];
+    expect((error as Error).message).toBe('boom');
+    expect(hint).toEqual({ tags: { component: 'chat-widget' } });
   });
 
-  it('ChatErrorBoundary renders null for a throwing child and passes healthy children through', () => {
+  it('ChatErrorBoundary renders null for a throwing child and passes healthy children through', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const Boom = () => { throw new Error('boom'); };
     const { container } = render(
@@ -75,5 +87,8 @@ describe('ChatWidgetLazy', () => {
       </div>,
     );
     expect(container.textContent).toBe('pageok');
+    await waitFor(() => expect(sentry.captureException).toHaveBeenCalled());
+    expect(sentry.captureException).toHaveBeenCalledTimes(1);
+    expect(sentry.captureException.mock.calls[0][1]).toEqual({ tags: { component: 'chat-widget' } });
   });
 });
