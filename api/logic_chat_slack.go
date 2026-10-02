@@ -55,6 +55,8 @@ const (
 var (
 	errChatSlackLockLost = errors.New("chat slack: lock lost")
 	errChatSlackBusy     = errors.New("chat slack: tail not flushed yet")
+	// errChatSlackSweepQuery sweep 自己的列表查询失败（库的问题，不是某个会话的 Slack 调用失败）。
+	errChatSlackSweepQuery = errors.New("chat slack sweep: query failed")
 )
 
 func init() {
@@ -519,7 +521,7 @@ func chatSlackSweepIn(ctx context.Context, brand string) (int, error) {
 	var ids []uint64
 	if err := q.Group("m.conversation_id").Order("MIN(m.id)").Limit(chatSlackSweepLimit).
 		Pluck("m.conversation_id", &ids).Error; err != nil {
-		return 0, fmt.Errorf("list conversations to sweep: %w", err)
+		return 0, fmt.Errorf("%w: list conversations to sweep: %w", errChatSlackSweepQuery, err)
 	}
 	for _, id := range ids {
 		if err := chatSlackMirror(ctx, id); err != nil {
@@ -541,7 +543,7 @@ func chatSlackSweepIn(ctx context.Context, brand string) (int, error) {
 	}
 	var closed []uint64
 	if err := aq.Order("id").Limit(chatSlackSweepLimit).Pluck("id", &closed).Error; err != nil {
-		return len(done), errors.Join(append(errs, fmt.Errorf("list conversations to archive: %w", err))...)
+		return len(done), errors.Join(append(errs, fmt.Errorf("%w: list conversations to archive: %w", errChatSlackSweepQuery, err))...)
 	}
 	for _, id := range closed {
 		if err := chatSlackArchive(ctx, &Conversation{ID: id}); err != nil {

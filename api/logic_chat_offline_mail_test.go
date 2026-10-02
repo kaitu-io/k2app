@@ -35,6 +35,13 @@ type offlineMailBox struct {
 	err   error // 非空：发信失败
 }
 
+// FailWith 让之后的发信返回 err（nil = 恢复成功）。
+func (b *offlineMailBox) FailWith(err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.err = err
+}
+
 func (b *offlineMailBox) All() []offlineMail {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -127,7 +134,8 @@ func TestOfflineMail_SentWhenOfflineWithEmail(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestOfflineMail_BrandDecidesBaseURLAndSender(t *testing.T) {
+// overleap 会话：发信按 overleap 品牌、回链用 overleap 基址、文案里没有另一个品牌。
+func TestOfflineMail_OverleapBrandLinkAndCopy(t *testing.T) {
 	conv, _, box := offlineMailConv(t, BrandOverleap, offlineMailAddr())
 
 	sent, err := chatMaybeSendOfflineMail(context.Background(), conv, staffText(conv, "hello"))
@@ -220,16 +228,14 @@ func TestOfflineMail_UserSubjectNotSent(t *testing.T) {
 func TestOfflineMail_SendFailureReleasesWindow(t *testing.T) {
 	conv, _, box := offlineMailConv(t, BrandKaitu, offlineMailAddr())
 	ctx := context.Background()
-	box.err = errors.New("smtp down")
+	box.FailWith(errors.New("smtp down"))
 
 	sent, err := chatMaybeSendOfflineMail(ctx, conv, staffText(conv, "第一条"))
 	require.Error(t, err)
 	assert.False(t, sent)
 
 	// 发信失败不应白占 10 分钟窗口
-	box.mu.Lock()
-	box.err = nil
-	box.mu.Unlock()
+	box.FailWith(nil)
 	sent, err = chatMaybeSendOfflineMail(ctx, conv, staffText(conv, "第二条"))
 	require.NoError(t, err)
 	assert.True(t, sent)
@@ -266,4 +272,33 @@ func TestOfflineMail_HookOnAppend(t *testing.T) {
 	require.Len(t, mails, 1)
 	assert.Equal(t, addr, mails[0].To)
 	assert.Contains(t, mails[0].Body, "钩子开启")
+}
+
+// 邮箱是访客自报的：能夹带多收件人 / 邮件头 / 显示名的串一律拒发，且不占频率窗口。
+func TestOfflineMail_RefusesMalformedAddress(t *testing.T) {
+	good := offlineMailAddr()
+	for name, bad := range map[string]string{
+		"comma":        good + ",evil@example.test",
+		"crlf header":  good + "\r\nBcc: evil@example.test",
+		"lf":           good + "\nevil@example.test",
+		"display name": "evil <" + good + ">",
+		"not an email": "not-an-address",
+	} {
+		t.Run(name, func(t *testing.T) {
+			conv, _, box := offlineMailConv(t, BrandKaitu, bad)
+			sent, err := chatMaybeSendOfflineMail(context.Background(), conv, staffText(conv, "您好"))
+			require.NoError(t, err)
+			assert.False(t, sent)
+			assert.Empty(t, box.All())
+			assert.False(t, testMiniRedis.Exists(chatOfflineMailKey(conv.ID)), "refused mail must not take the window")
+		})
+	}
+	assert.True(t, chatMailAddrOK(good))
+}
+
+// overleap 文案登记在 overleapTemplateCorpus 里，品牌泄漏守卫才扫得到它。
+func TestOfflineMail_OverleapCopyInCorpus(t *testing.T) {
+	subject, body := chatOfflineMailContent(BrandOverleap, "", "")
+	assert.Equal(t, subject+body, overleapTemplateCorpus()["chatOfflineMail"])
+	assert.NotEmpty(t, subject+body)
 }

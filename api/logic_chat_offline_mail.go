@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/mail"
+	"strings"
 	"time"
 
 	"github.com/wordgate/qtoolkit/log"
@@ -58,6 +60,16 @@ func chatOfflineMailCandidate(conv *Conversation, msg *ConversationMessage) bool
 		msg.SenderType == SenderStaff && msg.Kind == MsgText && conv.SubjectKind == SubjectGuest
 }
 
+// chatMailAddrOK 只接受单个裸地址：能被 net/mail 解析、解析结果与原串一致（排除 "名字 <a@b>" 形式），
+// 且不含 CR/LF（邮件头注入）与逗号（多收件人）。
+func chatMailAddrOK(addr string) bool {
+	if strings.ContainsAny(addr, "\r\n,") {
+		return false
+	}
+	a, err := mail.ParseAddress(addr)
+	return err == nil && a.Address == addr
+}
+
 func chatOfflineMailKey(convID uint64) string { return fmt.Sprintf("chat:mail:%d", convID) }
 
 // chatResumeLink 邮件里的"继续对话"链接。令牌放在 URL 片段（#）里：片段不会发给服务器、不进 Referer。
@@ -83,7 +95,15 @@ func chatMaybeSendOfflineMail(ctx context.Context, conv *Conversation, msg *Conv
 		return false, err
 	}
 	to := guestEmail(ctx, s.ID)
-	if to == "" || chatVisitorOnline(ctx, s) {
+	if to == "" {
+		return false, nil
+	}
+	// 邮箱是访客自报的：发信前再校验一次，绝不把能夹带多收件人 / 邮件头的串交给发信函数
+	if !chatMailAddrOK(to) {
+		log.Warnf(ctx, "chat offline mail: conv=%d refused malformed address %q", conv.ID, to)
+		return false, nil
+	}
+	if chatVisitorOnline(ctx, s) {
 		return false, nil
 	}
 	link := chatResumeLink(conv)
@@ -103,7 +123,8 @@ func chatMaybeSendOfflineMail(ctx context.Context, conv *Conversation, msg *Conv
 
 	subject, body := chatOfflineMailContent(s.Brand, msg.Content, link)
 	if err := chatOfflineMailSend(ctx, s.Brand, to, subject, body); err != nil {
-		// 没发出去就别白占 10 分钟
+		// 没发出去就别白占 10 分钟。无条件删：超时这类失败其实可能已经发出，
+		// 那样下一条回复会再发一封——可以接受重复一封，不能接受漏发。
 		if derr := redis.Client().Del(context.WithoutCancel(ctx), key).Err(); derr != nil {
 			log.Warnf(ctx, "chat offline mail: release window conv=%d: %v", conv.ID, derr)
 		}
@@ -111,16 +132,4 @@ func chatMaybeSendOfflineMail(ctx context.Context, conv *Conversation, msg *Conv
 	}
 	log.Infof(ctx, "chat offline mail sent: conv=%d to=%s", conv.ID, hideEmail(to))
 	return true, nil
-}
-
-// chatOfflineMailContent 按品牌出文案（写法同 ticketReplyNotification）。品牌名取注册表的 DisplayName，
-// 这里不写任何品牌字面量。
-func chatOfflineMailContent(b Brand, reply, link string) (subject, body string) {
-	name := b.Config().DisplayName
-	if b == BrandOverleap {
-		return fmt.Sprintf("[%s] New reply from support", name),
-			fmt.Sprintf("Hi,\n\nOur support team replied to your conversation:\n\n---\n%s\n---\n\nContinue the conversation here (link valid for 7 days):\n%s\n\n— The %s Team\n", reply, link, name)
-	}
-	return fmt.Sprintf("[%s] 客服回复了您的咨询", name),
-		fmt.Sprintf("您好，\n\n客服回复了您的咨询：\n\n---\n%s\n---\n\n点击下方链接继续对话（7 天内有效）：\n%s\n\n%s 团队\n", reply, link, name)
 }
