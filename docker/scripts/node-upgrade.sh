@@ -6,9 +6,12 @@
 #   → phase B: recreate k2s → wait for "k2s server ready" in the file log.
 #
 # Single-phase `docker compose up -d` puts the sidecar healthcheck wait INSIDE
-# the k2s gap; splitting it keeps the gap at compose's stop-grace + k2s start
-# (measured 13–18 s upper bound across 25 nodes on 2026-09-07; k2s itself is
-# ready < 1 s after start). Clients reconnect on their own.
+# the k2s gap; splitting it keeps the gap at stop-grace + k2s start. On SIGTERM
+# k2s closes its listeners immediately and only drains existing connections
+# until it is killed, so the stop grace is pure no-accept time: compose's 10 s
+# default gave a 13–18 s window (2026-09-07, 25 nodes); -t 2 gives 5.0–7.0 s
+# (2026-10-03, measured SIGTERM → "server ready" from the k2s log). Clients
+# reconnect on their own.
 #
 # Usage (from the kaitu-center MCP, runs ON the node; exit != 0 ⇒ stop the sweep):
 #   exec_on_node(ip, "sudo bash -s v0.4.10-<commit8>", scriptPath="docker/scripts/node-upgrade.sh", timeout=300)
@@ -39,14 +42,21 @@ echo "k2s_still_old=$OLD_K2S_IMG"
 # Phase B: k2s. Gap starts now.
 CUTSTR=$(date -u -d @"$TA" +%Y-%m-%dT%H:%M:%S)
 TB=$(date -u +%s)
-docker compose up -d --remove-orphans 2>&1 | tail -3
+# Stop grace 2 s instead of compose's 10 s default: on SIGTERM k2s closes its listeners at once and
+# only drains existing connections, which are killed anyway — the extra 8 s only lengthens the window
+# in which new connections are refused.
+docker compose up -d --remove-orphans -t "${STOP_T:-2}" 2>&1 | tail -3
 READY=""
-for i in $(seq 1 60); do
+for i in $(seq 1 300); do
   if awk -v c="$CUTSTR" 'substr($0,6,19)>=c' logs/k2s.log 2>/dev/null | grep -q 'server ready'; then READY=$(date -u +%s); break; fi
-  sleep 1
+  sleep 0.2
 done
 if [ -z "$READY" ]; then echo "FAIL: k2s not ready within 60s"; docker ps --format '{{.Names}} {{.Image}} {{.Status}}'; exit 5; fi
 echo "k2s_gap_upper_bound_s=$((READY-TB)) ready_at=$(date -u -d @"$READY" +%FT%TZ)"
+# measurement only — must never fail the upgrade (set -e / pipefail)
+SD=$(awk -v c="$CUTSTR" 'substr($0,6,19)>=c' logs/k2s.log | grep -m1 "Shutting down" | cut -c6-28 || true)
+RD=$(awk -v c="$CUTSTR" 'substr($0,6,19)>=c' logs/k2s.log | grep -m1 "k2s server ready" | cut -c6-28 || true)
+if [ -n "$SD" ] && [ -n "$RD" ]; then echo "no_accept_window sigterm=$SD ready=$RD ms=$(( ($(date -u -d "${RD}Z" +%s%N) - $(date -u -d "${SD}Z" +%s%N)) / 1000000 ))"; else echo "no_accept_window unmeasured sigterm=${SD:-?} ready=${RD:-?}"; fi
 docker ps --format '{{.Names}} {{.Image}} {{.Status}}'
 docker logs --since "$(date -u -d @"$T1" +%FT%TZ)" k2-sidecar 2>&1 | grep -E 'Registration completed|Tunnel registered|Traffic monitor initialized|usage-reporter-start|Metering disabled' | sed -E 's/(SECRET|CLAIM|TOKEN)=[^ ]*/\1=<redacted>/g' | head -6
 N=$(docker ps --format '{{.Image}}' | grep -c ":$TAG$" || true)
