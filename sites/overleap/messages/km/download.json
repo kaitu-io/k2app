@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "title": "ទាញយក {brand} សម្រាប់ Windows, macOS, iOS និង Android",
+    "description": "ទទួលយកកម្មវិធី {brand} សម្រាប់កុំព្យូទ័រ និងទូរសព្ទរបស់អ្នក។ គណនីតែមួយគ្របដណ្តប់ឧបករណ៍ ៥ ចូលគណនី ហើយភ្ជាប់ដោយប៉ះតែម្តង។"
+  },
+  "title": "ទាញយក {brand}",
+  "subtitle": "គណនីតែមួយ ឧបករណ៍ ៥។ ជ្រើសរើសវេទិការបស់អ្នក — យើងបានបន្លិចវេទិកាដែលអ្នកកំពុងប្រើ។",
+  "detected": "អ្នកកំពុងប្រើ {platform}",
+  "version": "កំណែ {version}",
+  "getFor": "ទាញយកសម្រាប់ {platform}",
+  "iosStore": "បើក App Store",
+  "androidStore": "ទទួលយកនៅលើ Google Play",
+  "comingSoon": "ឆាប់ៗនេះ",
+  "comingSoonHint": "មិនទាន់មានលើវេទិកានេះនៅឡើយទេ។ ជាវឥឡូវនេះ ហើយយើងនឹងផ្ញើអ៊ីមែលជូនដំណឹងនៅពេលវាមាន។",
+  "platforms": {
+    "windows": {
+      "name": "Windows",
+      "requirement": "Windows 10 ឬថ្មីជាងនេះ 64-bit"
+    },
+    "macos": {
+      "name": "Mac",
+      "requirement": "macOS 12 ឬថ្មីជាងនេះ Intel និង Apple silicon"
+    },
+    "ios": {
+      "name": "iPhone និង iPad",
+      "requirement": "iOS 15 ឬថ្មីជាងនេះ"
+    },
+    "android": {
+      "name": "Android",
+      "requirement": "Android 8 ឬថ្មីជាងនេះ"
+    }
+  },
+  "next": {
+    "title": "បន្ទាប់ពីដំឡើង",
+    "step1": "ចូលគណនីដោយប្រើអាសយដ្ឋានអ៊ីមែលដែលអ្នកបានជាវ។",
+    "step2": "ចុច ភ្ជាប់។ កម្មវិធីនឹងជ្រើសរើសផ្លូវលឿនបំផុតជូនអ្នក។",
+    "step3": "ប្រើគណនីដូចគ្នាលើឧបករណ៍រហូតដល់ ៥។"
+  },
+  "noSubscription": "មិនទាន់មានការជាវនៅឡើយទេ?",
+  "seePricing": "មើលតម្លៃ",
+  "help": "មានអ្វីមិនដំណើរការឬ?",
+  "helpLink": "ទៅកាន់ទំព័រជំនួយ"
+}

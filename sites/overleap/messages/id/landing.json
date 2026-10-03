@@ -1,0 +1,133 @@
+{
+  "meta": {
+    "title": "VPN privat tanpa log, tetap cepat di jaringan apa pun",
+    "description": "{brand} adalah VPN privat yang menyembunyikan tujuan Anda, bahkan dari penyedia internet, tidak menyimpan log, dan tetap cepat di jaringan yang sering mengecewakan. Windows, macOS, iOS, dan Android."
+  },
+  "hero": {
+    "badge": "Tanpa log · Encrypted Client Hello · 5 perangkat",
+    "title": "Apa yang Anda jelajahi bukan urusan siapa pun selain Anda.",
+    "subtitle": "VPN privat yang menyembunyikan ke mana Anda berselancar, bahkan dari penyedia internet Anda, dan tetap cepat di jaringan yang biasanya mengecewakan.",
+    "description": "{brand} mengenkripsi semua yang dikirim perangkat Anda dan menyembunyikan tujuannya dengan Encrypted Client Hello. Kami tidak menyimpan catatan apa pun tentang aktivitas Anda. Satu langganan mencakup lima perangkat di Windows, macOS, iOS, dan Android.",
+    "ctaPrimary": "Dapatkan {brand}",
+    "ctaSecondary": "Lihat cara kerjanya",
+    "mockConnected": "Terlindungi",
+    "mockNode": "Otomatis · rute tercepat"
+  },
+  "steps": {
+    "title": "Siap pakai dalam tiga langkah",
+    "subscribe": {
+      "label": "Berlangganan",
+      "detail": "Kartu, Apple Pay, atau Google Pay · batalkan kapan saja"
+    },
+    "download": {
+      "label": "Pasang aplikasi",
+      "detail": "Windows · macOS · iOS · Android"
+    },
+    "connect": {
+      "label": "Masuk dan sambungkan",
+      "detail": "Cukup satu ketukan. Tanpa konfigurasi."
+    },
+    "cta": "Mulai sekarang"
+  },
+  "features": {
+    "title": "Mengapa {brand}",
+    "isp": {
+      "title": "Tersembunyi bahkan dari ISP Anda",
+      "description": "Penyedia internet di Inggris wajib menyimpan catatan layanan yang Anda akses hingga dua belas bulan. Dengan {brand}, penyedia Anda hanya melihat satu sesi HTTPS biasa tanpa tahu ke mana tujuannya: Encrypted Client Hello menyembunyikan tujuan yang pada VPN lain tetap terlihat di handshake."
+    },
+    "logs": {
+      "title": "Tanpa log. Tidak ada yang bisa diserahkan.",
+      "description": "Kami tidak mencatat situs yang Anda kunjungi, aplikasi yang Anda pakai, atau lalu lintas yang Anda kirim. Kami hanya menyimpan yang dibutuhkan untuk berlangganan: alamat email, paket Anda, dan perangkat yang sedang masuk."
+    },
+    "speed": {
+      "title": "Cepat di jaringan yang mengecewakan",
+      "description": "Wi-Fi kereta, stadion yang padat, koneksi hotel: kebanyakan VPN merayap begitu paket mulai hilang. Kontrol laju k2cc milik {brand} membedakan gangguan dari kemacetan sebenarnya dan menjaga kecepatan Anda."
+    },
+    "roaming": {
+      "title": "Ikut ke mana pun Anda pergi",
+      "description": "Keluar rumah, Wi-Fi hilang, tetap lanjut. Terowongan berpindah dari Wi-Fi ke data seluler di tengah sesi, sehingga unduhan dan panggilan terus berjalan tanpa tersambung ulang."
+    },
+    "travel": {
+      "title": "Tetap berfungsi di luar negeri",
+      "description": "Bepergian ke tempat yang biasanya menyulitkan VPN? Koneksi {brand} terlihat seperti lalu lintas web biasa, jadi tetap berfungsi di tempat VPN lain mati."
+    }
+  },
+  "pricing": {
+    "title": "Satu paket. Semua perangkat.",
+    "subtitle": "Lima perangkat, data tanpa batas, semua lokasi. Batalkan kapan saja.",
+    "yearly": {
+      "name": "Tahunan",
+      "period": "per tahun",
+      "note": "Paling hemat — sekitar {monthly} per bulan"
+    },
+    "monthly": {
+      "name": "Bulanan",
+      "period": "per bulan",
+      "note": "Batalkan kapan saja"
+    },
+    "cta": "Pilih paket",
+    "includes": [
+      "5 perangkat sekaligus",
+      "Data tanpa batas",
+      "Semua lokasi",
+      "Windows, macOS, iOS, Android"
+    ],
+    "currencyNote": "Harga dalam {currency}. Bayar dengan kartu, Apple Pay, atau Google Pay. Anda ditagih dalam mata uang lokal jika tersedia."
+  },
+  "faq": {
+    "title": "Pertanyaan",
+    "subtitle": "Jawaban lugas tentang cara kerja {brand}.",
+    "items": {
+      "logs": {
+        "question": "Apakah Anda menyimpan log?",
+        "answer": "Tidak. Kami tidak mencatat situs yang Anda kunjungi, aplikasi yang Anda pakai, atau lalu lintas yang Anda kirim. Kami hanya menyimpan yang dibutuhkan untuk berlangganan: alamat email, paket Anda, dan perangkat yang sedang masuk."
+      },
+      "isp": {
+        "question": "Apa yang dilihat ISP saya?",
+        "answer": "Satu koneksi terenkripsi ke server {brand} yang membawa sesi HTTPS yang tampak biasa. Encrypted Client Hello menyembunyikan bahkan nama server di handshake, jadi tidak ada tanda yang mengidentifikasi VPN dan tidak ada informasi tentang tujuan Anda sebenarnya."
+      },
+      "legal": {
+        "question": "Apakah menggunakan VPN legal di Inggris?",
+        "answer": "Ya. Menggunakan VPN legal di Inggris dan di seluruh Eropa. Apa yang Anda lakukan secara online tetap tunduk pada hukum."
+      },
+      "publicWifi": {
+        "question": "Apakah aman di Wi-Fi publik?",
+        "answer": "Ya. Semua yang dikirim perangkat Anda dienkripsi sebelum keluar, sehingga jaringan kafe, hotel, atau kereta hanya melihat lalu lintas terenkripsi, dan tak seorang pun di jaringan yang sama dapat membaca atau mengubahnya."
+      },
+      "travel": {
+        "question": "Apakah berfungsi saat saya bepergian?",
+        "answer": "Ya. Koneksi {brand} terlihat seperti lalu lintas web biasa, jadi tetap berfungsi di tempat-tempat yang biasanya memblokir VPN. Langganan Anda mencakup semua lokasi, dan aplikasi memilih rute tercepat di mana pun Anda berada."
+      },
+      "ech": {
+        "question": "Apa itu Encrypted Client Hello?",
+        "answer": "Bagian handshake TLS yang biasanya mengungkap server mana yang Anda tuju, kini dienkripsi. Kebanyakan VPN masih mengirim nama itu secara terbuka, dan itulah yang dipakai jaringan untuk mendeteksi dan memblokirnya. {brand} mengenkripsinya."
+      },
+      "platforms": {
+        "question": "Platform apa saja yang didukung?",
+        "answer": "Windows, macOS, iOS, dan Android. Satu langganan mencakup lima perangkat sekaligus."
+      },
+      "devices": {
+        "question": "Berapa perangkat yang bisa saya pakai?",
+        "answer": "Lima sekaligus, dengan kombinasi platform apa pun. Masuk di perangkat keenam akan mengeluarkan perangkat terlama."
+      },
+      "pricing": {
+        "question": "Berapa harganya?",
+        "answer": "{yearly} per tahun, atau {monthly} per bulan. Keduanya sudah termasuk lima perangkat, data tanpa batas, dan semua lokasi, dan Anda bisa membatalkan kapan saja."
+      },
+      "payment": {
+        "question": "Bagaimana cara membayar?",
+        "answer": "Kartu kredit atau debit melalui Stripe. Apple Pay dan Google Pay tersedia saat pembayaran jika didukung perangkat Anda. Anda ditagih dalam mata uang lokal jika tersedia."
+      },
+      "cancel": {
+        "question": "Bagaimana cara membatalkan?",
+        "answer": "Dari halaman akun Anda, atau melalui toko aplikasi tempat Anda berlangganan. Paket Anda tetap aktif hingga akhir periode yang sudah dibayar."
+      }
+    }
+  },
+  "download": {
+    "title": "Dapatkan {brand} di setiap perangkat",
+    "subtitle": "Satu akun, lima perangkat, koneksi yang sama di mana-mana.",
+    "platforms": "Windows · macOS · iOS · Android",
+    "button": "Unduh"
+  }
+}

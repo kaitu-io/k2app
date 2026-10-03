@@ -1,0 +1,18 @@
+{
+  "title": "Выберите тариф",
+  "annualLabel": "Год",
+  "monthlyLabel": "Месяц",
+  "perMonthApprox": "≈ {price}/мес.",
+  "monthlyPrice": "{price}/мес.",
+  "cancelAnytime": "Отмена в любой момент",
+  "savePercent": "Экономия {percent}%",
+  "currencyNote": "Цены указаны в {currency}. Где возможно, списание происходит в вашей местной валюте.",
+  "subscribe": "Подписаться",
+  "redirecting": "Переход к безопасной оплате…",
+  "alreadySubscribed": "У вас уже есть активная подписка.",
+  "manageInAccount": "Управление подпиской",
+  "checkoutCancelled": "Оплата отменена — вы можете попробовать снова в любой момент.",
+  "channelUnavailable": "Этот способ оплаты недоступен для вашего аккаунта.",
+  "genericError": "Что-то пошло не так. Попробуйте ещё раз.",
+  "noPlans": "Тарифы готовятся. Загляните позже."
+}

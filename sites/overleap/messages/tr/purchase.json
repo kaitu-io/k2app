@@ -1,0 +1,18 @@
+{
+  "title": "Planınızı seçin",
+  "annualLabel": "Yıllık",
+  "monthlyLabel": "Aylık",
+  "perMonthApprox": "≈ {price}/ay",
+  "monthlyPrice": "{price}/ay",
+  "cancelAnytime": "İstediğiniz zaman iptal",
+  "savePercent": "%{percent} tasarruf",
+  "currencyNote": "Fiyatlar {currency} cinsindendir. Mümkün olduğunda yerel para biriminizle tahsil edilirsiniz.",
+  "subscribe": "Abone ol",
+  "redirecting": "Güvenli ödeme sayfasına yönlendiriliyor…",
+  "alreadySubscribed": "Zaten etkin bir aboneliğiniz var.",
+  "manageInAccount": "Aboneliği yönet",
+  "checkoutCancelled": "Ödeme iptal edildi — istediğiniz zaman tekrar deneyebilirsiniz.",
+  "channelUnavailable": "Bu ödeme yöntemi hesabınız için kullanılamıyor.",
+  "genericError": "Bir şeyler ters gitti. Lütfen tekrar deneyin.",
+  "noPlans": "Planlar hazırlanıyor. Lütfen kısa süre sonra tekrar kontrol edin."
+}

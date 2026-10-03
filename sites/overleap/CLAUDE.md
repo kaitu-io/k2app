@@ -35,7 +35,9 @@ src/lib/api.ts           Center API client (only endpoints this site calls)
 src/lib/api-errors.ts    ApiError → `errors` message key
 src/contexts/AuthContext profile-as-session: signed in ⇔ GET /api/user/info succeeds
 src/middleware.ts        locale negotiation, X-K2-Brand on /api/*, 404 on /app/*
-src/app/[locale]/        pages (home is a placeholder until the marketing pages land)
+src/app/[locale]/        pages: home, install, pricing, purchase (Stripe checkout), support, login, account, legal
+src/components/marketing/ landing sections shared by home / pricing / support (FAQ is native <details>: answers stay in the server HTML)
+src/lib/pricing.ts       display currency + formatting; PRICING (lib/site.ts) must equal scripts/stripe-setup-overleap.sh (tests/pricing-source.test.ts)
 ```
 
 ## Deployment

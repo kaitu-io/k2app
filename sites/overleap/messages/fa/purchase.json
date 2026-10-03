@@ -1,0 +1,18 @@
+{
+  "title": "طرح خود را انتخاب کنید",
+  "annualLabel": "سالانه",
+  "monthlyLabel": "ماهانه",
+  "perMonthApprox": "≈ {price} در ماه",
+  "monthlyPrice": "{price} در ماه",
+  "cancelAnytime": "لغو در هر زمان",
+  "savePercent": "{percent}٪ صرفه‌جویی",
+  "currencyNote": "قیمت‌ها به {currency} است. در صورت امکان به واحد پول محلی شما محاسبه می‌شود.",
+  "subscribe": "اشتراک",
+  "redirecting": "در حال انتقال به صفحه‌ی پرداخت امن…",
+  "alreadySubscribed": "شما هم‌اکنون اشتراک فعال دارید.",
+  "manageInAccount": "مدیریت اشتراک",
+  "checkoutCancelled": "پرداخت لغو شد — هر زمان می‌توانید دوباره امتحان کنید.",
+  "channelUnavailable": "این روش پرداخت برای حساب شما در دسترس نیست.",
+  "genericError": "مشکلی پیش آمد. لطفاً دوباره تلاش کنید.",
+  "noPlans": "طرح‌ها در حال آماده‌سازی هستند. لطفاً کمی بعد دوباره سر بزنید."
+}

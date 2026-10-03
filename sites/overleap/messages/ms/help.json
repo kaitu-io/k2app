@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "title": "Bantuan",
+    "description": "Bermula, akaun dan pengebilan, serta jawapan terus terang untuk soalan lazim tentang {brand}."
+  },
+  "title": "Bantuan",
+  "intro": "Bermula, akaun dan pengebilan, serta jawapan terus terang. Jika tiada di sini, e-mel kami — seorang manusia akan membalas.",
+  "gettingStarted": {
+    "title": "Bermula",
+    "step1": {
+      "title": "Langgan",
+      "body": "Pilih pelan di halaman harga dan bayar dengan kad, Apple Pay atau Google Pay."
+    },
+    "step2": {
+      "title": "Pasang aplikasi",
+      "body": "Muat turun {brand} untuk Windows, macOS, iOS atau Android."
+    },
+    "step3": {
+      "title": "Log masuk dan sambung",
+      "body": "Gunakan alamat e-mel yang anda gunakan untuk melanggan, kemudian ketik Sambung. Aplikasi memilih laluan terpantas untuk anda."
+    },
+    "download": "Ke halaman muat turun"
+  },
+  "billing": {
+    "title": "Akaun dan pengebilan",
+    "items": {
+      "manage": {
+        "question": "Bagaimana saya mengurus atau membatalkan langganan?",
+        "answer": "Buka halaman akaun anda dan pilih Urus langganan. Di sana anda boleh membatalkan, menukar kad atau memuat turun invois. Pembatalan mengekalkan pelan anda aktif sehingga akhir tempoh yang telah dibayar."
+      },
+      "charge": {
+        "question": "Bilakah saya dicaj?",
+        "answer": "Pada permulaan setiap tempoh pengebilan, pada kad yang anda gunakan untuk melanggan. Stripe akan e-mel resit kepada anda setiap kali."
+      },
+      "refund": {
+        "question": "Bolehkah saya mendapat bayaran balik?",
+        "answer": "Jika {brand} tidak sesuai untuk anda, e-mel kami dan kami akan selesaikannya."
+      },
+      "devices": {
+        "question": "Saya telah mencapai had lima peranti",
+        "answer": "Log masuk pada peranti keenam akan melog keluar peranti yang paling lama secara automatik. Untuk melog keluar peranti sendiri, gunakan skrin Peranti dalam aplikasi."
+      }
+    },
+    "account": "Ke akaun anda"
+  },
+  "faq": {
+    "title": "Soalan",
+    "subtitle": "Cara {brand} berfungsi, dalam bahasa mudah."
+  },
+  "contact": {
+    "title": "Masih buntu?",
+    "body": "E-mel {email} dengan apa yang anda cuba lakukan dan apa yang berlaku. Seorang manusia membaca setiap mesej.",
+    "button": "E-mel sokongan"
+  }
+}

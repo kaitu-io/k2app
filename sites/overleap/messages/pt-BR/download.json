@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "title": "Baixe o {brand} para Windows, macOS, iOS e Android",
+    "description": "Instale o app do {brand} no computador e no celular. Uma conta cobre cinco dispositivos; entre e conecte com um toque."
+  },
+  "title": "Baixe o {brand}",
+  "subtitle": "Uma conta, cinco dispositivos. Escolha sua plataforma: destacamos a que você está usando.",
+  "detected": "Você está no {platform}",
+  "version": "Versão {version}",
+  "getFor": "Baixar para {platform}",
+  "iosStore": "Abrir a App Store",
+  "androidStore": "Disponível no Google Play",
+  "comingSoon": "Em breve",
+  "comingSoonHint": "Ainda não disponível nesta plataforma. Assine agora e avisaremos por e-mail quando chegar.",
+  "platforms": {
+    "windows": {
+      "name": "Windows",
+      "requirement": "Windows 10 ou posterior, 64 bits"
+    },
+    "macos": {
+      "name": "Mac",
+      "requirement": "macOS 12 ou posterior, Intel e Apple silicon"
+    },
+    "ios": {
+      "name": "iPhone e iPad",
+      "requirement": "iOS 15 ou posterior"
+    },
+    "android": {
+      "name": "Android",
+      "requirement": "Android 8 ou posterior"
+    }
+  },
+  "next": {
+    "title": "Depois de instalar",
+    "step1": "Entre com o e-mail usado na assinatura.",
+    "step2": "Toque em Conectar. O app escolhe a rota mais rápida para você.",
+    "step3": "Use a mesma conta em até cinco dispositivos."
+  },
+  "noSubscription": "Ainda não tem uma assinatura?",
+  "seePricing": "Ver preços",
+  "help": "Algo não está funcionando?",
+  "helpLink": "Acesse a página de ajuda"
+}

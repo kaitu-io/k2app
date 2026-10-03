@@ -3,5 +3,5 @@
  * and every locale must carry every namespace with the same keys
  * (tests/messages-parity.test.ts). Add the name here when adding a file.
  */
-export const NAMESPACES = ['common', 'nav', 'home', 'auth', 'account', 'errors', 'legal'] as const;
+export const NAMESPACES = ['common', 'nav', 'landing', 'download', 'help', 'pricing', 'purchase', 'auth', 'account', 'errors', 'legal', 'chat'] as const;
 export type Namespace = (typeof NAMESPACES)[number];

@@ -1,0 +1,133 @@
+{
+  "meta": {
+    "title": "VPN privata senza log, veloce su qualsiasi rete",
+    "description": "{brand} è una VPN privata che nasconde dove navighi, anche al tuo provider, non conserva log e resta veloce sulle reti che ti deludono. Windows, macOS, iOS e Android."
+  },
+  "hero": {
+    "badge": "Nessun log · Encrypted Client Hello · 5 dispositivi",
+    "title": "Cosa navighi, lo sai solo tu.",
+    "subtitle": "Una VPN privata che nasconde dove navighi, anche al tuo provider internet, e resta veloce sulle reti che ti deludono.",
+    "description": "{brand} cifra tutto ciò che i tuoi dispositivi inviano e nasconde la destinazione con Encrypted Client Hello. Non conserviamo alcuna traccia di ciò che fai. Un solo abbonamento copre cinque dispositivi su Windows, macOS, iOS e Android.",
+    "ctaPrimary": "Scegli {brand}",
+    "ctaSecondary": "Scopri come funziona",
+    "mockConnected": "Protetto",
+    "mockNode": "Auto · percorso più veloce"
+  },
+  "steps": {
+    "title": "Pronto in tre passaggi",
+    "subscribe": {
+      "label": "Abbonati",
+      "detail": "Carta, Apple Pay o Google Pay · disdici quando vuoi"
+    },
+    "download": {
+      "label": "Installa l'app",
+      "detail": "Windows · macOS · iOS · Android"
+    },
+    "connect": {
+      "label": "Accedi e connettiti",
+      "detail": "Un tocco. Nessuna configurazione."
+    },
+    "cta": "Inizia ora"
+  },
+  "features": {
+    "title": "Perché {brand}",
+    "isp": {
+      "title": "Nascosto anche al tuo provider",
+      "description": "I provider britannici sono tenuti a conservare per un massimo di dodici mesi un registro dei servizi a cui ti connetti. Con {brand} il tuo provider vede un'ordinaria sessione HTTPS e nulla su dove porta: Encrypted Client Hello nasconde la destinazione che le altre VPN lasciano visibile nell'handshake."
+    },
+    "logs": {
+      "title": "Nessun log. Niente da consegnare.",
+      "description": "Non registriamo i siti che visiti, le app che usi né il traffico che invii. Conserviamo solo ciò che serve a un abbonamento: il tuo indirizzo email, il tuo piano e i dispositivi collegati."
+    },
+    "speed": {
+      "title": "Veloce sulle reti che ti deludono",
+      "description": "Wi-Fi del treno, stadio affollato, connessione d'albergo: la maggior parte delle VPN rallenta appena si perdono pacchetti. Il controllo di velocità k2cc di {brand} distingue le interferenze dalla vera congestione e mantiene alta la velocità."
+    },
+    "roaming": {
+      "title": "Si muove con te",
+      "description": "Esci di casa, perdi il Wi-Fi, vai avanti. Il tunnel passa dal Wi-Fi ai dati mobili durante la sessione, così download e chiamate continuano senza riconnettersi."
+    },
+    "travel": {
+      "title": "Funziona anche all'estero",
+      "description": "Viaggi dove le VPN di solito falliscono? La connessione di {brand} sembra normale traffico web, quindi continua a funzionare dove le altre si spengono."
+    }
+  },
+  "pricing": {
+    "title": "Un piano. Tutti i dispositivi.",
+    "subtitle": "Cinque dispositivi, dati illimitati, ogni località. Disdici quando vuoi.",
+    "yearly": {
+      "name": "Annuale",
+      "period": "all'anno",
+      "note": "Il più conveniente — circa {monthly} al mese"
+    },
+    "monthly": {
+      "name": "Mensile",
+      "period": "al mese",
+      "note": "Disdici quando vuoi"
+    },
+    "cta": "Scegli un piano",
+    "includes": [
+      "5 dispositivi contemporaneamente",
+      "Dati illimitati",
+      "Tutte le località",
+      "Windows, macOS, iOS, Android"
+    ],
+    "currencyNote": "Prezzi in {currency}. Paga con carta, Apple Pay o Google Pay. Dove disponibile, l'addebito avviene nella tua valuta locale."
+  },
+  "faq": {
+    "title": "Domande",
+    "subtitle": "Risposte dirette su come funziona {brand}.",
+    "items": {
+      "logs": {
+        "question": "Conservate dei log?",
+        "answer": "No. Non registriamo i siti che visiti, le app che usi né il traffico che invii. Conserviamo solo ciò che serve a un abbonamento: il tuo indirizzo email, il tuo piano e i dispositivi collegati."
+      },
+      "isp": {
+        "question": "Cosa vede il mio provider?",
+        "answer": "Una sola connessione cifrata verso un server {brand}, che trasporta una sessione HTTPS dall'aspetto ordinario. Encrypted Client Hello nasconde perfino il nome del server nell'handshake, quindi non c'è nulla che identifichi una VPN e nulla su dove vai davvero."
+      },
+      "legal": {
+        "question": "Usare una VPN è legale nel Regno Unito?",
+        "answer": "Sì. Usare una VPN è legale nel Regno Unito e in tutta Europa. Ciò che fai online resta comunque soggetto alla legge."
+      },
+      "publicWifi": {
+        "question": "È sicura sul Wi-Fi pubblico?",
+        "answer": "Sì. Tutto ciò che il tuo dispositivo invia è cifrato prima di uscire, quindi la rete del bar, dell'hotel o del treno vede solo traffico cifrato e nessuno sulla stessa rete può leggerlo o manometterlo."
+      },
+      "travel": {
+        "question": "Funziona quando viaggio?",
+        "answer": "Sì. La connessione di {brand} sembra normale traffico web, quindi continua a funzionare dove le VPN di solito vengono bloccate. L'abbonamento copre ogni località e l'app sceglie il percorso più veloce ovunque tu sia."
+      },
+      "ech": {
+        "question": "Cos'è Encrypted Client Hello?",
+        "answer": "La parte di un handshake TLS che di solito rivela a quale server ti stai connettendo, cifrata. Molte VPN inviano ancora quel nome in chiaro, ed è ciò che le reti usano per individuarle e bloccarle. {brand} lo cifra."
+      },
+      "platforms": {
+        "question": "Quali piattaforme sono supportate?",
+        "answer": "Windows, macOS, iOS e Android. Un solo abbonamento copre cinque dispositivi contemporaneamente."
+      },
+      "devices": {
+        "question": "Quanti dispositivi posso usare?",
+        "answer": "Cinque contemporaneamente, su qualsiasi combinazione di piattaforme. Accedere da un sesto dispositivo disconnette il più vecchio."
+      },
+      "pricing": {
+        "question": "Quanto costa?",
+        "answer": "{yearly} all'anno, oppure {monthly} al mese. Entrambi includono cinque dispositivi, dati illimitati e ogni località, e puoi disdire quando vuoi."
+      },
+      "payment": {
+        "question": "Come posso pagare?",
+        "answer": "Carta di credito o di debito tramite Stripe. Apple Pay e Google Pay sono disponibili al checkout se il tuo dispositivo li supporta. Dove disponibile, l'addebito avviene nella tua valuta locale."
+      },
+      "cancel": {
+        "question": "Come disdico?",
+        "answer": "Dalla pagina del tuo account o tramite lo store con cui ti sei abbonato. Il piano resta attivo fino alla fine del periodo già pagato."
+      }
+    }
+  },
+  "download": {
+    "title": "Scarica {brand} su ogni dispositivo",
+    "subtitle": "Un account, cinque dispositivi, la stessa connessione ovunque.",
+    "platforms": "Windows · macOS · iOS · Android",
+    "button": "Scarica"
+  }
+}

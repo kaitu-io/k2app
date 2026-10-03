@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "title": "{brand} für Windows, macOS, iOS und Android herunterladen",
+    "description": "Hol dir die {brand}-App für Computer und Smartphone. Ein Konto deckt fünf Geräte ab; melde dich an und verbinde dich mit einem Tipp."
+  },
+  "title": "{brand} herunterladen",
+  "subtitle": "Ein Konto, fünf Geräte. Wähle deine Plattform – die, auf der du gerade bist, haben wir hervorgehoben.",
+  "detected": "Du nutzt {platform}",
+  "version": "Version {version}",
+  "getFor": "Für {platform} herunterladen",
+  "iosStore": "App Store öffnen",
+  "androidStore": "Jetzt bei Google Play",
+  "comingSoon": "Demnächst",
+  "comingSoonHint": "Auf dieser Plattform noch nicht verfügbar. Abonniere jetzt, und wir schreiben dir, sobald sie erscheint.",
+  "platforms": {
+    "windows": {
+      "name": "Windows",
+      "requirement": "Windows 10 oder neuer, 64 Bit"
+    },
+    "macos": {
+      "name": "Mac",
+      "requirement": "macOS 12 oder neuer, Intel und Apple Silicon"
+    },
+    "ios": {
+      "name": "iPhone und iPad",
+      "requirement": "iOS 15 oder neuer"
+    },
+    "android": {
+      "name": "Android",
+      "requirement": "Android 8 oder neuer"
+    }
+  },
+  "next": {
+    "title": "Nach der Installation",
+    "step1": "Melde dich mit der E-Mail-Adresse an, mit der du abonniert hast.",
+    "step2": "Tippe auf Verbinden. Die App wählt die schnellste Route für dich.",
+    "step3": "Nutze dasselbe Konto auf bis zu fünf Geräten."
+  },
+  "noSubscription": "Noch kein Abonnement?",
+  "seePricing": "Preise ansehen",
+  "help": "Etwas funktioniert nicht?",
+  "helpLink": "Zur Hilfeseite"
+}

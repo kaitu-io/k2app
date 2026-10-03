@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "title": "Скачать {brand} для Windows, macOS, iOS и Android",
+    "description": "Скачайте приложение {brand} для компьютера и телефона. Один аккаунт охватывает пять устройств: войдите и подключитесь одним нажатием."
+  },
+  "title": "Скачать {brand}",
+  "subtitle": "Один аккаунт, пять устройств. Выберите платформу — ту, на которой вы сейчас, мы выделили.",
+  "detected": "Вы используете {platform}",
+  "version": "Версия {version}",
+  "getFor": "Скачать для {platform}",
+  "iosStore": "Открыть App Store",
+  "androidStore": "Доступно в Google Play",
+  "comingSoon": "Скоро",
+  "comingSoonHint": "Для этой платформы пока недоступно. Оформите подписку сейчас, и мы сообщим по email, когда приложение появится.",
+  "platforms": {
+    "windows": {
+      "name": "Windows",
+      "requirement": "Windows 10 или новее, 64-разрядная"
+    },
+    "macos": {
+      "name": "Mac",
+      "requirement": "macOS 12 или новее, Intel и Apple silicon"
+    },
+    "ios": {
+      "name": "iPhone и iPad",
+      "requirement": "iOS 15 или новее"
+    },
+    "android": {
+      "name": "Android",
+      "requirement": "Android 8 или новее"
+    }
+  },
+  "next": {
+    "title": "После установки",
+    "step1": "Войдите с адресом электронной почты, на который оформлена подписка.",
+    "step2": "Нажмите «Подключиться». Приложение само выберет самый быстрый маршрут.",
+    "step3": "Используйте один аккаунт на пяти устройствах."
+  },
+  "noSubscription": "У вас ещё нет подписки?",
+  "seePricing": "Посмотреть цены",
+  "help": "Что-то не работает?",
+  "helpLink": "Перейти в раздел помощи"
+}

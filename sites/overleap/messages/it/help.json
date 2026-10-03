@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "title": "Assistenza",
+    "description": "Per iniziare, account e fatturazione, e risposte dirette alle domande più comuni su {brand}."
+  },
+  "title": "Assistenza",
+  "intro": "Per iniziare, account e fatturazione, e risposte dirette. Se non trovi ciò che cerchi, scrivici: risponde una persona.",
+  "gettingStarted": {
+    "title": "Per iniziare",
+    "step1": {
+      "title": "Abbonati",
+      "body": "Scegli un piano nella pagina dei prezzi e paga con carta, Apple Pay o Google Pay."
+    },
+    "step2": {
+      "title": "Installa l'app",
+      "body": "Scarica {brand} per Windows, macOS, iOS o Android."
+    },
+    "step3": {
+      "title": "Accedi e connettiti",
+      "body": "Usa l'indirizzo email con cui ti sei abbonato, poi tocca Connetti. L'app sceglie per te il percorso più veloce."
+    },
+    "download": "Vai ai download"
+  },
+  "billing": {
+    "title": "Account e fatturazione",
+    "items": {
+      "manage": {
+        "question": "Come gestisco o disdico l'abbonamento?",
+        "answer": "Apri la pagina del tuo account e scegli Gestisci abbonamento. Lì puoi disdire, cambiare carta o scaricare le fatture. Disdire mantiene il piano attivo fino alla fine del periodo già pagato."
+      },
+      "charge": {
+        "question": "Quando vengo addebitato?",
+        "answer": "All'inizio di ogni periodo di fatturazione, sulla carta con cui ti sei abbonato. Stripe ti invia ogni volta una ricevuta via email."
+      },
+      "refund": {
+        "question": "Posso ottenere un rimborso?",
+        "answer": "Se {brand} non fa per te, scrivici e risolveremo la questione."
+      },
+      "devices": {
+        "question": "Ho raggiunto il limite di cinque dispositivi",
+        "answer": "Accedere da un sesto dispositivo disconnette automaticamente il più vecchio. Per disconnettere tu stesso un dispositivo, usa la schermata Dispositivi nell'app."
+      }
+    },
+    "account": "Vai al tuo account"
+  },
+  "faq": {
+    "title": "Domande",
+    "subtitle": "Come funziona {brand}, in parole semplici."
+  },
+  "contact": {
+    "title": "Ancora bloccato?",
+    "body": "Scrivi a {email} indicando cosa stavi cercando di fare e cosa è successo. Una persona legge ogni messaggio.",
+    "button": "Scrivi all'assistenza"
+  }
+}

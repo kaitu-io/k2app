@@ -5,13 +5,19 @@
   "language": "言語",
   "searchLanguage": "言語を検索",
   "noLanguageFound": "一致する言語がありません",
+  "features": "機能",
+  "pricing": "料金",
+  "help": "ヘルプ",
+  "download": "ダウンロード",
+  "menu": "メニュー",
   "footer": {
     "tagline": "ログを残さない、どんな回線でも速いプライベート VPN。",
+    "product": "製品",
     "company": "会社情報",
     "privacy": "プライバシーポリシー",
     "terms": "利用規約",
     "deleteAccount": "アカウント削除",
     "contact": "お問い合わせ",
-    "copyright": "© {year} {legalName}. All rights reserved."
+    "copyright": "© {year} {legalName}. 無断転載を禁じます。"
   }
 }

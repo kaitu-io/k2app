@@ -1,0 +1,18 @@
+{
+  "title": "Wähle deinen Tarif",
+  "annualLabel": "Jährlich",
+  "monthlyLabel": "Monatlich",
+  "perMonthApprox": "≈ {price}/Monat",
+  "monthlyPrice": "{price}/Monat",
+  "cancelAnytime": "Jederzeit kündbar",
+  "savePercent": "{percent} % sparen",
+  "currencyNote": "Preise in {currency}. Wo verfügbar, wird in deiner Landeswährung abgerechnet.",
+  "subscribe": "Abonnieren",
+  "redirecting": "Weiterleitung zur sicheren Zahlung …",
+  "alreadySubscribed": "Du hast bereits ein aktives Abonnement.",
+  "manageInAccount": "Abonnement verwalten",
+  "checkoutCancelled": "Die Zahlung wurde abgebrochen – du kannst es jederzeit erneut versuchen.",
+  "channelUnavailable": "Diese Zahlungsmethode ist für dein Konto nicht verfügbar.",
+  "genericError": "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+  "noPlans": "Die Tarife werden gerade vorbereitet. Schau bald wieder vorbei."
+}

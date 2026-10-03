@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "title": "Hilfe",
+    "description": "Erste Schritte, dein Konto und die Abrechnung sowie klare Antworten auf häufige Fragen zu {brand}."
+  },
+  "title": "Hilfe",
+  "intro": "Erste Schritte, dein Konto und die Abrechnung sowie klare Antworten. Wenn du hier nichts findest, schreib uns – ein Mensch antwortet.",
+  "gettingStarted": {
+    "title": "Erste Schritte",
+    "step1": {
+      "title": "Abonnieren",
+      "body": "Wähle auf der Preisseite einen Tarif und bezahle per Karte, Apple Pay oder Google Pay."
+    },
+    "step2": {
+      "title": "App installieren",
+      "body": "Lade {brand} für Windows, macOS, iOS oder Android herunter."
+    },
+    "step3": {
+      "title": "Anmelden und verbinden",
+      "body": "Nutze die E-Mail-Adresse deines Abonnements und tippe dann auf Verbinden. Die App wählt die schnellste Route für dich."
+    },
+    "download": "Zu den Downloads"
+  },
+  "billing": {
+    "title": "Konto und Abrechnung",
+    "items": {
+      "manage": {
+        "question": "Wie verwalte oder kündige ich mein Abonnement?",
+        "answer": "Öffne deine Kontoseite und wähle Abonnement verwalten. Dort kannst du kündigen, deine Karte ändern oder Rechnungen herunterladen. Nach der Kündigung bleibt dein Tarif bis zum Ende des bezahlten Zeitraums aktiv."
+      },
+      "charge": {
+        "question": "Wann wird abgebucht?",
+        "answer": "Zu Beginn jedes Abrechnungszeitraums von der Karte, mit der du abonniert hast. Stripe schickt dir jedes Mal eine Quittung per E-Mail."
+      },
+      "refund": {
+        "question": "Kann ich eine Rückerstattung bekommen?",
+        "answer": "Wenn {brand} für dich nicht funktioniert, schreib uns, dann finden wir eine Lösung."
+      },
+      "devices": {
+        "question": "Ich habe das Limit von fünf Geräten erreicht",
+        "answer": "Meldest du dich auf einem sechsten Gerät an, wird das älteste automatisch abgemeldet. Um ein Gerät selbst abzumelden, nutze den Bildschirm Geräte in der App."
+      }
+    },
+    "account": "Zu deinem Konto"
+  },
+  "faq": {
+    "title": "Fragen",
+    "subtitle": "Wie {brand} funktioniert – einfach erklärt."
+  },
+  "contact": {
+    "title": "Immer noch nicht weitergekommen?",
+    "body": "Schreib an {email}, was du versucht hast und was passiert ist. Jede Nachricht liest ein Mensch.",
+    "button": "Support per E-Mail kontaktieren"
+  }
+}
