@@ -5,6 +5,7 @@ import { siteBrand } from '@/lib/brands';
 import { landingPrices } from '@/lib/landing-prices';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import ChatWidgetLazy from '@/components/chat/ChatWidgetLazy';
 import FunnelEvent from '@/components/FunnelEvent';
 import OverleapPricing from '@/components/home-overleap/OverleapPricing';
 import OverleapFAQ from '@/components/home-overleap/OverleapFAQ';
@@ -117,6 +118,7 @@ export default async function PricingPage({
       )}
       <OverleapFAQ title={t('pricing.faqTitle')} subtitle={t('pricing.faqSubtitle')} items={faqItems} />
       <Footer />
+      <ChatWidgetLazy />
     </div>
   );
 }

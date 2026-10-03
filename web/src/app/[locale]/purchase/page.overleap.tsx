@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { routing } from '@/i18n/routing';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import ChatWidgetLazy from '@/components/chat/ChatWidgetLazy';
 import OverleapPurchaseClient from './OverleapPurchaseClient';
 
 type Locale = (typeof routing.locales)[number];
@@ -35,6 +36,7 @@ export default async function PurchasePage({
       <Header />
       <OverleapPurchaseClient />
       <Footer />
+      <ChatWidgetLazy />
     </div>
   );
 }

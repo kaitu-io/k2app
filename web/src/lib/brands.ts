@@ -128,7 +128,9 @@ export const OVERLEAP: Brand = {
   faviconPrefix: '/brand/overleap',
   gaMeasurementId: '',   // Open Question #1: create GA4 property, then fill in
   chatwootToken: '',     // Open Question #1: create Chatwoot inbox, then fill in
-  chatEnabled: false,
+  // Conversations open straight to the support team: the API's chat AI only knows
+  // the other brand's product (api BrandConfig.ChatAI = false for this brand).
+  chatEnabled: true,
   // No Overleap-branded guide video has been produced yet. Empty on purpose:
   // the Support page omits the player + VideoObject rather than serving the
   // 开途-branded recording (spec: overleap 站 0 处 kaitu).

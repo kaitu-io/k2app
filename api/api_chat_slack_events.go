@@ -47,6 +47,7 @@ const (
 	chatSlackWarnCmdFail   = "⚠️ 命令执行失败，请重发。"
 	chatSlackWarnCmdClosed = "⚠️ 会话已关闭，这条命令没有执行。"
 	chatSlackWarnAlreadyAI = "ℹ️ 当前已是 AI 接待，无需交还。"
+	chatSlackWarnNoAI      = "ℹ️ 该品牌的会话没有 AI 接待，!ai 不可用。"
 	chatSlackWarnEdited    = "⚠️ 编辑/删除不会同步给访客；如需更正请再发一条。"
 )
 
@@ -313,6 +314,10 @@ func chatSlackCommand(ctx context.Context, conv *Conversation, in appendMessageI
 	if isAI && conv.Handler == HandlerAI {
 		chatSlackWarnOnce(ctx, ch, ts, chatSlackWarnAlreadyAI)
 		return "already_ai"
+	}
+	if isAI && !Brand(conv.Brand).Config().ChatAI {
+		chatSlackWarnOnce(ctx, ch, ts, chatSlackWarnNoAI)
+		return "no_ai"
 	}
 	in.Kind = MsgNote
 	in.RequireOpen = true // 上面读到的状态可能已过时：命令标记同样以库为准

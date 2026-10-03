@@ -5,10 +5,23 @@ import type { ChatMessage, ChatWelcome } from '@/lib/chat-client';
 import { cn } from '@/lib/utils';
 import { linkParts } from './linkify';
 
+/** 服务端系统事件（meta.event）。事件正文是写给客服后台的中文，访客看到的按事件名取本地化文案。 */
+export const CHAT_EVENTS = ['transfer_human', 'handed_to_ai', 'closed', 'auto_closed'] as const;
+export type ChatEventName = (typeof CHAT_EVENTS)[number];
+
 export interface MessageListLabels {
   ai: string;
   staff: string;
   image: string;
+  events: Record<ChatEventName, string>;
+}
+
+/** 认识的事件取本地化文案；不认识的（服务端新加了事件）不渲染，免得把中文正文露给别的语言的访客。 */
+function eventLabel(m: ChatMessage, events: MessageListLabels['events']): string | null {
+  const name = m.meta?.event;
+  return typeof name === 'string' && (CHAT_EVENTS as readonly string[]).includes(name)
+    ? events[name as ChatEventName]
+    : null;
 }
 
 /** 纯文本渲染 + 只把 http(s) 链接变成 <a>。全程是 React 文本节点，不解析 HTML。 */
@@ -69,9 +82,11 @@ export default function MessageList({
       {messages.map((m) => {
         const key = m.pending ? `c:${m.clientId}` : `m:${m.id}`;
         if (m.kind === 'event') {
+          const text = eventLabel(m, labels.events);
+          if (text === null) return null;
           return (
             <li key={key} className="text-center text-xs text-muted-foreground">
-              {m.content}
+              {text}
             </li>
           );
         }

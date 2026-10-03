@@ -148,9 +148,13 @@ func ensureConversation(ctx context.Context, s chatSubject, entryPath string) (*
 		return conv, false, err
 	}
 	now := time.Now()
+	handler := HandlerHuman // 品牌不接 AI（BrandConfig.ChatAI）：一开始就等人工
+	if s.Brand.Config().ChatAI {
+		handler = HandlerAI
+	}
 	conv := &Conversation{
 		UUID: uuid.NewString(), Brand: string(s.Brand), SubjectKind: s.Kind, SubjectID: s.ID,
-		Status: ConvOpen, Handler: HandlerAI, EntryPath: entryPath, LastMessageAt: now,
+		Status: ConvOpen, Handler: handler, EntryPath: entryPath, LastMessageAt: now,
 	}
 	if err := db.Get().WithContext(ctx).Create(conv).Error; err != nil {
 		return nil, false, fmt.Errorf("create conversation: %w", err)

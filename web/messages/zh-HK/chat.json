@@ -16,5 +16,9 @@
   "emailSubmit": "提交",
   "emailInvalid": "請輸入有效的電郵地址。",
   "emailFailed": "提交失敗，請稍後再試。",
-  "emailSaved": "已收到。客服回覆後會以電郵通知您。"
+  "emailSaved": "已收到。客服回覆後會以電郵通知您。",
+  "eventTransferHuman": "已轉接真人客服",
+  "eventHandedToAi": "已轉回智能助手",
+  "eventClosed": "對話已關閉",
+  "eventAutoClosed": "對話因長時間沒有訊息已自動關閉"
 }

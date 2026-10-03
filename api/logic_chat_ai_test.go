@@ -272,7 +272,7 @@ func TestChatAI_TransferOnlyOnce(t *testing.T) {
 }
 
 func TestChatAIWelcome(t *testing.T) {
-	text, opts := chatAIWelcome()
+	text, opts := chatAIWelcome(BrandKaitu)
 	assert.Equal(t, "您好！请问需要什么帮助？", text)
 	assert.NotContains(t, text, "截图", "第 1 期不支持图片，欢迎语不得承诺可以发截图")
 	assert.Equal(t, []chatOption{

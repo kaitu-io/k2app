@@ -1,5 +1,5 @@
 import { StrictMode } from 'react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import ChatWidget from '../chat/ChatWidget';
 import { CHAT_EMAIL_FLAG, CHAT_KNOWN_FLAG, hasResumeToken, requestOpenChat, shouldProbeSession, takeResumeToken } from '../chat/gate';
@@ -13,6 +13,7 @@ import {
   type SessionState,
 } from '@/lib/chat-client';
 import { COOKIE_BANNER_OFFSET_VAR } from '@/lib/cookie-banner';
+import { OVERLEAP } from '@/lib/brands';
 import { FakeWS, fakeFetch, msg, session, setHidden } from '@/lib/__tests__/chat-test-fakes';
 
 const flush = (ms = 0) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
@@ -76,7 +77,10 @@ describe('ChatWidget', () => {
 
   describe('gating', () => {
     it('renders nothing and creates no client when the brand has chat off', async () => {
+      // 两个品牌目前都开着挂件：临时关掉一个来测这道门
       vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
+      OVERLEAP.chatEnabled = false;
+      onTestFinished(() => { OVERLEAP.chatEnabled = true; });
       const fc = fakeClient();
       const { container } = render(<ChatWidget createClient={fc.create} />);
       await flush();
@@ -490,7 +494,8 @@ describe('ChatWidget', () => {
       expect(container.textContent).not.toContain('Real Name');
       expect(screen.getByText('senderAi')).toBeInTheDocument();
       expect(screen.getAllByText('senderStaff').length).toBeGreaterThan(0);
-      expect(screen.getByText('transferred')).toBeInTheDocument();
+      expect(screen.getByText('eventTransferHuman')).toBeInTheDocument(); // 事件按名取本地化文案
+      expect(container.textContent).not.toContain('transferred');
       expect(screen.getByText('imagePlaceholder')).toBeInTheDocument();
       expect(container.textContent).not.toContain('internal secret');
       // 已有会话：不再显示欢迎语

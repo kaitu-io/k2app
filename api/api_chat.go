@@ -130,9 +130,9 @@ func chatConversationDTO(conv *Conversation) *ChatConvDTO {
 	return &ChatConvDTO{UUID: conv.UUID, Status: conv.Status, Handler: conv.Handler}
 }
 
-// chatWelcomeDTO 欢迎语取固定文案 chatAIWelcome()（不落库，前端渲染）；品牌与语言无关。
-func chatWelcomeDTO() *ChatWelcome {
-	text, opts := chatAIWelcome()
+// chatWelcomeDTO 欢迎语取该品牌的固定文案 chatAIWelcome(b)（不落库，前端渲染）；与访客语言无关。
+func chatWelcomeDTO(b Brand) *ChatWelcome {
+	text, opts := chatAIWelcome(b)
 	w := &ChatWelcome{Text: text, Options: make([]ChatWelcomeOption, 0, len(opts))}
 	for _, o := range opts {
 		w.Options = append(w.Options, ChatWelcomeOption{Label: o.Label, Value: o.Value})
@@ -360,7 +360,7 @@ func api_chat_session(c *gin.Context) {
 		Enabled:      true,
 		Conversation: chatConversationDTO(conv),
 		Messages:     msgs,
-		Welcome:      chatWelcomeDTO(),
+		Welcome:      chatWelcomeDTO(subj.Brand),
 	}
 	if u := chatWSURL(subj.Brand); u != "" {
 		if tok := signChatWSToken(subj, chatWSTokenTTL); tok != "" {

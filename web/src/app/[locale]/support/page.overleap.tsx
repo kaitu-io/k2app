@@ -7,6 +7,7 @@ import { siteConfig } from '@/lib/site';
 import { displayCurrency, formatMinor } from '@/lib/pricing';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import ChatWidgetLazy from '@/components/chat/ChatWidgetLazy';
 import OverleapFAQ from '@/components/home-overleap/OverleapFAQ';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -144,6 +145,7 @@ export default async function SupportPage({ params }: { params: Promise<{ locale
       </main>
 
       <Footer />
+      <ChatWidgetLazy />
     </div>
   );
 }
