@@ -11,7 +11,7 @@
  * 4. Layout component exists and can be imported
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { KAITU, OVERLEAP } from '@/lib/brands';
+import { KAITU } from '@/lib/brands';
 
 // Mock @/lib/brand-server — tests override the resolved brand per-case via beforeEach.
 vi.mock('@/lib/brand-server', () => ({
@@ -91,54 +91,21 @@ vi.mock('#velite', () => ({
       order: 0,
       section: 'comparison',
     },
+    // A doc marked for the other brand (frontmatter `brand:`) — never served here.
     {
-      title: 'k2 Protocol Comparison',
+      title: 'Other-brand doc',
       date: '2026-02-21T00:00:00.000Z',
-      summary: 'k2 vs WireGuard / Shadowsocks / VLESS+Reality / Hysteria2',
-      tags: ['k2', 'comparison'],
+      summary: 'Marked for the other brand.',
+      tags: ['k2'],
       draft: false,
-      content: '<h1>k2 Protocol Comparison</h1><p>Comparison aggregate.</p>',
-      metadata: { readingTime: 5, wordCount: 700 },
-      filePath: 'en-GB/k2/comparison',
-      locale: 'en-GB',
-      slug: 'k2/comparison',
-      order: 0,
-      section: 'comparison',
-    },
-    // en-US counterpart of the zh-CN architecture doc. The brand-aware JSON-LD
-    // cases below render this under OVERLEAP; before the fallback was made
-    // brand-aware they silently rendered the zh-CN post instead — i.e. they were
-    // passing while exercising the leak this suite now forbids.
-    {
-      title: 'k2 Architecture',
-      date: '2026-02-21T00:00:00.000Z',
-      summary: 'Technical deep-dive into k2 protocol architecture',
-      tags: ['k2', 'technical'],
-      draft: false,
-      content: '<h1>k2 Architecture</h1><p>Technical content.</p>',
-      metadata: { readingTime: 5, wordCount: 800 },
-      filePath: 'en-GB/k2/architecture',
-      locale: 'en-GB',
-      slug: 'k2/architecture',
-      order: 1,
-      section: 'technical',
-    },
-    // kaitu-only install doc, present in BOTH locales — the shape that made the
-    // frontmatter gate necessary (en-US gated, zh-CN unmarked → 'both').
-    {
-      title: 'k2s Server Deployment',
-      date: '2026-02-21T00:00:00.000Z',
-      summary: 'Deploy k2s on a Linux VPS. Install via https://kaitu.io/i/k2s.',
-      tags: ['k2', 'getting-started'],
-      draft: false,
-      content: '<h1>k2s Server Deployment</h1><p>curl -fsSL https://kaitu.io/i/k2s | sudo sh</p>',
-      metadata: { readingTime: 3, wordCount: 300 },
-      filePath: 'en-GB/k2/server',
-      locale: 'en-GB',
-      slug: 'k2/server',
-      order: 3,
+      content: '<h1>Other-brand doc</h1>',
+      metadata: { readingTime: 1, wordCount: 10 },
+      filePath: 'zh-CN/k2/other-brand',
+      locale: 'zh-CN',
+      slug: 'k2/other-brand',
+      order: 4,
       section: 'getting-started',
-      brand: 'kaitu',
+      brand: 'overleap',
     },
     {
       title: 'k2s 服务端部署',
@@ -172,7 +139,7 @@ vi.mock('#velite', () => ({
 // Mock @/i18n/routing
 vi.mock('@/i18n/routing', () => ({
   routing: {
-    locales: ['zh-CN', 'en-US', 'en-GB', 'en-AU', 'zh-TW', 'zh-HK', 'ja'],
+    locales: ['zh-CN', 'zh-TW', 'zh-HK'],
   },
   Link: ({ children, href }: { children: React.ReactNode; href: string }) => ({ type: 'a', props: { href, children } }),
 }));
@@ -210,8 +177,7 @@ vi.mock('@/components/K2Sidebar', () => ({
   default: () => null,
 }));
 
-// Default to KAITU for every test so existing assertions (which predate brand-aware
-// JSON-LD) continue to see the legacy Kaitu URLs. Individual tests override this.
+// getBrand is mocked; every test sees KAITU.
 beforeEach(async () => {
   const { getBrand } = await import('@/lib/brand-server');
   (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(KAITU);
@@ -519,25 +485,6 @@ describe('test_k2_comparison_emits_faqpage_jsonld', () => {
     expect(firstQuestion).toContain('区别');
   });
 
-  it('FAQPage en-US Q&A text uses English phrasing', async () => {
-    const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
-
-    const element = await K2Page({
-      params: Promise.resolve({ locale: 'en-GB', path: ['comparison'] }),
-    });
-
-    const jsonLd = extractAllJsonLd(element) as Array<{
-      '@type': string;
-      mainEntity?: Array<{ name: string; acceptedAnswer: { text: string } }>;
-    }>;
-
-    const faqPage = jsonLd.find((obj) => obj['@type'] === 'FAQPage');
-    expect(faqPage).toBeDefined();
-    const firstQuestion = faqPage!.mainEntity![0].name;
-    expect(firstQuestion).toContain('WireGuard');
-    expect(firstQuestion.toLowerCase()).toContain('differ');
-  });
-
   it('non-comparison slug still emits a single JSON-LD object (not an array)', async () => {
     const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
 
@@ -564,60 +511,31 @@ describe('test_k2_docs_are_brand_gated', () => {
     }
   }
 
-  it('overleap 404s a brand: kaitu doc instead of serving it', async () => {
-    const { getBrand } = await import('@/lib/brand-server');
-    (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(OVERLEAP);
-
-    expect(await renders('en-US', ['server'])).toBe(false);
+  it('404s a doc marked for the other brand instead of serving it', async () => {
+    expect(await renders('zh-CN', ['other-brand'])).toBe(false);
+    expect(await renders('zh-TW', ['other-brand'])).toBe(false);
   });
 
-  it('kaitu still serves that same doc', async () => {
-    const { getBrand } = await import('@/lib/brand-server');
-    (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(KAITU);
-
+  it('serves an unmarked doc', async () => {
     expect(await renders('zh-CN', ['server'])).toBe(true);
   });
 
-  it('overleap does not fall back to the zh-CN copy of a gated doc', async () => {
-    // The regression: en-US/k2/server is brand: kaitu, but zh-CN/k2/server is
-    // unmarked ('both'). A zh-CN fallback would render a 开途 Chinese page on
-    // overleap.io rather than 404.
-    const { getBrand } = await import('@/lib/brand-server');
-    (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(OVERLEAP);
-
-    expect(await renders('ja', ['server'])).toBe(false);
-  });
-
-  it('overleap falls back to its OWN default locale, never to zh-CN', async () => {
-    // /ja/k2/architecture has no ja copy. overleap must land on the en-GB (brand default) post.
-    const { getBrand } = await import('@/lib/brand-server');
-    (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(OVERLEAP);
-
-    const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
-    const element = await K2Page({ params: Promise.resolve({ locale: 'ja', path: ['architecture'] }) });
-    const jsonLd = extractJsonLd(element) as { headline: string };
-    expect(jsonLd.headline).toBe('k2 Architecture');
-  });
-
-  it('generateStaticParams prerenders no gated doc and no off-brand locale (overleap)', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
+  it('generateStaticParams prerenders no other-brand doc and only the served locales', async () => {
     vi.resetModules();
     const { generateStaticParams } = await import('../src/app/[locale]/k2/[[...path]]/page');
 
     const params = generateStaticParams();
-    expect(params.some((p) => p.path?.join('/') === 'server')).toBe(false);
-    expect(params.every((p) => OVERLEAP.allowedLocales.includes(p.locale as never))).toBe(true);
-    vi.unstubAllEnvs();
+    expect(params.some((p) => p.path?.join('/') === 'other-brand')).toBe(false);
+    expect(params.some((p) => p.path?.join('/') === 'server')).toBe(true);
+    expect(params.every((p) => KAITU.allowedLocales.includes(p.locale as never))).toBe(true);
   });
 
-  it('the sidebar source hides gated docs from overleap but keeps them on kaitu', async () => {
+  it('the sidebar source hides other-brand docs', async () => {
     const { getK2Posts } = await import('../src/lib/k2-posts');
 
-    const overleapSlugs = getK2Posts('en-GB', 'overleap').flatMap((g) => g.posts.map((p) => p.slug));
-    expect(overleapSlugs).not.toContain('k2/server');
-
-    const kaituSlugs = getK2Posts('zh-CN', 'kaitu').flatMap((g) => g.posts.map((p) => p.slug));
-    expect(kaituSlugs).toContain('k2/server');
+    const slugs = getK2Posts('zh-CN').flatMap((g) => g.posts.map((p) => p.slug));
+    expect(slugs).toContain('k2/server');
+    expect(slugs).not.toContain('k2/other-brand');
   });
 });
 
@@ -650,52 +568,5 @@ describe('test_k2_techarticle_is_brand_aware', () => {
     expect(jsonLd.isPartOf.url).toBe('https://kaitu.io');
     expect(jsonLd.url.startsWith('https://kaitu.io/')).toBe(true);
     expect(jsonLd.mainEntityOfPage['@id'].startsWith('https://kaitu.io/')).toBe(true);
-  });
-
-  it('TechArticle author/publisher/isPartOf name + url uses OVERLEAP when brand is Overleap', async () => {
-    const { getBrand } = await import('@/lib/brand-server');
-    (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(OVERLEAP);
-
-    const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
-
-    const element = await K2Page({
-      params: Promise.resolve({ locale: 'en-GB', path: ['architecture'] }),
-    });
-
-    const jsonLd = extractJsonLd(element) as {
-      '@type': string;
-      url: string;
-      author: { name: string; url: string };
-      publisher: { name: string; url: string };
-      isPartOf: { name: string; url: string };
-      mainEntityOfPage: { '@id': string };
-    };
-
-    expect(jsonLd['@type']).toBe('TechArticle');
-    expect(jsonLd.author.name).toBe('Overleap');
-    expect(jsonLd.author.url).toBe('https://overleap.io');
-    expect(jsonLd.publisher.name).toBe('Overleap');
-    expect(jsonLd.publisher.url).toBe('https://overleap.io');
-    expect(jsonLd.isPartOf.name).toBe('Overleap');
-    expect(jsonLd.isPartOf.url).toBe('https://overleap.io');
-    expect(jsonLd.url.startsWith('https://overleap.io/')).toBe(true);
-    expect(jsonLd.mainEntityOfPage['@id'].startsWith('https://overleap.io/')).toBe(true);
-  });
-
-  it('FAQPage @id on /k2/comparison uses brand baseUrl (Overleap)', async () => {
-    const { getBrand } = await import('@/lib/brand-server');
-    (getBrand as unknown as { mockResolvedValue: (b: unknown) => void }).mockResolvedValue(OVERLEAP);
-
-    const { default: K2Page } = await import('../src/app/[locale]/k2/[[...path]]/page');
-
-    const element = await K2Page({
-      params: Promise.resolve({ locale: 'en-GB', path: ['comparison'] }),
-    });
-
-    const jsonLd = extractAllJsonLd(element) as Array<{ '@type': string; '@id'?: string }>;
-    const faqPage = jsonLd.find((obj) => obj['@type'] === 'FAQPage');
-    expect(faqPage).toBeDefined();
-    expect(typeof faqPage!['@id']).toBe('string');
-    expect(faqPage!['@id']!.startsWith('https://overleap.io/')).toBe(true);
   });
 });

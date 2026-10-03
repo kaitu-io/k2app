@@ -1,11 +1,9 @@
 /**
- * Middleware single-brand routing tests — Brand Split Phase 2.
- *
- * The brand is baked via NEXT_PUBLIC_BRAND (siteBrand() reads it per call, so
- * vi.stubEnv is enough — no module reset needed). There is NO cross-domain
- * behavior anymore: hosts are irrelevant, redirects stay on the same origin.
+ * Middleware routing tests. The site serves kaitu.io only (zh-CN / zh-TW /
+ * zh-HK); the en-* / ja locales left with overleap.io (sites/overleap/), and
+ * their old URLs must keep resolving on this host via a 301 to zh-CN.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 
 vi.mock('next-intl/middleware', () => ({
@@ -13,12 +11,12 @@ vi.mock('next-intl/middleware', () => ({
 }));
 vi.mock('../src/i18n/routing', () => ({
   routing: {
-    locales: ['en-US', 'en-GB', 'en-AU', 'zh-CN', 'zh-TW', 'zh-HK', 'ja'],
+    locales: ['zh-CN', 'zh-TW', 'zh-HK'],
     defaultLocale: 'zh-CN',
   },
 }));
 
-import middleware from '../src/middleware';
+import middleware, { config } from '../src/middleware';
 
 function makeRequest(
   path: string,
@@ -36,169 +34,125 @@ async function run(req: NextRequest): Promise<Response> {
   return res ?? new Response(null, { status: 200 });
 }
 
-afterEach(() => vi.unstubAllEnvs());
+describe('legacy en-* / ja URLs → same-host 301 to zh-CN', () => {
+  it.each([
+    ['/en-US/install', 'https://example.test/zh-CN/install'],
+    ['/en-GB/k2/vs-hysteria2', 'https://example.test/zh-CN/k2/vs-hysteria2'],
+    ['/en-AU/purchase', 'https://example.test/zh-CN/purchase'],
+    ['/ja', 'https://example.test/zh-CN'],
+    ['/ja/support', 'https://example.test/zh-CN/support'],
+  ])('%s → 301 %s', async (path, location) => {
+    const res = await run(makeRequest(path));
+    expect(res.status).toBe(301);
+    expect(res.headers.get('location')).toBe(location);
+  });
 
-describe('off-brand locale → same-host 301 to brand default locale', () => {
-  it('kaitu build: /en-US/install → 301 /zh-CN/install (same host)', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
-    const res = await run(makeRequest('/en-US/install'));
+  it('keeps the query string', async () => {
+    const res = await run(makeRequest('/en-US/purchase', { search: '?ref=x' }));
     expect(res.status).toBe(301);
-    expect(res.headers.get('location')).toBe('https://example.test/zh-CN/install');
+    expect(res.headers.get('location')).toBe('https://example.test/zh-CN/purchase?ref=x');
   });
-  it('kaitu build: /ja → 301 /zh-CN', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
-    const res = await run(makeRequest('/ja'));
-    expect(res.status).toBe(301);
-    expect(res.headers.get('location')).toBe('https://example.test/zh-CN');
-  });
-  it('overleap build: /zh-CN/purchase?ref=x → 301 /en-GB/purchase?ref=x', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-    const res = await run(makeRequest('/zh-CN/purchase', { search: '?ref=x' }));
-    expect(res.status).toBe(301);
-    expect(res.headers.get('location')).toBe('https://example.test/en-GB/purchase?ref=x');
-  });
-  it('own-brand locales pass through (kaitu zh-TW, overleap ja)', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
+
+  it('served locales pass through', async () => {
     expect((await run(makeRequest('/zh-TW/install'))).status).not.toBe(301);
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-    expect((await run(makeRequest('/ja/k2'))).status).not.toBe(301);
+    expect((await run(makeRequest('/zh-HK'))).status).not.toBe(301);
+  });
+
+  it('a path that merely starts with a legacy code is not a locale prefix', async () => {
+    expect((await run(makeRequest('/japan'))).status).not.toBe(301);
+  });
+
+  it('the matcher still routes legacy prefixes (incl. dotted paths) through the middleware', () => {
+    expect(config.matcher).toContain('/(en-GB|en-US|en-AU|ja)/:path*');
   });
 });
 
 describe('X-K2-Brand injection on /api and /app', () => {
-  it('kaitu: /api/plans passes through with X-K2-Brand=kaitu on the downstream request', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
+  it('/api/plans passes through with X-K2-Brand=kaitu on the downstream request', async () => {
     const res = await run(makeRequest('/api/plans'));
     expect(res.status).toBe(200);
     // NextResponse.next({request:{headers}}) surfaces overrides via x-middleware-request-* headers.
     expect(res.headers.get('x-middleware-request-x-k2-brand')).toBe('kaitu');
   });
-  it('overleap: /api/plans carries X-K2-Brand=overleap', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-    const res = await run(makeRequest('/api/plans'));
-    expect(res.headers.get('x-middleware-request-x-k2-brand')).toBe('overleap');
-  });
-  it('overleap: /app/* admin API proxy is 404', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-    expect((await run(makeRequest('/app/users'))).status).toBe(404);
-  });
-  it('kaitu: /app/* passes through with the brand header', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
+  it('/app/* (admin API) passes through with the brand header', async () => {
     const res = await run(makeRequest('/app/users'));
     expect(res.status).toBe(200);
     expect(res.headers.get('x-middleware-request-x-k2-brand')).toBe('kaitu');
   });
 });
 
-describe('admin + install-script surfaces are kaitu-only', () => {
-  it.each(['/i/k2', '/i/k2s', '/i/k2r'])(
-    'overleap: %s → 404',
-    async (path) => {
-      vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-      expect((await run(makeRequest(path))).status).toBe(404);
-    },
-  );
-  // /manager 不再由中间件挡：后台整棵树是 page.kaitu.tsx，Overleap 构建里不存在这些路由，
-  // Next 原生 404（结构由 tests/brand-page-tree.test.ts 守）。中间件只放行。
-  it.each(['/manager', '/manager/users'])(
-    'overleap: %s passes through to the (absent) route tree',
-    async (path) => {
-      vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-      expect((await run(makeRequest(path))).status).toBe(200);
-    },
-  );
-  it.each(['/manager/users', '/i/k2'])(
-    'kaitu: %s passes through',
-    async (path) => {
-      vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
-      expect((await run(makeRequest(path))).status).toBe(200);
-    },
-  );
+describe('admin + install-script surfaces pass through', () => {
+  it.each(['/manager', '/manager/users', '/i/k2', '/i/k2s', '/i/k2r'])('%s passes through', async (path) => {
+    if (path !== '/i/k2') vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(null))));
+    const res = await run(makeRequest(path));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('location')).toBeNull();
+    vi.unstubAllGlobals();
+  });
 });
 
-describe('favicon rewrite', () => {
-  it('overleap: /favicon.ico rewrites to the brand favicon', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-    const res = await run(makeRequest('/favicon.ico'));
-    expect(res.headers.get('x-middleware-rewrite')).toBe(
-      'https://example.test/brand/overleap/favicon-32x32.png',
-    );
-  });
-  it('kaitu: /favicon.ico untouched (legacy root file)', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
+describe('favicon', () => {
+  it('/favicon.ico untouched (root file)', async () => {
     const res = await run(makeRequest('/favicon.ico'));
     expect(res.headers.get('x-middleware-rewrite')).toBeNull();
   });
   // Regression test for a real bug the mocked next-intl/middleware above
-  // cannot catch: kaitu's empty faviconPrefix must short-circuit before
-  // falling through to intlMiddleware, or next-intl's default
-  // localePrefix:'always' redirects /favicon.ico to /zh-CN/favicon.ico (no
-  // matching route → dead page, not the icon). Verified against the real
-  // next-intl middleware, not the module-level mock.
-  it('kaitu: /favicon.ico does not fall through to intlMiddleware', async () => {
+  // cannot catch: /favicon.ico must short-circuit before falling through to
+  // intlMiddleware, or next-intl's default localePrefix:'always' redirects
+  // /favicon.ico to /zh-CN/favicon.ico (no matching route → dead page, not the
+  // icon). Verified against the real next-intl middleware, not the module-level mock.
+  it('/favicon.ico does not fall through to intlMiddleware', async () => {
     // The describe-level mock always returns 200, which can't distinguish
     // "short-circuited before intlMiddleware" from "reached it and it happened
-    // to return 200" — that gap is exactly what hid the real bug (real
-    // next-intl's default localePrefix:'always' redirects any non-prefixed
-    // path, including /favicon.ico, to /zh-CN/favicon.ico — a dead route, not
-    // the icon). This override simulates that redirect so the test can tell
-    // the two cases apart.
+    // to return 200". This override simulates the real redirect so the test
+    // can tell the two cases apart.
     vi.doMock('next-intl/middleware', () => ({
       default: () => (req: NextRequest) =>
         NextResponse.redirect(new URL(`/zh-CN${req.nextUrl.pathname}`, req.url), 307),
     }));
     vi.resetModules();
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
     const { default: mw } = await import('../src/middleware');
     const res = await mw(makeRequest('/favicon.ico'));
     expect(res?.status).not.toBe(307);
     expect(res?.headers.get('location')).toBeNull();
+    vi.doUnmock('next-intl/middleware');
   });
 });
 
-describe('root path locale pick (brand-constrained)', () => {
-  it('overleap: / → redirect to /en-GB (brand default) with private cache-control', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
+describe('root path locale pick', () => {
+  it('/ → redirect to /zh-CN with private cache-control', async () => {
     const res = await run(makeRequest('/'));
     expect([302, 307]).toContain(res.status);
-    expect(res.headers.get('location')).toBe('https://example.test/en-GB');
+    expect(res.headers.get('location')).toBe('https://example.test/zh-CN');
     expect(res.headers.get('cache-control')).toContain('no-store');
   });
-  it('overleap: / with a bare Accept-Language en → /en-GB (brand default), en-US stays en-US', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-    expect((await run(makeRequest('/', { acceptLanguage: 'en' }))).headers.get('location')).toBe('https://example.test/en-GB');
-    expect((await run(makeRequest('/', { acceptLanguage: 'en-CA,en;q=0.8' }))).headers.get('location')).toBe('https://example.test/en-GB');
-    expect((await run(makeRequest('/', { acceptLanguage: 'en-US,en;q=0.9' }))).headers.get('location')).toBe('https://example.test/en-US');
-    expect((await run(makeRequest('/', { acceptLanguage: 'en-AU' }))).headers.get('location')).toBe('https://example.test/en-AU');
+  it.each([
+    ['zh-TW', 'zh-TW'],
+    ['zh-HK', 'zh-HK'],
+    ['zh-MO', 'zh-HK'],
+    ['zh-SG', 'zh-CN'],
+    ['zh', 'zh-CN'],
+    ['en-US,en;q=0.9', 'zh-CN'],
+    ['ja,en;q=0.5', 'zh-CN'],
+    ['en-GB,zh-TW;q=0.5', 'zh-TW'],
+  ])('Accept-Language %s → /%s', async (acceptLanguage, locale) => {
+    const res = await run(makeRequest('/', { acceptLanguage }));
+    expect(res.headers.get('location')).toBe(`https://example.test/${locale}`);
   });
-
-  it('overleap: / with Accept-Language ja → /ja', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-    const res = await run(makeRequest('/', { acceptLanguage: 'ja,en;q=0.5' }));
-    expect(res.headers.get('location')).toBe('https://example.test/ja');
-  });
-  it('overleap: preferredLocale cookie honored only when brand-allowed', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-    const stale = await run(makeRequest('/', { cookie: 'preferredLocale=zh-CN' }));
-    expect(stale.headers.get('location')).toBe('https://example.test/en-GB');
-    const ok = await run(makeRequest('/', { cookie: 'preferredLocale=en-GB' }));
-    expect(ok.headers.get('location')).toBe('https://example.test/en-GB');
-  });
-  it('kaitu: / with Accept-Language zh-TW → /zh-TW', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
-    const res = await run(makeRequest('/', { acceptLanguage: 'zh-TW' }));
-    expect(res.headers.get('location')).toBe('https://example.test/zh-TW');
+  it('preferredLocale cookie honored only when it is a served locale', async () => {
+    const stale = await run(makeRequest('/', { cookie: 'preferredLocale=en-GB' }));
+    expect(stale.headers.get('location')).toBe('https://example.test/zh-CN');
+    const ok = await run(makeRequest('/', { cookie: 'preferredLocale=zh-HK' }));
+    expect(ok.headers.get('location')).toBe('https://example.test/zh-HK');
   });
 });
 
-describe('x-pathname injection for downstream RSC (unchanged behavior)', () => {
-  it('kaitu: /zh-CN/install → x-middleware-request-x-pathname=/install', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
+describe('x-pathname injection for downstream RSC', () => {
+  it('/zh-CN/install → x-middleware-request-x-pathname=/install', async () => {
     const res = await run(makeRequest('/zh-CN/install'));
     expect(res.headers.get('x-middleware-request-x-pathname')).toBe('/install');
   });
-  it('kaitu: /zh-CN → x-pathname is "/"', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
+  it('/zh-CN → x-pathname is "/"', async () => {
     const res = await run(makeRequest('/zh-CN'));
     expect(res.headers.get('x-middleware-request-x-pathname')).toBe('/');
   });

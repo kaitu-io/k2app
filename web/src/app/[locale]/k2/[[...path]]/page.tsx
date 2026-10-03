@@ -41,36 +41,13 @@ function resolvePathname(path: string[] | undefined): string {
  * extract structured Q&A and cite the page. Mirrors the <h3> comparison sections
  * in content/{locale}/k2/comparison.md.
  *
- * Note: zh-TW / zh-HK currently share COMPARISON_QAS_ZH (Simplified Chinese).
+ * Note: zh-TW / zh-HK share COMPARISON_QAS_ZH (Simplified Chinese).
  * This is an acceptable simplification for structured data — the full Traditional
  * Chinese prose lives in the Velite markdown, and AI engines primarily consume
  * JSON-LD for Q&A schema extraction rather than surface rendering. If Traditional
  * Chinese variants become necessary, split into zh-Hant vs zh-Hans maps here.
  */
 type ComparisonQA = { question: string; answer: string };
-
-const COMPARISON_QAS_EN: ComparisonQA[] = [
-  {
-    question: 'How does k2 differ from WireGuard?',
-    answer:
-      'WireGuard is a plaintext UDP tunnel without TLS disguise; k2 adds ECH + QUIC/TCP-WS dual-stack fallback for stealth and resilience.',
-  },
-  {
-    question: 'How does k2 differ from Shadowsocks?',
-    answer:
-      'Shadowsocks has only lightweight AEAD without TLS handshake or active-probe defence; k2 adds full TLS 1.3 + ECH handshakes and a reverse proxy on the server.',
-  },
-  {
-    question: 'How does k2 differ from VLESS+Reality?',
-    answer:
-      'Reality mimics TLS fingerprints but lacks ECH, has no QUIC primary + TCP fallback, and no application-layer congestion control.',
-  },
-  {
-    question: 'How does k2 differ from Hysteria2?',
-    answer:
-      'Hysteria2 is QUIC-only with no ECH, no TCP fallback, no active-probe defence, and needs a manually configured bandwidth cap.',
-  },
-];
 
 const COMPARISON_QAS_ZH: ComparisonQA[] = [
   {
@@ -95,41 +72,12 @@ const COMPARISON_QAS_ZH: ComparisonQA[] = [
   },
 ];
 
-const COMPARISON_QAS_JA: ComparisonQA[] = [
-  {
-    question: 'k2 と WireGuard の違いは？',
-    answer:
-      'WireGuard は TLS 偽装のない平文 UDP トンネル；k2 は ECH + QUIC/TCP-WS デュアルスタックフォールバックでステルスと耐性を両立。',
-  },
-  {
-    question: 'k2 と Shadowsocks の違いは？',
-    answer:
-      'Shadowsocks は軽量 AEAD のみで TLS ハンドシェイク偽装もアクティブプローブ防御もない；k2 は完全 TLS 1.3 + ECH ハンドシェイク＋サーバーリバースプロキシ。',
-  },
-  {
-    question: 'k2 と VLESS+Reality の違いは？',
-    answer:
-      'Reality は TLS 指紋模倣があるが、ECH なし、QUIC+TCP デュアルスタックなし、アプリ層輻輳制御なし。',
-  },
-  {
-    question: 'k2 と Hysteria2 の違いは？',
-    answer:
-      'Hysteria2 は QUIC のみで、ECH なし、TCP フォールバックなし、アクティブプローブ対策なし、Brutal は帯域を手動設定。',
-  },
-];
-
-function comparisonQAs(locale: string): ComparisonQA[] {
-  if (locale.startsWith('zh')) return COMPARISON_QAS_ZH;
-  if (locale === 'ja') return COMPARISON_QAS_JA;
-  return COMPARISON_QAS_EN;
-}
-
 function buildComparisonFaqPage(locale: string, baseUrlArg: string, pathname: string) {
   return {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
     '@id': `${baseUrlArg}/${locale}${pathname}#faq`,
-    mainEntity: comparisonQAs(locale).map((qa) => ({
+    mainEntity: COMPARISON_QAS_ZH.map((qa) => ({
       '@type': 'Question',
       name: qa.question,
       acceptedAnswer: { '@type': 'Answer', text: qa.answer },
@@ -194,15 +142,9 @@ export function generateStaticParams(): { locale: string; path: string[] | undef
     params.push({ locale, path });
   };
 
-  // Prerender only what this brand may serve, and only in this brand's locales.
-  // Prerendering an off-brand doc would hand it a real, indexable URL — the gate
-  // in the page component would then be the only thing standing between the
-  // crawler and the leak.
-  //
-  // The locale filter is load-bearing, not cosmetic: slugs are harvested from
-  // posts of every locale, so a doc gated `brand: kaitu` in en-US but unmarked
-  // (→ 'both') in zh-CN would otherwise contribute its slug back and prerender
-  // /en-US/k2/<slug> on overleap.
+  // Prerender only what this brand may serve, and only in the served locales —
+  // slugs are harvested from posts of every locale, so without the locale
+  // filter a stray content locale would prerender URLs this site doesn't serve.
   const k2Posts = (posts as K2Post[]).filter(
     (p) =>
       (p.slug === 'k2' || p.slug.startsWith('k2/')) &&

@@ -75,19 +75,9 @@ function PlatformTabBar({
         : 'border-transparent hover:bg-muted/50'
     }`;
 
-  // Brand feature gates: /routers and the Linux one-liner installer are
-  // kaitu-only surfaces (Brand.features). Filtering here removes both the
-  // tile and its panel from the overleap build.
-  const brandFeatures = siteBrand().features;
-  const visiblePlatformIds = PLATFORM_IDS.filter((id) => {
-    if (id === 'router') return brandFeatures.routers;
-    if (id === 'linux') return brandFeatures.linuxInstall;
-    return true;
-  });
-
   return (
     <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-8">
-      {visiblePlatformIds.map((id) => {
+      {PLATFORM_IDS.map((id) => {
         if (id === 'router') {
           return (
             <Link
@@ -315,17 +305,15 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
             copied={copied}
           />
         </TabsContent>
-        {siteBrand().features.linuxInstall && (
-          <TabsContent value="linux">
-            <LinuxPanel
-              t={t}
-              version={displayVersion}
-              isBeta={isBeta}
-              onCopy={() => copyCliCommand('linux')}
-              copied={copied}
-            />
-          </TabsContent>
-        )}
+        <TabsContent value="linux">
+          <LinuxPanel
+            t={t}
+            version={displayVersion}
+            isBeta={isBeta}
+            onCopy={() => copyCliCommand('linux')}
+            copied={copied}
+          />
+        </TabsContent>
         <TabsContent value="ios">
           <IOSPanel
             t={t}

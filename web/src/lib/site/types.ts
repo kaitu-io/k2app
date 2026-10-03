@@ -1,9 +1,6 @@
 /**
- * 站点结构配置（spec 2026-09-04-overleap-site-decoupling §2）。
- *
- * 导航 / 页脚 / sitemap 静态路由 / 内容分类 / SEO 默认文案按品牌各一份，Header、Footer、
- * sitemap、content-posts、metadata 只读配置渲染——新增或删除一个品牌的页面只改该品牌的
- * 配置文件，不碰共享组件，也不再有 `brand.features.x && <li>` 式的条件渲染。
+ * 站点结构配置：导航 / 页脚 / sitemap 静态路由 / 内容分类 / SEO 默认文案集中在
+ * `kaitu.ts`，Header、Footer、sitemap、content-posts、metadata 只读配置渲染。
  *
  * 配置里只放 i18n key 与路径，绝不放品牌展示词（tests/brand-guard.test.ts 的 src 扫描）。
  */
@@ -29,7 +26,7 @@ export interface FooterColumn {
 }
 
 export interface ContentCategoryDef {
-  /** 按 locale 的显示名；品牌默认语言作回落。 */
+  /** 按 locale 的显示名；默认语言作回落。 */
   name: Partial<Record<Locale, string>>;
   /** 列表页 meta description。 */
   description?: Partial<Record<Locale, string>>;
@@ -43,7 +40,7 @@ export interface SiteConfig {
     cta: NavItem;
   };
   footer: FooterColumn[];
-  /** sitemap 静态路由（'' = 首页）。只列该品牌构建里真实存在的页面。 */
+  /** sitemap 静态路由（'' = 首页）。只列真实存在的页面。 */
   staticRoutes: string[];
   /** `[locale]/[...slug]` 目录页服务的内容分类（slug → 定义）。 */
   contentCategories: Record<string, ContentCategoryDef>;
@@ -54,18 +51,6 @@ export interface SiteConfig {
   seo: {
     defaultTitle: Partial<Record<Locale, string>>;
     defaultDescription: Partial<Record<Locale, string>>;
-  };
-  /**
-   * 首页定价区的静态价表 {币种小写 → 最小单位金额}。首页是静态营销页，不打 API；
-   * 唯一上游是 scripts/stripe-setup-overleap.sh 的 ensure_price 行——
-   * tests/pricing-source.test.ts 逐币种比对，三处只能同时变。购买页用 API 的
-   * currencyPrices（Stripe 真相）。没有网页定价面的品牌不填。
-   */
-  pricing?: {
-    yearly: Record<string, number>;
-    monthly: Record<string, number>;
-    /** 价表档位 → Center 套餐 pid。漏斗事件按套餐分组，静态价表与购买页必须报同一个标识。 */
-    pids?: { yearly: string; monthly: string };
   };
   /**
    * 定价页 App 版套餐的静态快照（美分），供 /pricing 服务端渲染出价格（SEO 与首屏），

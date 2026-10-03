@@ -172,9 +172,9 @@ func TestFunnelPaths_CheckoutAuthQuestionSaysInline(t *testing.T) {
 // 「登记了、文件在、文件里有这个事件名」，「无条件」要靠评审读发射点。
 var funnelStepEmitSites = map[string][][]string{
 	"web_purchase": {
-		{"web/src/components/FunnelPageView.tsx"}, // 每个页面挂载即发
-		{"web/src/app/[locale]/purchase/PurchaseClient.tsx", "web/src/app/[locale]/purchase/OverleapPurchaseClient.tsx", "web/src/app/[locale]/pricing/page.overleap.tsx"}, // 定价 / 购买页挂载即发
-		{"web/src/app/[locale]/purchase/PurchaseClient.tsx", "web/src/app/[locale]/purchase/OverleapPurchaseClient.tsx"},                                                   // 下单按钮：唯一的付款入口，带 plan
+		{"web/src/components/FunnelPageView.tsx"},                                                     // 每个页面挂载即发
+		{"web/src/app/[locale]/purchase/PurchaseClient.tsx", "web/src/app/[locale]/pricing/page.tsx"}, // 定价 / 购买页挂载即发
+		{"web/src/app/[locale]/purchase/PurchaseClient.tsx"},                                          // 下单按钮：唯一的付款入口，带 plan
 		nil, // 事实
 	},
 	"web_checkout_auth": {

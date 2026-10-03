@@ -1,19 +1,16 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 /**
- * Tests for LanguageSwitcher — Brand Split Phase 2.
- *
- * Each deployment is single-brand, so the dropdown offers only the baked
- * brand's own locales and switching is always in place (router.replace).
- * The old cross-domain `computeSwitchAction` is gone with the dual-host model.
+ * Tests for LanguageSwitcher: the dropdown offers exactly the served locales
+ * and switching is always in place (router.replace).
  */
 
 // Mock i18n routing — the underlying next-intl/navigation chain fails to load in jsdom
 vi.mock('@/i18n/routing', () => ({
   routing: {
-    locales: ['en-US', 'en-GB', 'en-AU', 'zh-CN', 'zh-TW', 'zh-HK', 'ja'],
+    locales: ['zh-CN', 'zh-TW', 'zh-HK'],
     defaultLocale: 'zh-CN',
   },
   Link: ({ children, ...props }: { children: React.ReactNode }) => <a {...props}>{children}</a>,
@@ -54,11 +51,8 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-afterEach(() => vi.unstubAllEnvs());
-
-describe('LanguageSwitcher — brand-local locales only', () => {
-  it('kaitu build lists exactly zh-CN/zh-TW/zh-HK', () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
+describe('LanguageSwitcher', () => {
+  it('lists exactly zh-CN/zh-TW/zh-HK', () => {
     render(<LanguageSwitcher />);
     expect(screen.getByText('简体中文')).toBeInTheDocument();
     expect(screen.getByText('繁體中文 (台灣)')).toBeInTheDocument();
@@ -67,27 +61,7 @@ describe('LanguageSwitcher — brand-local locales only', () => {
     expect(screen.queryByText('日本語')).toBeNull();
   });
 
-  it('overleap build lists exactly en-US/en-GB/en-AU/ja', () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-    render(<LanguageSwitcher />);
-    expect(screen.getByText('English (US)')).toBeInTheDocument();
-    expect(screen.getByText('English (UK)')).toBeInTheDocument();
-    expect(screen.getByText('English (AU)')).toBeInTheDocument();
-    expect(screen.getByText('日本語')).toBeInTheDocument();
-    expect(screen.queryByText('简体中文')).toBeNull();
-    expect(screen.queryByText('繁體中文 (台灣)')).toBeNull();
-  });
-});
-
-describe('LanguageSwitcher (render)', () => {
-  it('renders the trigger button on the kaitu build', () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
-    render(<LanguageSwitcher />);
-    expect(screen.getByRole('button')).toBeTruthy();
-  });
-
-  it('mounts on the overleap build without crashing', () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
+  it('renders the trigger button', () => {
     render(<LanguageSwitcher />);
     expect(screen.getByRole('button')).toBeTruthy();
   });

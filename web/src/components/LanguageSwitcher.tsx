@@ -1,7 +1,7 @@
 "use client";
 
 import { useLocale } from 'next-intl';
-import { useRouter, usePathname } from '@/i18n/routing';
+import { useRouter, usePathname, routing } from '@/i18n/routing';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -20,20 +20,12 @@ const localeNames = {
   'zh-CN': '简体中文',
   'zh-TW': '繁體中文 (台灣)',
   'zh-HK': '繁體中文 (香港)',
-  'en-US': 'English (US)',
-  'en-GB': 'English (UK)',
-  'en-AU': 'English (AU)', 
-  'ja': '日本語'
 } as const;
 
 const localeShortNames = {
   'zh-CN': '简',
   'zh-TW': '繁TW',
   'zh-HK': '繁HK',
-  'en-US': 'US',
-  'en-GB': 'GB',
-  'en-AU': 'AU',
-  'ja': '日'
 } as const;
 
 export default function LanguageSwitcher() {
@@ -56,9 +48,8 @@ export default function LanguageSwitcher() {
       }
     }
 
-    // Phase 2: single-brand deployment — locale switching is always in place.
     router.replace(pathname, {
-      locale: newLocale as 'zh-CN' | 'zh-TW' | 'zh-HK' | 'en-US' | 'en-GB' | 'en-AU' | 'ja',
+      locale: newLocale as (typeof routing.locales)[number],
     });
   };
 

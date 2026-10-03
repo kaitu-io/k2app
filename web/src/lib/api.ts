@@ -695,7 +695,7 @@ export const ErrorCode = {
   VerificationCodeExpired: 400013, // Verification code expired or not sent
   TierMismatch: 422001,            // 跨档购买被拒绝（仅同档续费）
   ProxyPurchaseDeprecated: 422002, // 代付下单已下线
-  ChannelUnavailable: 405001,      // 支付渠道不可用（如非 overleap 品牌调用 Stripe 端点）
+  ChannelUnavailable: 405001,      // 支付渠道对本品牌不可用
 } as const;
 
 export type ErrorCodeType = typeof ErrorCode[keyof typeof ErrorCode];
@@ -1596,29 +1596,6 @@ export const api = {
   // 铸造（或轮换）网关凭证。返回的 url 只在内存里用来拼安装命令，不持久化。
   async mintGatewayCredential(): Promise<{ url: string }> {
     return this.request<{ url: string }>('/api/user/gateway-credential', { method: 'POST' });
-  },
-
-  // ====== Stripe（overleap 专属渠道；其他品牌调用会得到 405001）======
-
-  async createStripeCheckout(
-    planPid: string,
-    options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>
-  ): Promise<{ url: string }> {
-    return this.request<{ url: string }>('/api/user/stripe/checkout', {
-      method: 'POST',
-      body: JSON.stringify({ plan: planPid }),
-      ...options,
-    });
-  },
-
-  async createStripePortal(
-    options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>
-  ): Promise<{ url: string }> {
-    return this.request<{ url: string }>('/api/user/stripe/portal', {
-      method: 'POST',
-      body: JSON.stringify({}),
-      ...options,
-    });
   },
 
   async getProHistories(params: PaginationParams): Promise<ListResult<ProHistory>> {

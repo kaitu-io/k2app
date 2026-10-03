@@ -63,7 +63,7 @@ vi.mock('#velite', () => ({
 // Mock @/i18n/routing
 vi.mock('@/i18n/routing', () => ({
   routing: {
-    locales: ['zh-CN', 'en-US', 'en-GB', 'en-AU', 'zh-TW', 'zh-HK', 'ja'],
+    locales: ['zh-CN', 'zh-TW', 'zh-HK'],
   },
 }));
 
@@ -102,9 +102,8 @@ describe('test_sitemap_includes_content', () => {
     // Must NOT include draft post
     expect(urls).not.toContain('https://kaitu.io/zh-CN/blog/draft-post');
 
-    // Kaitu host must NOT serve en-*/ja URLs — those belong to overleap.io
-    expect(urls).not.toContain('https://kaitu.io/en-US/guides/getting-started');
-    expect(urls).not.toContain('https://kaitu.io/ja/guides/getting-started');
+    // Only the served zh locales are advertised.
+    expect(urls.every((u: string) => !/\/(en-US|en-GB|en-AU|ja)\//.test(u))).toBe(true);
   });
 
   it('sitemap content entries have correct metadata', async () => {

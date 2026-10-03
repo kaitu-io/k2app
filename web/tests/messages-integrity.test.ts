@@ -6,10 +6,6 @@ import { namespaces } from '../messages/namespaces';
 const MESSAGES_DIR = path.resolve(__dirname, '../messages');
 
 const ZH_LOCALES = ['zh-CN', 'zh-TW', 'zh-HK'] as const;
-const EN_LOCALES = ['en-US', 'en-GB', 'en-AU'] as const;
-const OTHER_LOCALES = ['ja'] as const;
-const ALL_LOCALES = [...ZH_LOCALES, ...EN_LOCALES, ...OTHER_LOCALES];
-// hero.json 是开途独有 namespace（messages/namespaces.ts BRAND_NAMESPACES.kaitu）：只有 zh-* 有文件。
 const HERO_LOCALES = ZH_LOCALES;
 
 // Forbidden political/legacy tokens. Each has a `matcher` (regex) so we can express
@@ -45,12 +41,6 @@ const FORBIDDEN_TERMS: ForbiddenTerm[] = [
 // breaking production installs (see install.json installSteps.linux).
 const ZH_KAITU_BARE = /Kaitu(?!(\s+by\s+Overleap|\s+LLC|\.io|\.service|-))/;
 
-// For en-*/ja content: similar rule; "kaitu" (case-insensitive) forbidden except in
-// the same exception substrings. `.service` whitelist: same rationale as above.
-// `/` whitelist: CDN paths like `dl.kaitu.io/kaitu/k2r/` and the fallback
-// `d0.all7.cc/kaitu/k2r/` are real distribution URLs whose `kaitu/` directory
-// segment cannot be renamed without breaking existing installs.
-const EN_JA_KAITU_BARE = /kaitu(?!(\s+by\s+overleap|\s+llc|\.io|\.service|-|\/))/i;
 
 function readNamespace(locale: string, namespace: string): string {
   const p = path.join(MESSAGES_DIR, locale, `${namespace}.json`);
@@ -96,18 +86,6 @@ describe('messages-integrity: brand tokens per locale family — all namespaces'
       });
     }
   }
-  for (const locale of [...EN_LOCALES, ...OTHER_LOCALES]) {
-    for (const ns of namespaces) {
-      it(`${locale}/${ns}.json uses "Overleap" not standalone "Kaitu"/"kaitu"`, () => {
-        const raw = readNamespace(locale, ns);
-        if (!raw) return;
-        expect(
-          raw,
-          `Found standalone "kaitu" in ${locale}/${ns}.json (use "Overleap" or "Kaitu by Overleap")`
-        ).not.toMatch(EN_JA_KAITU_BARE);
-      });
-    }
-  }
 });
 
 describe('messages-integrity: FAQ key migration (hero.json only)', () => {
@@ -122,22 +100,5 @@ describe('messages-integrity: FAQ key migration (hero.json only)', () => {
       expect(j.faq?.items).not.toHaveProperty('gfwSpeed');
       expect(j.faq?.items).toHaveProperty('networkThrottlingSpeed');
     });
-  }
-});
-
-// Overleap-only locales (en-*/ja are never served by the kaitu build) must not
-// advertise China-market payment channels: the overleap purchase flow is Stripe.
-const CN_PAYMENT_CHANNELS = /Alipay|WeChat Pay|UnionPay|支付宝|微信支付/;
-
-describe('messages-integrity: overleap locales carry no China-market payment channels', () => {
-  for (const locale of [...EN_LOCALES, ...OTHER_LOCALES]) {
-    for (const ns of namespaces) {
-      it(`${locale}/${ns}.json`, () => {
-        const raw = readNamespace(locale, ns);
-        if (!raw) return;
-        const hit = raw.match(CN_PAYMENT_CHANNELS);
-        expect(hit, `found "${hit?.[0]}" in ${locale}/${ns}.json`).toBeNull();
-      });
-    }
   }
 });

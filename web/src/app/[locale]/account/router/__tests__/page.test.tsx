@@ -11,9 +11,9 @@ vi.mock('@/i18n/routing', () => ({ routing: { locales: ['zh-CN', 'zh-TW', 'zh-HK
 vi.mock('../RouterAccountClient', () => ({ default: () => null }));
 
 import { getTranslations } from 'next-intl/server';
-import AccountRouterPage, { generateMetadata } from '../page.kaitu';
+import AccountRouterPage, { generateMetadata } from '../page';
 
-describe('account/router/page.kaitu', () => {
+describe('account/router/page', () => {
   it('generateMetadata 取 routers 命名空间的 edition.account.metaTitle', async () => {
     const metadata = await generateMetadata({ params: Promise.resolve({ locale: 'zh-CN' }) });
     expect(metadata.title).toBe('edition.account.metaTitle');

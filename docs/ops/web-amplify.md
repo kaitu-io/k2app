@@ -13,8 +13,8 @@
   | overleap.io | `d3q4qon606iex5` | ap-northeast-1 | overleap.io（apex 为 canonical）+ www（301 → apex） | `dh6k16uopk53v` | `NEXT_PUBLIC_BRAND=overleap` |
 
   两个 app 都构建 `website` 分支（`main` 的纯镜像，**永远不要直接 commit 到它**），部署 = `git push origin main:website`，两个 app 各自起 job。overleap app 用 CLI 建（`aws amplify create-app --repository … --access-token $(gh auth token)`，GitHub App 已装在 kaitu-io org 上），buildSpec 取自仓库 `web/amplify.yml`（含 `.env.production` 烘焙行）；kaitu app 控制台里存的 buildSpec 没有那一行——`NEXT_PUBLIC_*` 变量由 Next 在构建期内联，所以两边都能工作。SSR logging IAM role 与 Sentry 四个变量两边共用。2026-09-04 之前 overleap.io 域名挂在 kaitu app 上（线上即开途站），当天迁移；Route 53 两个 zone（kaitu.io `Z0765916OB6BGV85HULS`、overleap.io `Z0660232TESUJOGFHJV8`）都在本账号，`create-domain-association` 后 Amplify 自动改写了 A alias / www CNAME / ACM 验证记录，证书复用无需重签。（ap-east-1 另有一个闲置 `kaitu` app `d2ooo048yr0i1y`，无自定义域名。）
-- 同一份 `web/amplify.yml`（`appRoot: web`），两个 app 只差 `NEXT_PUBLIC_BRAND`（kaitu 默认 / overleap 必须显式设置）。
-- 控制台环境变量只存在于构建 shell；`output: 'standalone'` 不会把它们带进 SSR Lambda，所以 `amplify.yml` preBuild 用 `env | grep -E '^(…)='` 把白名单追加进 `.env.production`。**白名单是权威**：不在里面的变量到不了 Lambda。当前白名单：`NEXT_PUBLIC_BRAND`、`NEXT_PUBLIC_SENTRY_DSN`、`SENTRY_ORG`、`SENTRY_PROJECT`、`SENTRY_AUTH_TOKEN`。Payload 时代的 DATABASE_URL / PAYLOAD_SECRET / TRANSLATOR_* / AI_* / S3_* / CDN_URL / CENTER_API_URL **已于 2026-09-04 从 Amplify 控制台删除**。
+- **`web/` 只构建 kaitu.io**（overleap 站拆到独立 app `sites/overleap/`，自带 `amplify.yml`）。`web/next.config.ts` 在 `NEXT_PUBLIC_BRAND` 被设成 kaitu 以外的值时直接让构建失败——overleap.io 那个 app 若仍以 `appRoot: web` + `NEXT_PUBLIC_BRAND=overleap` 构建 `website` 分支，会红在构建期，而不是把开途站部署到 overleap.io 上。overleap app 的 appRoot / buildSpec 切到 `sites/overleap` 是域名切换的一部分（不在本仓库代码里）。
+- 控制台环境变量只存在于构建 shell；`output: 'standalone'` 不会把它们带进 SSR Lambda，所以 `amplify.yml` preBuild 用 `env | grep -E '^(…)='` 把白名单追加进 `.env.production`。**白名单是权威**：不在里面的变量到不了 Lambda。当前白名单：`NEXT_PUBLIC_SENTRY_DSN`、`SENTRY_ORG`、`SENTRY_PROJECT`、`SENTRY_AUTH_TOKEN`（`NEXT_PUBLIC_BRAND` 已移出——`web/` 不再读它）。Payload 时代的 DATABASE_URL / PAYLOAD_SECRET / TRANSLATOR_* / AI_* / S3_* / CDN_URL / CENTER_API_URL **已于 2026-09-04 从 Amplify 控制台删除**。
 - SSR Lambda 上限 30s。
 
 ## 访问撤销记录（2026-09-04）

@@ -20,31 +20,26 @@ cd web && yarn test:e2e:headed   # E2E with browser visible
 
 Next.js 15 (App Router) | React 19 | TypeScript | Tailwind CSS 4 | shadcn/ui | next-intl | Velite (content)
 
-## Brand (双品牌拆分 Phase 2: 一套代码，两个部署)
+## Brand（单品牌：只构建 kaitu.io）
 
-- **Build-time baking**: `NEXT_PUBLIC_BRAND=kaitu|overleap` (default kaitu) → `siteBrand()` in `src/lib/brands.ts` — the ONLY brand source. No host/locale-based runtime resolution; no cross-domain 301/hreflang/canonical. Two Amplify apps (kaitu.io / overleap.io) build from the same repo with different env.
-- **页面树按品牌编译（`pageExtensions`）**：`next.config.ts` 按品牌取 `[`${brand}.tsx`, 'tsx']` —— `page.tsx` / `layout.tsx` 两品牌共用，`page.kaitu.tsx` 只进开途构建（Overleap 构建里该路径**不存在**，原生 404，无需中间件门），`page.overleap.tsx` 只进 Overleap 构建。同一目录**不得**同时有 `page.tsx` 与 `page.<brand>.tsx`（那一品牌构建失败、另一品牌是绿的）。开途独有：`(manager)` 整树、discovery / opensource / routers / retailer / releases / changelog / g / s / survey / account/wallet / account/delegate；分裂页：首页 / install / support / purchase / account。守卫 `tests/brand-page-tree.test.ts`。**不要再写 `if (siteBrand().id === 'overleap')` 分流**——加页面就加 `page.<brand>.tsx`。
-- **站点结构按品牌配置（`src/lib/site/<brand>.ts`）**：导航、页脚栏目、sitemap 静态路由、内容分类、SEO 默认 title/description、（Overleap）首页价表。Header / Footer / sitemap / content-posts / metadata 只读配置渲染；配置里只放 key 与路径，不放品牌展示词（`mailto:{contactEmail}` 由 Footer 用 `Brand.contactEmail` 填）。守卫：`tests/site-config-keys.test.ts`（每个 key 在该品牌全部 locale 存在）、`tests/footer-brand-gates.test.tsx`（开途一条不少 / Overleap 一条不多）。
-- **Locale matrix**: kaitu → zh-CN (default)/zh-TW/zh-HK; overleap → **en-GB (default, 英式母版)**/en-US/en-AU/ja. Off-brand locale paths 301 to the brand default locale, same host; a bare `Accept-Language: en` lands on the brand default. Message files partition by locale: en/ja files say "Overleap", zh files say「开途」— never mix (enforced by `tests/brand-guard.test.ts`). **k2 文档的英文母版在 `content/en-GB/k2/`**（回落是"品牌默认语言"）。
-- **Namespace 按品牌（`messages/namespaces.ts` `BRAND_NAMESPACES`）**：`request.ts` 只加载本品牌集合，缺文件回落**品牌默认语言**（不是 zh-CN）。共享集 common/nav/auth/purchase/account/discovery/errors/k2/admin（`admin` 因共享 Header / ChangePasswordDialog 用到 `admin.account.*`）；开途独有 hero/install/wallet/campaigns/invite/theme/changelog/releases/routers/guide-parents/licenseKeys/survey（只有 zh-* 有文件）；Overleap 独有 landing/download/help（只有 en-*/ja 有文件）。`tests/messages-parity.test.ts` 按品牌比对（base = 品牌默认语言），并断言任一品牌的 locale 目录下没有另一品牌的 namespace 文件。
-- **Funnel pixel（转化漏斗埋点）**：`src/lib/funnel.ts` 是网站上报行为事件的**唯一入口**（`track()` / `pxUrl()`，`new Image()` 打 `/api/px`，失败一律吞掉）；事件名 `WEB_FUNNEL_EVENTS` 由 `tests/funnel-contract.test.ts` 与 `contracts/api-contract.json` 的 `funnelEvents`（surfaces 含 `web`）锁定，两边只改一头就红。
-- 页面只拼 URL、不含后端逻辑（同意/GPC/退出/落库都在服务端 `/api/px`）；`FunnelPageView` 在 `[locale]/layout.tsx` 无品牌判断地挂；共享组件（`EmailLogin` 等）只通过可选回调 prop 发事件，别的使用方不传 = 不产生事件。
+- **本应用只服务 kaitu.io**。overleap.io 是独立应用 `sites/overleap/`（不共享代码、自带 lockfile / amplify.yml），2026-10 从本应用拆出（spec `2026-09-30-overleap-site-app-design.md` 阶段 ⑤）。`siteBrand()`（`src/lib/brands.ts`）恒返回 `KAITU`，不读环境变量；`next.config.ts` 在 `NEXT_PUBLIC_BRAND` 被设成 kaitu 以外的值时**让构建失败**——防止一个还按旧配置构建的 overleap Amplify app 把开途站部署到 overleap.io。
+- **页面文件就是普通的 `page.tsx` / `layout.tsx`**。旧的按品牌编译（`pageExtensions` + `page.kaitu.tsx` / `page.overleap.tsx`）已删除；`page.kaitu.tsx` 这种名字现在**不会被 Next 编译**（路径静默 404，直接 import 模块的单测照样绿）——`tests/brand-page-tree.test.ts` 让任何带品牌中缀的路由文件红掉。
+- **品牌注册表仍有两个品牌**：`/manager` 是跨品牌后台（唯一入口 kaitu.io/manager，管两个品牌的数据），`contracts/api-contract.json` 也按全量品牌比对（`tests/cross-layer-contract.test.ts`）。`KAITU` 是完整的站点配置（`Brand`），`OVERLEAP` 只有身份字段（`BrandIdentity`：id / displayName / wordmark / baseUrl / contactEmail）；`brandById()` 返回 `BrandIdentity`。**`BrandId` 联合类型与 `OVERLEAP` 条目别删**——manager 的 `BrandBadge` / `BrandPicker` / 品牌筛选靠它们渲染另一品牌的数据。
+- **Locale**：zh-CN（默认）/ zh-TW / zh-HK（`src/i18n/routing.ts`，`ALL_LOCALES` 在 `brands.ts` 里内联一份）。旧的 en-US / en-GB / en-AU / ja URL（曾属于 overleap 构建）由 `middleware.ts` **301 到同路径的 zh-CN**（matcher 里单列了这些前缀，带点的路径也覆盖）。`Accept-Language` 不是中文时根路径落 zh-CN。
+- **Namespace**：`messages/namespaces.ts` 的 `namespaces` 就是全部（`request.ts` 全量加载，缺文件回落 zh-CN）。`tests/messages-parity.test.ts` 逐 namespace 比对三个 locale，并断言 `messages/` 下只有这三个 locale 目录、没有未注册的 json。
+- **品牌隔离仍然生效**：kaitu.io 的任何用户面都不得出现 Overleap（唯一例外：法务署名 `Overleap LLC` = `Brand.legalName`，由 `Footer` 渲染）。守卫 `tests/brand-guard.test.ts`（zh messages / src / public/legal 文件扫描）、`tests/brand-leak-ssr.test.tsx`（渲染后的 chrome + metadata + 首页）。**品牌字面量只能进 `src/lib/brands.ts`**——注释里也别写展示词（guard 扫整行），用 `overleap` / `kaitu` 小写 id。
+- **站点结构（`src/lib/site/kaitu.ts`，经 `siteConfig()` 读）**：导航、页脚栏目、sitemap 静态路由、内容分类、SEO 默认 title/description、定价页 App 版快照。Header / Footer / sitemap / content-posts / metadata 只读配置渲染；配置里只放 key 与路径。守卫：`tests/site-config-keys.test.ts`、`tests/footer-brand-gates.test.tsx`（页脚/顶栏一条不少、已下线路径一条不多）。
+- **Funnel pixel（转化漏斗埋点）**：`src/lib/funnel.ts` 是网站上报行为事件的**唯一入口**（`track()` / `pxUrl()`，`new Image()` 打 `/api/px`，失败一律吞掉）；事件名 `WEB_FUNNEL_EVENTS` 由 `tests/funnel-contract.test.ts` 与 `contracts/api-contract.json` 的 `funnelEvents`（surfaces 含 `web`）锁定，两边只改一头就红。各漏斗步骤的发射文件登记在 `api/logic_funnel_paths_test.go` `funnelStepEmitSites`（改名/挪文件要同步，否则 api 测试红）。
+- 页面只拼 URL、不含后端逻辑（同意/GPC/退出/落库都在服务端 `/api/px`）；`FunnelPageView` 在 `[locale]/layout.tsx` 挂；共享组件（`EmailLogin` 等）只通过可选回调 prop 发事件，别的使用方不传 = 不产生事件。
 - **预览请求不埋**：购买页 `fetchPreview`（`preview: true`）是页面自己发的，只有 `handleOrder` / `handleDelegatePay` / `handleEmptyStateDelegatePay` / 路由器结账页 `handlePay` 这类真下单才发 `checkout_start`，且**必须带套餐 pid**（服务端按它拆套餐维度；没选中套餐就不发）。`plan_select` 只在访客真的换了卡片时发，默认选中不算。
 - **`install_click` 的 `source`**：`button`（主下载按钮 / 商店链接）、`backup`（备用链接）、`auto`（倒计时结束后的自动下载——桌面端的主要转化，真正触发时才发、每次挂载至多一次，取消倒计时不发）、`cli`（复制安装命令，plan = 所在平台页签）。
 - **`FunnelPageView` 跳过 App 内嵌页**（`?embed=true` / `#embed`，`isEmbeddedPage()`）；像素的 `u` 只带路径 + `utm_*`（`pixelLocation()` 在浏览器端剥掉其余 query 与 hash，token / code 不出浏览器）。
-- 页脚「不参与访问统计」是 `NavItem.external: true` → 原生 `<a href="/api/px/optout">`（next-intl `Link` 会补 locale 前缀）；隐私政策 §5.2 / §5.5 描述该 cookie 与 App 事件，改埋点范围要同步改 `public/legal/privacy-policy.md`。§5.2 里「是否用第三方分析」那句是 `{{thirdPartyAnalytics}}` 占位，由 `lib/legal.ts` 按 `Brand.gaMeasurementId` 生成（`tests/legal-docs.test.ts` 锁「有 id ⇔ 有那句」）。Cookie 横幅「拒绝」会请求 `/api/px/optout`（cookie 是 HttpOnly，只有服务端能改成退出值）；改横幅文案要 bump `COOKIE_CONSENT_VERSION`。横幅的 `detailsThirdParty` 一句同样只在 `gaMeasurementId` 非空的品牌渲染。
-- **Admin API is kaitu-only**: `/app/*` proxy → 404 on the overleap build (middleware). `/manager` 页面本身是 `.kaitu.tsx`，Overleap 构建没有这些路由。
-- **Manager 是跨品牌视角（唯一入口 kaitu.io/manager，管两个品牌的数据）**：顶栏全局品牌筛选 `components/manager/brand.tsx`（`ManagerBrandProvider` / `useManagerBrand()`，「全部」= 不带参数，选择存 localStorage `manager.brandFilter`，读完才渲染子树以免先按「全部」多拉一次）。列表/统计页把 `brandParam` 作为 `?brand=` 传给 `/app/*`；带 `brand` 的行用 `BrandBadge`。**品牌自有实体（套餐/活动/公告/授权码批次/EDM 模板）的创建表单必须用 `BrandPicker` 显式选品牌**——无默认值，API 拒绝空 brand；编辑时品牌只读（创建后不可变）。展示名只取 `brandById(id).wordmark`，manager 源码里也不写品牌展示词。
-- **`X-K2-Brand`**: injected on every `/api/*`/`/app/*` request by BOTH `src/lib/api.ts` and middleware. Center resolves Host → header → kaitu (`api/brand.go`).
-- **Brand-leak guards**: `tests/brand-guard.test.ts` (file scan: messages per-locale + src allowlist + velite content) and `tests/brand-leak-ssr.test.tsx` (rendered chrome + metadata per brand page tree). Neither site links a GitHub org for now (2026-09-30) — `tests/overleap-closed-source.test.ts` fails on any `github.com/getoverleap` in src/content/messages. Never add brand literals to src — extend the `Brand` registry instead. **注释里也不能写 Overleap / 开途 展示词**（guard 扫整行）——用 `overleap` / `kaitu` 小写 id。
-- **Legal signature is the ONE cross-brand exception**: both brands sign 法务文书 as `Overleap LLC` (`Brand.legalName`, rendered by `Footer`). The SSR guard strips it before scanning and asserts it is present, so the exception stays scoped.
-- **Feature gates**: `Brand.features` — routers/linuxInstall/androidApkGuide/releaseNotes/retailerProgram 描述品牌事实，开途独有页里的 `notFound()` 守卫保留；页脚 / sitemap **不再**靠它们条件渲染（由站点结构配置决定）。`Brand.storeLinks` 为空 = 未上架，下载页显示 Coming soon。
-- **Kaitu-only content**: velite markdown that documents kaitu-only surfaces (e.g. the `/i/k2*` install scripts) carries `brand: kaitu` frontmatter — the sitemap and the guard both honour it.
-- **Dev**: `yarn dev` (kaitu) / `yarn dev:overleap`; builds: `yarn build` / `yarn build:overleap`（**两个 build 都要过**——页面树不同，一边绿不代表另一边绿）。
-- **Overleap 首页 / 下载页 / 帮助页**：`page.overleap.tsx` + `components/home-overleap/`、`components/install-overleap/`；文案 namespace `landing` / `download` / `help`，品牌名 `{brand}` 插值。隐私优先叙事（spec `2026-09-04-overleap-site-decoupling-and-uk-positioning-design.md` §3）。守卫：`tests/landing-overleap-ssr.test.tsx`、`tests/overleap-pages-ssr.test.tsx`（真实文案渲染，零开途词/零中国支付渠道/零原始 key/零未填占位）。en/ja 文案只有 Overleap 部署会读，`tests/messages-integrity.test.ts` 禁止其中出现支付宝/微信支付/银联。
-- **定价三处同源**：Stripe Price 由 `scripts/stripe-setup-overleap.sh` 的 `ensure_price` 行创建（USD 主币 + GBP/EUR 固定本币价，Checkout 按属地自动选币）；首页静态价表在 `lib/site/overleap.ts`（`tests/pricing-source.test.ts` 锁两者逐币种相等）；购买页走 API `currencyPrices`。展示币由 `lib/pricing.ts` 按 locale 决定（en-GB 英镑，其余美元），价格数字**不进文案文件**（`{yearly}` `{monthly}` `{currency}` 插值）。改价 = 改脚本 + 改价表 + 跑脚本 + 回填 Plan 行，缺一处测试红。
-- **定价页 `/pricing` 两品牌各一份**（`pricing/page.<brand>.tsx`，共享 namespace `pricing`）：Overleap 复用首页价表与 `landing` FAQ；开途 App 版价格是 `lib/site/kaitu.ts` `appPlans` 的**静态快照**（SSR/SEO 用），`components/pricing/AppPlansGrid` 挂载后拉 `/api/plans` 按 pid 覆盖——后台改价后同步一下快照即可，不同步只是首屏闪一下旧价。**路由器版预售**由 `lib/router-edition.ts` 的 `ROUTER_PRESALE`（$359、发售日 2026-11-11 东八区零点）按日期切换：`/routers`、`/pricing`、结账页、账户页都读 `routerOffer()`；这两页因此是 `revalidate = 3600` 而非 `force-static`。价格常量与 `docs/router-edition-prod-deploy.md` 的 SQL/UPDATE 由 `src/lib/__tests__/router-edition.test.ts` 锁定。服务期自发货日起算是后端规则（`api_admin_router.go` 标发货时重设线路到期），账户页在成品未发货前不显示到期日。
-- **主题按 `html[data-brand]` 覆盖**：`globals.css` 的 `:root` 是开途，`html[data-brand="overleap"]` 块必须覆盖全部变量（`tests/brand-theme-css.test.ts`）。**二进制资产也有守卫**：`tests/brand-assets.test.ts` 对 `public/` 里两品牌的 logo/og/favicon 算哈希，任何一对相同即红——Overleap 资产由 `webapp/brand-assets/overleap/generate.sh` 从 `logo.svg` 生成。
+- 页脚「不参与访问统计」是 `NavItem.external: true` → 原生 `<a href="/api/px/optout">`（next-intl `Link` 会补 locale 前缀）；隐私政策 §5.2 / §5.5 描述该 cookie 与 App 事件，改埋点范围要同步改 `public/legal/privacy-policy.md`。§5.2 里「是否用第三方分析」那句是 `{{thirdPartyAnalytics}}` 占位，由 `lib/legal.ts` 按 `Brand.gaMeasurementId` 生成（`tests/legal-docs.test.ts` 锁「有 id ⇔ 有那句」）。Cookie 横幅「拒绝」会请求 `/api/px/optout`（cookie 是 HttpOnly，只有服务端能改成退出值）；改横幅文案要 bump `COOKIE_CONSENT_VERSION`。横幅的 `detailsThirdParty` 一句只在 `gaMeasurementId` 非空时渲染。`public/legal/*.md` 仍各含一份英文母版（只渲染中文母版；英文那份现在是死文本）。
+- **Manager 是跨品牌视角**：顶栏全局品牌筛选 `components/manager/brand.tsx`（`ManagerBrandProvider` / `useManagerBrand()`，「全部」= 不带参数，选择存 localStorage `manager.brandFilter`，读完才渲染子树以免先按「全部」多拉一次）。列表/统计页把 `brandParam` 作为 `?brand=` 传给 `/app/*`；带 `brand` 的行用 `BrandBadge`。**品牌自有实体（套餐/活动/公告/授权码批次/EDM 模板）的创建表单必须用 `BrandPicker` 显式选品牌**——无默认值，API 拒绝空 brand；编辑时品牌只读（创建后不可变）。展示名只取 `brandById(id).wordmark`，manager 源码里也不写品牌展示词。
+- **`X-K2-Brand: kaitu`**: injected on every `/api/*`/`/app/*` request by BOTH `src/lib/api.ts` and middleware. Center resolves Host → header → kaitu (`api/brand.go`).
+- **Legal signature is the ONE cross-brand exception**: legal documents sign as `Overleap LLC` (`Brand.legalName`, rendered by `Footer`). The SSR guard strips it before scanning and asserts it is present, so the exception stays scoped.
+- **Content `brand:` frontmatter**: velite `brand: kaitu|overleap|both`（默认 both）。`isPostVisibleToBrand` 仍然生效：标成另一品牌的文章 404、不进 sitemap / 侧栏。
+- **定价页 `/pricing`**：App 版价格是 `lib/site/kaitu.ts` `appPlans` 的**静态快照**（SSR/SEO 用），`components/pricing/AppPlansGrid` 挂载后拉 `/api/plans` 按 pid 覆盖——后台改价后同步一下快照即可，不同步只是首屏闪一下旧价。**路由器版预售**由 `lib/router-edition.ts` 的 `ROUTER_PRESALE`（$359、发售日 2026-11-11 东八区零点）按日期切换：`/routers`、`/pricing`、结账页、账户页都读 `routerOffer()`；这两页因此是 `revalidate = 3600` 而非 `force-static`。价格常量与 `docs/router-edition-prod-deploy.md` 的 SQL/UPDATE 由 `src/lib/__tests__/router-edition.test.ts` 锁定。服务期自发货日起算是后端规则（`api_admin_router.go` 标发货时重设线路到期），账户页在成品未发货前不显示到期日。
 
 ## Architecture
 
@@ -53,20 +48,20 @@ web/
 ├── src/
 │   ├── app/
 │   │   ├── [locale]/          # Public pages with i18n (next-intl)
-│   │   │   ├── page.kaitu.tsx / page.overleap.tsx  # Home（按品牌编译，见 Brand 段）
-│   │   │   ├── install/       # Download page（page.kaitu.tsx / page.overleap.tsx）
+│   │   │   ├── page.tsx       # Home
+│   │   │   ├── install/       # Download page
 │   │   │   ├── purchase/      # Subscription purchase flow
 │   │   │   ├── account/       # User profile, members, delegate, wallet
 │   │   │   ├── discovery/     # App discovery
 │   │   │   ├── releases/      # Version history + downloads (GitHub Releases style)
 │   │   │   ├── changelog/     # Redirects to /releases (backward compat)
 │   │   │   ├── login/         # Email OTP login
-│   │   │   ├── support/       # 开途家长指南 / Overleap Help（page.<brand>.tsx）
+│   │   │   ├── support/       # 家长指南 / 帮助
 │   │   │   ├── s/[code]/      # Invite link landing
 │   │   │   ├── k2/[[...path]]/ # K2 protocol docs section (Velite + sidebar layout)
 │   │   │   ├── [...slug]/     # Catch-all content pages (Velite markdown)
 │   │   │   └── ...            # privacy, terms, routers, opensource
-│   │   ├── (manager)/         # Admin dashboard (no locale prefix) — 整树 .kaitu.tsx
+│   │   ├── (manager)/         # Admin dashboard (no locale prefix), cross-brand
 │   │   │   └── manager/       # /manager/* routes
 │   │   │       ├── users/     # User management + detail
 │   │   │       ├── orders/    # Order list
@@ -105,16 +100,16 @@ web/
 │   │   ├── events.ts          # App event bus (auth:unauthorized, etc.)
 │   │   ├── k2-posts.ts        # getK2Posts(locale) — Velite filter/group/sort for /k2/ sidebar
 │   │   ├── content-posts.ts   # Velite lookup for the [...slug] catch-all（分类注册在 lib/site/<brand>.ts）
-│   │   ├── site/              # 站点结构按品牌：nav / footer / sitemap 路由 / 内容分类 / SEO 默认 / 价表
-│   │   ├── pricing.ts         # 展示币种（en-GB 英镑，其余美元）+ Intl 金额格式
+│   │   ├── site/              # 站点结构：nav / footer / sitemap 路由 / 内容分类 / SEO 默认 / 定价快照
+│   │   ├── pricing.ts         # formatMinor：最小单位金额 → Intl 货币字符串
 │   │   ├── api-errors.ts      # Error code→i18n mapping (getApiErrorMessage + getApiErrorMessageZh)
 │   │   ├── udid.ts            # Device fingerprint
 │   │   └── utils.ts           # cn() helper (clsx + tailwind-merge)
-│   └── middleware.ts          # brand gating + X-K2-Brand injection + next-intl locale detection
-├── content/{locale}/          # Velite markdown: k2/ docs（英文母版 en-GB，中文母版 zh-CN）+ guides/（zh，开途）+ blog/（en，Overleap）
+│   └── middleware.ts          # X-K2-Brand injection + legacy en/ja 301 + next-intl locale detection
+├── content/{locale}/          # Velite markdown (zh-CN / zh-TW / zh-HK): k2/ docs（母版 zh-CN）+ guides/
 ├── velite.config.ts           # Velite schema + collection config (order/section fields)
 ├── messages/                  # i18n JSON files（按品牌划分，见 Brand 段）
-│   └── namespaces.ts          # Namespace registry + BRAND_NAMESPACES — hand-edit when adding new *.json files
+│   └── namespaces.ts          # Namespace registry — hand-edit when adding new *.json files
 ├── tests/                     # Playwright E2E specs + vitest + build tests
 └── public/                    # Static assets, legal docs, app icons
 ```
@@ -127,7 +122,7 @@ Single `api` object with typed methods returning unwrapped `data`. Envelope is t
 
 ### API Proxy (Next.js → Center API)
 
-`/api/*` and `/app/*` are proxied by `rewrites()` in `next.config.ts` — in every environment, dev and Amplify alike (default upstream `https://k2.52j.me`). `API_PROXY_TARGET=http://127.0.0.1:5899 yarn dev` points at a local Center; it is not in `.env.example`. Middleware injects `X-K2-Brand` on both prefixes and 404s `/app/*` on the overleap build.
+`/api/*` and `/app/*` are proxied by `rewrites()` in `next.config.ts` — in every environment, dev and Amplify alike (default upstream `https://k2.52j.me`). `API_PROXY_TARGET=http://127.0.0.1:5899 yarn dev` points at a local Center; it is not in `.env.example`. Middleware injects `X-K2-Brand` on both prefixes.
 
 ### Error Handling
 
@@ -144,15 +139,15 @@ Error code-to-i18n mapping lives in `lib/api-errors.ts`. Use `getApiErrorMessage
 
 ## i18n (next-intl)
 
-Locale ↔ brand matrix and the off-brand 301 live in the Brand section above; `src/i18n/routing.ts` lists all 7 (`defaultLocale: 'zh-CN'`).
+Locales and the legacy en/ja 301 live in the Brand section above; `src/i18n/routing.ts` lists zh-CN / zh-TW / zh-HK (`defaultLocale: 'zh-CN'`).
 
-**URL format**: `/{locale}/path` (e.g., `/zh-CN/purchase`, `/en-US/install`)
+**URL format**: `/{locale}/path` (e.g., `/zh-CN/purchase`, `/zh-TW/install`)
 
 **Usage**: `const t = useTranslations()` — NOT `const { t } = useTranslations()`; destructuring does not work with next-intl.
 
 **Locale-aware navigation**: inside `[locale]` code import `Link`, `redirect`, `usePathname`, `useRouter` from `@/i18n/routing` (strips / auto-prefixes the locale; `redirect` takes `{ href, locale }`, not a string). ESLint `no-restricted-imports` blocks only `redirect` / `permanentRedirect` / `useRouter` / `usePathname` from `next/navigation` — a stray `Link` from `next/link` is NOT caught by lint. `next/link` is for external links only.
 
-**Files**: `messages/{locale}/{namespace}.json` — namespaces 按品牌划分（`BRAND_NAMESPACES`，见 Brand 段）：一个品牌独有的 namespace 只在该品牌的 locale 目录里有文件。
+**Files**: `messages/{locale}/{namespace}.json` — every registered namespace has a file in each of zh-CN / zh-TW / zh-HK.
 
 **Namespace registry**: `messages/namespaces.ts` lists all active namespaces. When adding a new `*.json` namespace file, add its name to the `namespaces` array — otherwise it is never loaded and all keys return their raw key string silently.
 
@@ -162,16 +157,16 @@ Locale ↔ brand matrix and the off-brand 301 live in the Brand section above; `
 > (Its `namespaceMapping` table is a separate flat-key→namespace map used by the
 > splitter that generated the current layout — leave it alone unless you're moving keys.)
 
-**Message-file shape trap**: `src/i18n/request.ts` stores each file under its namespace (`messages[ns] = file`), so the full key is `{namespace}.{keys inside the file}` — and the files come in three shapes. Single wrapper equal to the namespace (`install.json` = `{install: {...}}` → `t('install.install.windows')`, `InstallClient.tsx`); several sibling wrappers (`hero.json` = `{hero, security, download, routers, faq}` → with `namespace: 'hero'`, `t('hero.title')` is really `hero.hero.title`); flat leaves (`changelog.json`, `releases.json`, `survey.json` → `t('changelog.title')`). A key added at the wrong level in all 7 files passes every test — `src/test/setup.ts` stubs `useTranslations` to identity and `tests/messages-parity.test.ts` only compares locales against en-US — and renders as raw key text. Only a real browser render catches it.
+**Message-file shape trap**: `src/i18n/request.ts` stores each file under its namespace (`messages[ns] = file`), so the full key is `{namespace}.{keys inside the file}` — and the files come in three shapes. Single wrapper equal to the namespace (`install.json` = `{install: {...}}` → `t('install.install.windows')`, `InstallClient.tsx`); several sibling wrappers (`hero.json` = `{hero, security, download, routers, faq}` → with `namespace: 'hero'`, `t('hero.title')` is really `hero.hero.title`); flat leaves (`changelog.json`, `releases.json`, `survey.json` → `t('changelog.title')`). A key added at the wrong level in all 3 files passes every test — `src/test/setup.ts` stubs `useTranslations` to identity and `tests/messages-parity.test.ts` only compares locales against zh-CN — and renders as raw key text. Only a real browser render catches it.
 
-**File-level fallback**: `request.ts` loads `messages/{brand.defaultLocale}/{ns}.json` when `{locale}/{ns}.json` is missing — 同品牌同语系回落，永不回落到另一品牌的 locale。
+**File-level fallback**: `request.ts` loads `messages/zh-CN/{ns}.json` when `{locale}/{ns}.json` is missing.
 
 ## Content Publishing (Velite)
 
-Velite compiles `content/{locale}/**/*.md` at build time (`velite.config.ts`: `order` / `section` sidebar fields, `brand: kaitu|overleap|both`, `canonicalBrand`). Consumers: `src/app/[locale]/k2/[[...path]]/page.tsx` + `src/lib/k2-posts.ts` (the `k2/` docs), `src/app/[locale]/[...slug]/page.tsx` + `src/lib/content-posts.ts` (everything else, e.g. `guides/`), and `src/app/sitemap.ts`. Velite is the ONLY content pipeline — Payload CMS and its PostgreSQL database were removed 2026-09 (articles migrated to `content/{locale}/guides/*.md`).
+Velite compiles `content/{locale}/**/*.md` at build time (`velite.config.ts`: `order` / `section` sidebar fields, `brand: kaitu|overleap|both`). Consumers: `src/app/[locale]/k2/[[...path]]/page.tsx` + `src/lib/k2-posts.ts` (the `k2/` docs), `src/app/[locale]/[...slug]/page.tsx` + `src/lib/content-posts.ts` (everything else, e.g. `guides/`), and `src/app/sitemap.ts`. Velite is the ONLY content pipeline — Payload CMS and its PostgreSQL database were removed 2026-09 (articles migrated to `content/{locale}/guides/*.md`).
 
-- **The `[...slug]` catch-all serves only registered categories**: `contentCategories` in `src/lib/site/<brand>.ts` is the per-brand registry (1 segment = category list, 2 = post detail, 3+ = 404) — 开途 `guides`，Overleap `blog`. A markdown directory without a registry entry has no page — register it AND check the reserved-paths list below.
-- **Locale fallback**: a post missing in the requested locale falls back to the brand default locale (same pattern as `findK2Post`) — 开途内容写 zh-CN、Overleap 内容写 en-GB 为母版；其余 locale 按文件可选。
+- **The `[...slug]` catch-all serves only registered categories**: `contentCategories` in `src/lib/site/kaitu.ts` is the registry (1 segment = category list, 2 = post detail, 3+ = 404) — currently `guides`. A markdown directory without a registry entry has no page — register it AND check the reserved-paths list below.
+- **Locale fallback**: a post missing in the requested locale falls back to zh-CN (same pattern as `findK2Post`) — 内容写 zh-CN 为母版；zh-TW / zh-HK 按文件可选。
 - **Article markdown may contain inline HTML** (`<strong>`/`<em>`): CJK fullwidth punctuation adjacent to `**` breaks CommonMark emphasis flanking; the velite pipeline preserves raw inline HTML (rehypeRaw). Body starts at `##` — the page template renders the `<h1>` from frontmatter `title`.
 - **Import data**: `import { posts } from '#velite'` (tsconfig path + vitest alias → `.velite/`)
 - **Images**: `web/public/images/content/` → reference as `/images/content/filename.jpg`
@@ -228,11 +223,11 @@ Velite compiles `content/{locale}/**/*.md` at build time (`velite.config.ts`: `o
 
 See `.env.example` for all variables.
 
-`NEXT_PUBLIC_BRAND=kaitu|overleap` (default `kaitu`) bakes the deployment brand at build time — set per Amplify app, appended to `.env.production` by `amplify.yml` and inlined into client bundles. **`web/.env.production` is a tracked file** (despite matching `.env*` in `.gitignore`) kept as an append target: the real vars are appended by `amplify.yml` at build. Editing it does not configure prod.
+`NEXT_PUBLIC_BRAND` is no longer read (the brand is always kaitu); `next.config.ts` fails the build if it is set to anything else. **`web/.env.production` is a tracked file** (despite matching `.env*` in `.gitignore`) kept as an append target: the real vars are appended by `amplify.yml` at build. Editing it does not configure prod.
 
 ## Deployment
 
-Two AWS Amplify apps (one per brand) build the `website` branch — a pure mirror of `main`, never committed to directly — from the same `amplify.yml`; they differ only by `NEXT_PUBLIC_BRAND` (kaitu.io / overleap.io). Deploy = `git push origin main:website`. `amplify.yml` preBuild bakes console env vars into `.env.production` (standalone output does not forward them to the SSR Lambda); `scripts/amplify-prebuild.sh` (the `prebuild` npm script) only runs `scripts/generate-changelog.js`. Sentry: `withSentryConfig` in `next.config.ts` + `src/instrumentation*.ts` + `src/lib/sentry-filters.ts`; DSN via `NEXT_PUBLIC_SENTRY_DSN` (empty = SDK no-ops). AWS resource IDs (S3 / CloudFront / IAM / Route 53): [`docs/ops/web-amplify.md`](../docs/ops/web-amplify.md).
+The kaitu.io AWS Amplify app builds the `website` branch — a pure mirror of `main`, never committed to directly — with `appRoot: web`. Deploy = `git push origin main:website`. (overleap.io is built from `sites/overleap/` with its own `amplify.yml`.) `amplify.yml` preBuild bakes console env vars into `.env.production` (standalone output does not forward them to the SSR Lambda); `scripts/amplify-prebuild.sh` (the `prebuild` npm script) only runs `scripts/generate-changelog.js`. Sentry: `withSentryConfig` in `next.config.ts` + `src/instrumentation*.ts` + `src/lib/sentry-filters.ts`; DSN via `NEXT_PUBLIC_SENTRY_DSN` (empty = SDK no-ops). AWS resource IDs (S3 / CloudFront / IAM / Route 53): [`docs/ops/web-amplify.md`](../docs/ops/web-amplify.md).
 
 ## SEO & GEO Constitutional Rules
 
@@ -251,9 +246,9 @@ Every public `[locale]` page MUST follow these rules. Violations directly harm o
 - Internal linking: every public page reachable within 3 clicks from homepage.
 
 **Content SEO:**
-- Page titles follow pattern: `{Page Topic} | {brand.displayName}` —「开途」on zh, Overleap on en/ja. Max 60 characters.
+- Page titles follow pattern: `{Page Topic} | 开途` (the registry wordmark, via the SEO templates). Max 60 characters.
 - Every content page (Velite markdown) must have frontmatter with `title`, `description`. Description used for meta.
-- Brand keyword consistency: product is `brand.displayName` — "Overleap" on en/ja, "开途" on zh (standalone "Kaitu" in en/ja messages fails `tests/messages-integrity.test.ts`); protocol is "k2", congestion control is "k2cc". Never deviate.
+- Brand keyword consistency: product is「开途」in Chinese copy (standalone "Kaitu" in zh messages fails `tests/messages-integrity.test.ts`); protocol is "k2", congestion control is "k2cc". Never deviate.
 
 ### GEO (AI search)
 
@@ -261,7 +256,7 @@ Content-writing rules (citable facts, FAQPage JSON-LD, semantic `<table>`, direc
 
 ## Gotchas
 
-- **Translation keys in every locale of the brand**: a key must exist in all locales of the brand that owns the namespace（开途 zh-CN/zh-TW/zh-HK，Overleap en-GB/en-US/en-AU/ja；共享 namespace 两边都要）before committing — `tests/messages-parity.test.ts` 按品牌逐 namespace 比对。
+- **Translation keys in every locale**: a key must exist in zh-CN / zh-TW / zh-HK before committing — `tests/messages-parity.test.ts` 逐 namespace 比对。
 - **API response pattern**: Same as Center API — check `code` field, not HTTP status. Never show `message` to users.
 - **Manager has no i18n**: Admin dashboard is Chinese-only, routes bypass next-intl middleware entirely.
 - **Package manager**: Must use `yarn` exclusively (not npm).
@@ -273,15 +268,15 @@ Content-writing rules (citable facts, FAQPage JSON-LD, semantic `<table>`, direc
 - **Velite mock in tests**: vitest tests mock `#velite` import with synthetic post data. Server Component pages tested by calling as async functions directly, asserting on returned JSX or `generateMetadata()` output.
 - **next-intl IntlMessages interface**: `web/src/types/i18n.d.ts` uses an empty `interface IntlMessages {}` (permissive typing) because messages are split across namespace files loaded dynamically. This disables compile-time key checking — use runtime tests instead.
 - **Server Component pages with setRequestLocale**: Cast locale to `(typeof routing.locales)[number]` when calling `setRequestLocale()`. The URL param type is `string` but next-intl requires the narrower union type.
-- **Homepage is a Server Component**: `web/src/app/[locale]/page.kaitu.tsx` / `page.overleap.tsx` (no `dynamic` export). Do NOT add `"use client"` — it would break SSR metadata and SEO.
+- **Homepage is a Server Component**: `web/src/app/[locale]/page.tsx` (no `dynamic` export). Do NOT add `"use client"` — it would break SSR metadata and SEO.
 - **k2cc protocol naming**: Protocol brand name is "k2cc" (congestion control), NOT "k2arc". Renamed in commit 80330ec for SEO clarity (avoids amateur radio / math formula collisions). All i18n, content, and JSON-LD reflect this.
-- **Purchase page Server Component pattern**: `purchase/page.kaitu.tsx` / `page.overleap.tsx` are Server Component wrappers that export `generateMetadata()` for SEO. Client-side purchase logic is in `PurchaseClient` (WordGate) / `OverleapPurchaseClient` (Stripe).
+- **Purchase page Server Component pattern**: `purchase/page.tsx` is a Server Component wrapper that exports `generateMetadata()` for SEO. Client-side purchase logic is in `PurchaseClient` (WordGate).
 - **Embed mode** (`?embed=true`): Pages embedded in desktop app iframe. `useEmbedMode()` hook controls Header/Footer/CTA visibility. `ChatwootWidget` and `CookieConsent` auto-hide in embed mode. Used by `/releases` and `/changelog` routes.
 - **Platform labels in i18n**: Use user-friendly names, not technical ones. iOS → "iPhone / iPad", macOS → "苹果电脑" (zh) / "Mac" (en), Android → "安卓" (zh). No file extensions (.exe/.dmg/.apk) in download button labels.
 - **`transpilePackages` in `next.config.ts`** (`intl-messageformat`, `@xterm/xterm`): Next does not transpile `node_modules`; a dep shipping class `static {}` blocks blanks the page on iOS 16.0-16.3 / Safari < 16.4 with `SyntaxError: Unexpected token '{'`. Add new offenders to that list.
 - **`/` must stay `Cache-Control: private, no-store`** (`next.config.ts` headers + `middleware.ts`): the root 307 is computed from Accept-Language + `preferredLocale` cookie; a public cache pins the first visitor's locale for a whole CloudFront PoP. The dynamic-page cache rule deliberately matches `.+`, not `.*`, so `/` never falls into it.
-- **Middleware passthrough is load-bearing**: `src/middleware.ts` must early-return `NextResponse.next()` for `/manager` before reaching `intlMiddleware`. The matcher deliberately **includes** `/api`, `/app`, `/manager` (`/app/*` brand gating + `X-K2-Brand` injection must run there); only `_next`, `_vercel` and dotted static files are excluded. Without the early return, i18n middleware mangles admin requests into locale-prefixed redirects. `/manager` 在 Overleap 构建里不存在（`.kaitu.tsx`），中间件不再挡它。`tests/middleware.test.ts` covers this — keep it green when editing.
-- **`/i/k2s` and `/i/k2r` have a side effect**: `middleware.ts` fire-and-forget POSTs `{ip_raw, ua}` to `https://k2.52j.me/api/stats/{k2s,k2r}-download` before serving the script (kaitu-only; `/i/k2` does not report).
+- **Middleware passthrough is load-bearing**: `src/middleware.ts` must early-return `NextResponse.next()` for `/manager` before reaching `intlMiddleware`. The matcher deliberately **includes** `/api`, `/app`, `/manager` (`X-K2-Brand` injection must run there), plus the legacy `en-*` / `ja` prefixes (their 301); only `_next`, `_vercel` and dotted static files are excluded by the catch-all. Without the early return, i18n middleware mangles admin requests into locale-prefixed redirects.`tests/middleware.test.ts` covers this — keep it green when editing.
+- **`/i/k2s` and `/i/k2r` have a side effect**: `middleware.ts` fire-and-forget POSTs `{ip_raw, ua}` to `https://k2.52j.me/api/stats/{k2s,k2r}-download` before serving the script (`/i/k2` does not report).
 
 ## Related Docs
 

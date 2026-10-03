@@ -10,18 +10,21 @@ if (!process.env.VELITE_STARTED && (isDev || isBuild)) {
 import createNextIntlPlugin from 'next-intl/plugin';
 import { withSentryConfig } from '@sentry/nextjs';
 import type { NextConfig } from 'next';
-import { parseBrandId } from './src/lib/brands';
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 
-// 构建期品牌决定页面树：`page.tsx` 两品牌共用，`page.<brand>.tsx` 只进该品牌的构建，
-// 另一品牌的构建里该路径根本不存在（原生 404，无需中间件门）。同一目录不得同时有
-// `page.tsx` 与 `page.<brand>.tsx`（同路径双页面 = 构建失败，tests/brand-page-tree.test.ts
-// 也守着）。middleware / sitemap / robots 用普通扩展名，不受影响。
-const brand = parseBrandId(process.env.NEXT_PUBLIC_BRAND);
+// This app builds kaitu.io only; overleap.io is the standalone app in
+// sites/overleap/. Fail closed if a build is still configured for the other
+// brand (e.g. a stale Amplify app env) instead of deploying kaitu.io content
+// under the overleap domain.
+const bakedBrand = process.env.NEXT_PUBLIC_BRAND;
+if (bakedBrand && bakedBrand !== 'kaitu') {
+  throw new Error(
+    `web/ builds kaitu.io only, got NEXT_PUBLIC_BRAND=${bakedBrand}. overleap.io is built from sites/overleap/.`,
+  );
+}
 
 const nextConfig: NextConfig = {
-  pageExtensions: [`${brand}.tsx`, `${brand}.ts`, 'tsx', 'ts'],
   // Force SSR mode - explicitly disable static export
   output: 'standalone',
   trailingSlash: false,

@@ -7,14 +7,14 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
-import { KAITU, OVERLEAP } from '../src/lib/brands';
+import { KAITU } from '../src/lib/brands';
 
 vi.mock('next-intl/server', () => ({
   getTranslations: async () => (key: string) => key,
 }));
 
 vi.mock('@/i18n/routing', () => ({
-  routing: { locales: ['en-US', 'en-GB', 'en-AU', 'zh-CN', 'zh-TW', 'zh-HK', 'ja'], defaultLocale: 'zh-CN' },
+  routing: { locales: ['zh-CN', 'zh-TW', 'zh-HK'], defaultLocale: 'zh-CN' },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Link: ({ children, ...p }: any) => <a {...p}>{children}</a>,
 }));
@@ -44,16 +44,16 @@ describe('Breadcrumb', () => {
 
   it('emits BreadcrumbList JSON-LD with absolute, locale-prefixed item URLs', async () => {
     const { container } = await renderCrumb({
-      locale: 'en-GB',
-      brand: OVERLEAP,
+      locale: 'zh-TW',
+      brand: KAITU,
       items: [{ label: 'k2 Protocol', href: '/k2' }, { label: 'Quickstart' }],
     });
     const script = container.querySelector('script[type="application/ld+json"]')!;
     const ld = JSON.parse(script.innerHTML);
     expect(ld['@type']).toBe('BreadcrumbList');
     expect(ld.itemListElement.map((e: { position: number; name: string; item?: string }) => [e.position, e.name, e.item])).toEqual([
-      [1, 'nav.home', `${OVERLEAP.baseUrl}/en-GB`],
-      [2, 'k2 Protocol', `${OVERLEAP.baseUrl}/en-GB/k2`],
+      [1, 'nav.home', `${KAITU.baseUrl}/zh-TW`],
+      [2, 'k2 Protocol', `${KAITU.baseUrl}/zh-TW/k2`],
       [3, 'Quickstart', undefined],
     ]);
   });

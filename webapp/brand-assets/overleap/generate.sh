@@ -6,7 +6,7 @@
 # renderer silently drops stroked paths (verified 2026-09-04 — it drew the
 # background rect and nothing else), and the rsvg delegate is not installed.
 #
-# Outputs: webapp icons, web (Next.js) icons + OG image, desktop (Tauri) icons,
+# Outputs: webapp icons, overleap.io site (sites/overleap) icons + OG image, desktop (Tauri) icons,
 # iOS AppIcon + Splash (staged by scripts/apply-ios-brand.sh) and the Android
 # overleap-flavour launcher icons + splash. Set OUT_ROOT to render into another
 # tree (scripts/check-mobile-brand-assets.sh style guards / experiments).
@@ -23,7 +23,7 @@ done
 OUT_ROOT="${OUT_ROOT:-$ROOT}"          # guard renders into a temp tree
 WEBAPP_ASSETS="$OUT_ROOT/webapp/src/brands/overleap/assets"
 DESKTOP_ICONS="$OUT_ROOT/desktop/src-tauri/icons-overleap"
-WEB_PUBLIC="$OUT_ROOT/web/public"
+WEB_PUBLIC="$OUT_ROOT/sites/overleap/public"   # overleap.io is the standalone app; web/ is kaitu-only
 WEB_BRAND="$WEB_PUBLIC/brand/overleap"
 IOS_BRAND="$OUT_ROOT/mobile/ios/App/App/brand/overleap"
 AND_RES="$OUT_ROOT/mobile/android/app/src/overleap/res"
@@ -54,7 +54,7 @@ png 64  "$WEBAPP_ASSETS/favicon.png"
 png 192 "$WEBAPP_ASSETS/icon-192x192.png"
 png 512 "$WEBAPP_ASSETS/icon-512x512.png"
 
-# --- web (Next.js public/) ---
+# --- overleap.io site (sites/overleap/public/) ---
 png 512 "$WEB_PUBLIC/overleap-icon.png"
 png 16  "$WEB_BRAND/favicon-16x16.png"
 png 32  "$WEB_BRAND/favicon-32x32.png"

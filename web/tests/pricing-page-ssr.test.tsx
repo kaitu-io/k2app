@@ -1,10 +1,10 @@
 /**
- * /pricing 两品牌各一份的真实文案渲染守卫 + /routers 预售期 / 发售后两种日期。
+ * /pricing 的真实文案渲染守卫 + /routers 预售期 / 发售后两种日期。
  *
  * - 真实 message 文件（key 回显的替身会让"错层级 key"漏网）；
  * - 价格必须出现在服务端 HTML 里（SEO / 首屏），并且与 lib/site 的价表 / lib/router-edition 的
  *   预售常量一致；
- * - 零另一品牌的词、零原始 key、零未填占位；
+ * - 零另一品牌的词（法务署名除外）、零原始 key、零未填占位；
  * - 预售期：$359 划线 $399 + 发货日；发售后：$399、无划线、无预售徽标。
  */
 import React from 'react';
@@ -55,7 +55,7 @@ vi.mock('@/contexts/AuthContext', () => ({
   AuthProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 vi.mock('@/i18n/routing', () => ({
-  routing: { locales: ['en-US', 'en-GB', 'en-AU', 'zh-CN', 'zh-TW', 'zh-HK', 'ja'], defaultLocale: 'zh-CN' },
+  routing: { locales: ['zh-CN', 'zh-TW', 'zh-HK'], defaultLocale: 'zh-CN' },
   usePathname: () => '/pricing',
   useRouter: () => ({ replace: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -68,9 +68,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
   return { ...actual, api: { ...actual.api, getPlans: () => new Promise(() => {}) } };
 });
 
-const KAITU_WORDS = /Kaitu|开途|開途|kaitu\.(io|me)/;
 const OVERLEAP_WORDS = /Overleap|overleap\.io/;
-const CN_PAYMENT = /Alipay|WeChat|UnionPay|支付宝|微信/;
 const PRESALE_NOW = new Date('2026-10-01T12:00:00+08:00');
 const AFTER_LAUNCH = new Date('2026-11-12T12:00:00+08:00');
 
@@ -80,10 +78,9 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.useRealTimers();
-  vi.unstubAllEnvs();
 });
 
-type Locale = 'zh-CN' | 'zh-TW' | 'zh-HK' | 'en-GB' | 'en-US' | 'en-AU' | 'ja';
+type Locale = 'zh-CN' | 'zh-TW' | 'zh-HK';
 
 async function renderPage(mod: string, locale: Locale): Promise<string> {
   const { default: Page } = await import(mod);
@@ -94,12 +91,11 @@ async function renderPage(mod: string, locale: Locale): Promise<string> {
   return container.innerHTML.replaceAll('github.com/getoverleap', '').replaceAll('Overleap LLC', '');
 }
 
-describe('kaitu /pricing (NEXT_PUBLIC_BRAND=kaitu)', () => {
+describe('/pricing', () => {
   for (const locale of ['zh-CN', 'zh-TW', 'zh-HK'] as const) {
     it(`${locale}: App 版四档带线上快照价、路由器版预售卡、定价 FAQ；零 overleap 词、零原始 key`, async () => {
-      vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
-      vi.setSystemTime(PRESALE_NOW);
-      const html = await renderPage('../src/app/[locale]/pricing/page.kaitu', locale);
+        vi.setSystemTime(PRESALE_NOW);
+      const html = await renderPage('../src/app/[locale]/pricing/page', locale);
       expect(html.length).toBeGreaterThan(2000);
       // App 版：四张卡，2 年热门，价格与 lib/site 快照一致
       expect(html.match(/data-pid="/g)).toHaveLength(4);
@@ -124,9 +120,8 @@ describe('kaitu /pricing (NEXT_PUBLIC_BRAND=kaitu)', () => {
   }
 
   it('发售后：路由器版按标价 $399 出，无划线、无预售徽标', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
     vi.setSystemTime(AFTER_LAUNCH);
-    const html = await renderPage('../src/app/[locale]/pricing/page.kaitu', 'zh-CN');
+    const html = await renderPage('../src/app/[locale]/pricing/page', 'zh-CN');
     expect(html).toContain('data-testid="router-plan" data-presale="false"');
     // 只看路由器卡：App 版卡片常年带划线原价，与预售无关。
     const routerCard = html.slice(html.indexOf('data-testid="router-plan"'));
@@ -136,9 +131,8 @@ describe('kaitu /pricing (NEXT_PUBLIC_BRAND=kaitu)', () => {
   });
 
   it('metadata：标题带品牌，描述带 App 入门价与路由器版当前价', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
     vi.setSystemTime(PRESALE_NOW);
-    const { generateMetadata } = await import('../src/app/[locale]/pricing/page.kaitu');
+    const { generateMetadata } = await import('../src/app/[locale]/pricing/page');
     const meta = await generateMetadata({ params: Promise.resolve({ locale: 'zh-CN' }) });
     expect(String(meta.title)).toMatch(/定价 \| 开途/);
     expect(String(meta.description)).toContain('$49');
@@ -147,12 +141,9 @@ describe('kaitu /pricing (NEXT_PUBLIC_BRAND=kaitu)', () => {
   });
 });
 
-// The purchase paths start at 看定价; a brand whose /pricing page stays silent
-// loses every visitor who reads prices there and buys later.
-describe.each([
-  ['kaitu', '../src/app/[locale]/pricing/page.kaitu', 'zh-CN'],
-  ['overleap', '../src/app/[locale]/pricing/page.overleap', 'en-GB'],
-] as const)('%s /pricing reports pricing_view', (brand, mod, locale) => {
+// The purchase paths start at 看定价; a /pricing page that stays silent loses
+// every visitor who reads prices there and buys later.
+describe('/pricing reports pricing_view', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it('exactly once on mount', async () => {
@@ -160,53 +151,17 @@ describe.each([
     vi.stubGlobal('Image', function (this: object) {
       Object.defineProperty(this, 'src', { set: (v: string) => srcs.push(v) });
     } as unknown as typeof Image);
-    vi.stubEnv('NEXT_PUBLIC_BRAND', brand);
     vi.setSystemTime(PRESALE_NOW);
-    await renderPage(mod, locale);
+    await renderPage('../src/app/[locale]/pricing/page', 'zh-CN');
     const views = srcs.map((u) => new URL(u, 'http://x').searchParams.get('e')).filter((e) => e === 'pricing_view');
     expect(views).toHaveLength(1);
   });
 });
 
-describe('overleap /pricing (NEXT_PUBLIC_BRAND=overleap)', () => {
-  const PRICE_ANCHORS = { 'en-GB': ['£79', '£9.99', '£6.58'], 'en-US': ['$79', '$11.99', '$6.58'], ja: ['$79', '$11.99'] } as const;
-  for (const locale of ['en-GB', 'en-US', 'ja'] as const) {
-    it(`${locale}: yearly / monthly cards with real prices, four money FAQs; zero kaitu words, zero raw keys`, async () => {
-      vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-      vi.setSystemTime(PRESALE_NOW);
-      const html = await renderPage('../src/app/[locale]/pricing/page.overleap', locale);
-      expect(html.length).toBeGreaterThan(2000);
-      expect(html).toContain('id="pricing"');
-      expect(html).toContain('id="faq"');
-      for (const anchor of PRICE_ANCHORS[locale]) expect(html, anchor).toContain(anchor);
-      expect(html).toContain('href="/purchase"');
-      expect(html).toContain('"@type":"FAQPage"');
-      expect(html).toContain('"@type":"Offer"');
-      // 路由器版是开途独有：Overleap 定价页零路由器
-      expect(html).not.toContain('/routers');
-      expect(html).not.toMatch(KAITU_WORDS);
-      expect(html).not.toMatch(CN_PAYMENT);
-      expect(html).not.toMatch(/(pricing|landing)\.[a-z]+\./i);
-      expect(html).not.toMatch(/\{(brand|yearly|monthly|currency)\}/);
-    });
-  }
-
-  it('metadata carries the brand and the two prices', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-    const { generateMetadata } = await import('../src/app/[locale]/pricing/page.overleap');
-    const meta = await generateMetadata({ params: Promise.resolve({ locale: 'en-GB' }) });
-    expect(String(meta.title)).toMatch(/Pricing \| Overleap$/);
-    expect(String(meta.description)).toContain('£79');
-    expect(String(meta.description)).toContain('£9.99');
-    expect(JSON.stringify(meta)).not.toMatch(KAITU_WORDS);
-  });
-});
-
-describe('kaitu /routers presale copy (real messages)', () => {
+describe('/routers presale copy (real messages)', () => {
   it('预售期：徽标、预售 CTA、划线 $399、预售 FAQ 在最前', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
     vi.setSystemTime(PRESALE_NOW);
-    const html = await renderPage('../src/app/[locale]/routers/page.kaitu', 'zh-CN');
+    const html = await renderPage('../src/app/[locale]/routers/page', 'zh-CN');
     expect(html).toContain('data-testid="presale-badge"');
     expect(html).toContain('预售价 $359 立即预订');
     expect(html).toContain('data-presale="true"');
@@ -219,9 +174,8 @@ describe('kaitu /routers presale copy (real messages)', () => {
   });
 
   it('发售后：无徽标、CTA 回到「立即购买」、$399 无划线、预售 FAQ 消失', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
     vi.setSystemTime(AFTER_LAUNCH);
-    const html = await renderPage('../src/app/[locale]/routers/page.kaitu', 'zh-CN');
+    const html = await renderPage('../src/app/[locale]/routers/page', 'zh-CN');
     expect(html).not.toContain('data-testid="presale-badge"');
     expect(html).toContain('立即购买');
     expect(html).toContain('data-presale="false"');

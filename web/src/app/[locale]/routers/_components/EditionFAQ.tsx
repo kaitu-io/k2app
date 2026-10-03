@@ -19,7 +19,7 @@ export function EditionFAQ({ t, locale }: { t: RoutersT; locale: string }) {
   const presaleItems = offer.presale ? fillDate(t.raw('edition.product.presaleFaq') as FaqItem[], shipsFrom) : [];
   const items = [...presaleItems, ...(t.raw('edition.product.faq') as FaqItem[])];
 
-  // FAQ structured data for GEO/SEO — same shape as support/page.kaitu.tsx.
+  // FAQ structured data for GEO/SEO — same shape as support/page.tsx.
   // Content comes from trusted i18n translations, safe for inline script.
   const faqJsonLd = {
     '@context': 'https://schema.org',

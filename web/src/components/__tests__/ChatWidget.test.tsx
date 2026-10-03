@@ -13,7 +13,7 @@ import {
   type SessionState,
 } from '@/lib/chat-client';
 import { COOKIE_BANNER_OFFSET_VAR } from '@/lib/cookie-banner';
-import { OVERLEAP } from '@/lib/brands';
+import { KAITU } from '@/lib/brands';
 import { FakeWS, fakeFetch, msg, session, setHidden } from '@/lib/__tests__/chat-test-fakes';
 
 const flush = (ms = 0) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
@@ -77,10 +77,9 @@ describe('ChatWidget', () => {
 
   describe('gating', () => {
     it('renders nothing and creates no client when the brand has chat off', async () => {
-      // 两个品牌目前都开着挂件：临时关掉一个来测这道门
-      vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-      OVERLEAP.chatEnabled = false;
-      onTestFinished(() => { OVERLEAP.chatEnabled = true; });
+      // 挂件目前开着：临时关掉来测这道门
+      KAITU.chatEnabled = false;
+      onTestFinished(() => { KAITU.chatEnabled = true; });
       const fc = fakeClient();
       const { container } = render(<ChatWidget createClient={fc.create} />);
       await flush();

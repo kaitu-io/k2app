@@ -67,9 +67,7 @@ function FaqItem({ questionKey, t }: { questionKey: string; t: (key: string) => 
 export default function SupportClient() {
   const t = useTranslations();
   const brand = useBrand();
-  // Was a hardcoded address assembled from string fragments — a split literal
-  // the brand guards' regexes could not see, yet which rendered the kaitu
-  // support address into the overleap DOM. The registry is the single source.
+  // The brand registry is the single source for the support address.
   const email = brand.contactEmail;
 
   return (

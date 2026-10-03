@@ -9,13 +9,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { siteConfig, isExternalHref, type NavItem } from '@/lib/site';
 
 /**
- * 页脚：栏目与链接来自 `lib/site/<brand>.ts`（spec 2026-09-04-overleap-site-decoupling §2）。
- * 一个品牌的页脚只能链到该品牌构建里存在的页面——由配置保证，不再有
- * `brand.features.x && <li>` 式的条件渲染（那种写法漏一处就是死链）。
+ * 页脚：栏目与链接来自 `lib/site/kaitu.ts`——只链真实存在的页面，由配置保证。
  */
 export default function Footer() {
   const brand = useBrand();
-  const site = siteConfig(brand);
+  const site = siteConfig();
   const t = useTranslations();
   const locale = useLocale();
   const { user } = useAuth();

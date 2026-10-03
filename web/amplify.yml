@@ -8,16 +8,18 @@ applications:
             # Amplify console env vars live only in the build shell; output: 'standalone'
             # does not forward them to the SSR Lambda. Bake them into .env.production so
             # Next.js bundles them into the standalone output.
-            - env | grep -E '^(NEXT_PUBLIC_BRAND|NEXT_PUBLIC_SENTRY_DSN|SENTRY_ORG|SENTRY_PROJECT|SENTRY_AUTH_TOKEN)=' >> .env.production
+            - env | grep -E '^(NEXT_PUBLIC_SENTRY_DSN|SENTRY_ORG|SENTRY_PROJECT|SENTRY_AUTH_TOKEN)=' >> .env.production
             - yarn install
         build:
           commands:
             # Required env vars (set via Amplify console):
             #   NEXT_PUBLIC_SENTRY_DSN, SENTRY_ORG, SENTRY_PROJECT, SENTRY_AUTH_TOKEN.
             #
-            #   NEXT_PUBLIC_BRAND=kaitu|overleap — the baked deployment brand.
-            #   Unset defaults to kaitu (zero-breakage). The overleap Amplify app
-            #   MUST set NEXT_PUBLIC_BRAND=overleap. One repo, two Amplify apps.
+            #
+            #   This app builds kaitu.io only (overleap.io is sites/overleap/, its own
+            #   amplify.yml). next.config.ts fails the build if NEXT_PUBLIC_BRAND is set
+            #   to anything but kaitu, so a stale overleap app config cannot deploy
+            #   kaitu.io onto overleap.io.
             - echo "Building Next.js application..."
             - yarn run build
       artifacts:

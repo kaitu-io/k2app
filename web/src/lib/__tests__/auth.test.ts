@@ -62,14 +62,14 @@ describe('Auth Utilities', () => {
       expect(window.location.href).toBe('/login?next=%2Fmanager%2Forders');
     });
 
-    it('should handle en-US locale', () => {
-      redirectToLogin('/en-US/dashboard');
+    it('should handle zh-TW locale', () => {
+      redirectToLogin('/zh-TW/dashboard');
 
       expect(window.location.href).toBe('/login?next=%2Fdashboard');
     });
 
-    it('should handle ja locale', () => {
-      redirectToLogin('/ja/settings');
+    it('should handle zh-HK locale', () => {
+      redirectToLogin('/zh-HK/settings');
 
       expect(window.location.href).toBe('/login?next=%2Fsettings');
     });
@@ -94,7 +94,7 @@ describe('Auth Utilities', () => {
   });
 
   describe('Supported Locales', () => {
-    const supportedLocales = ['en-US', 'en-GB', 'en-AU', 'zh-CN', 'zh-TW', 'zh-HK', 'ja'];
+    const supportedLocales = ['zh-CN', 'zh-TW', 'zh-HK'];
 
     supportedLocales.forEach((locale) => {
       it(`should remove ${locale} prefix`, () => {

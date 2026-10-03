@@ -155,20 +155,8 @@ function renderInstallClient() {
   );
 }
 
-describe('install page brand gating', () => {
-  afterEach(() => vi.unstubAllEnvs());
-
-  it('overleap: no Linux install command, no router section, no kaitu strings', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-    const { container } = renderInstallClient();
-    expect(container.textContent).not.toContain('kaitu.io');
-    expect(container.textContent).not.toContain('开途');
-    expect(container.textContent).not.toMatch(/\bKaitu\b/);
-    expect(container.textContent).not.toContain('curl -fsSL');
-  });
-
-  it('kaitu: Linux install command present with kaitu.io URL', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'kaitu');
+describe('install page Linux command', () => {
+  it('Linux install command present with kaitu.io URL', async () => {
     const { container } = renderInstallClient();
     expect(container.textContent).toContain('curl -fsSL https://kaitu.io/i/k2 | sudo bash');
   });

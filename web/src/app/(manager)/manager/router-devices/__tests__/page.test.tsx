@@ -27,7 +27,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
   };
 });
 
-import RouterDevicesPage from '../page.kaitu';
+import RouterDevicesPage from '../page';
 
 function items(): AdminRouterDeviceItem[] {
   return [

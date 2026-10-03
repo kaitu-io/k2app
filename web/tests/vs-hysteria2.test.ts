@@ -37,20 +37,6 @@ vi.mock('#velite', () => ({
       order: 8,
       section: 'comparison',
     },
-    {
-      title: 'k2 vs Hysteria2: Congestion Control Comparison',
-      date: '2026-02-21T00:00:00.000Z',
-      summary: 'An in-depth comparison of k2 proprietary adaptive congestion control versus Hysteria2 Brutal fixed-rate sending.',
-      tags: ['k2', 'comparison', 'congestion control'],
-      draft: false,
-      content: '<h1>k2 vs Hysteria2</h1><p>proprietary adaptive congestion control</p><p>packet loss recovery</p><p>latency stability</p><p>bandwidth utilization</p><p>fairness</p>',
-      metadata: { readingTime: 5, wordCount: 800 },
-      filePath: 'en-US/k2/vs-hysteria2',
-      locale: 'en-US',
-      slug: 'k2/vs-hysteria2',
-      order: 8,
-      section: 'comparison',
-    },
   ],
 }));
 
@@ -75,38 +61,11 @@ describe('test_vs_hysteria2_renders', () => {
     expect(content.length).toBeGreaterThan(0);
     expect(content).toContain('Hysteria2');
   });
-
-  it('en-US post with slug k2/vs-hysteria2 exists and has non-empty content', async () => {
-    const { posts } = await import('#velite');
-
-    const post = (posts as Array<{
-      slug: string;
-      locale: string;
-      content: string;
-    }>).find((p) => p.slug === 'k2/vs-hysteria2' && p.locale === 'en-US');
-
-    expect(post).toBeDefined();
-    expect(post!.content.length).toBeGreaterThan(0);
-    expect(post!.content).toContain('Hysteria2');
-  });
-
-  it('en-US markdown file exists and contains Hysteria2', () => {
-    const content = readContentFile('content/en-GB/k2/vs-hysteria2.md');
-    expect(content.length).toBeGreaterThan(0);
-    expect(content).toContain('Hysteria2');
-  });
 });
 
 describe('test_vs_hysteria2_no_pcc_disclosure', () => {
   it('zh-CN markdown file does not disclose PCC algorithm name', () => {
     const content = readContentFile('content/zh-CN/k2/vs-hysteria2.md');
-    expect(content).not.toContain('PCC');
-    expect(content).not.toContain('Vivace');
-    expect(content).not.toContain('Performance-oriented Congestion Control');
-  });
-
-  it('en-US markdown file does not disclose PCC algorithm name', () => {
-    const content = readContentFile('content/en-GB/k2/vs-hysteria2.md');
     expect(content).not.toContain('PCC');
     expect(content).not.toContain('Vivace');
     expect(content).not.toContain('Performance-oriented Congestion Control');
@@ -143,26 +102,6 @@ describe('test_vs_hysteria2_has_comparison_dimensions', () => {
 
     // Dimension 4: Fairness — 公平
     expect(content).toContain('公平');
-  });
-
-  it('en-US markdown file covers all 4 comparison dimensions', () => {
-    const content = readContentFile('content/en-GB/k2/vs-hysteria2.md');
-
-    // Dimension 1: Packet loss recovery
-    const hasPacketLoss = content.toLowerCase().includes('packet loss') || content.toLowerCase().includes('loss recovery');
-    expect(hasPacketLoss).toBe(true);
-
-    // Dimension 2: Latency stability
-    const hasLatency = content.toLowerCase().includes('latency') || content.toLowerCase().includes('delay');
-    expect(hasLatency).toBe(true);
-
-    // Dimension 3: Bandwidth utilization
-    const hasBandwidth = content.toLowerCase().includes('bandwidth') || content.toLowerCase().includes('utilization');
-    expect(hasBandwidth).toBe(true);
-
-    // Dimension 4: Fairness
-    const hasFairness = content.toLowerCase().includes('fairness') || content.toLowerCase().includes('fair');
-    expect(hasFairness).toBe(true);
   });
 });
 
@@ -218,17 +157,6 @@ describe('test_vs_hysteria2_has_frontmatter', () => {
 
   it('zh-CN markdown frontmatter contains order: 8', () => {
     const content = readContentFile('content/zh-CN/k2/vs-hysteria2.md');
-    expect(content).toContain('order: 8');
-  });
-
-  it('en-US markdown frontmatter contains section: comparison', () => {
-    const content = readContentFile('content/en-GB/k2/vs-hysteria2.md');
-    expect(content).toContain('section:');
-    expect(content).toContain('comparison');
-  });
-
-  it('en-US markdown frontmatter contains order: 8', () => {
-    const content = readContentFile('content/en-GB/k2/vs-hysteria2.md');
     expect(content).toContain('order: 8');
   });
 });

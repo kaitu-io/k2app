@@ -27,7 +27,7 @@ vi.mock('next-intl', () => ({
 // Mock @/i18n/routing
 vi.mock('@/i18n/routing', () => ({
   routing: {
-    locales: ['zh-CN', 'en-US', 'en-GB', 'en-AU', 'zh-TW', 'zh-HK', 'ja'],
+    locales: ['zh-CN', 'zh-TW', 'zh-HK'],
   },
   Link: ({ children }: { children: React.ReactNode }) => children,
   useRouter: () => ({
@@ -138,7 +138,7 @@ describe('test_403_generates_metadata', () => {
     const { generateMetadata } = await import('../src/app/[locale]/403/page');
 
     const metadata = await generateMetadata({
-      params: Promise.resolve({ locale: 'en-US' }),
+      params: Promise.resolve({ locale: 'zh-TW' }),
     });
 
     expect(metadata).toHaveProperty('description');
@@ -220,7 +220,7 @@ describe('test_privacy_generates_metadata', () => {
     const { generateMetadata } = await import('../src/app/[locale]/privacy/page');
 
     const metadata = await generateMetadata({
-      params: Promise.resolve({ locale: 'en-US' }),
+      params: Promise.resolve({ locale: 'zh-TW' }),
     });
 
     expect(metadata).toHaveProperty('description');
@@ -301,7 +301,7 @@ describe('test_terms_generates_metadata', () => {
     const { generateMetadata } = await import('../src/app/[locale]/terms/page');
 
     const metadata = await generateMetadata({
-      params: Promise.resolve({ locale: 'en-US' }),
+      params: Promise.resolve({ locale: 'zh-TW' }),
     });
 
     expect(metadata).toHaveProperty('description');
@@ -324,7 +324,7 @@ describe('test_retailer_rules_ssr_renders_content', () => {
   });
 
   it('page component is an async function (Server Component pattern)', async () => {
-    const { default: RetailerRulesPage } = await import('../src/app/[locale]/retailer/rules/page.kaitu');
+    const { default: RetailerRulesPage } = await import('../src/app/[locale]/retailer/rules/page');
 
     expect(RetailerRulesPage).toBeTypeOf('function');
     const result = RetailerRulesPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
@@ -332,14 +332,14 @@ describe('test_retailer_rules_ssr_renders_content', () => {
   });
 
   it('page accepts params as a Promise<{ locale: string }> (Next.js 15 pattern)', async () => {
-    const { default: RetailerRulesPage } = await import('../src/app/[locale]/retailer/rules/page.kaitu');
+    const { default: RetailerRulesPage } = await import('../src/app/[locale]/retailer/rules/page');
 
     const element = await RetailerRulesPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
     expect(element).not.toBeNull();
   });
 
   it('page renders JSX content (not null or empty)', async () => {
-    const { default: RetailerRulesPage } = await import('../src/app/[locale]/retailer/rules/page.kaitu');
+    const { default: RetailerRulesPage } = await import('../src/app/[locale]/retailer/rules/page');
 
     const element = await RetailerRulesPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
 
@@ -361,14 +361,14 @@ describe('test_retailer_rules_generates_metadata', () => {
   });
 
   it('generateMetadata is exported from the page module', async () => {
-    const pageModule = await import('../src/app/[locale]/retailer/rules/page.kaitu');
+    const pageModule = await import('../src/app/[locale]/retailer/rules/page');
 
     expect(pageModule.generateMetadata).toBeDefined();
     expect(pageModule.generateMetadata).toBeTypeOf('function');
   });
 
   it('generateMetadata returns an object with title field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/retailer/rules/page.kaitu');
+    const { generateMetadata } = await import('../src/app/[locale]/retailer/rules/page');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'zh-CN' }),
@@ -379,10 +379,10 @@ describe('test_retailer_rules_generates_metadata', () => {
   });
 
   it('generateMetadata returns an object with description field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/retailer/rules/page.kaitu');
+    const { generateMetadata } = await import('../src/app/[locale]/retailer/rules/page');
 
     const metadata = await generateMetadata({
-      params: Promise.resolve({ locale: 'en-US' }),
+      params: Promise.resolve({ locale: 'zh-TW' }),
     });
 
     expect(metadata).toHaveProperty('description');

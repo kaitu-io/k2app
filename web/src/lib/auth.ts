@@ -1,7 +1,7 @@
 // Authentication utilities for the web application
 
 // Supported locales - must match i18n/routing.ts
-const LOCALES = ['en-US', 'en-GB', 'en-AU', 'zh-CN', 'zh-TW', 'zh-HK', 'ja'];
+const LOCALES = ['zh-CN', 'zh-TW', 'zh-HK'];
 
 /**
  * Remove locale prefix from path

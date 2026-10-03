@@ -12,20 +12,11 @@ describe('api client X-K2-Brand header', () => {
   });
   afterEach(() => {
     vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
   });
 
-  it('sends X-K2-Brand: kaitu by default', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', '');
+  it('sends X-K2-Brand: kaitu', async () => {
     await api.getPlans(); // any public GET endpoint on the api object
     const [, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(new Headers(init.headers).get('X-K2-Brand')).toBe('kaitu');
-  });
-
-  it('sends X-K2-Brand: overleap when baked', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BRAND', 'overleap');
-    await api.getPlans();
-    const [, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(new Headers(init.headers).get('X-K2-Brand')).toBe('overleap');
   });
 });

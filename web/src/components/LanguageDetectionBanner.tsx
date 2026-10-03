@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
-import { useRouter, usePathname } from '@/i18n/routing';
+import { useRouter, usePathname, routing } from '@/i18n/routing';
 import { useLocale, useTranslations } from 'next-intl';
 import Cookies from 'js-cookie';
 import FlagIcon from './FlagIcon';
@@ -12,10 +12,6 @@ const localeNames: Record<string, string> = {
   'zh-CN': '简体中文',
   'zh-TW': '繁體中文 (台灣)',
   'zh-HK': '繁體中文 (香港)',
-  'en-US': 'English (US)',
-  'en-GB': 'English (UK)',
-  'en-AU': 'English (AU)',
-  'ja': '日本語'
 };
 
 export default function LanguageDetectionBanner() {
@@ -52,7 +48,7 @@ export default function LanguageDetectionBanner() {
       // Save preference
       Cookies.set('preferredLocale', suggestedLocale, { expires: 365 });
       // Navigate to suggested locale
-      router.push(pathname, { locale: suggestedLocale as "zh-CN" | "zh-TW" | "zh-HK" | "en-US" | "en-GB" | "en-AU" | "ja" });
+      router.push(pathname, { locale: suggestedLocale as (typeof routing.locales)[number] });
     }
     setShowBanner(false);
   };

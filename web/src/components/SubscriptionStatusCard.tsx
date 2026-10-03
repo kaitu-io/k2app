@@ -7,10 +7,8 @@
  *   - /account 首页：完整形态，带续费 CTA
  *   - /purchase 顶部：compact，无 CTA（整个页面本身就是 CTA，再放一个按钮是噪音）
  *
- * 本品牌的订阅模型是 `User.expiredAt`（授权到期时间戳）+ `tier`（档位），
- * 不是 Stripe/Apple 的 `subscriptions[]` —— 那是另一品牌的形态，见
- * OverleapAccountClient。两者不共用组件是刻意的：数据模型不同，
- * 强行合并会得到一个两边都别扭的抽象。
+ * 订阅模型是 `User.expiredAt`（授权到期时间戳）+ `tier`（档位），
+ * 不是 Stripe/Apple 的 `subscriptions[]`。
  */
 import { useLocale, useTranslations } from 'next-intl';
 import { Link } from '@/i18n/routing';

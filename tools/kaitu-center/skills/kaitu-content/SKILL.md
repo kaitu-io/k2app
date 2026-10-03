@@ -23,7 +23,7 @@ Use this skill when creating articles for kaitu.io. Every article is optimized f
 - Images: `web/public/images/content/`
 - URL pattern: `kaitu.io/{locale}/{slug}`
 - CMS: Velite (build-time markdown → JSON)
-- 7 locales: zh-CN (primary), en-US, en-GB, en-AU, zh-TW, zh-HK, ja
+- 3 locales: zh-CN (primary), zh-TW, zh-HK (kaitu.io serves Chinese only; en-*/ja URLs 301 to zh-CN)
 
 ### Frontmatter Schema (Required)
 
@@ -386,8 +386,8 @@ Create `web/content/zh-CN/{slug}.md` with:
 
 Create additional files at the same slug path:
 ```
-web/content/en-US/{slug}.md
-web/content/ja/{slug}.md
+web/content/zh-TW/{slug}.md
+web/content/zh-HK/{slug}.md
 ```
 
 Translation rules:

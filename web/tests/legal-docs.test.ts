@@ -3,23 +3,22 @@
  *
  * These exist because tests/static-pages-ssr.test.ts mocks `fs/promises` to a
  * one-line stub, so it asserts the privacy/terms pages are Server Components
- * and nothing about what they actually serve. Under that coverage,
- * overleap.io/privacy told visitors they were registering a Kaitu account and
- * gave a kaitu.io address for data-subject requests, and every page rendered a
- * full Chinese copy of the policy above the English one.
+ * and nothing about what they actually serve. So read the shipped markdown
+ * here, run it through the real renderer for the served locales, and assert on
+ * the output a reader would see.
  *
- * So read the shipped markdown here, run it through the real renderer for both
- * brands, and assert on the output a reader would see.
+ * The files still carry an English master; this site serves zh-* only, so only
+ * the zh master is rendered (and tested) here.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { KAITU, OVERLEAP, type Brand } from '../src/lib/brands';
+import { KAITU, type Brand } from '../src/lib/brands';
 import { renderLegalDoc } from '../src/lib/legal';
 
 const LEGAL = path.resolve(__dirname, '../public/legal');
 
-/** Documents both deployments serve. retailer-rules is kaitu-only (page.kaitu.tsx). */
+/** Brand-templated documents. retailer-rules is 开途-worded on disk. */
 const SHARED_DOCS = ['privacy-policy', 'terms-of-service', 'delete-account'] as const;
 
 const read = (doc: string) => readFileSync(path.join(LEGAL, `${doc}.md`), 'utf8');
@@ -27,12 +26,10 @@ const read = (doc: string) => readFileSync(path.join(LEGAL, `${doc}.md`), 'utf8'
 const KAITU_WORDS = /Kaitu|开途|開途|kaitu\.(io|me)/;
 const OVERLEAP_WORDS = /[Oo]verleap/;
 
-/** One locale per language master, per brand. */
 const CASES: { brand: Brand; locale: string; zh: boolean }[] = [
   { brand: KAITU, locale: 'zh-CN', zh: true },
   { brand: KAITU, locale: 'zh-TW', zh: true },
-  { brand: OVERLEAP, locale: 'en-GB', zh: false },
-  { brand: OVERLEAP, locale: 'ja', zh: false },
+  { brand: KAITU, locale: 'zh-HK', zh: true },
 ];
 
 describe.each(SHARED_DOCS)('%s', (doc) => {
@@ -67,30 +64,20 @@ describe.each(SHARED_DOCS)('%s', (doc) => {
     // hold it is dropped with the other language.
     expect(out).toMatch(zh ? /\*\*最后更新：/ : /\*\*Last updated: /);
 
-    // The reader sees this deployment's brand and only this deployment's brand.
-    // Legal-signature exception (root CLAUDE.md, 法务文书署名): both deployments
+    // The reader sees this brand and never the other one.
+    // Legal-signature exception (root CLAUDE.md, 法务文书署名): legal documents
     // sign as Overleap LLC, so strip exactly that string first — the same
     // scoping tests/brand-leak-ssr.test.tsx uses — and assert separately that it
     // is present, so the exception can't widen into a general free pass.
     expect(out).toContain(brand.legalName);
     const body = out.replaceAll(brand.legalName, '');
-    const own = brand.id === 'kaitu' ? KAITU_WORDS : OVERLEAP_WORDS;
-    const other = brand.id === 'kaitu' ? OVERLEAP_WORDS : KAITU_WORDS;
-    expect(body).toMatch(own);
-    expect(body.match(other)).toBeNull();
+    expect(body).toMatch(KAITU_WORDS);
+    expect(body.match(OVERLEAP_WORDS)).toBeNull();
 
     // Root CLAUDE.md: the latin form is banned in Chinese user-facing copy
     // (开途, never "Kaitu"). Without this the brand-word assertion above passes
     // on either form, since both are "this brand's words".
     if (zh) expect(body).not.toMatch(/\bKaitu\b/);
-  });
-
-  it.each(CASES)('$brand.id / $locale names only its own contact addresses', ({ brand, locale }) => {
-    const out = renderLegalDoc(raw, locale, brand);
-    const foreign = (brand.id === 'kaitu' ? OVERLEAP : KAITU);
-    for (const addr of [foreign.privacyEmail, foreign.legalEmail, foreign.contactEmail]) {
-      expect(out).not.toContain(addr);
-    }
   });
 });
 
@@ -129,14 +116,14 @@ describe('delete-account satisfies the Play Data safety URL requirements', () =>
 
 describe('renderLegalDoc edge cases', () => {
   it('returns a document with no language markers whole, still substituted', () => {
-    const out = renderLegalDoc('Operated by {{legalName}}.', 'en-GB', OVERLEAP);
+    const out = renderLegalDoc('Operated by {{legalName}}.', 'zh-CN', KAITU);
     expect(out).toBe('Operated by Overleap LLC.');
   });
 
   it('leaves an unknown placeholder visible rather than blanking it', () => {
     // A blank where a company name belongs reads as finished prose, and nothing
     // downstream would flag it.
-    expect(renderLegalDoc('Contact {{nope}}.', 'en-GB', OVERLEAP)).toBe('Contact {{nope}}.');
+    expect(renderLegalDoc('Contact {{nope}}.', 'zh-CN', KAITU)).toBe('Contact {{nope}}.');
   });
 
   it('uses the wordmark in Chinese and the latin name elsewhere', () => {
@@ -148,20 +135,21 @@ describe('renderLegalDoc edge cases', () => {
 });
 
 describe('privacy-policy: the statistics section matches what the site actually does', () => {
-  // The policy is one file served to both deployments, while the shared layout
-  // loads a third-party analytics script only for a brand whose registry entry
-  // has a measurement id. A sentence written once on disk is therefore false
-  // for one of them; it is derived from the registry, and this locks the two.
+  // The layout loads a third-party analytics script only when the registry entry
+  // has a measurement id, so the sentence is derived from the registry rather
+  // than written on disk; this locks the two. A copy of the brand with GA off
+  // keeps the other branch tested.
   const raw = read('privacy-policy');
   const THIRD_PARTY = { zh: /第三方网站分析服务（Google Analytics）/, en: /third-party web-analytics service \(Google Analytics\)/ };
   const NONE = { zh: /不使用任何第三方分析工具/, en: /use no third-party analytics tools/ };
 
-  const MATRIX = [KAITU, OVERLEAP].flatMap((brand) =>
-    ['zh-CN', 'en-GB'].map((locale) => ({ brand, locale, lang: locale.startsWith('zh') ? 'zh' as const : 'en' as const })),
+  const NO_GA: Brand = { ...KAITU, gaMeasurementId: '' };
+  const MATRIX = [KAITU, NO_GA].flatMap((brand) =>
+    ['zh-CN', 'zh-TW'].map((locale) => ({ brand, locale, lang: 'zh' as const })),
   );
 
   it('covers both registry states, so neither branch goes untested', () => {
-    const states = new Set([KAITU, OVERLEAP].map((b) => Boolean(b.gaMeasurementId)));
+    const states = new Set([KAITU, NO_GA].map((b) => Boolean(b.gaMeasurementId)));
     expect(states.size).toBe(2);
   });
 

@@ -62,7 +62,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 // Import after the mock so we get the real ApiError/ErrorCode.
 import { ApiError, ErrorCode } from '@/lib/api';
 import { toast } from 'sonner';
-import RouterFulfillmentsPage from '../page.kaitu';
+import RouterFulfillmentsPage from '../page';
 
 function items(): AdminRouterFulfillmentItem[] {
   return [

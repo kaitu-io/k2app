@@ -37,7 +37,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
   };
 });
 
-import ConversationsPage from '../conversations/page.kaitu';
+import ConversationsPage from '../conversations/page';
 
 function conv(over: Partial<ChatConversation> = {}): ChatConversation {
   return {

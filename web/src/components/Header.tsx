@@ -14,7 +14,7 @@ import { siteConfig, isExternalHref, type NavItem } from '@/lib/site'
 import { cn } from '@/lib/utils'
 
 /**
- * 顶栏：结构来自 `lib/site/<brand>.ts`。
+ * 顶栏：结构来自 `lib/site/kaitu.ts`。
  *
  * - 一级项都是可点击的链接；带 children 的项在桌面端悬停 / 聚焦时展开下拉，移动端为折叠段。
  * - 当前页高亮：按 locale 无关的 pathname 与配置路径做前缀匹配（子项命中则父项也高亮）。
@@ -84,7 +84,7 @@ function NavLink({
 
 export default function Header() {
   const brand = useBrand()
-  const site = siteConfig(brand)
+  const site = siteConfig()
   const { isAuthenticated } = useAuth()
   const t = useTranslations()
   const pathname = usePathname()

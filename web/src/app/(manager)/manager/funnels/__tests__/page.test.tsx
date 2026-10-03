@@ -35,7 +35,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 });
 
 import { ApiError, ErrorCode } from '@/lib/api';
-import FunnelsPage from '../page.kaitu';
+import FunnelsPage from '../page';
 
 const PATHS = {
   paths: [

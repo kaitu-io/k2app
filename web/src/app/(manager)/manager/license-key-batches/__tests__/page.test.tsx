@@ -26,7 +26,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
   };
 });
 
-import LicenseKeyBatchesPage from '../page.kaitu';
+import LicenseKeyBatchesPage from '../page';
 
 function renderPage() {
   return render(
