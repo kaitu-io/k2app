@@ -42,4 +42,4 @@ src/lib/pricing.ts       display currency + formatting; PRICING (lib/site.ts) mu
 
 ## Deployment
 
-Amplify app for overleap.io, `appRoot: sites/overleap`, build spec `sites/overleap/amplify.yml`. Until the cutover (spec §1 phase ④) overleap.io is still served by `web/` with `NEXT_PUBLIC_BRAND=overleap`; this app deploys to a preview domain only.
+Live on overleap.io since 2026-10-03: Amplify app `d3q4qon606iex5` (ap-northeast-1) builds the `website` branch with env `AMPLIFY_MONOREPO_APP_ROOT=sites/overleap` and the app-level build spec copied from `sites/overleap/amplify.yml` — editing that file does not change the console copy; update both. Deploy = `git push origin main:website` (same as kaitu.io). `web/` no longer builds this brand and fails its build if `NEXT_PUBLIC_BRAND` is not kaitu.
