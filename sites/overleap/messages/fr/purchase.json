@@ -1,0 +1,18 @@
+{
+  "title": "Choisissez votre formule",
+  "annualLabel": "Annuel",
+  "monthlyLabel": "Mensuel",
+  "perMonthApprox": "≈ {price}/mois",
+  "monthlyPrice": "{price}/mois",
+  "cancelAnytime": "Résiliable à tout moment",
+  "savePercent": "Économisez {percent} %",
+  "currencyNote": "Prix en {currency}. Le débit s'effectue dans votre devise locale lorsque c'est possible.",
+  "subscribe": "S'abonner",
+  "redirecting": "Redirection vers le paiement sécurisé…",
+  "alreadySubscribed": "Vous avez déjà un abonnement actif.",
+  "manageInAccount": "Gérer l'abonnement",
+  "checkoutCancelled": "Le paiement a été annulé — vous pouvez réessayer à tout moment.",
+  "channelUnavailable": "Ce moyen de paiement n'est pas disponible pour votre compte.",
+  "genericError": "Une erreur s'est produite. Veuillez réessayer.",
+  "noPlans": "Les formules sont en cours de préparation. Revenez bientôt."
+}

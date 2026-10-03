@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "title": "Tải {brand} cho Windows, macOS, iOS và Android",
+    "description": "Tải ứng dụng {brand} cho máy tính và điện thoại. Một tài khoản dùng cho năm thiết bị; đăng nhập và kết nối chỉ với một chạm."
+  },
+  "title": "Tải {brand}",
+  "subtitle": "Một tài khoản, năm thiết bị. Hãy chọn nền tảng của bạn — chúng tôi đã đánh dấu nền tảng bạn đang dùng.",
+  "detected": "Bạn đang dùng {platform}",
+  "version": "Phiên bản {version}",
+  "getFor": "Tải cho {platform}",
+  "iosStore": "Mở App Store",
+  "androidStore": "Tải trên Google Play",
+  "comingSoon": "Sắp ra mắt",
+  "comingSoonHint": "Chưa có trên nền tảng này. Hãy đăng ký ngay và chúng tôi sẽ gửi email khi có.",
+  "platforms": {
+    "windows": {
+      "name": "Windows",
+      "requirement": "Windows 10 trở lên, 64-bit"
+    },
+    "macos": {
+      "name": "Mac",
+      "requirement": "macOS 12 trở lên, Intel và Apple silicon"
+    },
+    "ios": {
+      "name": "iPhone và iPad",
+      "requirement": "iOS 15 trở lên"
+    },
+    "android": {
+      "name": "Android",
+      "requirement": "Android 8 trở lên"
+    }
+  },
+  "next": {
+    "title": "Sau khi cài đặt",
+    "step1": "Đăng nhập bằng địa chỉ email bạn đã dùng để đăng ký.",
+    "step2": "Nhấn Kết nối. Ứng dụng sẽ chọn tuyến nhanh nhất cho bạn.",
+    "step3": "Dùng cùng một tài khoản trên tối đa năm thiết bị."
+  },
+  "noSubscription": "Bạn chưa đăng ký gói nào?",
+  "seePricing": "Xem bảng giá",
+  "help": "Có gì đó không hoạt động?",
+  "helpLink": "Truy cập trang trợ giúp"
+}

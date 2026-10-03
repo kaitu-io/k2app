@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "title": "Trợ giúp",
+    "description": "Bắt đầu sử dụng, tài khoản và thanh toán, cùng giải đáp thẳng thắn cho những câu hỏi thường gặp về {brand}."
+  },
+  "title": "Trợ giúp",
+  "intro": "Bắt đầu sử dụng, tài khoản và thanh toán, cùng những câu trả lời thẳng thắn. Nếu không thấy ở đây, hãy gửi email cho chúng tôi — sẽ có người thật trả lời.",
+  "gettingStarted": {
+    "title": "Bắt đầu sử dụng",
+    "step1": {
+      "title": "Đăng ký gói",
+      "body": "Chọn một gói trên trang bảng giá và thanh toán bằng thẻ, Apple Pay hoặc Google Pay."
+    },
+    "step2": {
+      "title": "Cài đặt ứng dụng",
+      "body": "Tải {brand} cho Windows, macOS, iOS hoặc Android."
+    },
+    "step3": {
+      "title": "Đăng nhập và kết nối",
+      "body": "Dùng địa chỉ email bạn đã đăng ký, rồi nhấn Kết nối. Ứng dụng sẽ chọn tuyến nhanh nhất cho bạn."
+    },
+    "download": "Đến trang tải xuống"
+  },
+  "billing": {
+    "title": "Tài khoản và thanh toán",
+    "items": {
+      "manage": {
+        "question": "Làm sao để quản lý hoặc hủy gói đăng ký?",
+        "answer": "Mở trang tài khoản và chọn Quản lý gói đăng ký. Tại đó bạn có thể hủy, đổi thẻ hoặc tải hóa đơn. Hủy gói vẫn giữ gói hoạt động đến hết kỳ đã thanh toán."
+      },
+      "charge": {
+        "question": "Khi nào tôi bị tính phí?",
+        "answer": "Vào đầu mỗi kỳ thanh toán, trên thẻ bạn đã dùng để đăng ký. Stripe sẽ gửi biên nhận qua email mỗi lần."
+      },
+      "refund": {
+        "question": "Tôi có được hoàn tiền không?",
+        "answer": "Nếu {brand} không phù hợp với bạn, hãy gửi email cho chúng tôi và chúng tôi sẽ giải quyết."
+      },
+      "devices": {
+        "question": "Tôi đã đạt giới hạn năm thiết bị",
+        "answer": "Đăng nhập trên thiết bị thứ sáu sẽ tự động đăng xuất thiết bị cũ nhất. Để tự đăng xuất một thiết bị, hãy dùng màn hình Thiết bị trong ứng dụng."
+      }
+    },
+    "account": "Đến trang tài khoản"
+  },
+  "faq": {
+    "title": "Câu hỏi thường gặp",
+    "subtitle": "Cách {brand} hoạt động, nói đơn giản."
+  },
+  "contact": {
+    "title": "Vẫn chưa giải quyết được?",
+    "body": "Gửi email tới {email} cho biết bạn định làm gì và đã xảy ra chuyện gì. Mỗi tin nhắn đều do người thật đọc.",
+    "button": "Gửi email hỗ trợ"
+  }
+}

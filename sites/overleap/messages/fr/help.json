@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "title": "Aide",
+    "description": "Premiers pas, votre compte et la facturation, et des réponses claires aux questions courantes sur {brand}."
+  },
+  "title": "Aide",
+  "intro": "Premiers pas, votre compte et la facturation, et des réponses claires. Si vous ne trouvez pas, écrivez-nous : une vraie personne vous répond.",
+  "gettingStarted": {
+    "title": "Premiers pas",
+    "step1": {
+      "title": "Abonnez-vous",
+      "body": "Choisissez une formule sur la page des tarifs et payez par carte bancaire, Apple Pay ou Google Pay."
+    },
+    "step2": {
+      "title": "Installez l'app",
+      "body": "Téléchargez {brand} pour Windows, macOS, iOS ou Android."
+    },
+    "step3": {
+      "title": "Connectez-vous",
+      "body": "Utilisez l'adresse e-mail de votre abonnement, puis touchez Connecter. L'app choisit pour vous la route la plus rapide."
+    },
+    "download": "Aller aux téléchargements"
+  },
+  "billing": {
+    "title": "Compte et facturation",
+    "items": {
+      "manage": {
+        "question": "Comment gérer ou résilier mon abonnement ?",
+        "answer": "Ouvrez la page de votre compte et choisissez Gérer l'abonnement. Vous pouvez y résilier, changer de carte ou télécharger vos factures. Une résiliation maintient votre formule active jusqu'à la fin de la période réglée."
+      },
+      "charge": {
+        "question": "Quand suis-je débité ?",
+        "answer": "Au début de chaque période de facturation, sur la carte utilisée pour l'abonnement. Stripe vous envoie un reçu par e-mail à chaque fois."
+      },
+      "refund": {
+        "question": "Puis-je être remboursé ?",
+        "answer": "Si {brand} ne vous convient pas, écrivez-nous et nous trouverons une solution."
+      },
+      "devices": {
+        "question": "J'ai atteint la limite de cinq appareils",
+        "answer": "Se connecter sur un sixième appareil déconnecte automatiquement le plus ancien. Pour déconnecter vous-même un appareil, utilisez l'écran Appareils de l'app."
+      }
+    },
+    "account": "Aller à votre compte"
+  },
+  "faq": {
+    "title": "Questions",
+    "subtitle": "Le fonctionnement de {brand}, en termes simples."
+  },
+  "contact": {
+    "title": "Toujours bloqué ?",
+    "body": "Écrivez à {email} en précisant ce que vous essayiez de faire et ce qui s'est passé. Chaque message est lu par une vraie personne.",
+    "button": "Écrire au support"
+  }
+}

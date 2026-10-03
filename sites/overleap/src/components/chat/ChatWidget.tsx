@@ -1,0 +1,342 @@
+'use client';
+
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useTranslations } from 'next-intl';
+import { MessageCircle, Send, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { isEmbeddedPage } from '@/lib/embed';
+import {
+  CHAT_CONTENT_MAX,
+  ChatError,
+  createChatClient,
+  type ChatClient,
+  type ChatConversation,
+  type ChatMessage,
+  type SessionState,
+} from '@/lib/chat-client';
+import EmailForm from './EmailForm';
+import MessageList from './MessageList';
+import {
+  CHAT_EMAIL_FLAG,
+  CHAT_KNOWN_FLAG,
+  isPreview,
+  onOpenChatRequest,
+  readFlag,
+  shouldProbeSession,
+  takeResumeToken,
+  writeFlag,
+} from './gate';
+
+/** 转人工后这么久没有客服消息，就请访客留邮箱。 */
+const EMAIL_PROMPT_AFTER_MS = 30_000;
+
+type SendError = 'rateLimited' | 'sendFailed' | 'tooLong';
+
+/**
+ * 正在等人工的那段：`at` 是转人工的时刻（留邮箱表单的计时起点，与面板开合无关），
+ * `afterId` 之后出现客服消息即视为已接入。按会话 uuid 记，换会话重新算。
+ */
+type HumanWait = { uuid: string; at: number; afterId: number };
+
+const isWaitingHuman = (c: ChatConversation | null): c is ChatConversation =>
+  c !== null && c.status === 'open' && c.handler === 'human';
+
+const maxId = (list: readonly ChatMessage[]) => list.reduce((max, m) => (m.id > max ? m.id : max), 0);
+
+/** 页面加载时会话已经在等人工：起点取最近一条转人工事件的时间（取不到或在未来就用现在）。 */
+function humanWaitFromHistory(conv: ChatConversation, history: readonly ChatMessage[]): HumanWait {
+  const now = Date.now();
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (m.kind === 'event' && m.meta?.event === 'transfer_human') {
+      const at = Date.parse(m.createdAt);
+      return { uuid: conv.uuid, at: Number.isFinite(at) && at <= now ? at : now, afterId: m.id };
+    }
+  }
+  return { uuid: conv.uuid, at: now, afterId: 0 };
+}
+
+/**
+ * 官网访客会话挂件（入口按钮 + 对话面板）。只挂在售前页面，由 ChatWidgetLazy 按需加载。
+ *
+ * 出现条件（全部满足才渲染，否则返回 null）：
+ * 1. 不是 App 内嵌页（`?embed=true` / `#embed`）；
+ * 2. `shouldProbeSession()`——暗发布阶段只有预览身份、带继续对话令牌或建过会话的浏览器
+ *    才去问服务端，其余访客不渲染、不发请求、不种 cookie；
+ * 3. 服务端 `session` 返回 `enabled: true`。
+ *
+ * `?chat=preview` 以预览身份建会话（本标签页内跟着站内跳转走）。邮件回链是 `#chat=<令牌>`：
+ * 令牌由根布局的内联脚本在统计脚本之前移出地址栏，这里取走、传给服务端并自动展开面板。
+ *
+ * 实时通道（WebSocket / 轮询）在访客第一次展开面板、或会话已存在时才建立。
+ * 会话状态（处理方、是否关闭）以服务端下发为准。
+ *
+ * 位置用逻辑方向（end-*）：阿拉伯语 / 波斯语页面里入口在左下角。
+ */
+export default function ChatWidget({ createClient = createChatClient }: { createClient?: () => ChatClient }) {
+  const t = useTranslations('chat');
+  // 只取首次传入的工厂：父组件重渲染换了函数身份不该导致重连
+  const [create] = useState(() => createClient);
+  const [session, setSession] = useState<SessionState | null>(null); // 非 null = 服务端已确认 enabled
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [conversation, setConversation] = useState<ChatConversation | null>(null);
+  const [humanWait, setHumanWait] = useState<HumanWait | null>(null);
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [error, setError] = useState<SendError | null>(null);
+  const [emailState, setEmailState] = useState<'idle' | 'saved' | 'done'>(() =>
+    readFlag(CHAT_EMAIL_FLAG) ? 'done' : 'idle',
+  );
+  const [emailDue, setEmailDue] = useState(false);
+
+  const clientRef = useRef<ChatClient | null>(null);
+  // 入口参数只读一次并存在 ref 里：令牌只能取走一次，严格模式的第二次挂载要靠它拿回来
+  const entryRef = useRef<{ preview: boolean; resume: string | null } | null>(null);
+  const messagesRef = useRef<ChatMessage[]>([]);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const launcherRef = useRef<HTMLButtonElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+  const wasOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (isEmbeddedPage()) return;
+    if (entryRef.current === null) {
+      if (!shouldProbeSession()) return;
+      entryRef.current = { preview: isPreview(), resume: takeResumeToken() };
+    }
+    const entry = entryRef.current;
+    const client = create();
+    clientRef.current = client;
+    let cancelled = false;
+    const off = client.onMessages((list) => {
+      if (cancelled) return;
+      messagesRef.current = list;
+      setMessages(list);
+    });
+    const offConv = client.onConversation((conv) => {
+      if (cancelled) return;
+      setConversation(conv);
+      // 运行中看到转人工：起点就是此刻，此后的客服消息才算"已接入"
+      setHumanWait((prev) =>
+        !isWaitingHuman(conv)
+          ? null
+          : prev?.uuid === conv.uuid
+            ? prev
+            : { uuid: conv.uuid, at: Date.now(), afterId: maxId(messagesRef.current) },
+      );
+    });
+    const opts: { preview?: boolean; resume?: string } = {};
+    if (entry.preview) opts.preview = true;
+    if (entry.resume) opts.resume = entry.resume;
+    client
+      .start(window.location.pathname, opts)
+      .then((state) => {
+        if (cancelled || !state.enabled) return;
+        writeFlag(CHAT_KNOWN_FLAG);
+        setConversation(state.conversation);
+        setHumanWait(isWaitingHuman(state.conversation) ? humanWaitFromHistory(state.conversation, state.messages) : null);
+        setSession(state);
+        if (entry.resume) setOpen(true);
+      })
+      .catch(() => {
+        // 会话建不起来：不出现入口，旧客服入口照常可用
+      });
+    return () => {
+      cancelled = true;
+      off();
+      offConv();
+      client.stop();
+      clientRef.current = null;
+    };
+  }, [create]);
+
+  const visible = session !== null;
+
+  useEffect(() => {
+    if (!visible) return;
+    return onOpenChatRequest(() => setOpen(true));
+  }, [visible]);
+
+  // 第一次展开才建实时通道：从没点开过的访客不占连接（已有会话的由客户端自己连）
+  useEffect(() => {
+    if (open && visible) clientRef.current?.activate();
+  }, [open, visible]);
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+    else if (wasOpenRef.current) launcherRef.current?.focus();
+    wasOpenRef.current = open;
+  }, [open]);
+
+  useEffect(() => {
+    if (open) endRef.current?.scrollIntoView?.({ block: 'end' });
+  }, [open, messages, emailDue]);
+
+  // "客服已接入"仍看消息：转人工之后出现过客服消息
+  const staffReplied =
+    humanWait !== null && messages.some((m) => m.id > humanWait.afterId && m.senderType === 'staff');
+  const wantsEmail = humanWait !== null && !staffReplied && emailState === 'idle';
+
+  // 计时锚在转人工的时刻，与面板开合无关：过了 30 秒再打开面板，表单直接在
+  useEffect(() => {
+    if (!wantsEmail || !humanWait) return;
+    const remaining = Math.max(0, humanWait.at + EMAIL_PROMPT_AFTER_MS - Date.now());
+    const timer = setTimeout(() => setEmailDue(true), remaining);
+    return () => {
+      clearTimeout(timer);
+      setEmailDue(false);
+    };
+  }, [wantsEmail, humanWait]);
+
+  if (!session) return null;
+
+  const fail = (err: unknown) =>
+    setError(err instanceof ChatError && err.kind === 'rate_limited' ? 'rateLimited' : 'sendFailed');
+
+  const submit = async () => {
+    const text = draft.trim();
+    if (!text) return;
+    if ([...text].length > CHAT_CONTENT_MAX) {
+      setError('tooLong');
+      return;
+    }
+    setError(null);
+    setDraft('');
+    try {
+      await clientRef.current?.send('text', text);
+    } catch (err) {
+      // 没发出去：把文字还给输入框（期间访客已经另打了字就不覆盖）
+      setDraft((current) => current || text);
+      fail(err);
+    }
+  };
+
+  const pickOption = (value: string) => {
+    setError(null);
+    clientRef.current?.send('option_reply', value).catch(fail);
+  };
+
+  const onInputKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    // 输入法组字中的回车是"上屏"，不是发送（Safari 用 keyCode 229 表示）
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    e.preventDefault();
+    void submit();
+  };
+
+  const submitEmail = async (email: string) => {
+    await clientRef.current?.leaveEmail(email);
+    writeFlag(CHAT_EMAIL_FLAG);
+    setEmailState('saved');
+  };
+
+  if (!open) {
+    return (
+      <button
+        ref={launcherRef}
+        type="button"
+        aria-label={t('launcher')}
+        onClick={() => setOpen(true)}
+        className="fixed end-4 bottom-4 z-50 flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      >
+        <MessageCircle className="size-6" aria-hidden />
+      </button>
+    );
+  }
+
+  const welcome = session.welcome;
+  const showWelcome = welcome !== null && messages.length === 0 && conversation === null;
+
+  return (
+    <div
+      role="dialog"
+      aria-label={t('title')}
+      onKeyDown={(e) => {
+        // 输入法组字中的 Esc 是取消候选，不是关面板
+        if (e.key === 'Escape' && !e.nativeEvent.isComposing && e.keyCode !== 229) setOpen(false);
+      }}
+      className="fixed end-0 bottom-0 z-50 flex h-[32rem] max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-border bg-background shadow-2xl min-[480px]:end-4 min-[480px]:bottom-4 min-[480px]:w-[22rem] min-[480px]:rounded-2xl"
+    >
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <span className="text-sm font-semibold text-foreground">{t('title')}</span>
+        <Button type="button" variant="ghost" size="icon" aria-label={t('close')} onClick={() => setOpen(false)}>
+          <X aria-hidden />
+        </Button>
+      </div>
+
+      {/* data-sentry-mask：对话内容不进会话回放 */}
+      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3" aria-live="polite" data-sentry-mask>
+        {showWelcome && (
+          <div className="space-y-2">
+            <p className="max-w-[85%] rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-sm whitespace-pre-wrap text-foreground">
+              {welcome.text}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {welcome.options.map((o) => (
+                <Button key={o.value} type="button" variant="outline" size="sm" onClick={() => pickOption(o.value)}>
+                  {o.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
+        <MessageList
+          messages={messages}
+          welcome={welcome}
+          labels={{
+            ai: t('senderAi'),
+            staff: t('senderStaff'),
+            image: t('imagePlaceholder'),
+            events: {
+              transfer_human: t('eventTransferHuman'),
+              handed_to_ai: t('eventHandedToAi'),
+              closed: t('eventClosed'),
+              auto_closed: t('eventAutoClosed'),
+            },
+          }}
+        />
+        {conversation?.status === 'closed' && (
+          <p className="text-center text-xs text-muted-foreground">{t('closed')}</p>
+        )}
+        {emailDue && wantsEmail && (
+          <EmailForm
+            labels={{
+              prompt: t('emailPrompt'),
+              placeholder: t('emailPlaceholder'),
+              submit: t('emailSubmit'),
+              invalid: t('emailInvalid'),
+              failed: t('emailFailed'),
+            }}
+            onSubmit={submitEmail}
+          />
+        )}
+        {emailState === 'saved' && <p className="text-center text-xs text-muted-foreground">{t('emailSaved')}</p>}
+        <div ref={endRef} />
+      </div>
+
+      <div className="border-t border-border p-3">
+        {error && (
+          <p role="alert" className="mb-2 text-xs text-destructive">
+            {t(error)}
+          </p>
+        )}
+        <div className="flex items-end gap-2">
+          <Textarea
+            ref={inputRef}
+            rows={1}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={onInputKeyDown}
+            placeholder={t('placeholder')}
+            aria-label={t('placeholder')}
+            className="max-h-32 min-h-9 resize-none"
+          />
+          <Button type="button" size="icon" aria-label={t('send')} onClick={() => void submit()}>
+            <Send aria-hidden />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "title": "Yardım",
+    "description": "Başlangıç, hesap ve faturalandırma ile {brand} hakkında sık sorulan sorulara net cevaplar."
+  },
+  "title": "Yardım",
+  "intro": "Başlangıç, hesap ve faturalandırma ile net cevaplar. Aradığınız burada yoksa bize e-posta gönderin — bir insan yanıtlar.",
+  "gettingStarted": {
+    "title": "Başlarken",
+    "step1": {
+      "title": "Abone olun",
+      "body": "Fiyatlandırma sayfasından bir plan seçin ve kart, Apple Pay veya Google Pay ile ödeyin."
+    },
+    "step2": {
+      "title": "Uygulamayı yükleyin",
+      "body": "{brand}'i Windows, macOS, iOS veya Android için indirin."
+    },
+    "step3": {
+      "title": "Giriş yapın ve bağlanın",
+      "body": "Abone olduğunuz e-posta adresini kullanın, ardından Bağlan'a dokunun. Uygulama sizin için en hızlı rotayı seçer."
+    },
+    "download": "İndirmelere git"
+  },
+  "billing": {
+    "title": "Hesap ve faturalandırma",
+    "items": {
+      "manage": {
+        "question": "Aboneliğimi nasıl yönetir veya iptal ederim?",
+        "answer": "Hesap sayfanızı açın ve Aboneliği yönet'i seçin. Buradan iptal edebilir, kartınızı değiştirebilir veya faturaları indirebilirsiniz. İptal etmeniz planınızı ödediğiniz dönemin sonuna kadar etkin tutar."
+      },
+      "charge": {
+        "question": "Ne zaman ücretlendirilirim?",
+        "answer": "Her faturalandırma döneminin başında, abone olduğunuz karttan. Stripe her seferinde size makbuzu e-postayla gönderir."
+      },
+      "refund": {
+        "question": "İade alabilir miyim?",
+        "answer": "{brand} sizin için işe yaramazsa bize e-posta gönderin, çözelim."
+      },
+      "devices": {
+        "question": "Beş cihaz sınırına ulaştım",
+        "answer": "Altıncı cihazda oturum açmak en eski cihazın oturumunu otomatik olarak kapatır. Bir cihazın oturumunu kendiniz kapatmak için uygulamadaki Cihazlar ekranını kullanın."
+      }
+    },
+    "account": "Hesabınıza git"
+  },
+  "faq": {
+    "title": "Sorular",
+    "subtitle": "{brand} nasıl çalışır, sade bir dille."
+  },
+  "contact": {
+    "title": "Hâlâ çözemediniz mi?",
+    "body": "{email} adresine ne yapmaya çalıştığınızı ve ne olduğunu yazın. Her mesajı bir insan okur.",
+    "button": "Destek ekibine e-posta gönderin"
+  }
+}

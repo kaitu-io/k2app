@@ -1,0 +1,18 @@
+{
+  "title": "Pilih paket Anda",
+  "annualLabel": "Tahunan",
+  "monthlyLabel": "Bulanan",
+  "perMonthApprox": "≈ {price}/bln",
+  "monthlyPrice": "{price}/bln",
+  "cancelAnytime": "Batalkan kapan saja",
+  "savePercent": "Hemat {percent}%",
+  "currencyNote": "Harga dalam {currency}. Anda ditagih dalam mata uang lokal jika tersedia.",
+  "subscribe": "Berlangganan",
+  "redirecting": "Mengalihkan ke pembayaran aman…",
+  "alreadySubscribed": "Anda sudah memiliki langganan aktif.",
+  "manageInAccount": "Kelola langganan",
+  "checkoutCancelled": "Pembayaran dibatalkan — Anda bisa mencoba lagi kapan saja.",
+  "channelUnavailable": "Metode pembayaran ini tidak tersedia untuk akun Anda.",
+  "genericError": "Terjadi kesalahan. Silakan coba lagi.",
+  "noPlans": "Paket sedang disiapkan. Silakan cek kembali nanti."
+}

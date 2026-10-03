@@ -4,8 +4,9 @@
 # 币种规则（2026-09-04，spec 2026-09-04-overleap-site-decoupling-and-uk-positioning-design.md §4）：
 #   主币 USD —— Stripe 账号是 US 主体、结算币 USD；只有主币 = 结算币时 Adaptive Pricing 才会
 #   把其余国家换算成本币。currency_options 里 GBP / EUR 是固定本币价（Checkout 按客户属地自动选）。
-#   本脚本的三组数字是网站定价表的唯一上游：web/tests/pricing-source.test.ts 解析下面的
-#   `ensure_price` 行与 web/src/lib/site/overleap.ts 的 pricing 表逐币种对比，改价必须同步。
+#   本脚本的三组数字是网站定价表的唯一上游：sites/overleap/tests/pricing-source.test.ts 解析下面的
+#   `ensure_price` 行与 sites/overleap/src/lib/site.ts 的 PRICING 表逐币种对比（切换前旧站
+#   web/tests/pricing-source.test.ts 对 web/src/lib/site/overleap.ts 做同样的比对），改价必须同步。
 #
 # 用法：STRIPE_SECRET_KEY=sk_... scripts/stripe-setup-overleap.sh
 # test / live key 均可。幂等：Price 按 lookup_key 找；既有且主币已是 usd → 只输出 id；

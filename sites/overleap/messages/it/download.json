@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "title": "Scarica {brand} per Windows, macOS, iOS e Android",
+    "description": "Scarica l'app {brand} per computer e telefono. Un account copre cinque dispositivi: accedi e connettiti con un tocco."
+  },
+  "title": "Scarica {brand}",
+  "subtitle": "Un account, cinque dispositivi. Scegli la tua piattaforma: abbiamo evidenziato quella che stai usando.",
+  "detected": "Stai usando {platform}",
+  "version": "Versione {version}",
+  "getFor": "Scarica per {platform}",
+  "iosStore": "Apri l'App Store",
+  "androidStore": "Scaricala su Google Play",
+  "comingSoon": "In arrivo",
+  "comingSoonHint": "Non ancora disponibile su questa piattaforma. Abbonati ora e ti scriveremo quando arriva.",
+  "platforms": {
+    "windows": {
+      "name": "Windows",
+      "requirement": "Windows 10 o successivo, 64 bit"
+    },
+    "macos": {
+      "name": "Mac",
+      "requirement": "macOS 12 o successivo, Intel e Apple silicon"
+    },
+    "ios": {
+      "name": "iPhone e iPad",
+      "requirement": "iOS 15 o successivo"
+    },
+    "android": {
+      "name": "Android",
+      "requirement": "Android 8 o successivo"
+    }
+  },
+  "next": {
+    "title": "Dopo l'installazione",
+    "step1": "Accedi con l'indirizzo email con cui ti sei abbonato.",
+    "step2": "Tocca Connetti. L'app sceglie per te il percorso più veloce.",
+    "step3": "Usa lo stesso account su un massimo di cinque dispositivi."
+  },
+  "noSubscription": "Non hai ancora un abbonamento?",
+  "seePricing": "Vedi i prezzi",
+  "help": "Qualcosa non funziona?",
+  "helpLink": "Vai alla pagina di assistenza"
+}

@@ -1,0 +1,18 @@
+{
+  "title": "Scegli il tuo piano",
+  "annualLabel": "Annuale",
+  "monthlyLabel": "Mensile",
+  "perMonthApprox": "≈ {price}/mese",
+  "monthlyPrice": "{price}/mese",
+  "cancelAnytime": "Disdici quando vuoi",
+  "savePercent": "Risparmia il {percent}%",
+  "currencyNote": "Prezzi in {currency}. Dove disponibile, l'addebito avviene nella tua valuta locale.",
+  "subscribe": "Abbonati",
+  "redirecting": "Reindirizzamento al checkout sicuro…",
+  "alreadySubscribed": "Hai già un abbonamento attivo.",
+  "manageInAccount": "Gestisci abbonamento",
+  "checkoutCancelled": "Il checkout è stato annullato: puoi riprovare quando vuoi.",
+  "channelUnavailable": "Questo metodo di pagamento non è disponibile per il tuo account.",
+  "genericError": "Qualcosa è andato storto. Riprova.",
+  "noPlans": "I piani sono in preparazione. Torna a trovarci a breve."
+}

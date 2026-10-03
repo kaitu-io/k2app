@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "title": "Bantuan",
+    "description": "Memulai, akun dan penagihan, serta jawaban lugas untuk pertanyaan umum tentang {brand}."
+  },
+  "title": "Bantuan",
+  "intro": "Memulai, akun dan penagihan, serta jawaban lugas. Jika tidak ada di sini, kirim email kepada kami — manusia yang membalas.",
+  "gettingStarted": {
+    "title": "Memulai",
+    "step1": {
+      "title": "Berlangganan",
+      "body": "Pilih paket di halaman harga dan bayar dengan kartu, Apple Pay, atau Google Pay."
+    },
+    "step2": {
+      "title": "Pasang aplikasi",
+      "body": "Unduh {brand} untuk Windows, macOS, iOS, atau Android."
+    },
+    "step3": {
+      "title": "Masuk dan sambungkan",
+      "body": "Gunakan alamat email yang Anda pakai untuk berlangganan, lalu ketuk Sambungkan. Aplikasi memilihkan rute tercepat untuk Anda."
+    },
+    "download": "Ke halaman unduhan"
+  },
+  "billing": {
+    "title": "Akun dan penagihan",
+    "items": {
+      "manage": {
+        "question": "Bagaimana cara mengelola atau membatalkan langganan?",
+        "answer": "Buka halaman akun Anda dan pilih Kelola langganan. Di sana Anda bisa membatalkan, mengganti kartu, atau mengunduh faktur. Setelah dibatalkan, paket Anda tetap aktif hingga akhir periode yang sudah dibayar."
+      },
+      "charge": {
+        "question": "Kapan saya ditagih?",
+        "answer": "Di awal setiap periode penagihan, ke kartu yang Anda gunakan untuk berlangganan. Stripe mengirimkan kuitansi lewat email setiap kali."
+      },
+      "refund": {
+        "question": "Bisakah saya meminta pengembalian dana?",
+        "answer": "Jika {brand} tidak cocok untuk Anda, kirim email kepada kami dan kami akan menyelesaikannya."
+      },
+      "devices": {
+        "question": "Saya sudah mencapai batas lima perangkat",
+        "answer": "Masuk di perangkat keenam akan otomatis mengeluarkan perangkat terlama. Untuk mengeluarkan perangkat sendiri, gunakan layar Perangkat di aplikasi."
+      }
+    },
+    "account": "Ke halaman akun"
+  },
+  "faq": {
+    "title": "Pertanyaan",
+    "subtitle": "Cara kerja {brand}, dengan bahasa sederhana."
+  },
+  "contact": {
+    "title": "Masih belum teratasi?",
+    "body": "Kirim email ke {email} berisi apa yang ingin Anda lakukan dan apa yang terjadi. Setiap pesan dibaca oleh manusia.",
+    "button": "Email dukungan"
+  }
+}

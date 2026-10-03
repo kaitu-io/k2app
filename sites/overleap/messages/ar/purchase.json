@@ -1,0 +1,18 @@
+{
+  "title": "اختر خطتك",
+  "annualLabel": "سنوي",
+  "monthlyLabel": "شهري",
+  "perMonthApprox": "≈ {price}/شهر",
+  "monthlyPrice": "{price}/شهر",
+  "cancelAnytime": "إلغاء في أي وقت",
+  "savePercent": "وفّر {percent}%",
+  "currencyNote": "الأسعار بعملة {currency}. يتم الخصم بعملتك المحلية متى توفّر ذلك.",
+  "subscribe": "اشترك",
+  "redirecting": "جارٍ التحويل إلى صفحة الدفع الآمنة…",
+  "alreadySubscribed": "لديك اشتراك فعّال بالفعل.",
+  "manageInAccount": "إدارة الاشتراك",
+  "checkoutCancelled": "أُلغيت عملية الدفع — يمكنك المحاولة مجددًا في أي وقت.",
+  "channelUnavailable": "طريقة الدفع هذه غير متاحة لحسابك.",
+  "genericError": "حدث خطأ ما. يُرجى المحاولة مرة أخرى.",
+  "noPlans": "الخطط قيد الإعداد. يُرجى العودة قريبًا."
+}

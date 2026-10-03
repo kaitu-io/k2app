@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "title": "Descarga {brand} para Windows, macOS, iOS y Android",
+    "description": "Obtén la app de {brand} para tu ordenador y tu teléfono. Una cuenta cubre cinco dispositivos; inicia sesión y conecta con un toque."
+  },
+  "title": "Descarga {brand}",
+  "subtitle": "Una cuenta, cinco dispositivos. Elige tu plataforma: hemos destacado la que estás usando.",
+  "detected": "Estás en {platform}",
+  "version": "Versión {version}",
+  "getFor": "Descargar para {platform}",
+  "iosStore": "Abrir la App Store",
+  "androidStore": "Disponible en Google Play",
+  "comingSoon": "Próximamente",
+  "comingSoonHint": "Aún no está disponible en esta plataforma. Suscríbete ahora y te avisaremos por correo cuando llegue.",
+  "platforms": {
+    "windows": {
+      "name": "Windows",
+      "requirement": "Windows 10 o posterior, 64 bits"
+    },
+    "macos": {
+      "name": "Mac",
+      "requirement": "macOS 12 o posterior, Intel y Apple silicon"
+    },
+    "ios": {
+      "name": "iPhone y iPad",
+      "requirement": "iOS 15 o posterior"
+    },
+    "android": {
+      "name": "Android",
+      "requirement": "Android 8 o posterior"
+    }
+  },
+  "next": {
+    "title": "Después de instalar",
+    "step1": "Inicia sesión con el correo electrónico con el que te suscribiste.",
+    "step2": "Toca Conectar. La app elige la ruta más rápida por ti.",
+    "step3": "Usa la misma cuenta en hasta cinco dispositivos."
+  },
+  "noSubscription": "¿Aún no tienes una suscripción?",
+  "seePricing": "Ver precios",
+  "help": "¿Algo no funciona?",
+  "helpLink": "Visita la página de ayuda"
+}

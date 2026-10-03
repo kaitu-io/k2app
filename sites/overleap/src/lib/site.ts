@@ -81,11 +81,25 @@ export interface NavItem {
   external?: boolean;
 }
 
-export const NAV: { primary: NavItem[] } = {
-  primary: [],
+export const NAV: { primary: NavItem[]; cta: NavItem } = {
+  // Few pages, so direct links; a label points at the same path in the header and the footer.
+  primary: [
+    { labelKey: 'features', href: '/#features' },
+    { labelKey: 'pricing', href: '/pricing' },
+    { labelKey: 'help', href: '/support' },
+  ],
+  cta: { labelKey: 'download', href: '/install' },
 };
 
 export const FOOTER: { titleKey: NavKey; items: NavItem[] }[] = [
+  {
+    titleKey: 'footer.product',
+    items: [
+      { labelKey: 'download', href: '/install' },
+      { labelKey: 'pricing', href: '/pricing' },
+      { labelKey: 'help', href: '/support' },
+    ],
+  },
   {
     titleKey: 'footer.company',
     items: [
@@ -98,4 +112,31 @@ export const FOOTER: { titleKey: NavKey; items: NavItem[] }[] = [
 ];
 
 /** Public, indexable static routes (sitemap). */
-export const STATIC_ROUTES = ['', '/privacy', '/terms', '/delete-account'];
+export const STATIC_ROUTES = ['', '/install', '/pricing', '/purchase', '/support', '/privacy', '/terms', '/delete-account'];
+
+/**
+ * Static price table for the home and pricing pages, in minor units per currency.
+ * Must equal the `ensure_price` lines of scripts/stripe-setup-overleap.sh, which
+ * create the Stripe Prices Checkout actually charges (tests/pricing-source.test.ts).
+ * The purchase page reads live prices from the API (`currencyPrices`) instead.
+ */
+export const PRICING = {
+  yearly: { usd: 7900, gbp: 7900, eur: 8900 },
+  monthly: { usd: 1199, gbp: 999, eur: 1199 },
+  /** Center plan ids, as the purchase page sees them in GET /api/plans. */
+  pids: { yearly: 'overleap-basic-1y', monthly: 'overleap-basic-1m' },
+} as const;
+
+/**
+ * Download locations. Desktop artifacts: `<desktopBase>/<version>/Overleap_<version>_<arch>.<ext>`,
+ * versions from `<desktopBase>/cloudfront.latest.json` (stable) and `/beta/cloudfront.latest.json`.
+ * Mobile manifests: `<mobileBase>/{ios,android}/latest.json`. dl.overleap.io does not exist
+ * yet — raw CloudFront until it is provisioned.
+ */
+export const DOWNLOADS = {
+  desktopBases: ['https://d13jc1jqzlg4yt.cloudfront.net/overleap/desktop'],
+  mobileBases: ['https://d13jc1jqzlg4yt.cloudfront.net/overleap'],
+  artifactPrefix: 'Overleap',
+  /** Store listings; '' = not live yet, the download page shows "Coming soon". */
+  storeLinks: { ios: '', android: '' },
+} as const;

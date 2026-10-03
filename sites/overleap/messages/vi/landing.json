@@ -1,0 +1,133 @@
+{
+  "meta": {
+    "title": "VPN riêng tư, không lưu nhật ký, nhanh trên mọi mạng",
+    "description": "{brand} là VPN riêng tư che giấu nơi bạn truy cập, kể cả với nhà cung cấp internet, không lưu nhật ký và vẫn nhanh trên những mạng hay làm bạn thất vọng. Hỗ trợ Windows, macOS, iOS và Android."
+  },
+  "hero": {
+    "badge": "Không lưu nhật ký · Encrypted Client Hello · 5 thiết bị",
+    "title": "Bạn lướt web, chuyện của riêng bạn.",
+    "subtitle": "VPN riêng tư che giấu những nơi bạn truy cập, kể cả với nhà cung cấp internet, và vẫn nhanh trên những mạng hay làm bạn thất vọng.",
+    "description": "{brand} mã hóa mọi dữ liệu thiết bị của bạn gửi đi và che giấu điểm đến bằng Encrypted Client Hello. Chúng tôi không lưu lại bất kỳ dấu vết nào về hoạt động của bạn. Một gói đăng ký dùng được trên năm thiết bị Windows, macOS, iOS và Android.",
+    "ctaPrimary": "Dùng {brand}",
+    "ctaSecondary": "Xem cách hoạt động",
+    "mockConnected": "Đã được bảo vệ",
+    "mockNode": "Tự động · tuyến nhanh nhất"
+  },
+  "steps": {
+    "title": "Bắt đầu chỉ với ba bước",
+    "subscribe": {
+      "label": "Đăng ký gói",
+      "detail": "Thẻ, Apple Pay hoặc Google Pay · hủy bất cứ lúc nào"
+    },
+    "download": {
+      "label": "Cài đặt ứng dụng",
+      "detail": "Windows · macOS · iOS · Android"
+    },
+    "connect": {
+      "label": "Đăng nhập và kết nối",
+      "detail": "Chỉ một chạm. Không cần cấu hình."
+    },
+    "cta": "Bắt đầu ngay"
+  },
+  "features": {
+    "title": "Vì sao chọn {brand}",
+    "isp": {
+      "title": "Ẩn cả với nhà cung cấp internet",
+      "description": "Các nhà cung cấp internet ở Anh bắt buộc phải lưu lại các dịch vụ bạn kết nối tới trong tối đa mười hai tháng. Với {brand}, nhà cung cấp chỉ thấy một phiên HTTPS bình thường và không biết gì về điểm đến: Encrypted Client Hello che giấu điểm đến mà các VPN khác vẫn để lộ trong quá trình bắt tay."
+    },
+    "logs": {
+      "title": "Không lưu nhật ký. Không có gì để giao nộp.",
+      "description": "Chúng tôi không ghi lại các trang bạn truy cập, ứng dụng bạn dùng hay lưu lượng bạn gửi. Chúng tôi chỉ giữ những gì một gói đăng ký cần: địa chỉ email, gói của bạn và các thiết bị đang đăng nhập."
+    },
+    "speed": {
+      "title": "Nhanh ngay cả trên mạng chập chờn",
+      "description": "Wi-Fi trên tàu, sân vận động đông kín, kết nối khách sạn: hầu hết VPN chậm hẳn khi gói tin bị mất. Cơ chế điều khiển tốc độ k2cc của {brand} phân biệt nhiễu với tắc nghẽn thực sự để giữ tốc độ cho bạn."
+    },
+    "roaming": {
+      "title": "Đi đâu cũng theo bạn",
+      "description": "Ra khỏi nhà, mất Wi-Fi, vẫn tiếp tục dùng bình thường. Đường hầm chuyển từ Wi-Fi sang dữ liệu di động ngay giữa phiên, nên tải xuống và cuộc gọi không bị gián đoạn, không cần kết nối lại."
+    },
+    "travel": {
+      "title": "Vẫn hoạt động khi ở nước ngoài",
+      "description": "Đi đến nơi VPN thường không dùng được? Kết nối của {brand} trông như lưu lượng web thông thường, nên vẫn hoạt động ở nơi các VPN khác bị chặn."
+    }
+  },
+  "pricing": {
+    "title": "Một gói. Mọi thiết bị.",
+    "subtitle": "Năm thiết bị, dữ liệu không giới hạn, mọi vị trí. Hủy bất cứ lúc nào.",
+    "yearly": {
+      "name": "Theo năm",
+      "period": "mỗi năm",
+      "note": "Tiết kiệm nhất — khoảng {monthly} mỗi tháng"
+    },
+    "monthly": {
+      "name": "Theo tháng",
+      "period": "mỗi tháng",
+      "note": "Hủy bất cứ lúc nào"
+    },
+    "cta": "Chọn gói",
+    "includes": [
+      "5 thiết bị cùng lúc",
+      "Dữ liệu không giới hạn",
+      "Mọi vị trí",
+      "Windows, macOS, iOS, Android"
+    ],
+    "currencyNote": "Giá tính bằng {currency}. Thanh toán bằng thẻ, Apple Pay hoặc Google Pay. Bạn được tính phí bằng nội tệ khi có hỗ trợ."
+  },
+  "faq": {
+    "title": "Câu hỏi thường gặp",
+    "subtitle": "Giải đáp thẳng thắn về cách {brand} hoạt động.",
+    "items": {
+      "logs": {
+        "question": "Các bạn có lưu nhật ký không?",
+        "answer": "Không. Chúng tôi không ghi lại các trang bạn truy cập, ứng dụng bạn dùng hay lưu lượng bạn gửi. Chúng tôi chỉ giữ những gì một gói đăng ký cần: địa chỉ email, gói của bạn và các thiết bị đang đăng nhập."
+      },
+      "isp": {
+        "question": "Nhà cung cấp internet của tôi thấy gì?",
+        "answer": "Một kết nối được mã hóa tới máy chủ {brand}, mang một phiên HTTPS trông hoàn toàn bình thường. Encrypted Client Hello che giấu cả tên máy chủ trong quá trình bắt tay, nên không có gì cho thấy đó là VPN và không có gì về nơi bạn thực sự truy cập."
+      },
+      "legal": {
+        "question": "Dùng VPN ở Anh có hợp pháp không?",
+        "answer": "Có. Dùng VPN là hợp pháp ở Anh và trên khắp châu Âu. Những gì bạn làm trên mạng vẫn phải tuân theo pháp luật."
+      },
+      "publicWifi": {
+        "question": "Dùng Wi-Fi công cộng có an toàn không?",
+        "answer": "Có. Mọi dữ liệu thiết bị gửi đi đều được mã hóa trước khi rời máy, nên mạng của quán cà phê, khách sạn hay tàu xe chỉ thấy lưu lượng đã mã hóa, và không ai trong cùng mạng có thể đọc hay can thiệp vào đó."
+      },
+      "travel": {
+        "question": "Có dùng được khi đi du lịch không?",
+        "answer": "Có. Kết nối của {brand} trông như lưu lượng web thông thường, nên vẫn hoạt động ở những nơi VPN thường bị chặn. Gói đăng ký của bạn bao gồm mọi vị trí, và ứng dụng chọn tuyến nhanh nhất dù bạn ở đâu."
+      },
+      "ech": {
+        "question": "Encrypted Client Hello là gì?",
+        "answer": "Đó là phần của quá trình bắt tay TLS thường cho biết bạn đang kết nối tới máy chủ nào, nay được mã hóa. Hầu hết VPN vẫn gửi tên này ở dạng rõ, và đó chính là thứ mạng dùng để nhận diện và chặn chúng. {brand} mã hóa nó."
+      },
+      "platforms": {
+        "question": "Hỗ trợ những nền tảng nào?",
+        "answer": "Windows, macOS, iOS và Android. Một gói đăng ký dùng được trên năm thiết bị cùng lúc."
+      },
+      "devices": {
+        "question": "Tôi dùng được bao nhiêu thiết bị?",
+        "answer": "Năm thiết bị cùng lúc, kết hợp tùy ý các nền tảng. Đăng nhập trên thiết bị thứ sáu sẽ đăng xuất thiết bị cũ nhất."
+      },
+      "pricing": {
+        "question": "Giá bao nhiêu?",
+        "answer": "{yearly} mỗi năm, hoặc {monthly} mỗi tháng. Cả hai đều gồm năm thiết bị, dữ liệu không giới hạn và mọi vị trí, và bạn có thể hủy bất cứ lúc nào."
+      },
+      "payment": {
+        "question": "Tôi thanh toán bằng cách nào?",
+        "answer": "Thẻ tín dụng hoặc thẻ ghi nợ qua Stripe. Apple Pay và Google Pay được hỗ trợ khi thanh toán nếu thiết bị của bạn có hỗ trợ. Bạn được tính phí bằng nội tệ khi có hỗ trợ."
+      },
+      "cancel": {
+        "question": "Làm sao để hủy?",
+        "answer": "Từ trang tài khoản của bạn, hoặc qua cửa hàng ứng dụng mà bạn đã đăng ký. Gói của bạn vẫn hoạt động đến hết kỳ đã thanh toán."
+      }
+    }
+  },
+  "download": {
+    "title": "Dùng {brand} trên mọi thiết bị",
+    "subtitle": "Một tài khoản, năm thiết bị, cùng một kết nối ở mọi nơi.",
+    "platforms": "Windows · macOS · iOS · Android",
+    "button": "Tải xuống"
+  }
+}

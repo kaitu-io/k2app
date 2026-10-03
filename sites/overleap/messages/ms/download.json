@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "title": "Muat turun {brand} untuk Windows, macOS, iOS dan Android",
+    "description": "Dapatkan aplikasi {brand} untuk komputer dan telefon anda. Satu akaun meliputi lima peranti; log masuk dan sambung dengan satu ketikan."
+  },
+  "title": "Muat turun {brand}",
+  "subtitle": "Satu akaun, lima peranti. Pilih platform anda — kami telah menyerlahkan yang sedang anda gunakan.",
+  "detected": "Anda menggunakan {platform}",
+  "version": "Versi {version}",
+  "getFor": "Muat turun untuk {platform}",
+  "iosStore": "Buka App Store",
+  "androidStore": "Dapatkan di Google Play",
+  "comingSoon": "Akan datang",
+  "comingSoonHint": "Belum tersedia pada platform ini. Langgan sekarang dan kami akan e-mel anda apabila ia sedia.",
+  "platforms": {
+    "windows": {
+      "name": "Windows",
+      "requirement": "Windows 10 atau lebih baharu, 64-bit"
+    },
+    "macos": {
+      "name": "Mac",
+      "requirement": "macOS 12 atau lebih baharu, Intel dan Apple silicon"
+    },
+    "ios": {
+      "name": "iPhone dan iPad",
+      "requirement": "iOS 15 atau lebih baharu"
+    },
+    "android": {
+      "name": "Android",
+      "requirement": "Android 8 atau lebih baharu"
+    }
+  },
+  "next": {
+    "title": "Selepas pemasangan",
+    "step1": "Log masuk dengan alamat e-mel yang anda gunakan untuk melanggan.",
+    "step2": "Ketik Sambung. Aplikasi memilih laluan terpantas untuk anda.",
+    "step3": "Gunakan akaun yang sama pada sehingga lima peranti."
+  },
+  "noSubscription": "Belum melanggan?",
+  "seePricing": "Lihat harga",
+  "help": "Ada yang tidak berfungsi?",
+  "helpLink": "Lawati halaman bantuan"
+}

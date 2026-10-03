@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "title": "{brand}'i Windows, macOS, iOS ve Android için indirin",
+    "description": "{brand} uygulamasını bilgisayarınız ve telefonunuz için indirin. Tek hesap beş cihazı kapsar; giriş yapın ve tek dokunuşla bağlanın."
+  },
+  "title": "{brand}'i indirin",
+  "subtitle": "Tek hesap, beş cihaz. Platformunuzu seçin — kullandığınızı vurguladık.",
+  "detected": "{platform} kullanıyorsunuz",
+  "version": "Sürüm {version}",
+  "getFor": "{platform} için indir",
+  "iosStore": "App Store'u aç",
+  "androidStore": "Google Play'den edinin",
+  "comingSoon": "Çok yakında",
+  "comingSoonHint": "Bu platformda henüz mevcut değil. Şimdi abone olun, kullanıma girdiğinde size e-posta gönderelim.",
+  "platforms": {
+    "windows": {
+      "name": "Windows",
+      "requirement": "Windows 10 veya üzeri, 64 bit"
+    },
+    "macos": {
+      "name": "Mac",
+      "requirement": "macOS 12 veya üzeri, Intel ve Apple silicon"
+    },
+    "ios": {
+      "name": "iPhone ve iPad",
+      "requirement": "iOS 15 veya üzeri"
+    },
+    "android": {
+      "name": "Android",
+      "requirement": "Android 8 veya üzeri"
+    }
+  },
+  "next": {
+    "title": "Yükledikten sonra",
+    "step1": "Abone olduğunuz e-posta adresiyle giriş yapın.",
+    "step2": "Bağlan'a dokunun. Uygulama sizin için en hızlı rotayı seçer.",
+    "step3": "Aynı hesabı en fazla beş cihazda kullanın."
+  },
+  "noSubscription": "Henüz aboneliğiniz yok mu?",
+  "seePricing": "Fiyatları görün",
+  "help": "Bir şey mi çalışmıyor?",
+  "helpLink": "Yardım sayfasını ziyaret edin"
+}

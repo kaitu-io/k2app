@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "title": "Ajuda",
+    "description": "Primeiros passos, sua conta e cobrança, e respostas diretas para as dúvidas comuns sobre o {brand}."
+  },
+  "title": "Ajuda",
+  "intro": "Primeiros passos, sua conta e cobrança, e respostas diretas. Se não estiver aqui, escreva para nós: uma pessoa responde.",
+  "gettingStarted": {
+    "title": "Primeiros passos",
+    "step1": {
+      "title": "Assine",
+      "body": "Escolha um plano na página de preços e pague com cartão, Apple Pay ou Google Pay."
+    },
+    "step2": {
+      "title": "Instale o app",
+      "body": "Baixe o {brand} para Windows, macOS, iOS ou Android."
+    },
+    "step3": {
+      "title": "Entre e conecte",
+      "body": "Use o e-mail da sua assinatura e toque em Conectar. O app escolhe a rota mais rápida para você."
+    },
+    "download": "Ir para downloads"
+  },
+  "billing": {
+    "title": "Conta e cobrança",
+    "items": {
+      "manage": {
+        "question": "Como gerencio ou cancelo minha assinatura?",
+        "answer": "Abra a página da sua conta e escolha Gerenciar assinatura. Lá você pode cancelar, trocar o cartão ou baixar faturas. Ao cancelar, seu plano continua ativo até o fim do período que você pagou."
+      },
+      "charge": {
+        "question": "Quando sou cobrado?",
+        "answer": "No início de cada período de cobrança, no cartão usado na assinatura. O Stripe envia um recibo por e-mail a cada cobrança."
+      },
+      "refund": {
+        "question": "Posso pedir reembolso?",
+        "answer": "Se o {brand} não funcionar para você, escreva para nós e resolveremos."
+      },
+      "devices": {
+        "question": "Atingi o limite de cinco dispositivos",
+        "answer": "Entrar em um sexto dispositivo desconecta automaticamente o mais antigo. Para desconectar um dispositivo por conta própria, use a tela Dispositivos do app."
+      }
+    },
+    "account": "Ir para sua conta"
+  },
+  "faq": {
+    "title": "Perguntas",
+    "subtitle": "Como o {brand} funciona, em linguagem simples."
+  },
+  "contact": {
+    "title": "Ainda com dificuldade?",
+    "body": "Escreva para {email} contando o que você tentava fazer e o que aconteceu. Uma pessoa lê cada mensagem.",
+    "button": "Escrever para o suporte"
+  }
+}

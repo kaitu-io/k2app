@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "title": "ดาวน์โหลด {brand} สำหรับ Windows, macOS, iOS และ Android",
+    "description": "รับแอป {brand} สำหรับคอมพิวเตอร์และโทรศัพท์ของคุณ หนึ่งบัญชีครอบคลุม 5 อุปกรณ์ เข้าสู่ระบบและเชื่อมต่อได้ในแตะเดียว"
+  },
+  "title": "ดาวน์โหลด {brand}",
+  "subtitle": "หนึ่งบัญชี 5 อุปกรณ์ เลือกแพลตฟอร์มของคุณ เราได้ไฮไลต์แพลตฟอร์มที่คุณใช้อยู่ไว้ให้แล้ว",
+  "detected": "คุณกำลังใช้ {platform}",
+  "version": "เวอร์ชัน {version}",
+  "getFor": "ดาวน์โหลดสำหรับ {platform}",
+  "iosStore": "เปิด App Store",
+  "androidStore": "ดาวน์โหลดบน Google Play",
+  "comingSoon": "เร็วๆ นี้",
+  "comingSoonHint": "ยังไม่รองรับบนแพลตฟอร์มนี้ สมัครใช้งานตอนนี้แล้วเราจะส่งอีเมลแจ้งเมื่อพร้อมใช้งาน",
+  "platforms": {
+    "windows": {
+      "name": "Windows",
+      "requirement": "Windows 10 ขึ้นไป 64 บิต"
+    },
+    "macos": {
+      "name": "Mac",
+      "requirement": "macOS 12 ขึ้นไป รองรับ Intel และ Apple silicon"
+    },
+    "ios": {
+      "name": "iPhone และ iPad",
+      "requirement": "iOS 15 ขึ้นไป"
+    },
+    "android": {
+      "name": "Android",
+      "requirement": "Android 8 ขึ้นไป"
+    }
+  },
+  "next": {
+    "title": "หลังติดตั้งแล้ว",
+    "step1": "เข้าสู่ระบบด้วยอีเมลที่คุณใช้สมัคร",
+    "step2": "แตะเชื่อมต่อ แอปจะเลือกเส้นทางที่เร็วที่สุดให้คุณ",
+    "step3": "ใช้บัญชีเดียวกันได้สูงสุด 5 อุปกรณ์"
+  },
+  "noSubscription": "ยังไม่ได้สมัครใช้งานใช่ไหม",
+  "seePricing": "ดูราคา",
+  "help": "มีอะไรใช้งานไม่ได้หรือไม่",
+  "helpLink": "ไปที่หน้าช่วยเหลือ"
+}
