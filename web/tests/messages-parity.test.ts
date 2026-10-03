@@ -71,3 +71,12 @@ describe('no locale carries the other brand\'s namespaces', () => {
     expect(stray).toEqual([]);
   });
 });
+
+describe('the chat widget copy ships only with the brand that has the widget', () => {
+  it('chat is a kaitu namespace, absent from the overleap set (so it is not in any overleap page payload)', () => {
+    expect(BRAND_NAMESPACES.kaitu as readonly string[]).toContain('chat');
+    expect(BRAND_NAMESPACES.overleap as readonly string[]).not.toContain('chat');
+    expect(KAITU.chatEnabled).toBe(true);
+    expect(OVERLEAP.chatEnabled).toBe(false);
+  });
+});

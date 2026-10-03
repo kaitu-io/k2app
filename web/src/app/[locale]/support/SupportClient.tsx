@@ -24,8 +24,12 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { useState } from 'react';
+import ChatWidgetLazy from '@/components/chat/ChatWidgetLazy';
+import { requestOpenChat } from '@/components/chat/gate';
 
 const openChat = () => {
+  // 自建会话挂件在场时由它接管；不在场（未开启 / 未预览）走原来的客服入口。
+  if (requestOpenChat()) return;
   const w = window as unknown as Record<string, unknown>;
   if (w.$chatwoot && typeof (w.$chatwoot as Record<string, unknown>).toggle === 'function') {
     (w.$chatwoot as { toggle: (action: string) => void }).toggle('open');
@@ -377,6 +381,7 @@ export default function SupportClient() {
       </section>
 
       <Footer />
+      {brand.chatEnabled && <ChatWidgetLazy />}
     </div>
   );
 }

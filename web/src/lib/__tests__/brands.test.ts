@@ -79,6 +79,10 @@ describe('extended brand config', () => {
     expect(OVERLEAP.gaMeasurementId).toBe('');
     expect(OVERLEAP.chatwootToken).toBe('');
   });
+  it('in-house chat widget is kaitu-only', () => {
+    expect(KAITU.chatEnabled).toBe(true);
+    expect(OVERLEAP.chatEnabled).toBe(false);
+  });
   it('cdn config carries per-brand bases and artifact prefixes', () => {
     expect(KAITU.cdn.artifactPrefix).toBe('Kaitu');
     expect(KAITU.cdn.desktopBases[0]).toBe('https://dl.kaitu.io/kaitu/desktop');

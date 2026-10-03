@@ -1,0 +1,20 @@
+{
+  "launcher": "線上諮詢",
+  "title": "線上諮詢",
+  "close": "關閉",
+  "placeholder": "輸入訊息…",
+  "send": "傳送",
+  "senderAi": "智慧助理",
+  "senderStaff": "客服",
+  "imagePlaceholder": "[圖片]",
+  "closed": "對話已結束。傳送新訊息即可開始新的對話。",
+  "rateLimited": "傳送太頻繁，請稍後再試。",
+  "sendFailed": "傳送失敗，請檢查網路後重試。",
+  "tooLong": "訊息太長了，請精簡後再傳送。",
+  "emailPrompt": "客服暫時無法接入。留下電子郵件，我們回覆後會寄信通知您。",
+  "emailPlaceholder": "您的電子郵件",
+  "emailSubmit": "送出",
+  "emailInvalid": "請輸入有效的電子郵件地址。",
+  "emailFailed": "送出失敗，請稍後再試。",
+  "emailSaved": "已收到。客服回覆後會寄信通知您。"
+}

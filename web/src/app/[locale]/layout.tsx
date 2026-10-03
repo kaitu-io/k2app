@@ -20,6 +20,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import Script from 'next/script';
 import ChatwootWidget from '@/components/ChatwootWidget';
 import FunnelPageView from '@/components/FunnelPageView';
+import { CHAT_RESUME_SCRIPT } from '@/components/chat/resume-script';
 import "../globals.css";
 
 // Inline polyfill for Array.prototype.at — Sentry web-vitals (INP) and Next.js
@@ -95,6 +96,13 @@ export default async function LocaleLayout({
             link click is forwarded to the parent app instead of navigating the
             iframe. See public/embed-interceptor.js. */}
         <Script src="/embed-interceptor.js" strategy="beforeInteractive" />
+        {/* Must run before any analytics script: moves an emailed chat-resume
+            token out of the URL fragment (#chat=…) so it never reaches
+            analytics, history or referrers. Brand-neutral; a no-op without the
+            fragment. See components/chat/resume-script.ts. */}
+        <Script id="chat-resume-strip" strategy="beforeInteractive">
+          {CHAT_RESUME_SCRIPT}
+        </Script>
         {brand.gaMeasurementId && (
           <>
             <Script

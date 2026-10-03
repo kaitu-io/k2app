@@ -10,8 +10,8 @@ github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751/go.mod h1:LOuy
 github.com/alecthomas/units v0.0.0-20151022065526-2efee857e7cf/go.mod h1:ybxpYRFXyAe+OPACYpWeL0wqObRcbAqCMya13uyzqw0=
 github.com/alecthomas/units v0.0.0-20190717042225-c3de453c63f4/go.mod h1:ybxpYRFXyAe+OPACYpWeL0wqObRcbAqCMya13uyzqw0=
 github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d/go.mod h1:rBZYJk541a8SKzHPHnH3zbiI+7dagKZ0cgpgrD7Fyho=
-github.com/alicebob/miniredis/v2 v2.36.0 h1:yKczg+ez0bQYsG/PrgqtMMmCfl820RPu27kVGjP53eY=
-github.com/alicebob/miniredis/v2 v2.36.0/go.mod h1:TcL7YfarKPGDAthEtl5NBeHZfeUQj6OXMm/+iu5cLMM=
+github.com/alicebob/miniredis/v2 v2.37.0 h1:RheObYW32G1aiJIj81XVt78ZHJpHonHLHW7OLIshq68=
+github.com/alicebob/miniredis/v2 v2.37.0/go.mod h1:TcL7YfarKPGDAthEtl5NBeHZfeUQj6OXMm/+iu5cLMM=
 github.com/aws/aws-sdk-go-v2 v1.41.1 h1:ABlyEARCDLN034NhxlRUSZr4l71mh+T5KAeGh6cerhU=
 github.com/aws/aws-sdk-go-v2 v1.41.1/go.mod h1:MayyLB8y+buD9hZqkCW3kX1AKq07Y5pXxtgB+rRFhz0=
 github.com/aws/aws-sdk-go-v2/config v1.32.3 h1:cpz7H2uMNTDa0h/5CYL5dLUEzPSLo2g0NkbxTRJtSSU=
@@ -377,10 +377,10 @@ github.com/wordgate/qtoolkit/nextpay v1.5.38 h1:G2xq0CJQAbYNObUglvxksN/675a7q3Un
 github.com/wordgate/qtoolkit/nextpay v1.5.38/go.mod h1:1bCw/USjCnPHYkmbS3NJf2v3P9iOWYss8XhKYn/ZE7s=
 github.com/wordgate/qtoolkit/openai/filesearch v1.5.25 h1:CUDuPG0syNKDTk/69Sq80v0xvKmjGHnvGhPynXeMWd4=
 github.com/wordgate/qtoolkit/openai/filesearch v1.5.25/go.mod h1:rEGtsFnPUgm1UDVDzD1vwONa8iPaoigM/ndxlScldp0=
-github.com/wordgate/qtoolkit/redis v1.5.25 h1:5Ubrb9g5MiRyOmi/HsD7bwgMlQ2Agml+cSKyUmCKMUk=
-github.com/wordgate/qtoolkit/redis v1.5.25/go.mod h1:hCQLoaTlQa5QVI87xzIwSUuOMaeCqe922iEF67lpoLo=
-github.com/wordgate/qtoolkit/slack v1.5.25 h1:WHZhnqRECyaMj6LOhcedHlCQr7Dn1vLhLSqpgnLxO+0=
-github.com/wordgate/qtoolkit/slack v1.5.25/go.mod h1:jIFshVtYFvwpa87BEv3M5SZ38EbSShhf2QBesVVOQxs=
+github.com/wordgate/qtoolkit/redis v1.5.40 h1:fJo6zWKz8Hjtdx1oRsE+Rhpn2f6ZZwoD8eAwbEAqtmI=
+github.com/wordgate/qtoolkit/redis v1.5.40/go.mod h1:vLZCYLzPzA4p9bW8IuNyrHPYwinTJk7ltPU8K+PVACs=
+github.com/wordgate/qtoolkit/slack v1.5.40 h1:lnppgeZV+QS7glIU3/KdqSKnQBGru5qdxhvSXPF0a+Y=
+github.com/wordgate/qtoolkit/slack v1.5.40/go.mod h1:jIFshVtYFvwpa87BEv3M5SZ38EbSShhf2QBesVVOQxs=
 github.com/wordgate/qtoolkit/unred v1.5.25 h1:YXiZx7uyyfeZwa+a7kH9bolTVV3t/3A2oCd95TgX+0A=
 github.com/wordgate/qtoolkit/unred v1.5.25/go.mod h1:ZGLEXOOi8HuTDJEB1Qffnr0w1+DIp8HMEchRKhEi2Yg=
 github.com/wordgate/qtoolkit/util v1.5.25 h1:JYyAO6e/25U5eYgqrIgUnfKl5FZPGE1hblyJXoTKBTU=

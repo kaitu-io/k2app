@@ -194,6 +194,18 @@ func ticketReplyNotification(b Brand, ticketID uint64, replies string) (subject,
 		fmt.Sprintf("您好，\n\n您的工单 (#%d) 收到了新的回复：\n\n---\n%s\n---\n\n请登录 Kaitu 客户端查看完整对话。\n", ticketID, replies)
 }
 
+// chatOfflineMailContent 客服聊天离线邮件的文案（发信逻辑在 logic_chat_offline_mail.go）。
+// 品牌名取注册表的 DisplayName，不写品牌字面量；overleap 文案已登记进 overleapTemplateCorpus。
+func chatOfflineMailContent(b Brand, reply, link string) (subject, body string) {
+	name := b.Config().DisplayName
+	if b == BrandOverleap {
+		return fmt.Sprintf("[%s] New reply from support", name),
+			fmt.Sprintf("Hi,\n\nOur support team replied to your conversation:\n\n---\n%s\n---\n\nContinue the conversation here (link valid for 7 days):\n%s\n\n— The %s Team\n", reply, link, name)
+	}
+	return fmt.Sprintf("[%s] 客服回复了您的咨询", name),
+		fmt.Sprintf("您好，\n\n客服回复了您的咨询：\n\n---\n%s\n---\n\n点击下方链接继续对话（7 天内有效）：\n%s\n\n%s 团队\n", reply, link, name)
+}
+
 // overleapTemplateCorpus 汇总全部 overleap 文案的 Subject+Body，供
 // TestOverleapTemplatesNoChineseBrandLeak 逐一断言零中文品牌泄漏。
 //
@@ -203,6 +215,7 @@ func ticketReplyNotification(b Brand, ticketID uint64, replies string) (subject,
 // `var brandedXxx = brandedEmailTemplate[...]` 这一形状的声明，那个守卫看不见。
 func overleapTemplateCorpus() map[string]string {
 	ticketReplySubject, ticketReplyBody := ticketReplyNotification(BrandOverleap, 0, "")
+	chatOfflineSubject, chatOfflineBody := chatOfflineMailContent(BrandOverleap, "", "")
 	return map[string]string{
 		"brandedVerificationCodeTemplate":   brandedVerificationCodeTemplate.Overleap.Subject + brandedVerificationCodeTemplate.Overleap.Body,
 		"brandedNewDeviceLoginTemplate":     brandedNewDeviceLoginTemplate.Overleap.Subject + brandedNewDeviceLoginTemplate.Overleap.Body,
@@ -213,6 +226,7 @@ func overleapTemplateCorpus() map[string]string {
 		"brandedDeviceKickTemplate":         brandedDeviceKickTemplate.Overleap.Subject + brandedDeviceKickTemplate.Overleap.Body,
 		"brandedAdminResetPasswordTemplate": brandedAdminResetPasswordTemplate.Overleap.Subject + brandedAdminResetPasswordTemplate.Overleap.Body,
 		"ticketReply":                       ticketReplySubject + ticketReplyBody,
+		"chatOfflineMail":                   chatOfflineSubject + chatOfflineBody,
 	}
 }
 

@@ -38,6 +38,9 @@ func SetupRouter() *gin.Engine {
 	r.POST("/webhook/stripe", log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), api_stripe_webhook)
 	// NextPay webhook（kaitu 一次性购买入账：order.paid 单一入账事件，2026-09-22 起）
 	r.POST("/webhook/nextpay", log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), api_nextpay_webhook)
+	// Slack Events API：客服在会话频道里发言即回复访客（自带签名校验，与 Host/品牌无关，故不挂 BrandResolver；
+	// 也不挂请求日志：它会在验签前整体读入并记录 body，handler 自己限 1MB 并只记不含正文的结构化日志）
+	r.POST("/webhook/slack/events", MiddleRecovery(), api_slack_events)
 
 	// Chatwoot → FastGPT AI bridge
 	chatwootWebhook := r.Group("/webhook")
@@ -314,6 +317,9 @@ func SetupRouter() *gin.Engine {
 		api.GET("/px", api_funnel_px)
 		api.GET("/px/optout", api_funnel_px_optout)
 
+		// 访客聊天（官网挂件；无需登录，登录用户自动识别）
+		registerChatRoutes(api)
+
 		// 问卷调查
 		survey := api.Group("/survey")
 		{
@@ -515,6 +521,9 @@ func SetupRouter() *gin.Engine {
 		opsAdmin.PUT("/feedback-tickets/:id/close", RoleRequired(RoleSupport), api_admin_close_feedback_ticket)
 		opsAdmin.POST("/feedback-tickets/:id/reply", RoleRequired(RoleSupport), api_admin_reply_ticket)
 		opsAdmin.GET("/feedback-tickets/:id/replies", RoleRequired(allOpsRoles), api_admin_list_ticket_replies)
+
+		// 访客会话（只读索引 + 关闭；Slack 是客服主界面）
+		registerAdminChatRoutes(opsAdmin)
 
 		// 分销商管理（Marketing 角色）
 		opsAdmin.GET("/retailers", RoleRequired(RoleMarketing), api_admin_list_retailers)

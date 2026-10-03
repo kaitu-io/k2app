@@ -496,6 +496,9 @@ func startServer() {
 	// Task system is ready - execute tasks via center.RunTasks() or admin APIs
 	log.Infof(ctx, "Task system ready")
 
+	// 访客聊天实时通道：订阅 Redis 广播，把消息推给本实例上的 WebSocket
+	center.StartChatBroadcast(ctx)
+
 	// 启动 HTTP 服务
 	r := center.SetupRouter()
 	serverConfig := center.ConfigServer(ctx)

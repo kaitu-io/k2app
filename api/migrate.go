@@ -170,6 +170,13 @@ func Migrate() error {
 		&StatK2sDownload{},
 		&FunnelEvent{},
 		&FunnelIdentity{},
+		// Support chat
+		&Guest{},
+		&GuestIdentity{},
+		&GuestMerge{},
+		&GuestUserLink{},
+		&Conversation{},
+		&ConversationMessage{},
 		// Admin audit log
 		&AdminAuditLog{},
 		// Admin approval system

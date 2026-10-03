@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
-	github.com/alicebob/miniredis/v2 v2.36.0
+	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/aws/aws-sdk-go-v2 v1.41.1
 	github.com/aws/aws-sdk-go-v2/config v1.32.3
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.3
@@ -32,8 +32,8 @@ require (
 	github.com/wordgate/qtoolkit/mail v1.5.29
 	github.com/wordgate/qtoolkit/nextpay v1.5.38
 	github.com/wordgate/qtoolkit/openai/filesearch v1.5.25
-	github.com/wordgate/qtoolkit/redis v1.5.25
-	github.com/wordgate/qtoolkit/slack v1.5.25
+	github.com/wordgate/qtoolkit/redis v1.5.40
+	github.com/wordgate/qtoolkit/slack v1.5.40
 	github.com/wordgate/qtoolkit/unred v1.5.25
 	github.com/wordgate/qtoolkit/util v1.5.25
 	github.com/wordgate/wordgate-sdk v0.1.12
@@ -76,7 +76,7 @@ require (
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.18.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
-	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
+	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/hibiken/asynqmon v0.7.2 // indirect
 	github.com/jackc/chunkreader/v2 v2.0.1 // indirect
 	github.com/jackc/pgconn v1.14.3 // indirect

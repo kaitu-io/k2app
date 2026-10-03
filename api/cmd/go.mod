@@ -109,8 +109,8 @@ require (
 	github.com/wordgate/qtoolkit/mail v1.5.29 // indirect
 	github.com/wordgate/qtoolkit/nextpay v1.5.38 // indirect
 	github.com/wordgate/qtoolkit/openai/filesearch v1.5.25 // indirect
-	github.com/wordgate/qtoolkit/redis v1.5.25 // indirect
-	github.com/wordgate/qtoolkit/slack v1.5.25 // indirect
+	github.com/wordgate/qtoolkit/redis v1.5.40 // indirect
+	github.com/wordgate/qtoolkit/slack v1.5.40 // indirect
 	github.com/wordgate/wordgate-sdk v0.1.12 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
