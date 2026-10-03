@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
 
 // 挂件本体换成替身：工厂只在真的发生动态 import 时执行，借此断言"门没开就不加载代码块"。
@@ -13,6 +13,7 @@ vi.mock('@sentry/nextjs', () => sentry);
 
 import ChatWidgetLazy, { ChatErrorBoundary } from '../chat/ChatWidgetLazy';
 import { CHAT_KNOWN_FLAG } from '../chat/gate';
+import { OVERLEAP } from '@/lib/brands';
 
 const visit = (url: string) => window.history.pushState({}, '', url);
 
@@ -36,7 +37,10 @@ describe('ChatWidgetLazy', () => {
   ])('renders nothing and never imports the widget chunk — %s', async (_name, url, brand) => {
     visit(url);
     if (brand) {
+      // 两个品牌目前都开着挂件：临时关掉一个来测这道门
       vi.stubEnv('NEXT_PUBLIC_BRAND', brand);
+      OVERLEAP.chatEnabled = false;
+      onTestFinished(() => { OVERLEAP.chatEnabled = true; });
       localStorage.setItem(CHAT_KNOWN_FLAG, '1');
     }
     const { container } = render(<ChatWidgetLazy />);

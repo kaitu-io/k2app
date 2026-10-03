@@ -391,7 +391,7 @@ func TestChatSession_WelcomeIsFixedCopy(t *testing.T) {
 	}
 	welcome, ok := data["welcome"].(map[string]any)
 	require.True(t, ok)
-	text, _ := chatAIWelcome()
+	text, _ := chatAIWelcome(BrandKaitu)
 	assert.Equal(t, text, welcome["text"])
 	var values []string
 	for _, o := range welcome["options"].([]any) {

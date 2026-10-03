@@ -11,15 +11,13 @@ export const defaultNamespace: Namespace = 'common';
  * locale 目录里有文件（开途 = zh-*，Overleap = en-* + ja），tests/messages-parity.test.ts
  * 按品牌逐 namespace 比对 key 集。
  *
- * `chat`（访客会话挂件文案）是开途独有：只有 `Brand.chatEnabled` 的品牌才渲染挂件，放进 SHARED
- * 会让另一个品牌的每个页面载荷都白带这些文案。哪天另一个品牌也开挂件，再把它挪回 SHARED 并补齐
- * 该品牌各 locale 的文件。
+ * `chat`（访客会话挂件文案）两个品牌都有挂件（`Brand.chatEnabled`），所以在 SHARED 里、每个 locale 都有文件。
  * SHARED 里的 `admin` 是因为共享的 Header（账户按钮）与 ChangePasswordDialog 用到
  * `admin.account.*`——不是 Overleap 有后台。
  */
-export const SHARED_NAMESPACES = ["common","nav","auth","purchase","account","discovery","errors","k2","admin","pricing"] as const satisfies readonly Namespace[];
+export const SHARED_NAMESPACES = ["common","nav","auth","purchase","account","discovery","errors","k2","admin","pricing","chat"] as const satisfies readonly Namespace[];
 export const BRAND_NAMESPACES = {
-  kaitu: [...SHARED_NAMESPACES, "hero","install","wallet","campaigns","invite","theme","changelog","releases","routers","guide-parents","licenseKeys","survey","payResult","chat"],
+  kaitu: [...SHARED_NAMESPACES, "hero","install","wallet","campaigns","invite","theme","changelog","releases","routers","guide-parents","licenseKeys","survey","payResult"],
   overleap: [...SHARED_NAMESPACES, "landing","download","help"],
 } as const satisfies Record<string, readonly Namespace[]>;
 

@@ -308,7 +308,17 @@ export default function ChatWidget({ createClient = createChatClient }: { create
         <MessageList
           messages={messages}
           welcome={welcome}
-          labels={{ ai: t('senderAi'), staff: t('senderStaff'), image: t('imagePlaceholder') }}
+          labels={{
+            ai: t('senderAi'),
+            staff: t('senderStaff'),
+            image: t('imagePlaceholder'),
+            events: {
+              transfer_human: t('eventTransferHuman'),
+              handed_to_ai: t('eventHandedToAi'),
+              closed: t('eventClosed'),
+              auto_closed: t('eventAutoClosed'),
+            },
+          }}
         />
         {conversation?.status === 'closed' && (
           <p className="text-center text-xs text-muted-foreground">{t('closed')}</p>

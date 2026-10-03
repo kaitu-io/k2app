@@ -47,6 +47,9 @@ type BrandConfig struct {
 	// GeoDetect=true：按请求 IP 判定，判定不出或该国没有规则包时落到 GeoDefaultCountry。
 	GeoDetect         bool
 	GeoDefaultCountry string
+	// 访客会话是否由 AI 先接待。AI 的系统提示（data/system_prompt.md）与知识库只写了开途的产品与价格，
+	// 别的品牌接上会把开途的内容答给它的访客，所以为 false：会话一建出来就是人工，Slack 里 !ai 也被拒。
+	ChatAI bool
 }
 
 func (bc *BrandConfig) AllowsPayment(channel string) bool {
@@ -74,6 +77,7 @@ var brandRegistry = map[Brand]*BrandConfig{
 		PaymentChannels:   []string{PayChannelNextpay, PayChannelWordgate, PayChannelAppleIAP},
 		GeoDetect:         false,
 		GeoDefaultCountry: "cn",
+		ChatAI:            true,
 	},
 	BrandOverleap: {
 		ID:                 BrandOverleap,
@@ -89,6 +93,7 @@ var brandRegistry = map[Brand]*BrandConfig{
 		PaymentChannels:   []string{PayChannelStripe, PayChannelAppleIAP},
 		GeoDetect:         true,
 		GeoDefaultCountry: "gb",
+		ChatAI:            false,
 	},
 }
 

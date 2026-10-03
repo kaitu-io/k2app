@@ -13,7 +13,7 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { BRAND_NAMESPACES } from '../messages/namespaces';
+import { BRAND_NAMESPACES, SHARED_NAMESPACES } from '../messages/namespaces';
 import { KAITU, OVERLEAP } from '../src/lib/brands';
 
 const MESSAGES_DIR = path.resolve(__dirname, '../messages');
@@ -72,11 +72,10 @@ describe('no locale carries the other brand\'s namespaces', () => {
   });
 });
 
-describe('the chat widget copy ships only with the brand that has the widget', () => {
-  it('chat is a kaitu namespace, absent from the overleap set (so it is not in any overleap page payload)', () => {
-    expect(BRAND_NAMESPACES.kaitu as readonly string[]).toContain('chat');
-    expect(BRAND_NAMESPACES.overleap as readonly string[]).not.toContain('chat');
+describe('the chat widget copy ships with both brands', () => {
+  it('chat is a shared namespace and both brands render the widget', () => {
+    expect(SHARED_NAMESPACES as readonly string[]).toContain('chat');
     expect(KAITU.chatEnabled).toBe(true);
-    expect(OVERLEAP.chatEnabled).toBe(false);
+    expect(OVERLEAP.chatEnabled).toBe(true);
   });
 });

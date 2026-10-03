@@ -75,8 +75,13 @@ func chatAISystemPrompt(brand Brand) string {
 type chatOption struct{ Label, Value string }
 
 // chatAIWelcome 返回（简报名 chatWelcome 与 api_chat.go 的 chatWelcome(locale) 冲突）欢迎语与快捷选项。
-func chatAIWelcome() (text string, options []chatOption) {
-	return chatWelcomeText, []chatOption{
+// 快捷选项是给 AI 的提问（chatOptionQuestion），品牌不接 AI 时不给。
+func chatAIWelcome(b Brand) (text string, options []chatOption) {
+	text = chatWelcomeTextFor(b)
+	if !b.Config().ChatAI {
+		return text, nil
+	}
+	return text, []chatOption{
 		{Label: "📱 安装问题", Value: "install"},
 		{Label: "💳 购买/续费", Value: "purchase"},
 		{Label: "❓ 使用问题", Value: "usage"},
