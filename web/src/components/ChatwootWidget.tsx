@@ -29,7 +29,7 @@ function showChatwootElements() {
 export default function ChatwootWidget() {
   const searchParams = useSearchParams();
   const [shouldLoad, setShouldLoad] = useState(false);
-  // '' disables the support widget for this brand (overleap has no inbox yet).
+  // '' disables the support widget.
   const chatwootToken = siteBrand().chatwootToken;
 
   const isEmbed = searchParams.get('embed') === 'true' ||

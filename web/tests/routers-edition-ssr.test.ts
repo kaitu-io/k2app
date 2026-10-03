@@ -31,7 +31,7 @@ vi.mock('next-intl', () => ({
 // Mock @/i18n/routing
 vi.mock('@/i18n/routing', () => ({
   routing: {
-    locales: ['zh-CN', 'en-US', 'en-GB', 'en-AU', 'zh-TW', 'zh-HK', 'ja'],
+    locales: ['zh-CN', 'zh-TW', 'zh-HK'],
   },
   Link: ({ children }: { children: React.ReactNode }) => children,
 }));
@@ -39,9 +39,9 @@ vi.mock('@/i18n/routing', () => ({
 vi.mock('@/components/Header', () => ({ default: () => null }));
 vi.mock('@/components/Footer', () => ({ default: () => null }));
 
-describe('routers/page.kaitu (edition product page)', () => {
+describe('routers/page (edition product page)', () => {
   it('default export is an async function returning a Promise', async () => {
-    const { default: RoutersEditionPage } = await import('../src/app/[locale]/routers/page.kaitu');
+    const { default: RoutersEditionPage } = await import('../src/app/[locale]/routers/page');
 
     expect(RoutersEditionPage).toBeTypeOf('function');
     const result = RoutersEditionPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
@@ -51,7 +51,7 @@ describe('routers/page.kaitu (edition product page)', () => {
   });
 
   it('generateMetadata returns edition.product.metaTitle / metaDescription', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/routers/page.kaitu');
+    const { generateMetadata } = await import('../src/app/[locale]/routers/page');
 
     const metadata = await generateMetadata({ params: Promise.resolve({ locale: 'zh-CN' }) });
 

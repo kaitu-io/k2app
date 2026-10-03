@@ -19,7 +19,7 @@ vi.mock('@/contexts/AuthContext', () => ({
 }));
 
 vi.mock('@/i18n/routing', () => ({
-  routing: { locales: ['en-US', 'en-GB', 'en-AU', 'zh-CN', 'zh-TW', 'zh-HK', 'ja'], defaultLocale: 'zh-CN' },
+  routing: { locales: ['zh-CN', 'zh-TW', 'zh-HK'], defaultLocale: 'zh-CN' },
   usePathname: () => pathnameRef.current,
   useRouter: () => ({ replace: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -28,12 +28,10 @@ vi.mock('@/i18n/routing', () => ({
 }));
 
 afterEach(() => {
-  vi.unstubAllEnvs();
   pathnameRef.current = '/';
 });
 
-async function renderHeader(brand: 'kaitu' | 'overleap', pathname: string) {
-  vi.stubEnv('NEXT_PUBLIC_BRAND', brand);
+async function renderHeader(pathname: string) {
   pathnameRef.current = pathname;
   vi.resetModules();
   const { default: Header } = await import('../src/components/Header');
@@ -80,32 +78,32 @@ describe('isNavItemActive', () => {
 
 describe('Header current-page highlight', () => {
   it('kaitu: /k2/quickstart marks the Developers group, not Help', async () => {
-    const { container } = await renderHeader('kaitu', '/k2/quickstart');
+    const { container } = await renderHeader('/k2/quickstart');
     const current = [...container.querySelectorAll('a[aria-current="page"]')].map((a) => a.getAttribute('href'));
     expect(current).toEqual(['/k2']);
   });
 
   it('kaitu: /routers marks the Router Edition link only', async () => {
-    const { container } = await renderHeader('kaitu', '/routers');
+    const { container } = await renderHeader('/routers');
     const current = [...container.querySelectorAll('a[aria-current="page"]')].map((a) => a.getAttribute('href'));
     expect(current).toEqual(['/routers']);
   });
 
-  it('overleap: /support marks Help', async () => {
-    const { container } = await renderHeader('overleap', '/support');
+  it('/support marks the Help group (its parent link is /guides)', async () => {
+    const { container } = await renderHeader('/support');
     const current = [...container.querySelectorAll('a[aria-current="page"]')].map((a) => a.getAttribute('href'));
-    expect(current).toEqual(['/support']);
+    expect(current).toEqual(['/guides']);
   });
 
   it('home page highlights nothing', async () => {
-    const { container } = await renderHeader('kaitu', '/');
+    const { container } = await renderHeader('/');
     expect(container.querySelectorAll('[aria-current="page"]').length).toBe(0);
   });
 });
 
 describe('Header dropdown groups', () => {
   it('kaitu: children render on hover and the parent stays a link', async () => {
-    const { container } = await renderHeader('kaitu', '/');
+    const { container } = await renderHeader('/');
     expect(container.innerHTML).not.toContain('href="/k2/quickstart"');
     const parent = container.querySelector('a[href="/k2"]')!;
     expect(parent.tagName).toBe('A');
@@ -117,7 +115,7 @@ describe('Header dropdown groups', () => {
   });
 
   it('kaitu: the active group is expanded by default in the mobile menu', async () => {
-    const { container, getByLabelText } = await renderHeader('kaitu', '/guides/getting-started');
+    const { container, getByLabelText } = await renderHeader('/guides/getting-started');
     fireEvent.click(getByLabelText('nav.nav.menu'));
     const mobile = container.querySelector('#site-mobile-menu')!;
     expect(mobile.innerHTML).toContain('href="/support#faq"');

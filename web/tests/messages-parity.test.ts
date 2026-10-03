@@ -1,11 +1,9 @@
 /**
- * Locale key parity for web/messages — per brand.
+ * Locale key parity for web/messages.
  *
- * Message files partition by brand (kaitu = zh-*, overleap = en-* + ja), and each brand
- * loads only its own namespaces (messages/namespaces.ts BRAND_NAMESPACES). So parity is
- * checked per brand: every locale of a brand exposes exactly the key set of that brand's
- * default locale, namespace by namespace. Missing keys render as raw "ns.key" text on a
- * real page; extra keys are dead weight that hides real drift.
+ * Every served locale exposes exactly the key set of the default locale (zh-CN),
+ * namespace by namespace. Missing keys render as raw "ns.key" text on a real page;
+ * extra keys are dead weight that hides real drift.
  *
  * Arrays are leaves (a list's shape is content, not structure) — same rule as the
  * webapp checker.
@@ -13,8 +11,8 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { BRAND_NAMESPACES, SHARED_NAMESPACES } from '../messages/namespaces';
-import { KAITU, OVERLEAP } from '../src/lib/brands';
+import { namespaces } from '../messages/namespaces';
+import { KAITU } from '../src/lib/brands';
 
 const MESSAGES_DIR = path.resolve(__dirname, '../messages');
 
@@ -35,9 +33,9 @@ function readKeys(locale: string, ns: string): Set<string> | null {
   return flatKeys(JSON.parse(fs.readFileSync(p, 'utf8')));
 }
 
-describe.each([KAITU, OVERLEAP])('messages-parity for $id: every locale mirrors the brand default key-for-key', (brand) => {
-  const base = brand.defaultLocale;
-  for (const ns of BRAND_NAMESPACES[brand.id]) {
+describe('messages-parity: every locale mirrors the default key-for-key', () => {
+  const base = KAITU.defaultLocale;
+  for (const ns of namespaces) {
     const baseKeys = readKeys(base, ns);
 
     it(`${base}/${ns}.json exists and is non-empty (guards the parser)`, () => {
@@ -45,7 +43,7 @@ describe.each([KAITU, OVERLEAP])('messages-parity for $id: every locale mirrors 
       expect(baseKeys!.size).toBeGreaterThan(0);
     });
 
-    for (const locale of brand.allowedLocales) {
+    for (const locale of KAITU.allowedLocales) {
       if (locale === base) continue;
       it(`${locale}/${ns}.json has exactly the ${base} key set`, () => {
         const keys = readKeys(locale, ns);
@@ -58,24 +56,24 @@ describe.each([KAITU, OVERLEAP])('messages-parity for $id: every locale mirrors 
   }
 });
 
-describe('no locale carries the other brand\'s namespaces', () => {
-  // A stray en-US/hero.json (kaitu narrative in English) is exactly the dead file that
-  // used to ship the kaitu home copy to the overleap deployment.
-  it.each([
-    [OVERLEAP, BRAND_NAMESPACES.kaitu.filter((ns) => !(BRAND_NAMESPACES.overleap as readonly string[]).includes(ns))],
-    [KAITU, BRAND_NAMESPACES.overleap.filter((ns) => !(BRAND_NAMESPACES.kaitu as readonly string[]).includes(ns))],
-  ] as const)('$0.id locales have none of the other brand\'s namespace files', (brand, foreign) => {
-    const stray = brand.allowedLocales.flatMap((loc) =>
-      foreign.filter((ns) => fs.existsSync(path.join(MESSAGES_DIR, loc, `${ns}.json`))).map((ns) => `${loc}/${ns}.json`),
+describe('messages/ holds only what request.ts loads', () => {
+  it('locale directories are exactly the served locales', () => {
+    const dirs = fs
+      .readdirSync(MESSAGES_DIR, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .sort();
+    expect(dirs).toEqual([...KAITU.allowedLocales].sort());
+  });
+
+  it('every message file is a registered namespace (an unregistered file is never loaded)', () => {
+    const registered = new Set<string>(namespaces);
+    const stray = KAITU.allowedLocales.flatMap((loc) =>
+      fs
+        .readdirSync(path.join(MESSAGES_DIR, loc))
+        .filter((f) => f.endsWith('.json') && !registered.has(f.replace(/\.json$/, '')))
+        .map((f) => `${loc}/${f}`),
     );
     expect(stray).toEqual([]);
-  });
-});
-
-describe('the chat widget copy ships with both brands', () => {
-  it('chat is a shared namespace and both brands render the widget', () => {
-    expect(SHARED_NAMESPACES as readonly string[]).toContain('chat');
-    expect(KAITU.chatEnabled).toBe(true);
-    expect(OVERLEAP.chatEnabled).toBe(true);
   });
 });

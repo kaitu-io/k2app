@@ -21,9 +21,7 @@ jobs:
   # (tests/brand-guard.test.ts, tests/brand-leak-ssr.test.tsx) and the
   # cross-layer contract test were documentation, not gates — they only ran
   # when someone remembered to run them locally.
-  # One run covers both brands: web resolves NEXT_PUBLIC_BRAND at call time via
-  # siteBrand(), so the tests flip it with vi.stubEnv rather than being baked
-  # like webapp's __K2_BRAND__ define.
+  # web/ builds kaitu.io only (overleap.io is sites/overleap/, gated below).
   test-web:
     runs-on: ubuntu-latest
     timeout-minutes: 15

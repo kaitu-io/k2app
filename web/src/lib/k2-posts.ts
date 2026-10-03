@@ -28,7 +28,7 @@ export interface K2Post {
 }
 
 /**
- * Whether a post may be served by the given brand's deployment.
+ * Whether a post may be served by the given brand.
  *
  * A missing `brand` means 'both' — that is the Velite schema default, and test
  * fixtures pre-dating the field rely on it. Frontmatter `brand: kaitu` is a real
@@ -52,31 +52,22 @@ export interface K2PostGroup {
 }
 
 /**
- * Return all published k2/ posts for the given locale that this deployment's
- * brand may serve, grouped by section and sorted by `order` within each group.
+ * Return all published k2/ posts for the given locale that the brand may serve,
+ * grouped by section and sorted by `order` within each group.
  *
  * Posts without a `section` field are placed into a fallback group keyed
  * `"uncategorized"`. Posts without an `order` field sort to the end of their
  * section.
  *
- * The brand filter is what keeps the sidebar honest: without it the overleap
- * sidebar would list — and link to — the kaitu-only install docs on every k2 page.
- *
  * @param locale - BCP-47 locale code, e.g. `"zh-CN"`.
- * @param brandId - Serving brand; defaults to the baked deployment brand.
+ * @param brandId - Serving brand; defaults to siteBrand().
  * @returns Array of `K2PostGroup` objects, ordered by the first appearance of
  *   each section among the sorted posts.
  */
 /**
  * Find a published k2 post by locale + slug that the serving brand may show,
- * falling back to the brand's own default locale.
- *
- * Two brand rules are enforced here:
- *  - Off-brand posts are invisible (frontmatter `brand:`), so the caller 404s
- *    instead of serving e.g. kaitu install docs from the overleap deployment.
- *  - The fallback locale is the BRAND's default, not a hardcoded 'zh-CN'.
- *    zh-CN is a kaitu-only locale; falling back to it from overleap turned
- *    /ja/k2/client into a kaitu-branded Chinese page on the overleap site.
+ * falling back to the brand's default locale. Off-brand posts (frontmatter
+ * `brand:`) are invisible, so the caller 404s.
  *
  * Shared by the /k2 page (body + metadata) and the /k2 layout (breadcrumb), so
  * the breadcrumb can never name a post the page would 404.

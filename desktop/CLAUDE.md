@@ -54,7 +54,7 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
 - overleap 图标由 `webapp/brand-assets/overleap/generate.sh` 从 `logo.svg` 生成进 `icons-overleap/`
   （不要用 `yarn tauri icon`，它只认 PNG 源且会覆盖 `.icns/.ico` 的生成方式）；NSIS 语言 overleap 仅 English。
 - 图像资产（logo PNG 等二进制）不在桌面纯度守卫覆盖范围内——`strings`/`grep` 抓不到位图里的文字；
-  web 侧有哈希守卫（`web/tests/brand-assets.test.ts`），桌面侧靠发布前人工视觉 smoke 把关。
+  桌面侧靠发布前人工视觉 smoke 把关（原 `web/tests/brand-assets.test.ts` 哈希守卫随 overleap 站迁出 `web/` 已删除）。
 - **窗口形态按品牌分叉**：kaitu 是竖版手机比例（`tauri.conf.json` 430×956、max 480，`window.rs` 9:20 锁比）；
   overleap 是横向桌面窗口（`tauri.conf.overleap.json` 1040×700、min 880×620、可最大化，`window.rs`
   `cfg(brand_overleap)` 分支按工作区 85% 夹紧、不锁比）。webapp 侧栏布局靠短边 ≥ 600 触发，所以

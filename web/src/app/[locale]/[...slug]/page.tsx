@@ -52,7 +52,7 @@ export function generateStaticParams(): { locale: string; slug: string[] }[] {
     params.push({ locale, slug });
   };
 
-  for (const category of categorySlugs(brand)) {
+  for (const category of categorySlugs()) {
     // Harvest slugs across ALL locales (a post may exist only in one), but
     // prerender only this brand's locales — same discipline as the /k2 pages:
     // an off-brand or off-locale prerender would hand the doc a real URL.

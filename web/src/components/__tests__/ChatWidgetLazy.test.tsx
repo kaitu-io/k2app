@@ -13,7 +13,7 @@ vi.mock('@sentry/nextjs', () => sentry);
 
 import ChatWidgetLazy, { ChatErrorBoundary } from '../chat/ChatWidgetLazy';
 import { CHAT_KNOWN_FLAG } from '../chat/gate';
-import { OVERLEAP } from '@/lib/brands';
+import { KAITU } from '@/lib/brands';
 
 const visit = (url: string) => window.history.pushState({}, '', url);
 
@@ -31,16 +31,15 @@ describe('ChatWidgetLazy', () => {
 
   // 顺序有意义：先跑完所有"门没开"的用例，确认模块工厂一次都没执行过。
   it.each([
-    ['dark launch: no preview, no token, no known flag', '/zh-CN/pricing', undefined],
-    ['embedded page', '/zh-CN/pricing?chat=preview&embed=true', undefined],
-    ['brand has chat off', '/zh-CN/pricing', 'overleap'],
-  ])('renders nothing and never imports the widget chunk — %s', async (_name, url, brand) => {
+    ['dark launch: no preview, no token, no known flag', '/zh-CN/pricing', false],
+    ['embedded page', '/zh-CN/pricing?chat=preview&embed=true', false],
+    ['brand has chat off', '/zh-CN/pricing', true],
+  ])('renders nothing and never imports the widget chunk — %s', async (_name, url, chatOff) => {
     visit(url);
-    if (brand) {
-      // 两个品牌目前都开着挂件：临时关掉一个来测这道门
-      vi.stubEnv('NEXT_PUBLIC_BRAND', brand);
-      OVERLEAP.chatEnabled = false;
-      onTestFinished(() => { OVERLEAP.chatEnabled = true; });
+    if (chatOff) {
+      // 挂件目前开着：临时关掉来测这道门
+      KAITU.chatEnabled = false;
+      onTestFinished(() => { KAITU.chatEnabled = true; });
       localStorage.setItem(CHAT_KNOWN_FLAG, '1');
     }
     const { container } = render(<ChatWidgetLazy />);

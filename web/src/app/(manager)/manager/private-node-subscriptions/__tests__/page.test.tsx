@@ -63,7 +63,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 });
 
 // Import after the mocks.
-import PrivateNodeSubscriptionsPage from '../page.kaitu';
+import PrivateNodeSubscriptionsPage from '../page';
 
 function items(): AdminPrivateNodeSubscriptionItem[] {
   return [

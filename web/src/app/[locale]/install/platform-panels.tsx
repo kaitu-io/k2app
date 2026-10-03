@@ -160,17 +160,13 @@ export function MacOSPanel({
       </Button>
       <BackupLink href={backupLink} t={t} platform="macos" />
 
-      {/* CLI block — pipes the /i/k2 install script, which is a kaitu-only
-          surface (middleware 404s it on other brands), so gate it alongside
-          the Linux installer rather than offering a command that can't work. */}
-      {siteBrand().features.linuxInstall && (
-        <div className="max-w-lg mx-auto mt-6">
-          <p className="text-xs text-muted-foreground mb-2">
-            {t('install.install.terminalInstall')}
-          </p>
-          <CliBlock onCopy={onCopy} copied={copied} />
-        </div>
-      )}
+      {/* CLI block — pipes the /i/k2 install script. */}
+      <div className="max-w-lg mx-auto mt-6">
+        <p className="text-xs text-muted-foreground mb-2">
+          {t('install.install.terminalInstall')}
+        </p>
+        <CliBlock onCopy={onCopy} copied={copied} />
+      </div>
 
       {/* Install guides */}
       <div className="mt-8 max-w-xl mx-auto space-y-4 text-left">
@@ -275,15 +271,13 @@ export function AndroidPanel({
       </Button>
       <BackupLink href={backupLink} t={t} platform="android" />
 
-      {/* Install guide — the USB/APK sideload walkthrough is a kaitu-only
-          surface (it depends on the desktop client's 其他设备安装 flow). */}
-      {siteBrand().features.androidApkGuide && (
-        <div className="mt-8 max-w-xl mx-auto space-y-4 text-left">
-          <DownloadTipCard title={t('install.install.faq.androidUsbInstall.question')}>
-            <DesktopUsbInstallGuide />
-          </DownloadTipCard>
-        </div>
-      )}
+      {/* Install guide — the USB/APK sideload walkthrough (depends on the
+          desktop client's 其他设备安装 flow). */}
+      <div className="mt-8 max-w-xl mx-auto space-y-4 text-left">
+        <DownloadTipCard title={t('install.install.faq.androidUsbInstall.question')}>
+          <DesktopUsbInstallGuide />
+        </DownloadTipCard>
+      </div>
     </div>
   );
 }

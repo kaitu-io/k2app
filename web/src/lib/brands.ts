@@ -1,21 +1,31 @@
 // Mirrors routing.locales in `src/i18n/routing.ts`. Kept inline to avoid pulling
 // `next-intl/navigation` (and transitively `next/navigation`) into vitest's module
 // graph when non-component code imports brand config.
-export const ALL_LOCALES = ['en-US', 'en-GB', 'en-AU', 'zh-CN', 'zh-TW', 'zh-HK', 'ja'] as const;
+export const ALL_LOCALES = ['zh-CN', 'zh-TW', 'zh-HK'] as const;
 type Locale = (typeof ALL_LOCALES)[number];
 
+/**
+ * Every brand the backend knows. The site serves only kaitu, but the admin
+ * dashboard (/manager) is cross-brand and the cross-layer contract checks the
+ * full set against api/brand.go.
+ */
 export type BrandId = 'kaitu' | 'overleap';
 
-export type Brand = {
+/** What any surface needs to name / link / attribute a brand. */
+export type BrandIdentity = {
   id: BrandId;
   displayName: string;
   wordmark: string;
-  legalName: string;
   baseUrl: string;
+  contactEmail: string;
+};
+
+/** The served brand's full site configuration. */
+export type Brand = BrandIdentity & {
+  legalName: string;
   defaultLocale: Locale;
   allowedLocales: readonly Locale[];
   logoPath: string;
-  contactEmail: string;
   /** Recipient named by the privacy policy for data-subject requests. */
   privacyEmail: string;
   /** Recipient named by the terms of service for legal enquiries. */
@@ -45,26 +55,11 @@ export type Brand = {
   /** App store listings. '' = not published yet: the download page shows a
    *  "coming soon" state instead of a dead link. */
   storeLinks: { ios: string; android: string };
-  /** Download CDN layout (spec §8: /kaitu/ vs /overleap/ path segments, Kaitu_* vs Overleap_* artifacts). */
+  /** Download CDN layout (`/kaitu/` path segment, `Kaitu_*` artifacts). */
   cdn: {
     desktopBases: readonly string[];
     mobileBases: readonly string[];
     artifactPrefix: string;
-  };
-  /** Brand feature gates for web surfaces. */
-  features: {
-    routers: boolean;
-    linuxInstall: boolean;
-    androidApkGuide: boolean;
-    /**
-     * /releases + /changelog. Both render public/releases.json, which is a
-     * single-brand artifact: 开途-worded release notes and dl.kaitu.io download
-     * URLs. Until per-brand release notes exist, only kaitu may serve them.
-     */
-    releaseNotes: boolean;
-    /** Retailer (分销) program pages + footer link. Kaitu-only — the program
-     *  is a China-market channel and the pages are 开途-worded. */
-    retailerProgram: boolean;
   };
 };
 
@@ -105,68 +100,32 @@ export const KAITU: Brand = {
     ],
     artifactPrefix: 'Kaitu',
   },
-  features: { routers: true, linuxInstall: true, androidApkGuide: true, releaseNotes: true, retailerProgram: true },
 };
 
-export const OVERLEAP: Brand = {
+/**
+ * The other brand, as the cross-brand admin dashboard (/manager) and the
+ * cross-layer contract (tests/cross-layer-contract.test.ts) see it. overleap.io
+ * itself is the standalone app in `sites/overleap/` — this site never renders
+ * an overleap page, so only identity fields live here.
+ */
+export const OVERLEAP: BrandIdentity = {
   id: 'overleap',
   displayName: 'Overleap',
   wordmark: 'Overleap',
-  legalName: 'Overleap LLC',
   baseUrl: 'https://overleap.io',
-  // en-GB is the master: UK-first market (spec 2026-09-04-overleap-site-decoupling §5.2);
-  // en-US / en-AU are spelling variants, ja a translation. allowedLocales[0] doubles as
-  // the middleware's Accept-Language fallback.
-  defaultLocale: 'en-GB',
-  allowedLocales: ['en-GB', 'en-US', 'en-AU', 'ja'],
-  logoPath: '/overleap-icon.png',
   contactEmail: 'support@overleap.io',
-  privacyEmail: 'privacy@overleap.io',
-  legalEmail: 'legal@overleap.io',
-  ogImagePath: '/overleap-og.png',
-  productName: 'Overleap',
-  faviconPrefix: '/brand/overleap',
-  gaMeasurementId: '',   // Open Question #1: create GA4 property, then fill in
-  chatwootToken: '',     // Open Question #1: create Chatwoot inbox, then fill in
-  // Conversations open straight to the support team: the API's chat AI only knows
-  // the other brand's product (api BrandConfig.ChatAI = false for this brand).
-  chatEnabled: true,
-  // No Overleap-branded guide video has been produced yet. Empty on purpose:
-  // the Support page omits the player + VideoObject rather than serving the
-  // 开途-branded recording (spec: overleap 站 0 处 kaitu).
-  guideVideoUrl: '',
-  // Neither store listing is live yet (App Store record exists, not published;
-  // Play not submitted) — the download page renders "coming soon" until filled.
-  storeLinks: { ios: '', android: '' },
-  cdn: {
-    // /overleap/ CDN path per spec §8. dl.overleap.io CNAME does not exist yet
-    // (Open Question #2) — raw CloudFront until provisioned. Artifacts appear in Phase 4/5.
-    desktopBases: ['https://d13jc1jqzlg4yt.cloudfront.net/overleap/desktop'],
-    mobileBases: ['https://d13jc1jqzlg4yt.cloudfront.net/overleap'],
-    artifactPrefix: 'Overleap',
-  },
-  features: { routers: false, linuxInstall: false, androidApkGuide: false, releaseNotes: false, retailerProgram: false },
 };
 
-export function brandById(id: BrandId): Brand {
+/** Registry lookup for cross-brand surfaces (manager brand filter / badges). */
+export function brandById(id: BrandId): BrandIdentity {
   return id === 'overleap' ? OVERLEAP : KAITU;
 }
 
 /**
- * Build-time brand id parsing. Exact-match on purpose: NEXT_PUBLIC_BRAND is a
- * build variable we control, and any drift (typo, unset) must fall back to
- * kaitu — the zero-breakage default, mirroring api/brand.go resolveRequestBrand.
- */
-export function parseBrandId(raw: string | undefined | null): BrandId {
-  return raw === 'overleap' ? 'overleap' : 'kaitu';
-}
-
-/**
- * The baked deployment brand. Single source of truth for Phase 2's
- * one-codebase-two-deployments model: NEXT_PUBLIC_BRAND is set per Amplify app
- * and inlined into client bundles at build time; server/middleware read it from
- * the environment baked into .env.production by amplify.yml.
+ * The brand this site serves. web/ is kaitu.io only — overleap.io is the
+ * standalone app in `sites/overleap/` — so this is a constant; it stays a
+ * function so call sites read the brand from one place.
  */
 export function siteBrand(): Brand {
-  return brandById(parseBrandId(process.env.NEXT_PUBLIC_BRAND));
+  return KAITU;
 }

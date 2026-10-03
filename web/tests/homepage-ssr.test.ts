@@ -26,7 +26,7 @@ vi.mock('next-intl', () => ({
 // Mock @/i18n/routing
 vi.mock('@/i18n/routing', () => ({
   routing: {
-    locales: ['zh-CN', 'en-US', 'en-GB', 'en-AU', 'zh-TW', 'zh-HK', 'ja'],
+    locales: ['zh-CN', 'zh-TW', 'zh-HK'],
   },
   Link: ({ children }: { children: React.ReactNode }) => children,
 }));
@@ -95,7 +95,7 @@ vi.mock('@/components/ui/button', () => ({
 
 describe('test_homepage_ssr_renders_content', () => {
   it('page component is an async function (Server Component pattern)', async () => {
-    const { default: Home } = await import('../src/app/[locale]/page.kaitu');
+    const { default: Home } = await import('../src/app/[locale]/page');
 
     // Must be an async function to qualify as a Server Component that awaits params
     expect(Home).toBeTypeOf('function');
@@ -104,7 +104,7 @@ describe('test_homepage_ssr_renders_content', () => {
   });
 
   it('page accepts params as a Promise<{ locale: string }> (Next.js 15 pattern)', async () => {
-    const { default: Home } = await import('../src/app/[locale]/page.kaitu');
+    const { default: Home } = await import('../src/app/[locale]/page');
 
     // Should resolve without throwing — async params are awaited inside
     const element = await Home({ params: Promise.resolve({ locale: 'zh-CN' }) });
@@ -112,7 +112,7 @@ describe('test_homepage_ssr_renders_content', () => {
   });
 
   it('page renders JSX content (not null or empty)', async () => {
-    const { default: Home } = await import('../src/app/[locale]/page.kaitu');
+    const { default: Home } = await import('../src/app/[locale]/page');
 
     const element = await Home({ params: Promise.resolve({ locale: 'zh-CN' }) });
 
@@ -124,14 +124,14 @@ describe('test_homepage_ssr_renders_content', () => {
 
 describe('test_homepage_generates_metadata', () => {
   it('generateMetadata is exported from the page module', async () => {
-    const pageModule = await import('../src/app/[locale]/page.kaitu');
+    const pageModule = await import('../src/app/[locale]/page');
 
     expect(pageModule.generateMetadata).toBeDefined();
     expect(pageModule.generateMetadata).toBeTypeOf('function');
   });
 
   it('generateMetadata returns an object with title field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/page.kaitu');
+    const { generateMetadata } = await import('../src/app/[locale]/page');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'zh-CN' }),
@@ -142,10 +142,10 @@ describe('test_homepage_generates_metadata', () => {
   });
 
   it('generateMetadata returns an object with description field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/page.kaitu');
+    const { generateMetadata } = await import('../src/app/[locale]/page');
 
     const metadata = await generateMetadata({
-      params: Promise.resolve({ locale: 'en-US' }),
+      params: Promise.resolve({ locale: 'zh-TW' }),
     });
 
     expect(metadata).toHaveProperty('description');

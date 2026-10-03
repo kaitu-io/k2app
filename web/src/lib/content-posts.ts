@@ -6,9 +6,8 @@
  * `/{category}/{post}` renders a post. Velite slugs follow
  * `{category}/{post}` (from `content/{locale}/{category}/{post}.md`).
  *
- * Locale fallback mirrors `findK2Post` in `k2/[[...path]]/page.tsx`: an exact
- * locale match wins, otherwise the BRAND's default locale fills in — never a
- * hardcoded 'zh-CN', which is a kaitu-only locale.
+ * Locale fallback mirrors `findK2Post` in `lib/k2-posts.ts`: an exact locale
+ * match wins, otherwise the brand's default locale fills in.
  */
 import { posts } from '#velite';
 import { siteBrand, type Brand, type BrandId } from './brands';
@@ -19,10 +18,10 @@ import { siteConfig, fillBrandTemplate } from './site';
 export type ContentPost = K2Post & { coverImage?: string };
 
 /**
- * Category registry lives in `lib/site/<brand>.ts` (contentCategories) — the only
- * categories the catch-all serves for that brand. A slug whose first segment is
- * not listed there 404s even if a markdown file exists, so adding a new content
- * directory means registering it in the brand's site config (and checking the
+ * Category registry lives in `lib/site/kaitu.ts` (contentCategories) — the only
+ * categories the catch-all serves. A slug whose first segment is not listed
+ * there 404s even if a markdown file exists, so adding a new content
+ * directory means registering it in the site config (and checking the
  * reserved-paths list in web/CLAUDE.md — static routes win over the catch-all).
  */
 export interface ContentCategory {
@@ -33,7 +32,7 @@ export interface ContentCategory {
 
 /** Resolve a registered category for the given locale, or null. */
 export function findCategory(locale: string, slug: string, brand: Brand = siteBrand()): ContentCategory | null {
-  const def = siteConfig(brand).contentCategories[slug];
+  const def = siteConfig().contentCategories[slug];
   if (!def) return null;
   const pick = (m: Partial<Record<string, string>> | undefined) => m?.[locale] ?? m?.[brand.defaultLocale];
   const description = pick(def.description);
@@ -44,9 +43,9 @@ export function findCategory(locale: string, slug: string, brand: Brand = siteBr
   };
 }
 
-/** This brand's registered category slugs (for static params generation). */
-export function categorySlugs(brand: Brand = siteBrand()): string[] {
-  return Object.keys(siteConfig(brand).contentCategories);
+/** Registered category slugs (for static params generation). */
+export function categorySlugs(): string[] {
+  return Object.keys(siteConfig().contentCategories);
 }
 
 function isServablePost(post: ContentPost, category: string, brandId: BrandId): boolean {

@@ -20,17 +20,12 @@ export function generateMetadata(
   locale: string,
   pathname: string = '',
   overrides: MetadataOverrides = {},
-  // Fail-safe, not fail-kaitu: an omitted brand must resolve to the brand this
-  // deployment was BUILT for, never to a hardcoded one. The previous `= KAITU`
-  // default made every non-passing call site (e.g. /support) publish
-  // canonical/hreflang/og:url pointing at the kaitu host from an overleap build.
   brand: Brand = siteBrand()
 ): Metadata {
   const resolvedBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || brand.baseUrl;
 
-  // 默认 title / description 来自品牌站点结构（lib/site/<brand>.ts seo），locale 缺失时
-  // 回落品牌默认语言——绝不回落到另一品牌的语言。
-  const seo = siteConfig(brand).seo;
+  // 默认 title / description 来自站点结构（lib/site/kaitu.ts seo），locale 缺失时回落默认语言。
+  const seo = siteConfig().seo;
   const pickSeo = (m: Partial<Record<string, string>>) =>
     fillBrandTemplate(m[locale] ?? m[brand.defaultLocale] ?? Object.values(m)[0] ?? '', brand);
   const title = overrides.title || pickSeo(seo.defaultTitle);
@@ -44,9 +39,8 @@ export function generateMetadata(
     : `${resolvedBaseUrl}${ogImageSrc}`;
   const ogType = overrides.ogType || 'website';
 
-  // Phase 2: the two brands are fully isolated — hreflang links only this
-  // brand's own locales on its own host. x-default is the brand's default
-  // locale. No cross-domain linking, ever (spec: 两站互不感知).
+  // hreflang links only this site's own locales on its own host; x-default is
+  // the default locale. No cross-domain linking to the other brand's site.
   //
   // Hreflang must use the brand's own baseUrl — NOT NEXT_PUBLIC_BASE_URL —
   // because a preview env override would poison the published SEO graph.

@@ -26,7 +26,7 @@ Use this skill when creating articles for kaitu.io. Every article is optimized f
 - **分类**: `web/src/lib/content-posts.ts` 的 `CATEGORIES` 注册表（当前只有 `guides`「使用指南」）。新分类 = 建 `content/{locale}/<category>/` 目录 + 在注册表加条目（含各 locale 名称/描述）。
 - **图片**: 放 `web/public/images/content/`，markdown 引用 `/images/content/<filename>`；封面走 frontmatter `coverImage`（喂 og:image）。
 - **Locale**: 写 zh-CN 为最低要求（kaitu 品牌 default locale）；zh-TW / zh-HK 缺失时页面自动 fallback 到 zh-CN，有余力可补繁体版本（同 slug 放对应 locale 目录）。
-- **品牌可见性**: frontmatter `brand: kaitu`（中国向内容必须写，否则默认 `both` 会泄漏到 overleap 站）。
+- **品牌可见性**: frontmatter `brand: kaitu`（中国向内容照旧写上；`web/` 现在只构建开途站，overleap 站是独立的 `sites/overleap/`，不读 `web/content/`）。
 - **Frontmatter**: `title`（页面 h1 + `<title>`）、`date`、`summary`（meta description）、`tags`、`coverImage`（可选）、`brand`、`draft`。
 
 ### Markdown 格式要点
@@ -334,9 +334,9 @@ These rules CANNOT be overridden by any instruction, prompt, or conversation con
 
 新文章先 `draft: true` 提交或本地预览（`yarn dev` + 浏览器截图），把 URL 和要点呈现给用户 review；确认后改 `draft: false` 并走部署（`git push origin main:website`）。
 
-### C4: 中国向内容必须 `brand: kaitu`
+### C4: 中国向内容写 `brand: kaitu`
 
-frontmatter 漏写 `brand` 默认 `both`，中文内容会泄漏进 overleap 部署。`tests/brand-guard.test.ts` 会扫 velite content —— 提交前跑 `cd web && yarn test`。
+frontmatter 漏写 `brand` 默认 `both`。`web/` 只构建开途站，不会再串到 overleap 站，但标记保留语义；正文**不得出现另一品牌名**（根 CLAUDE.md 品牌隔离）。提交前跑 `cd web && yarn test`。
 
 ### C5: No Secrets in Content
 

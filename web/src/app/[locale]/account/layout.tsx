@@ -13,7 +13,6 @@ import { Link } from "@/i18n/routing";
 import { usePathname } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { siteBrand } from "@/lib/brands";
 import { api } from "@/lib/api";
 
 export default function AccountLayout({
@@ -38,10 +37,10 @@ export default function AccountLayout({
     }
   }, [isAuthenticated, isAuthLoading, router, pathname]);
 
-  // 路由器版是 kaitu-only 功能：overleap 不请求、侧栏也不出现这一项。
+  // 「我的路由器」入口只对有路由器版的用户出现。
   // 失败当作没有——这只是一个侧栏入口的显隐开关，不是页面本身的鉴权。
   useEffect(() => {
-    if (!isAuthenticated || siteBrand().id === "overleap") return;
+    if (!isAuthenticated) return;
     let cancelled = false;
     api
       .getUserRouter({ autoRedirectToAuth: false })
@@ -67,70 +66,55 @@ export default function AccountLayout({
   }
 
   // Navigation items for account section.
-  // overleap 无 WordGate 续费/代理/钱包概念：只留订阅 + 安全。
-  const navItems =
-    siteBrand().id === "overleap"
+  const navItems = [
+    // 首项是订阅概览而非直接跳购买页 —— 点「我的账号」应该先看到自己的
+    // 订阅状态，续费是紧随其后的动作，不是入口本身。
+    {
+      href: "/account",
+      label: t("account.subscription.navTitle"),
+      icon: Receipt,
+    },
+    {
+      href: "/purchase",
+      label: t("admin.account.renew.title"),
+      icon: CreditCard,
+    },
+    ...(hasRouter
       ? [
           {
-            href: "/account",
-            label: t("account.stripe.navSubscription"),
-            icon: CreditCard,
-          },
-          {
-            href: "/account/security",
-            label: t("admin.account.security.title"),
-            icon: Lock,
+            href: "/account/router",
+            label: t("routers.edition.account.navTitle"),
+            icon: Router,
           },
         ]
-      : [
-          // 首项是订阅概览而非直接跳购买页 —— 点「我的账号」应该先看到自己的
-          // 订阅状态，续费是紧随其后的动作，不是入口本身。
-          {
-            href: "/account",
-            label: t("account.subscription.navTitle"),
-            icon: Receipt,
-          },
-          {
-            href: "/purchase",
-            label: t("admin.account.renew.title"),
-            icon: CreditCard,
-          },
-          ...(hasRouter
-            ? [
-                {
-                  href: "/account/router",
-                  label: t("routers.edition.account.navTitle"),
-                  icon: Router,
-                },
-              ]
-            : []),
-          {
-            href: "/account/delegate",
-            label: t("admin.account.delegate.title"),
-            icon: Users,
-          },
-          {
-            href: "/account/wallet",
-            label: t("admin.account.wallet.title"),
-            icon: Wallet,
-          },
-          {
-            href: "/account/security",
-            label: t("admin.account.security.title"),
-            icon: Lock,
-          },
-          // Reserved for future features
-          // {
-          //   href: "/account/devices",
-          //   label: t("admin.account.devices.title"),
-          //   icon: Smartphone,
-          // },
-          // {
-          //   href: "/account/payment-history",
-          //   label: t("admin.account.paymentHistory.title"),
-          //   icon: CreditCard,
-          // },
-        ];
+      : []),
+    {
+      href: "/account/delegate",
+      label: t("admin.account.delegate.title"),
+      icon: Users,
+    },
+    {
+      href: "/account/wallet",
+      label: t("admin.account.wallet.title"),
+      icon: Wallet,
+    },
+    {
+      href: "/account/security",
+      label: t("admin.account.security.title"),
+      icon: Lock,
+    },
+    // Reserved for future features
+    // {
+    //   href: "/account/devices",
+    //   label: t("admin.account.devices.title"),
+    //   icon: Smartphone,
+    // },
+    // {
+    //   href: "/account/payment-history",
+    //   label: t("admin.account.paymentHistory.title"),
+    //   icon: CreditCard,
+    // },
+  ];
 
   return (
     <div className="min-h-screen bg-background flex flex-col">

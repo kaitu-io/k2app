@@ -25,7 +25,7 @@ vi.mock('#velite', () => ({
 
 // Mock @/i18n/routing
 vi.mock('@/i18n/routing', () => ({
-  routing: { locales: ['zh-CN', 'en-US'] },
+  routing: { locales: ['zh-CN', 'zh-TW', 'zh-HK'] },
 }));
 
 describe('test_sitemap_includes_k2_pages', () => {

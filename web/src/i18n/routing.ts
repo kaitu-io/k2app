@@ -2,10 +2,10 @@ import {defineRouting} from 'next-intl/routing';
 import {createNavigation} from 'next-intl/navigation';
  
 export const routing = defineRouting({
-  // A list of all locales that are supported
-  locales: ['en-US', 'en-GB', 'en-AU', 'zh-CN', 'zh-TW', 'zh-HK', 'ja'],
+  // This site (kaitu) serves Chinese only. The en-* / ja locales left with the
+  // overleap site (sites/overleap/); src/middleware.ts 301s their old URLs to zh-CN.
+  locales: ['zh-CN', 'zh-TW', 'zh-HK'],
 
-  // Used when no locale matches - default to Chinese
   defaultLocale: 'zh-CN',
 
   // Only define pathnames if you need localized URLs

@@ -58,7 +58,7 @@ vi.mock('#velite', () => ({
   ],
 }));
 
-import { KAITU, OVERLEAP } from '../brands';
+import { KAITU } from '../brands';
 import {
   categorySlugs,
   findCategory,
@@ -99,10 +99,6 @@ describe('findContentPost', () => {
     expect(findContentPost('zh-CN', 'guides', 'draft-post', KAITU)).toBeUndefined();
   });
 
-  it('404s kaitu-only posts on the overleap brand', () => {
-    expect(findContentPost('en-US', 'guides', 'getting-started', OVERLEAP)).toBeUndefined();
-  });
-
   it('returns undefined for a missing slug', () => {
     expect(findContentPost('zh-CN', 'guides', 'nope', KAITU)).toBeUndefined();
   });
@@ -115,9 +111,5 @@ describe('listCategoryPosts', () => {
     // getting-started has a real zh-TW copy; zh-only falls back to zh-CN.
     expect(list.find((p) => p.slug === 'guides/getting-started')?.locale).toBe('zh-TW');
     expect(list.find((p) => p.slug === 'guides/zh-only')?.locale).toBe('zh-CN');
-  });
-
-  it('is empty on the overleap brand (all fixture posts are kaitu-only)', () => {
-    expect(listCategoryPosts('en-US', 'guides', OVERLEAP)).toEqual([]);
   });
 });

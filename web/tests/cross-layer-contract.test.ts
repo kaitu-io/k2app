@@ -11,14 +11,14 @@
  * backend change that web hasn't followed fails here instead of in production.
  *
  * Assertions use the named `KAITU` / `OVERLEAP` exports rather than `siteBrand()`:
- * `siteBrand()` reads `NEXT_PUBLIC_BRAND`, so under it this suite would only ever
- * check the one brand the current build bakes. The gate must hold for both.
+ * the site serves only kaitu, but the admin dashboard (/manager) is cross-brand,
+ * so the registry carries every brand the backend knows and the gate holds for all.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import path from 'path';
 import * as brandRegistry from '../src/lib/brands';
-import type { Brand } from '../src/lib/brands';
+import type { BrandIdentity } from '../src/lib/brands';
 import { ErrorCode } from '../src/lib/api';
 
 const CONTRACT_PATH = path.resolve(__dirname, '../../contracts/api-contract.json');
@@ -54,13 +54,13 @@ const contract = loadContract();
  * added to the registry is picked up by this gate automatically instead of
  * silently sitting outside it.
  */
-const WEB_BRANDS: Brand[] = Object.values(brandRegistry).filter(
-  (v): v is Brand =>
+const WEB_BRANDS: BrandIdentity[] = Object.values(brandRegistry).filter(
+  (v): v is BrandIdentity =>
     typeof v === 'object' &&
     v !== null &&
-    typeof (v as Brand).id === 'string' &&
-    typeof (v as Brand).baseUrl === 'string' &&
-    typeof (v as Brand).contactEmail === 'string',
+    typeof (v as BrandIdentity).id === 'string' &&
+    typeof (v as BrandIdentity).baseUrl === 'string' &&
+    typeof (v as BrandIdentity).contactEmail === 'string',
 );
 
 describe('brand registry ↔ Go contract', () => {

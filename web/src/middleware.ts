@@ -7,49 +7,37 @@ type Locale = (typeof routing.locales)[number];
 
 const intlMiddleware = createMiddleware(routing);
 
-// Any locale-prefixed request path (all 7 codebase locales — the brand gate
-// below decides which of them this deployment actually serves).
-const LOCALE_PREFIX_RE = /^\/(zh-CN|zh-TW|zh-HK|en-US|en-GB|en-AU|ja)(\/.*)?$/;
+// Locales this site used to serve when it also built the overleap site (en-* / ja).
+// Their URLs are still indexed / bookmarked: 301 them to the same path under
+// zh-CN rather than letting next-intl treat `en-US` as a path segment.
+const LEGACY_LOCALE_RE = /^\/(en-US|en-GB|en-AU|ja)(\/.*)?$/;
 
 export default function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const brand = siteBrand();
-  const isKaitu = brand.id === 'kaitu';
 
-  // ---- API proxy: inject the baked brand for the Center API. --------------
+  // ---- API proxy: inject the brand for the Center API. ---------------------
   // Center resolves brand as Host → X-K2-Brand → kaitu (api/brand.go); the
   // proxied request's Host is the backend origin, so the header is what
-  // carries the brand end-to-end. /app/* is the admin API — kaitu-only.
+  // carries the brand end-to-end.
   if (pathname.startsWith('/api/') || pathname.startsWith('/app/')) {
-    if (pathname.startsWith('/app/') && !isKaitu) {
-      return new NextResponse(null, { status: 404 });
-    }
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set('X-K2-Brand', brand.id);
     return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   // ---- Browsers request /favicon.ico unconditionally; the root file is the
-  // kaitu icon. Brands with a namespaced favicon set get a rewrite. kaitu
-  // (empty faviconPrefix) must return here rather than fall through to
-  // intlMiddleware below — next-intl's default localePrefix ('always')
-  // redirects any non-prefixed path to `/${defaultLocale}${pathname}`, which
-  // for /favicon.ico has no matching route and resolves as a dead page
-  // instead of the icon. -----------------------------------------------------
+  // icon. It must return here rather than fall through to intlMiddleware
+  // below — next-intl's default localePrefix ('always') redirects any
+  // non-prefixed path to `/${defaultLocale}${pathname}`, which for
+  // /favicon.ico has no matching route and resolves as a dead page instead of
+  // the icon. -----------------------------------------------------------------
   if (pathname === '/favicon.ico') {
-    if (brand.faviconPrefix) {
-      return NextResponse.rewrite(
-        new URL(`${brand.faviconPrefix}/favicon-32x32.png`, request.url),
-      );
-    }
     return NextResponse.next();
   }
 
-  // ---- Install scripts: kaitu-only surface (Linux install / k2s / k2r). ---
+  // ---- Install scripts (Linux install / k2s / k2r). -------------------------
   if (pathname === '/i/k2' || pathname === '/i/k2s' || pathname === '/i/k2r') {
-    if (!isKaitu) {
-      return new NextResponse(null, { status: 404 });
-    }
     if (pathname === '/i/k2s' || pathname === '/i/k2r') {
       const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
         || request.headers.get('x-real-ip')
@@ -67,25 +55,19 @@ export default function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // ---- Admin surfaces (/manager) are `page.kaitu.tsx` route files: the overleap
-  // build does not contain them, so they 404 natively. No gate needed here; the
-  // /app/* API proxy gate above is what keeps admin *data* off the overleap host.
+  // ---- Admin surfaces (/manager) bypass i18n entirely. ----------------------
   if (pathname.startsWith('/manager')) {
     return NextResponse.next();
   }
 
-  // ---- Off-brand locale → 301 to the same path under the brand's default
-  // locale, SAME HOST. The old cross-domain 301 is gone: the two brands do
-  // not know about each other (spec: 两站互不感知). ------------------------
-  const localeMatch = pathname.match(LOCALE_PREFIX_RE);
-  if (localeMatch) {
-    const pathLocale = localeMatch[1] as Locale;
-    if (!(brand.allowedLocales as readonly string[]).includes(pathLocale)) {
-      const rest = localeMatch[2] ?? '';
-      const targetUrl = new URL(`/${brand.defaultLocale}${rest}`, request.url);
-      targetUrl.search = request.nextUrl.search;
-      return NextResponse.redirect(targetUrl, 301);
-    }
+  // ---- Legacy en-* / ja URLs → 301 to the same path under the default
+  // locale, same host. ---------------------------------------------------------
+  const legacyMatch = pathname.match(LEGACY_LOCALE_RE);
+  if (legacyMatch) {
+    const rest = legacyMatch[2] ?? '';
+    const targetUrl = new URL(`/${brand.defaultLocale}${rest}`, request.url);
+    targetUrl.search = request.nextUrl.search;
+    return NextResponse.redirect(targetUrl, 301);
   }
 
   // ---- Root path → pick locale within the brand's allowed set. ------------
@@ -135,7 +117,7 @@ export default function middleware(request: NextRequest) {
   // next-intl's internal rewrite/next() response.
   const response = intlMiddleware(request);
   const strippedPathname =
-    pathname.replace(/^\/(zh-CN|zh-TW|zh-HK|en-US|en-GB|en-AU|ja)(?=\/|$)/, '') || '/';
+    pathname.replace(/^\/(zh-CN|zh-TW|zh-HK)(?=\/|$)/, '') || '/';
   if (response && typeof (response as Response).headers?.set === 'function') {
     (response as Response).headers.set('x-middleware-request-x-pathname', strippedPathname);
   }
@@ -143,17 +125,13 @@ export default function middleware(request: NextRequest) {
 }
 
 // Get the best matching locale based on Accept-Language header, constrained to
-// allowedLocales. (Unchanged from the pre-split implementation — it was already
-// allowedLocales-constrained; the overleap fallback lands on en-US because
-// zh-CN is not in its allowed set, so allowedLocales[0] wins.)
+// allowedLocales; anything unmatched (en, ja, …) lands on the default zh-CN.
 function getBestLocale(
   acceptLanguage: string | null,
   allowedLocales: readonly Locale[]
 ): Locale {
   const allowedSet = new Set<string>(allowedLocales);
-  const fallback: Locale = allowedLocales.includes(routing.defaultLocale as Locale)
-    ? (routing.defaultLocale as Locale)
-    : allowedLocales[0];
+  const fallback = routing.defaultLocale as Locale;
 
   if (!acceptLanguage) return fallback;
 
@@ -178,28 +156,8 @@ function getBestLocale(
       const zhPick =
         langSuffix === 'hk' || langSuffix === 'mo' ? 'zh-HK'
           : langSuffix === 'tw' ? 'zh-TW'
-            : langSuffix === 'cn' || langSuffix === 'sg' ? 'zh-CN'
-              : 'zh-CN';
+            : 'zh-CN';
       if (allowedSet.has(zhPick)) return zhPick as Locale;
-    }
-
-    if (langPrefix === 'en') {
-      // A bare `en` or an unmapped region lands on the brand's own default when
-      // that default is an English locale (overleap: en-GB), else en-US.
-      const enDefault = fallback.startsWith('en-') ? fallback : 'en-US';
-      const enPick =
-        langSuffix === 'au' ? 'en-AU'
-          : langSuffix === 'gb' || langSuffix === 'uk' ? 'en-GB'
-            : langSuffix === 'us' ? 'en-US'
-              : enDefault;
-      if (allowedSet.has(enPick)) return enPick as Locale;
-    }
-
-    const matched = routing.locales.find(locale =>
-      locale.toLowerCase().startsWith(langPrefix) && allowedSet.has(locale)
-    );
-    if (matched) {
-      return matched as Locale;
     }
   }
 
@@ -207,13 +165,15 @@ function getBestLocale(
 }
 
 export const config = {
-  // /api, /app, /admin, /manager, /favicon.ico now MUST hit the
-  // middleware (brand gating + X-K2-Brand injection) — the old matcher
-  // excluded them. Static assets and _next remain excluded via the catch-all.
+  // /api, /app, /manager, /favicon.ico MUST hit the middleware (X-K2-Brand
+  // injection, /manager passthrough). The legacy en-* / ja prefixes are listed
+  // so their 301 also covers dotted paths the catch-all excludes. Static
+  // assets and _next remain excluded via the catch-all.
   matcher: [
     '/',
     '/favicon.ico',
-    '/(zh-CN|zh-TW|zh-HK|en-GB|en-US|en-AU|ja)/:path*',
+    '/(zh-CN|zh-TW|zh-HK)/:path*',
+    '/(en-GB|en-US|en-AU|ja)/:path*',
     '/(api|app)/:path*',
     '/manager/:path*',
     '/manager',

@@ -15,7 +15,7 @@ import path from 'node:path';
 const WEB_DIR = path.resolve(__dirname, '..');
 const MESSAGES_DIR = path.join(WEB_DIR, 'messages');
 
-const ALL_LOCALES = ['zh-CN', 'zh-TW', 'zh-HK', 'en-US', 'en-GB', 'en-AU', 'ja'] as const;
+const ALL_LOCALES = ['zh-CN', 'zh-TW', 'zh-HK'] as const;
 
 // useTranslations('account') + t('subscription.X')
 const NAMESPACED_SOURCES = [

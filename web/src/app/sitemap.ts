@@ -10,9 +10,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = brand.baseUrl;
   const locales = brand.allowedLocales;
 
-  // 静态路由来自品牌站点结构（lib/site/<brand>.ts）：只列该品牌构建里真实存在的页面，
-  // 与页面树（page.<brand>.tsx）同源，不再靠 feature 标志逐项开关。
-  const staticPages = siteConfig(brand).staticRoutes;
+  // 静态路由来自站点结构（lib/site/kaitu.ts）：只列真实存在的页面。
+  const staticPages = siteConfig().staticRoutes;
 
   const sitemapEntries: MetadataRoute.Sitemap = [];
 
@@ -54,14 +53,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Add content pages from velite (published posts only).
   //
-  // Both filters matter. Brand visibility is obvious. The locale filter is not:
-  // slugs are collected across ALL locales below, so a doc that is kaitu-only in
-  // en-US but unmarked in zh-CN would still contribute its slug and get emitted
-  // under the overleap locales — advertising a URL that 404s.
+  // Both filters matter: a post marked for another brand (`brand:` frontmatter)
+  // is not served here, and a post in a locale this site does not serve would
+  // be advertised under a URL that 404s.
   // Only slugs a route actually serves: the /k2 section, or a category
   // registered in content-posts.ts. Anything else would be a sitemap entry
   // pointing at a 404 (the catch-all rejects unregistered categories).
-  const servedCategories = categorySlugs(brand);
+  const servedCategories = categorySlugs();
   const publishedPosts = posts.filter(
     (post) =>
       !post.draft &&
@@ -98,7 +96,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Category listing pages (e.g. /guides) — only when this brand's deployment
   // actually lists something there; an empty category page is not advertised.
-  for (const category of categorySlugs(brand)) {
+  for (const category of categorySlugs()) {
     const hasPosts = locales.some(
       (locale) => listCategoryPosts(locale, category, brand).length > 0
     );

@@ -129,8 +129,8 @@ describe('dropChatwootSdkErrors', () => {
 
   it('KEEPS the same TypeError when it originates in our own code (real regression)', () => {
     const event = chatwootEvent([
-      'https://overleap.io/_next/static/chunks/main-abc123.js',
-      'https://overleap.io/_next/static/chunks/app/[locale]/layout-def456.js',
+      'https://www.kaitu.io/_next/static/chunks/main-abc123.js',
+      'https://www.kaitu.io/_next/static/chunks/app/[locale]/layout-def456.js',
     ]);
     expect(dropChatwootSdkErrors(event)).toBe(event);
   });
@@ -402,7 +402,7 @@ describe('dropInjectedMatchMediaCircularJsonErrors', () => {
 
   it('KEEPS the same TypeError when matchMedia resolves to our own bundle (real regression)', () => {
     const event = circularJsonEvent([
-      { function: 'window.matchMedia', filename: 'https://overleap.io/_next/static/chunks/main-abc123.js' },
+      { function: 'window.matchMedia', filename: 'https://www.kaitu.io/_next/static/chunks/main-abc123.js' },
       { function: 'JSON.stringify', filename: '<anonymous>' },
     ]);
     expect(dropInjectedMatchMediaCircularJsonErrors(event)).toBe(event);
@@ -410,7 +410,7 @@ describe('dropInjectedMatchMediaCircularJsonErrors', () => {
 
   it('KEEPS circular JSON TypeErrors unrelated to matchMedia', () => {
     const event = circularJsonEvent([
-      { function: 'someAppFunction', filename: 'https://overleap.io/_next/static/chunks/main-abc123.js' },
+      { function: 'someAppFunction', filename: 'https://www.kaitu.io/_next/static/chunks/main-abc123.js' },
       { function: 'JSON.stringify', filename: '<anonymous>' },
     ]);
     expect(dropInjectedMatchMediaCircularJsonErrors(event)).toBe(event);
