@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -299,10 +300,35 @@ func chatAIFallback(ctx context.Context, convID uint64, aiReply string) error {
 	return err
 }
 
-// chatAppendAI 追加一条 AI 回复。会话在此之前已关闭（以库为准，行锁下判断）则丢弃，不算出错。
+var (
+	chatMDFence   = regexp.MustCompile("(?m)^[ \t]*```[^\n]*\n?")
+	chatMDHeading = regexp.MustCompile(`(?m)^[ \t]*#{1,6}[ \t]+`)
+	chatMDBullet  = regexp.MustCompile(`(?m)^([ \t]*)[-*+][ \t]+`)
+	chatMDBold    = regexp.MustCompile(`\*\*([^*\n]+?)\*\*|__([^_\n]+?)__`)
+	chatMDLink    = regexp.MustCompile(`\[([^\]\n]+)\]\((https?://[^)\s]+)\)`)
+	chatMDCode    = regexp.MustCompile("`([^`\n]+)`")
+)
+
+// chatPlainText 把 AI 回复里常见的 Markdown 语法转成纯文本。挂件原样显示文字，
+// 而模型并不总遵守 chatAIFormatRules（共用系统提示里有 Markdown 示例），所以入库前兜底清一遍。
+// 只处理确定是语法的形态（成对的 **、行首的 #/-/*、[文字](网址)、反引号），单个星号等普通字符不动。
+func chatPlainText(raw string) string {
+	s := chatMDFence.ReplaceAllString(raw, "")
+	s = chatMDHeading.ReplaceAllString(s, "")
+	s = chatMDBullet.ReplaceAllString(s, "$1· ")
+	s = chatMDBold.ReplaceAllString(s, "$1$2")
+	s = chatMDLink.ReplaceAllString(s, "$1 $2")
+	s = chatMDCode.ReplaceAllString(s, "$1")
+	if s = strings.TrimSpace(s); s == "" {
+		return strings.TrimSpace(raw) // 整条都是语法符号时宁可原样，也不追加空消息
+	}
+	return s
+}
+
+// chatAppendAI 追加一条 AI 回复（先转纯文本）。会话在此之前已关闭（以库为准，行锁下判断）则丢弃，不算出错。
 func chatAppendAI(ctx context.Context, conv *Conversation, content string) error {
 	_, _, err := appendMessage(ctx, conv, appendMessageInput{
-		SenderType: SenderAI, SenderName: "AI", Kind: MsgText, Content: content, RequireOpen: true,
+		SenderType: SenderAI, SenderName: "AI", Kind: MsgText, Content: chatPlainText(content), RequireOpen: true,
 	})
 	if errors.Is(err, errChatConversationClosed) {
 		return nil
