@@ -1,12 +1,14 @@
 import { localeOf } from '@/lib/locale-param';
 import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
+import Script from 'next/script';
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, setRequestLocale } from 'next-intl/server';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { Toaster } from '@/components/ui/sonner';
 import { LOCALES, LOCALE_META, SITE } from '@/lib/site';
 import { ICONS } from '@/lib/metadata';
+import { CHAT_RESUME_SCRIPT } from '@/components/chat/resume-script';
 import '../globals.css';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
@@ -38,6 +40,11 @@ export default async function LocaleLayout({
   return (
     <html lang={locale} dir={LOCALE_META[locale].dir} className="dark" suppressHydrationWarning>
       <body className={`${inter.variable} ${mono.variable} font-sans`}>
+        {/* Moves a chat resume token (#chat=… in support reply emails) out of the URL
+            before anything else reads it. See components/chat/resume-script.ts. */}
+        <Script id="chat-resume-strip" strategy="beforeInteractive">
+          {CHAT_RESUME_SCRIPT}
+        </Script>
         <NextIntlClientProvider messages={messages}>
           <AuthProvider>
             {children}

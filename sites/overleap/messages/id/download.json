@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "title": "Unduh {brand} untuk Windows, macOS, iOS, dan Android",
+    "description": "Dapatkan aplikasi {brand} untuk komputer dan ponsel Anda. Satu akun mencakup lima perangkat; masuk dan sambungkan dengan satu ketukan."
+  },
+  "title": "Unduh {brand}",
+  "subtitle": "Satu akun, lima perangkat. Pilih platform Anda — kami sudah menyorot yang sedang Anda gunakan.",
+  "detected": "Anda menggunakan {platform}",
+  "version": "Versi {version}",
+  "getFor": "Unduh untuk {platform}",
+  "iosStore": "Buka App Store",
+  "androidStore": "Dapatkan di Google Play",
+  "comingSoon": "Segera hadir",
+  "comingSoonHint": "Belum tersedia di platform ini. Berlangganan sekarang dan kami akan mengirim email saat sudah tersedia.",
+  "platforms": {
+    "windows": {
+      "name": "Windows",
+      "requirement": "Windows 10 atau lebih baru, 64-bit"
+    },
+    "macos": {
+      "name": "Mac",
+      "requirement": "macOS 12 atau lebih baru, Intel dan Apple silicon"
+    },
+    "ios": {
+      "name": "iPhone dan iPad",
+      "requirement": "iOS 15 atau lebih baru"
+    },
+    "android": {
+      "name": "Android",
+      "requirement": "Android 8 atau lebih baru"
+    }
+  },
+  "next": {
+    "title": "Setelah memasang",
+    "step1": "Masuk dengan alamat email yang Anda gunakan untuk berlangganan.",
+    "step2": "Ketuk Sambungkan. Aplikasi memilihkan rute tercepat untuk Anda.",
+    "step3": "Gunakan akun yang sama di hingga lima perangkat."
+  },
+  "noSubscription": "Belum berlangganan?",
+  "seePricing": "Lihat harga",
+  "help": "Ada yang tidak berfungsi?",
+  "helpLink": "Kunjungi halaman bantuan"
+}

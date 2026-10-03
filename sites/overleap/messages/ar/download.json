@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "title": "نزّل {brand} لأنظمة Windows وmacOS وiOS وAndroid",
+    "description": "احصل على تطبيق {brand} لحاسوبك وهاتفك. حساب واحد يغطي خمسة أجهزة؛ سجّل الدخول واتصل بضغطة واحدة."
+  },
+  "title": "نزّل {brand}",
+  "subtitle": "حساب واحد، خمسة أجهزة. اختر منصتك — أبرزنا لك المنصة التي تستخدمها الآن.",
+  "detected": "أنت تستخدم {platform}",
+  "version": "الإصدار {version}",
+  "getFor": "نزّل لنظام {platform}",
+  "iosStore": "افتح App Store",
+  "androidStore": "احصل عليه من Google Play",
+  "comingSoon": "قريبًا",
+  "comingSoonHint": "غير متاح على هذه المنصة بعد. اشترك الآن وسنراسلك عبر البريد الإلكتروني عند توفره.",
+  "platforms": {
+    "windows": {
+      "name": "Windows",
+      "requirement": "Windows 10 أو أحدث، 64 بت"
+    },
+    "macos": {
+      "name": "Mac",
+      "requirement": "macOS 12 أو أحدث، Intel وApple silicon"
+    },
+    "ios": {
+      "name": "iPhone وiPad",
+      "requirement": "iOS 15 أو أحدث"
+    },
+    "android": {
+      "name": "Android",
+      "requirement": "Android 8 أو أحدث"
+    }
+  },
+  "next": {
+    "title": "بعد التثبيت",
+    "step1": "سجّل الدخول بالبريد الإلكتروني الذي اشتركت به.",
+    "step2": "اضغط على «اتصال». يختار التطبيق أسرع مسار لك.",
+    "step3": "استخدم الحساب نفسه على ما يصل إلى خمسة أجهزة."
+  },
+  "noSubscription": "ليس لديك اشتراك بعد؟",
+  "seePricing": "اطّلع على الأسعار",
+  "help": "هل هناك ما لا يعمل؟",
+  "helpLink": "زر صفحة المساعدة"
+}

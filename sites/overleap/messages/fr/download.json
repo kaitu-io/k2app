@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "title": "Télécharger {brand} pour Windows, macOS, iOS et Android",
+    "description": "Installez l'app {brand} sur votre ordinateur et votre téléphone. Un compte couvre cinq appareils ; connectez-vous et lancez la connexion d'un geste."
+  },
+  "title": "Télécharger {brand}",
+  "subtitle": "Un compte, cinq appareils. Choisissez votre plateforme : nous avons mis en avant celle que vous utilisez.",
+  "detected": "Vous êtes sur {platform}",
+  "version": "Version {version}",
+  "getFor": "Télécharger pour {platform}",
+  "iosStore": "Ouvrir l'App Store",
+  "androidStore": "Disponible sur Google Play",
+  "comingSoon": "Bientôt disponible",
+  "comingSoonHint": "Pas encore disponible sur cette plateforme. Abonnez-vous dès maintenant et nous vous écrirons à sa sortie.",
+  "platforms": {
+    "windows": {
+      "name": "Windows",
+      "requirement": "Windows 10 ou version ultérieure, 64 bits"
+    },
+    "macos": {
+      "name": "Mac",
+      "requirement": "macOS 12 ou version ultérieure, Intel et Apple silicon"
+    },
+    "ios": {
+      "name": "iPhone et iPad",
+      "requirement": "iOS 15 ou version ultérieure"
+    },
+    "android": {
+      "name": "Android",
+      "requirement": "Android 8 ou version ultérieure"
+    }
+  },
+  "next": {
+    "title": "Après l'installation",
+    "step1": "Connectez-vous avec l'adresse e-mail utilisée pour votre abonnement.",
+    "step2": "Touchez Connecter. L'app choisit pour vous la route la plus rapide.",
+    "step3": "Utilisez le même compte sur cinq appareils au maximum."
+  },
+  "noSubscription": "Pas encore d'abonnement ?",
+  "seePricing": "Voir les tarifs",
+  "help": "Un problème ?",
+  "helpLink": "Consultez la page d'aide"
+}

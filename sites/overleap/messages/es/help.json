@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "title": "Ayuda",
+    "description": "Primeros pasos, tu cuenta y la facturación, y respuestas claras a las preguntas habituales sobre {brand}."
+  },
+  "title": "Ayuda",
+  "intro": "Primeros pasos, tu cuenta y la facturación, y respuestas claras. Si no encuentras lo que buscas, escríbenos: te responde una persona.",
+  "gettingStarted": {
+    "title": "Primeros pasos",
+    "step1": {
+      "title": "Suscríbete",
+      "body": "Elige un plan en la página de precios y paga con tarjeta, Apple Pay o Google Pay."
+    },
+    "step2": {
+      "title": "Instala la app",
+      "body": "Descarga {brand} para Windows, macOS, iOS o Android."
+    },
+    "step3": {
+      "title": "Inicia sesión y conecta",
+      "body": "Usa el correo electrónico con el que te suscribiste y toca Conectar. La app elige la ruta más rápida por ti."
+    },
+    "download": "Ir a descargas"
+  },
+  "billing": {
+    "title": "Cuenta y facturación",
+    "items": {
+      "manage": {
+        "question": "¿Cómo gestiono o cancelo mi suscripción?",
+        "answer": "Abre la página de tu cuenta y elige Gestionar suscripción. Allí puedes cancelar, cambiar tu tarjeta o descargar facturas. Si cancelas, tu plan sigue activo hasta el final del periodo que has pagado."
+      },
+      "charge": {
+        "question": "¿Cuándo se me cobra?",
+        "answer": "Al inicio de cada periodo de facturación, en la tarjeta con la que te suscribiste. Stripe te envía un recibo por correo cada vez."
+      },
+      "refund": {
+        "question": "¿Puedo pedir un reembolso?",
+        "answer": "Si {brand} no te funciona, escríbenos y lo solucionamos."
+      },
+      "devices": {
+        "question": "He alcanzado el límite de cinco dispositivos",
+        "answer": "Al iniciar sesión en un sexto dispositivo, se cierra automáticamente la sesión del más antiguo. Para cerrar tú mismo la sesión de un dispositivo, usa la pantalla Dispositivos de la app."
+      }
+    },
+    "account": "Ir a tu cuenta"
+  },
+  "faq": {
+    "title": "Preguntas",
+    "subtitle": "Cómo funciona {brand}, en pocas palabras."
+  },
+  "contact": {
+    "title": "¿Sigues atascado?",
+    "body": "Escribe a {email} con lo que intentabas hacer y lo que ocurrió. Una persona lee cada mensaje.",
+    "button": "Escribir a soporte"
+  }
+}

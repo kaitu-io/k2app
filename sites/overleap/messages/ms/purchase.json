@@ -1,0 +1,18 @@
+{
+  "title": "Pilih pelan anda",
+  "annualLabel": "Tahunan",
+  "monthlyLabel": "Bulanan",
+  "perMonthApprox": "≈ {price}/bln",
+  "monthlyPrice": "{price}/bln",
+  "cancelAnytime": "Batal bila-bila masa",
+  "savePercent": "Jimat {percent}%",
+  "currencyNote": "Harga dalam {currency}. Anda dicaj dalam mata wang tempatan jika tersedia.",
+  "subscribe": "Langgan",
+  "redirecting": "Mengalihkan ke pembayaran selamat…",
+  "alreadySubscribed": "Anda sudah mempunyai langganan aktif.",
+  "manageInAccount": "Urus langganan",
+  "checkoutCancelled": "Pembayaran dibatalkan — anda boleh mencuba lagi pada bila-bila masa.",
+  "channelUnavailable": "Kaedah pembayaran ini tidak tersedia untuk akaun anda.",
+  "genericError": "Sesuatu telah berlaku. Sila cuba lagi.",
+  "noPlans": "Pelan sedang disediakan. Sila semak semula tidak lama lagi."
+}

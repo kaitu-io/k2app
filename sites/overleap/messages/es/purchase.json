@@ -1,0 +1,18 @@
+{
+  "title": "Elige tu plan",
+  "annualLabel": "Anual",
+  "monthlyLabel": "Mensual",
+  "perMonthApprox": "≈ {price}/mes",
+  "monthlyPrice": "{price}/mes",
+  "cancelAnytime": "Cancela cuando quieras",
+  "savePercent": "Ahorra un {percent}%",
+  "currencyNote": "Precios en {currency}. Se te cobra en tu moneda local cuando está disponible.",
+  "subscribe": "Suscribirme",
+  "redirecting": "Redirigiendo al pago seguro…",
+  "alreadySubscribed": "Ya tienes una suscripción activa.",
+  "manageInAccount": "Gestionar suscripción",
+  "checkoutCancelled": "El pago se canceló: puedes volver a intentarlo cuando quieras.",
+  "channelUnavailable": "Este método de pago no está disponible para tu cuenta.",
+  "genericError": "Algo salió mal. Inténtalo de nuevo.",
+  "noPlans": "Estamos preparando los planes. Vuelve a comprobarlo en breve."
+}

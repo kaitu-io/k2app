@@ -1,0 +1,133 @@
+{
+  "meta": {
+    "title": "VPN peribadi tanpa log, laju di mana-mana rangkaian",
+    "description": "{brand} ialah VPN peribadi yang merahsiakan destinasi anda, malah daripada penyedia internet, tidak menyimpan log, dan kekal laju pada rangkaian yang sering mengecewakan. Windows, macOS, iOS dan Android."
+  },
+  "hero": {
+    "badge": "Tanpa log · Encrypted Client Hello · 5 peranti",
+    "title": "Apa yang anda layari, urusan anda sendiri.",
+    "subtitle": "VPN peribadi yang merahsiakan laman yang anda lawati, malah daripada penyedia perkhidmatan internet anda, dan kekal laju pada rangkaian yang sering mengecewakan.",
+    "description": "{brand} menyulitkan semua yang dihantar peranti anda dan merahsiakan destinasinya dengan Encrypted Client Hello. Kami tidak menyimpan sebarang rekod tentang aktiviti anda. Satu langganan meliputi lima peranti pada Windows, macOS, iOS dan Android.",
+    "ctaPrimary": "Dapatkan {brand}",
+    "ctaSecondary": "Lihat cara ia berfungsi",
+    "mockConnected": "Dilindungi",
+    "mockNode": "Auto · laluan terpantas"
+  },
+  "steps": {
+    "title": "Sedia dalam tiga langkah",
+    "subscribe": {
+      "label": "Langgan",
+      "detail": "Kad, Apple Pay atau Google Pay · batal pada bila-bila masa"
+    },
+    "download": {
+      "label": "Pasang aplikasi",
+      "detail": "Windows · macOS · iOS · Android"
+    },
+    "connect": {
+      "label": "Log masuk dan sambung",
+      "detail": "Satu ketikan. Tiada konfigurasi."
+    },
+    "cta": "Mulakan sekarang"
+  },
+  "features": {
+    "title": "Mengapa {brand}",
+    "isp": {
+      "title": "Tersembunyi malah daripada ISP anda",
+      "description": "Penyedia internet di UK dikehendaki menyimpan rekod perkhidmatan yang anda akses sehingga dua belas bulan. Dengan {brand}, penyedia anda hanya melihat satu sesi HTTPS biasa tanpa mengetahui ke mana arahnya: Encrypted Client Hello merahsiakan destinasi yang pada VPN lain masih kelihatan dalam handshake."
+    },
+    "logs": {
+      "title": "Tanpa log. Tiada apa untuk diserahkan.",
+      "description": "Kami tidak merekodkan laman yang anda lawati, aplikasi yang anda guna atau trafik yang anda hantar. Kami hanya menyimpan apa yang diperlukan untuk langganan: alamat e-mel, pelan anda dan peranti yang sedang log masuk."
+    },
+    "speed": {
+      "title": "Laju pada rangkaian yang mengecewakan",
+      "description": "Wi-Fi tren, stadium yang sesak, sambungan hotel: kebanyakan VPN merangkak sebaik sahaja paket mula hilang. Kawalan kadar k2cc milik {brand} membezakan gangguan daripada kesesakan sebenar dan mengekalkan kelajuan anda."
+    },
+    "roaming": {
+      "title": "Bergerak bersama anda",
+      "description": "Keluar rumah, Wi-Fi hilang, teruskan sahaja. Terowong berpindah daripada Wi-Fi ke data mudah alih di tengah sesi, jadi muat turun dan panggilan berterusan tanpa menyambung semula."
+    },
+    "travel": {
+      "title": "Terus berfungsi di luar negara",
+      "description": "Mengembara ke tempat yang biasanya menyukarkan VPN? Sambungan {brand} kelihatan seperti trafik web biasa, jadi ia terus berfungsi di tempat VPN lain terputus."
+    }
+  },
+  "pricing": {
+    "title": "Satu pelan. Semua peranti.",
+    "subtitle": "Lima peranti, data tanpa had, semua lokasi. Batal pada bila-bila masa.",
+    "yearly": {
+      "name": "Tahunan",
+      "period": "setahun",
+      "note": "Nilai terbaik — kira-kira {monthly} sebulan"
+    },
+    "monthly": {
+      "name": "Bulanan",
+      "period": "sebulan",
+      "note": "Batal pada bila-bila masa"
+    },
+    "cta": "Pilih pelan",
+    "includes": [
+      "5 peranti serentak",
+      "Data tanpa had",
+      "Semua lokasi",
+      "Windows, macOS, iOS, Android"
+    ],
+    "currencyNote": "Harga dalam {currency}. Bayar dengan kad, Apple Pay atau Google Pay. Anda dicaj dalam mata wang tempatan jika tersedia."
+  },
+  "faq": {
+    "title": "Soalan",
+    "subtitle": "Jawapan terus terang tentang cara {brand} berfungsi.",
+    "items": {
+      "logs": {
+        "question": "Adakah anda menyimpan log?",
+        "answer": "Tidak. Kami tidak merekodkan laman yang anda lawati, aplikasi yang anda guna atau trafik yang anda hantar. Kami hanya menyimpan apa yang diperlukan untuk langganan: alamat e-mel, pelan anda dan peranti yang sedang log masuk."
+      },
+      "isp": {
+        "question": "Apa yang dilihat oleh ISP saya?",
+        "answer": "Satu sambungan disulitkan ke pelayan {brand}, membawa sesi HTTPS yang kelihatan biasa. Encrypted Client Hello merahsiakan hingga nama pelayan dalam handshake, jadi tiada tanda yang mengenal pasti VPN dan tiada maklumat tentang destinasi sebenar anda."
+      },
+      "legal": {
+        "question": "Adakah menggunakan VPN sah di UK?",
+        "answer": "Ya. Menggunakan VPN adalah sah di UK dan di seluruh Eropah. Apa yang anda lakukan dalam talian masih tertakluk kepada undang-undang."
+      },
+      "publicWifi": {
+        "question": "Adakah selamat pada Wi-Fi awam?",
+        "answer": "Ya. Semua yang dihantar peranti anda disulitkan sebelum keluar, jadi rangkaian kafe, hotel atau tren hanya melihat trafik tersulit, dan tiada sesiapa pada rangkaian yang sama boleh membaca atau mengubahnya."
+      },
+      "travel": {
+        "question": "Adakah ia berfungsi semasa saya mengembara?",
+        "answer": "Ya. Sambungan {brand} kelihatan seperti trafik web biasa, jadi ia terus berfungsi di tempat VPN lazimnya disekat. Langganan anda meliputi semua lokasi, dan aplikasi memilih laluan terpantas di mana-mana anda berada."
+      },
+      "ech": {
+        "question": "Apakah Encrypted Client Hello?",
+        "answer": "Bahagian handshake TLS yang biasanya mendedahkan pelayan mana yang anda sambung, kini disulitkan. Kebanyakan VPN masih menghantar nama itu secara terbuka, dan itulah yang digunakan rangkaian untuk mengesan dan menyekatnya. {brand} menyulitkannya."
+      },
+      "platforms": {
+        "question": "Platform apakah yang disokong?",
+        "answer": "Windows, macOS, iOS dan Android. Satu langganan meliputi lima peranti serentak."
+      },
+      "devices": {
+        "question": "Berapa banyak peranti yang boleh saya guna?",
+        "answer": "Lima serentak, dengan gabungan platform apa pun. Log masuk pada peranti keenam akan melog keluar peranti yang paling lama."
+      },
+      "pricing": {
+        "question": "Berapakah harganya?",
+        "answer": "{yearly} setahun, atau {monthly} sebulan. Kedua-duanya termasuk lima peranti, data tanpa had dan semua lokasi, dan anda boleh membatalkan pada bila-bila masa."
+      },
+      "payment": {
+        "question": "Bagaimana saya boleh membayar?",
+        "answer": "Kad kredit atau debit melalui Stripe. Apple Pay dan Google Pay ditawarkan semasa pembayaran jika disokong peranti anda. Anda dicaj dalam mata wang tempatan jika tersedia."
+      },
+      "cancel": {
+        "question": "Bagaimana saya membatalkan?",
+        "answer": "Daripada halaman akaun anda, atau melalui kedai aplikasi tempat anda melanggan. Pelan anda kekal aktif sehingga akhir tempoh yang telah dibayar."
+      }
+    }
+  },
+  "download": {
+    "title": "Dapatkan {brand} pada setiap peranti",
+    "subtitle": "Satu akaun, lima peranti, sambungan yang sama di mana-mana.",
+    "platforms": "Windows · macOS · iOS · Android",
+    "button": "Muat turun"
+  }
+}

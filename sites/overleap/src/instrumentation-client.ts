@@ -5,6 +5,11 @@ import {
   dropOutdatedBrowserSyntaxErrors,
   dropRscNavigationFallbackRejections,
 } from '@/lib/sentry-filters';
+import { stripChatResume } from '@/components/chat/resume-script';
+
+// First statement that touches the URL: take a chat resume token (#chat=…) out of
+// the address bar before the SDK records the initial URL.
+if (typeof window !== 'undefined') stripChatResume(window);
 
 const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
 

@@ -1,0 +1,18 @@
+{
+  "title": "Chọn gói của bạn",
+  "annualLabel": "Theo năm",
+  "monthlyLabel": "Theo tháng",
+  "perMonthApprox": "≈ {price}/tháng",
+  "monthlyPrice": "{price}/tháng",
+  "cancelAnytime": "Hủy bất cứ lúc nào",
+  "savePercent": "Tiết kiệm {percent}%",
+  "currencyNote": "Giá tính bằng {currency}. Bạn được tính phí bằng nội tệ khi có hỗ trợ.",
+  "subscribe": "Đăng ký",
+  "redirecting": "Đang chuyển đến trang thanh toán an toàn…",
+  "alreadySubscribed": "Bạn đã có một gói đăng ký đang hoạt động.",
+  "manageInAccount": "Quản lý gói đăng ký",
+  "checkoutCancelled": "Thanh toán đã bị hủy — bạn có thể thử lại bất cứ lúc nào.",
+  "channelUnavailable": "Phương thức thanh toán này không khả dụng cho tài khoản của bạn.",
+  "genericError": "Đã xảy ra lỗi. Vui lòng thử lại.",
+  "noPlans": "Các gói đang được chuẩn bị. Vui lòng quay lại sau."
+}

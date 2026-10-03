@@ -1,0 +1,133 @@
+{
+  "meta": {
+    "title": "Kayıt tutmayan özel VPN, her ağda hızlı",
+    "description": "{brand}, nereye gittiğinizi internet sağlayıcınızdan bile gizleyen, kayıt tutmayan ve sizi yarı yolda bırakan ağlarda hızlı kalan özel bir VPN'dir. Windows, macOS, iOS ve Android."
+  },
+  "hero": {
+    "badge": "Kayıt yok · Encrypted Client Hello · 5 cihaz",
+    "title": "Ne gezdiğiniz sizden başkasını ilgilendirmez.",
+    "subtitle": "Nereye gittiğinizi internet sağlayıcınızdan bile gizleyen, sizi yarı yolda bırakan ağlarda bile hızlı kalan özel bir VPN.",
+    "description": "{brand}, cihazlarınızın gönderdiği her şeyi şifreler ve Encrypted Client Hello ile hedefi gizler. Ne yaptığınıza dair hiçbir kayıt tutmayız. Tek abonelik Windows, macOS, iOS ve Android'de beş cihazı kapsar.",
+    "ctaPrimary": "{brand}'i edinin",
+    "ctaSecondary": "Nasıl çalıştığını görün",
+    "mockConnected": "Korunuyor",
+    "mockNode": "Otomatik · en hızlı rota"
+  },
+  "steps": {
+    "title": "Üç adımda hazır",
+    "subscribe": {
+      "label": "Abone olun",
+      "detail": "Kart, Apple Pay veya Google Pay · istediğiniz zaman iptal"
+    },
+    "download": {
+      "label": "Uygulamayı yükleyin",
+      "detail": "Windows · macOS · iOS · Android"
+    },
+    "connect": {
+      "label": "Giriş yapın ve bağlanın",
+      "detail": "Tek dokunuş. Ayar yok."
+    },
+    "cta": "Hemen başlayın"
+  },
+  "features": {
+    "title": "Neden {brand}",
+    "isp": {
+      "title": "İnternet sağlayıcınızdan bile gizli",
+      "description": "Birleşik Krallık'taki sağlayıcılar, bağlandığınız hizmetlerin kaydını on iki aya kadar tutmak zorundadır. {brand} ile sağlayıcınız yalnızca sıradan bir HTTPS oturumu görür, nereye gittiğiniz hakkında hiçbir şey görmez: Encrypted Client Hello, diğer VPN'lerin el sıkışmada açıkta bıraktığı hedefi gizler."
+    },
+    "logs": {
+      "title": "Kayıt yok. Teslim edilecek bir şey yok.",
+      "description": "Ziyaret ettiğiniz siteleri, kullandığınız uygulamaları veya gönderdiğiniz trafiği kaydetmeyiz. Yalnızca bir abonelik için gerekeni saklarız: e-posta adresiniz, planınız ve oturum açık cihazlarınız."
+    },
+    "speed": {
+      "title": "Sizi yarı yolda bırakan ağlarda hızlı",
+      "description": "Trendeki Wi-Fi, kalabalık bir stadyum, otel bağlantısı: paket kaybı başladığı anda çoğu VPN yavaşlar. {brand}'in k2cc hız kontrolü parazit ile gerçek tıkanıklığı ayırt eder ve hızınızı yüksek tutar."
+    },
+    "roaming": {
+      "title": "Sizinle birlikte hareket eder",
+      "description": "Evden çıkın, Wi-Fi'yi kaybedin, devam edin. Tünel oturum sürerken Wi-Fi'dan mobil veriye geçer; indirmeler ve görüşmeler yeniden bağlanmadan sürer."
+    },
+    "travel": {
+      "title": "Yurt dışında da çalışır",
+      "description": "VPN'lerin genelde çalışmadığı bir yere mi gidiyorsunuz? {brand} bağlantısı sıradan web trafiği gibi görünür; bu yüzden diğerlerinin kesildiği yerlerde çalışmaya devam eder."
+    }
+  },
+  "pricing": {
+    "title": "Tek plan. Tüm cihazlar.",
+    "subtitle": "Beş cihaz, sınırsız veri, tüm konumlar. İstediğiniz zaman iptal edin.",
+    "yearly": {
+      "name": "Yıllık",
+      "period": "yıllık",
+      "note": "En avantajlısı — ayda yaklaşık {monthly}"
+    },
+    "monthly": {
+      "name": "Aylık",
+      "period": "aylık",
+      "note": "İstediğiniz zaman iptal edin"
+    },
+    "cta": "Plan seçin",
+    "includes": [
+      "Aynı anda 5 cihaz",
+      "Sınırsız veri",
+      "Tüm konumlar",
+      "Windows, macOS, iOS, Android"
+    ],
+    "currencyNote": "Fiyatlar {currency} cinsindendir. Kart, Apple Pay veya Google Pay ile ödeyin. Mümkün olduğunda yerel para biriminizle tahsil edilirsiniz."
+  },
+  "faq": {
+    "title": "Sorular",
+    "subtitle": "{brand}'in nasıl çalıştığına dair net cevaplar.",
+    "items": {
+      "logs": {
+        "question": "Kayıt tutuyor musunuz?",
+        "answer": "Hayır. Ziyaret ettiğiniz siteleri, kullandığınız uygulamaları veya gönderdiğiniz trafiği kaydetmeyiz. Yalnızca bir abonelik için gerekeni saklarız: e-posta adresiniz, planınız ve oturum açık cihazlarınız."
+      },
+      "isp": {
+        "question": "İnternet sağlayıcım ne görür?",
+        "answer": "Bir {brand} sunucusuna tek bir şifreli bağlantı; içinde sıradan görünen bir HTTPS oturumu. Encrypted Client Hello el sıkışmadaki sunucu adını bile gizler; yani bir VPN'i belli edecek hiçbir şey ve gerçekte nereye gittiğinize dair hiçbir iz kalmaz."
+      },
+      "legal": {
+        "question": "Birleşik Krallık'ta VPN kullanmak yasal mı?",
+        "answer": "Evet. VPN kullanmak Birleşik Krallık'ta ve Avrupa genelinde yasaldır. İnternette yaptıklarınız yine de yasalara tabidir."
+      },
+      "publicWifi": {
+        "question": "Herkese açık Wi-Fi'da güvenli mi?",
+        "answer": "Evet. Cihazınızın gönderdiği her şey çıkmadan önce şifrelenir; kafenin, otelin veya trenin ağı yalnızca şifreli trafik görür ve aynı ağdaki hiç kimse onu okuyamaz veya değiştiremez."
+      },
+      "travel": {
+        "question": "Seyahat ederken çalışır mı?",
+        "answer": "Evet. {brand} bağlantısı sıradan web trafiği gibi göründüğü için VPN'lerin genelde engellendiği yerlerde de çalışmaya devam eder. Aboneliğiniz tüm konumları kapsar ve uygulama nerede olursanız olun en hızlı rotayı seçer."
+      },
+      "ech": {
+        "question": "Encrypted Client Hello nedir?",
+        "answer": "TLS el sıkışmasında normalde hangi sunucuya bağlandığınızı gösteren bölümün şifrelenmiş hâli. Çoğu VPN bu adı hâlâ açık gönderir ve ağlar onları bu sayede tespit edip engeller. {brand} bunu şifreler."
+      },
+      "platforms": {
+        "question": "Hangi platformlar destekleniyor?",
+        "answer": "Windows, macOS, iOS ve Android. Tek abonelik aynı anda beş cihazı kapsar."
+      },
+      "devices": {
+        "question": "Kaç cihaz kullanabilirim?",
+        "answer": "Platform karışımı fark etmeksizin aynı anda beş. Altıncı cihazda oturum açmak en eski cihazın oturumunu kapatır."
+      },
+      "pricing": {
+        "question": "Ne kadar?",
+        "answer": "Yılda {yearly} veya ayda {monthly}. İkisi de beş cihaz, sınırsız veri ve tüm konumları içerir; istediğiniz zaman iptal edebilirsiniz."
+      },
+      "payment": {
+        "question": "Nasıl ödeyebilirim?",
+        "answer": "Stripe üzerinden kredi veya banka kartı. Cihazınız destekliyorsa ödeme sırasında Apple Pay ve Google Pay sunulur. Mümkün olduğunda yerel para biriminizle tahsil edilirsiniz."
+      },
+      "cancel": {
+        "question": "Nasıl iptal ederim?",
+        "answer": "Hesap sayfanızdan veya abone olduğunuz uygulama mağazası üzerinden. Planınız ödediğiniz dönemin sonuna kadar etkin kalır."
+      }
+    }
+  },
+  "download": {
+    "title": "{brand} her cihazınızda",
+    "subtitle": "Tek hesap, beş cihaz, her yerde aynı bağlantı.",
+    "platforms": "Windows · macOS · iOS · Android",
+    "button": "İndir"
+  }
+}
