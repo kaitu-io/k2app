@@ -2,10 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 
 import { act, render, screen, waitFor } from '@testing-library/react';
 
 // 挂件本体换成替身：工厂只在真的发生动态 import 时执行，借此断言"门没开就不加载代码块"。
-const widget = vi.hoisted(() => ({ loads: 0, impl: (_props: { deferStart?: boolean }): unknown => null }));
+type WidgetProps = { deferStart?: boolean };
+const widget = vi.hoisted(() => ({ loads: 0, impl: ((): unknown => null) as (props: WidgetProps) => unknown }));
 vi.mock('../chat/ChatWidget', () => {
   widget.loads++;
-  return { default: (props: { deferStart?: boolean }) => widget.impl(props) };
+  return { default: (props: WidgetProps) => widget.impl(props) };
 });
 
 const sentry = vi.hoisted(() => ({ captureException: vi.fn() }));
