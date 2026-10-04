@@ -18,7 +18,7 @@ import { Metadata } from 'next';
 import { Suspense } from 'react';
 import { Inter, JetBrains_Mono } from "next/font/google";
 import Script from 'next/script';
-import ChatwootWidget from '@/components/ChatwootWidget';
+import ChatWidgetLazy from '@/components/chat/ChatWidgetLazy';
 import FunnelPageView from '@/components/FunnelPageView';
 import { CHAT_RESUME_SCRIPT } from '@/components/chat/resume-script';
 import "../globals.css";
@@ -131,7 +131,7 @@ export default async function LocaleLayout({
                     <FunnelPageView />
                     <Toaster />
                     <CookieConsent />
-                    <ChatwootWidget />
+                    <ChatWidgetLazy />
                   </AuthProvider>
                 </AppConfigProvider>
               </EmbedThemeProvider>

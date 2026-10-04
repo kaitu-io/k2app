@@ -69,7 +69,7 @@ var antiblockSeedTopN = 5
 func handleAntiblockSeed(c *gin.Context) {
 	// Config gate: endpoint is inert when the key is not configured. The key is
 	// read from config.yml (antiblock.seed_key) — the idiomatic Center config
-	// source, like chatwoot.api_token etc. (qtoolkit SetConfigFile does NOT
+	// source, like slack.signing_secret etc. (qtoolkit SetConfigFile does NOT
 	// enable AutomaticEnv, so this is config-file only, not an env var).
 	expectedKey := viper.GetString("antiblock.seed_key")
 	if expectedKey == "" {

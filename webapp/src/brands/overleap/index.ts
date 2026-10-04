@@ -59,7 +59,6 @@ export const OVERLEAP_BRAND: WebappBrandConfig = {
     wallet: false, // no WordGate wallet on this brand (Stripe handles billing on the website)
     wordgatePurchase: false,
     stripeCheckout: true, // Purchase page renders StripePurchasePanel (subscribe/manage)
-    chatwoot: false,
     privateNode: false,
     antiblockRelay: false,
     selfHostedTunnels: false, // no k2s install channel for this brand (see k2sInstallUrl)

@@ -79,19 +79,13 @@ export function takeResumeToken(): string | null {
 }
 
 /**
- * 挂载时要不要去问服务端 `session`（问了才知道 `enabled`，才决定画不画入口按钮）。
+ * 挂载时要不要立刻调 `start()`（问服务端 `session`，会新建访客主体并种 cookie）。
  *
- * 暗发布阶段的规则：预览身份、带着继续对话令牌，或者本浏览器已经建过会话。
- * 三者都没有 = 不渲染、不发任何请求、不种 cookie。
- *
- * 正式上线（对所有访客显示入口）不能只把这里改成恒返回 true：现在"问服务端"就是 `start()`，
- * 它会新建访客主体并种 cookie——对每个路过的访客都这么做不可接受。需要三件事一起改：
- * 1. 服务端加一个不建主体、可缓存的 `enabled` 探测接口；
- * 2. 挂件按探测结果先画入口，此时不调 `start()`；
- * 3. `start()`（会建访客、种 cookie）推迟到访客第一次展开面板，或本浏览器已有
- *    `chat:known` 标记（建过会话，要恢复它）时才调。
+ * 只有这三种访客立刻建会话：预览身份、带着继续对话令牌、本浏览器已经建过会话（要恢复它）。
+ * 其余访客先用 `probeChatEnabled()` 问一下开没开（不建主体、不种 cookie），开着就只画入口按钮，
+ * 等访客第一次展开面板才调 `start()`（裁定 R26）。
  */
-export function shouldProbeSession(): boolean {
+export function shouldStartSession(): boolean {
   return isPreview() || hasResumeToken() || readFlag(CHAT_KNOWN_FLAG);
 }
 
@@ -112,4 +106,41 @@ export function onOpenChatRequest(handler: () => void): () => void {
   };
   window.addEventListener(OPEN_EVENT, listener);
   return () => window.removeEventListener(OPEN_EVENT, listener);
+}
+
+/** 入口探测结果在本标签页内的缓存：开关极少变，不必每次站内跳转都问一遍。 */
+export const CHAT_ENABLED_CACHE = 'chat:enabled';
+const ENABLED_CACHE_MS = 5 * 60_000;
+
+/**
+ * 问服务端会话功能对普通访客开没开（`GET /api/chat/enabled`）：只读开关，不建访客、不种 cookie。
+ * 结果在本标签页缓存 5 分钟。任何失败都按"没开"处理——探测坏了只是少一个入口。
+ */
+export async function probeChatEnabled(brandId: string, fetchImpl: typeof fetch = fetch): Promise<boolean> {
+  try {
+    const cached = JSON.parse(window.sessionStorage.getItem(CHAT_ENABLED_CACHE) ?? 'null') as
+      | { enabled?: unknown; at?: unknown }
+      | null;
+    if (cached && typeof cached.enabled === 'boolean' && typeof cached.at === 'number'
+      && Date.now() - cached.at >= 0 && Date.now() - cached.at < ENABLED_CACHE_MS) {
+      return cached.enabled;
+    }
+  } catch {
+    // 存储被禁用或内容损坏：照常去问
+  }
+  let enabled = false;
+  try {
+    const res = await fetchImpl('/api/chat/enabled', { headers: { 'X-K2-Brand': brandId } });
+    if (!res.ok) return false;
+    const body = (await res.json()) as { code?: number; data?: { enabled?: unknown } };
+    enabled = body.code === 0 && body.data?.enabled === true;
+  } catch {
+    return false; // 网络错误不缓存，下一页再问
+  }
+  try {
+    window.sessionStorage.setItem(CHAT_ENABLED_CACHE, JSON.stringify({ enabled, at: Date.now() }));
+  } catch {
+    // 存不下只是下一页多问一次
+  }
+  return enabled;
 }

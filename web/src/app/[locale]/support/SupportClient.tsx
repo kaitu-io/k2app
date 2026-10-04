@@ -24,16 +24,12 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { useState } from 'react';
-import ChatWidgetLazy from '@/components/chat/ChatWidgetLazy';
 import { requestOpenChat } from '@/components/chat/gate';
 
-const openChat = () => {
-  // 自建会话挂件在场时由它接管；不在场（未开启 / 未预览）走原来的客服入口。
+/** 会话挂件（根布局里）在场就由它展开；不在场（未开启 / 探测失败 / App 内嵌页）改发邮件。 */
+const openChat = (email: string) => {
   if (requestOpenChat()) return;
-  const w = window as unknown as Record<string, unknown>;
-  if (w.$chatwoot && typeof (w.$chatwoot as Record<string, unknown>).toggle === 'function') {
-    (w.$chatwoot as { toggle: (action: string) => void }).toggle('open');
-  }
+  window.location.href = `mailto:${email}`;
 };
 
 const FAQ_KEYS = [
@@ -324,7 +320,7 @@ export default function SupportClient() {
           <div className="grid sm:grid-cols-3 gap-6">
             <Card
               className="p-6 text-center cursor-pointer hover:shadow-lg transition-shadow"
-              onClick={openChat}
+              onClick={() => openChat(email)}
             >
               <div className="w-12 h-12 mx-auto mb-4 bg-blue-900/50 rounded-full flex items-center justify-center">
                 <MessageCircle className="w-6 h-6 text-blue-600" />
@@ -379,7 +375,6 @@ export default function SupportClient() {
       </section>
 
       <Footer />
-      {brand.chatEnabled && <ChatWidgetLazy />}
     </div>
   );
 }

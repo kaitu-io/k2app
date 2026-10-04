@@ -10,9 +10,8 @@
  * Served from the live site, so it also protects already-shipped app versions
  * that embed these pages without an iframe sandbox.
  *
- * The postMessage call must stay wrapped in try/catch — sentry-filters.ts
- * (dropNativePostMessageRejections) relies on app-originated postMessage never
- * producing an unhandled rejection.
+ * The postMessage call stays wrapped in try/catch: a postMessage into a
+ * not-yet-ready parent must never surface as an unhandled rejection.
  */
 (function () {
   'use strict';

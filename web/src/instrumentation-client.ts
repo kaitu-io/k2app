@@ -1,8 +1,6 @@
 import * as Sentry from '@sentry/nextjs';
 import {
-  dropChatwootSdkErrors,
   dropInjectedMatchMediaCircularJsonErrors,
-  dropNativePostMessageRejections,
   dropOutdatedBrowserSyntaxErrors,
   dropRscNavigationFallbackRejections,
   scrubChatResumeBreadcrumb,
@@ -45,11 +43,7 @@ if (dsn) {
     beforeSendSpan: scrubChatResumeSpan,
     beforeSend: (rawEvent) => {
       const event = scrubChatResumeEvent(rawEvent);
-      const afterChatwoot = dropChatwootSdkErrors(event);
-      if (!afterChatwoot) return null;
-      const afterNativePostMessage = dropNativePostMessageRejections(afterChatwoot);
-      if (!afterNativePostMessage) return null;
-      const afterSyntaxErrors = dropOutdatedBrowserSyntaxErrors(afterNativePostMessage);
+      const afterSyntaxErrors = dropOutdatedBrowserSyntaxErrors(event);
       if (!afterSyntaxErrors) return null;
       const afterCircularJson = dropInjectedMatchMediaCircularJsonErrors(afterSyntaxErrors);
       if (!afterCircularJson) return null;

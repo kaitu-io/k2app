@@ -55,7 +55,6 @@ export const KAITU_BRAND: WebappBrandConfig = {
     wallet: true,
     wordgatePurchase: true,
     stripeCheckout: false,
-    chatwoot: true,
     privateNode: true,
     antiblockRelay: true,
     selfHostedTunnels: true,

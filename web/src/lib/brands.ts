@@ -38,12 +38,10 @@ export type Brand = BrandIdentity & {
   faviconPrefix: string;
   /** Google Analytics measurement id. '' = GA disabled for this brand. */
   gaMeasurementId: string;
-  /** Chatwoot website token. '' = support widget disabled for this brand. */
-  chatwootToken: string;
   /**
-   * In-house visitor chat widget (pre-purchase pages). false = the widget never
-   * renders and never calls /api/chat for this brand; true still needs the
-   * server switch (`session.enabled`) before anything shows.
+   * In-house visitor chat widget (site-wide, mounted in the locale layout). false =
+   * the widget never renders and never calls /api/chat for this brand; true still
+   * needs the server switch (`GET /api/chat/enabled`) before the launcher shows.
    */
   chatEnabled: boolean;
   /**
@@ -84,7 +82,6 @@ export const KAITU: Brand = {
   productName: '开途 VPN',
   faviconPrefix: '',
   gaMeasurementId: 'G-EH2PY4S0CX',
-  chatwootToken: 'ZfFNvQRuoKzkik6X4KCSgp1h',
   chatEnabled: true,
   guideVideoUrl: 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/guides/kaitu_guide.mp4',
   // Android ships as an APK from the CDN (androidApkGuide), not a store listing.

@@ -5,7 +5,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 vi.mock('next-intl', () => ({ useTranslations: () => (key: string) => key }));
 
 import ChatWidget from '../chat/ChatWidget';
-import { CHAT_EMAIL_FLAG, CHAT_KNOWN_FLAG, hasResumeToken, requestOpenChat, shouldProbeSession, takeResumeToken } from '../chat/gate';
+import { CHAT_EMAIL_FLAG, CHAT_KNOWN_FLAG, hasResumeToken, requestOpenChat, shouldStartSession, takeResumeToken } from '../chat/gate';
 import { CHAT_RESUME_GLOBAL, CHAT_RESUME_HASH_PREFIX, CHAT_RESUME_SCRIPT, stripChatResume } from '../chat/resume-script';
 import {
   ChatError,
@@ -73,6 +73,82 @@ describe('ChatWidget', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllEnvs();
+  });
+
+  describe('deferred start (probe said enabled; R26)', () => {
+    beforeEach(() => visit('/en-GB/pricing'));
+
+    it('shows only the launcher: no client, no session, no cookie until the visitor opens the panel', async () => {
+      const fc = fakeClient();
+      render(<ChatWidget createClient={fc.create} deferStart />);
+      await flush();
+      expect(launcher()).not.toBeNull();
+      expect(fc.create).not.toHaveBeenCalled();
+      expect(localStorage.getItem(CHAT_KNOWN_FLAG)).toBeNull();
+
+      fireEvent.click(launcher()!);
+      await flush();
+      expect(fc.client.start).toHaveBeenCalledTimes(1);
+      expect(fc.client.start).toHaveBeenCalledWith('/en-GB/pricing', {});
+      expect(dialog()).not.toBeNull();
+      expect(fc.client.activate).toHaveBeenCalled();
+      expect(localStorage.getItem(CHAT_KNOWN_FLAG)).toBe('1');
+    });
+
+    it('shows a connecting line and keeps the draft while the session is being created', async () => {
+      const fc = fakeClient();
+      let resolve!: (s: SessionState) => void;
+      fc.client.start.mockImplementationOnce(() => new Promise<SessionState>((r) => { resolve = r; }));
+      render(<ChatWidget createClient={fc.create} deferStart />);
+      await flush();
+      fireEvent.click(launcher()!);
+      await flush();
+      expect(screen.getByText('connecting')).toBeInTheDocument();
+      fireEvent.change(input(), { target: { value: 'hello' } });
+      fireEvent.keyDown(input(), { key: 'Enter' });
+      expect(fc.client.send).not.toHaveBeenCalled();
+      expect(input().value).toBe('hello');
+      await act(async () => { resolve(session() as unknown as SessionState); });
+      await flush();
+      expect(screen.queryByText('connecting')).toBeNull();
+    });
+
+    it('disappears when the session call says enabled:false', async () => {
+      const fc = fakeClient({ enabled: false });
+      const { container } = render(<ChatWidget createClient={fc.create} deferStart />);
+      await flush();
+      fireEvent.click(launcher()!);
+      await flush();
+      expect(container.innerHTML).toBe('');
+      expect(localStorage.getItem(CHAT_KNOWN_FLAG)).toBeNull();
+    });
+
+    it('a failed session call folds the panel back to the launcher, and a second click retries', async () => {
+      const fc = fakeClient();
+      fc.client.start.mockRejectedValueOnce(new ChatError('network', 0));
+      render(<ChatWidget createClient={fc.create} deferStart />);
+      await flush();
+      fireEvent.click(launcher()!);
+      await flush();
+      expect(dialog()).toBeNull();
+      expect(launcher()).not.toBeNull();
+      fireEvent.click(launcher()!);
+      await flush();
+      expect(fc.client.start).toHaveBeenCalledTimes(2);
+      expect(dialog()).not.toBeNull();
+    });
+
+    it('requestOpenChat() starts the session and opens the panel', async () => {
+      const fc = fakeClient();
+      render(<ChatWidget createClient={fc.create} deferStart />);
+      await flush();
+      let handled = false;
+      act(() => { handled = requestOpenChat(); });
+      await flush();
+      expect(handled).toBe(true);
+      expect(fc.client.start).toHaveBeenCalledTimes(1);
+      expect(dialog()).not.toBeNull();
+    });
   });
 
   describe('gating', () => {
@@ -196,24 +272,24 @@ describe('ChatWidget', () => {
       expect(dialog()).not.toBeNull();
     });
 
-    it('shouldProbeSession: preview, a pending resume token, or the known flag — nothing else', () => {
+    it('shouldStartSession: preview, a pending resume token, or the known flag — nothing else', () => {
       visit('/a');
-      expect(shouldProbeSession()).toBe(false);
+      expect(shouldStartSession()).toBe(false);
       visit('/a?chat=');
-      expect(shouldProbeSession()).toBe(false);
+      expect(shouldStartSession()).toBe(false);
       visit('/a?chat=tok&x=1#contact');
-      expect(shouldProbeSession()).toBe(false);
+      expect(shouldStartSession()).toBe(false);
       visit('/a#chat=tok');
-      expect(shouldProbeSession()).toBe(true);
+      expect(shouldStartSession()).toBe(true);
       expect(hasResumeToken()).toBe(true); // 判断不取走
       expect(takeResumeToken()).toBe('tok');
       expect(takeResumeToken()).toBeNull();
-      expect(shouldProbeSession()).toBe(false);
+      expect(shouldStartSession()).toBe(false);
       localStorage.setItem(CHAT_KNOWN_FLAG, '1');
-      expect(shouldProbeSession()).toBe(true);
+      expect(shouldStartSession()).toBe(true);
       localStorage.clear();
       visit('/a?chat=preview');
-      expect(shouldProbeSession()).toBe(true);
+      expect(shouldStartSession()).toBe(true);
     });
 
     describe('inline resume script (root layout, before analytics)', () => {

@@ -44,8 +44,6 @@ export interface AppConfig {
       /** Default proxy rule mode */
       defaultValue: 'global' | 'chnroute' | 'gfwlist';
     };
-    /** Chatwoot chat widget */
-    chatwoot?: boolean;
     /** App bypass (per-app VPN exclusion) */
     appBypass?: boolean;
     /** Private (dedicated) node management page */
@@ -80,7 +78,6 @@ const APP_CONFIG: AppConfig = {
     discover: brandConfig.features.discover,
     delegate: brandConfig.features.delegate,
     wallet: brandConfig.features.wallet,
-    chatwoot: brandConfig.features.chatwoot,
     privateNode: brandConfig.features.privateNode,
     selfHostedTunnels: brandConfig.features.selfHostedTunnels,
     multiCountryRouting: brandConfig.features.multiCountryRouting,

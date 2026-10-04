@@ -23,7 +23,7 @@ import {
   isPreview,
   onOpenChatRequest,
   readFlag,
-  shouldProbeSession,
+  shouldStartSession,
   takeResumeToken,
   writeFlag,
 } from './gate';
@@ -58,13 +58,15 @@ function humanWaitFromHistory(conv: ChatConversation, history: readonly ChatMess
 }
 
 /**
- * 官网访客会话挂件（入口按钮 + 对话面板）。只挂在售前页面，由 ChatWidgetLazy 按需加载。
+ * 官网访客会话挂件（入口按钮 + 对话面板）。由 ChatWidgetLazy 按需加载。
  *
  * 出现条件（全部满足才渲染，否则返回 null）：
  * 1. 不是 App 内嵌页（`?embed=true` / `#embed`）；
- * 2. `shouldProbeSession()`——暗发布阶段只有预览身份、带继续对话令牌或建过会话的浏览器
- *    才去问服务端，其余访客不渲染、不发请求、不种 cookie；
- * 3. 服务端 `session` 返回 `enabled: true`。
+ * 2. 两种进入方式之一：
+ *    - `deferStart`（ChatWidgetLazy 已探测到会话开着）：先只画入口，访客第一次展开面板才调
+ *      `start()`——路过的访客不建主体、不种 cookie；
+ *    - 否则必须 `shouldStartSession()`（预览身份、带继续对话令牌或建过会话），挂载即调 `start()`；
+ * 3. 服务端 `session` 返回 `enabled: true`（返回 false 则整个挂件消失）。
  *
  * `?chat=preview` 以预览身份建会话（本标签页内跟着站内跳转走）。邮件回链是 `#chat=<令牌>`：
  * 令牌由根布局的内联脚本在统计脚本之前移出地址栏，这里取走、传给服务端并自动展开面板。
@@ -74,11 +76,21 @@ function humanWaitFromHistory(conv: ChatConversation, history: readonly ChatMess
  *
  * 位置用逻辑方向（end-*）：阿拉伯语 / 波斯语页面里入口在左下角。
  */
-export default function ChatWidget({ createClient = createChatClient }: { createClient?: () => ChatClient }) {
+export default function ChatWidget({
+  createClient = createChatClient,
+  deferStart = false,
+}: {
+  createClient?: () => ChatClient;
+  deferStart?: boolean;
+}) {
   const t = useTranslations('chat');
   // 只取首次传入的工厂：父组件重渲染换了函数身份不该导致重连
   const [create] = useState(() => createClient);
   const [session, setSession] = useState<SessionState | null>(null); // 非 null = 服务端已确认 enabled
+  // 要不要调 start()：非延迟模式挂载即调；延迟模式等访客第一次展开面板
+  const [started, setStarted] = useState(!deferStart);
+  // 服务端 session 说没开：整个挂件消失（延迟模式下入口也收起）
+  const [unavailable, setUnavailable] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversation, setConversation] = useState<ChatConversation | null>(null);
   const [humanWait, setHumanWait] = useState<HumanWait | null>(null);
@@ -100,9 +112,9 @@ export default function ChatWidget({ createClient = createChatClient }: { create
   const wasOpenRef = useRef(false);
 
   useEffect(() => {
-    if (isEmbeddedPage()) return;
+    if (!started || isEmbeddedPage()) return;
     if (entryRef.current === null) {
-      if (!shouldProbeSession()) return;
+      if (!deferStart && !shouldStartSession()) return;
       entryRef.current = { preview: isPreview(), resume: takeResumeToken() };
     }
     const entry = entryRef.current;
@@ -132,7 +144,11 @@ export default function ChatWidget({ createClient = createChatClient }: { create
     client
       .start(window.location.pathname, opts)
       .then((state) => {
-        if (cancelled || !state.enabled) return;
+        if (cancelled) return;
+        if (!state.enabled) {
+          setUnavailable(true);
+          return;
+        }
         writeFlag(CHAT_KNOWN_FLAG);
         setConversation(state.conversation);
         setHumanWait(isWaitingHuman(state.conversation) ? humanWaitFromHistory(state.conversation, state.messages) : null);
@@ -140,7 +156,12 @@ export default function ChatWidget({ createClient = createChatClient }: { create
         if (entry.resume) setOpen(true);
       })
       .catch(() => {
-        // 会话建不起来：不出现入口，旧客服入口照常可用
+        if (cancelled) return;
+        // 会话建不起来：延迟模式收起面板、保留入口，访客可以再点一次重试；非延迟模式不出现入口
+        if (deferStart) {
+          setStarted(false);
+          setOpen(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -149,14 +170,25 @@ export default function ChatWidget({ createClient = createChatClient }: { create
       client.stop();
       clientRef.current = null;
     };
-  }, [create]);
+  }, [create, started, deferStart]);
 
   const visible = session !== null;
+  // 能画入口：服务端已确认，或延迟模式下探测说开着（且 session 没否认）
+  const available = !unavailable && (visible || deferStart);
+
+  // 展开面板；延迟模式下第一次展开才建会话
+  const openPanel = () => {
+    setStarted(true);
+    setOpen(true);
+  };
 
   useEffect(() => {
-    if (!visible) return;
-    return onOpenChatRequest(() => setOpen(true));
-  }, [visible]);
+    if (!available) return;
+    return onOpenChatRequest(() => {
+      setStarted(true);
+      setOpen(true);
+    });
+  }, [available]);
 
   // 第一次展开才建实时通道：从没点开过的访客不占连接（已有会话的由客户端自己连）
   useEffect(() => {
@@ -189,14 +221,14 @@ export default function ChatWidget({ createClient = createChatClient }: { create
     };
   }, [wantsEmail, humanWait]);
 
-  if (!session) return null;
+  if (!available) return null;
 
   const fail = (err: unknown) =>
     setError(err instanceof ChatError && err.kind === 'rate_limited' ? 'rateLimited' : 'sendFailed');
 
   const submit = async () => {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || !session) return; // 会话还没建好：输入框里的字留着
     if ([...text].length > CHAT_CONTENT_MAX) {
       setError('tooLong');
       return;
@@ -237,7 +269,7 @@ export default function ChatWidget({ createClient = createChatClient }: { create
         ref={launcherRef}
         type="button"
         aria-label={t('launcher')}
-        onClick={() => setOpen(true)}
+        onClick={openPanel}
         className="fixed end-4 bottom-4 z-50 flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <MessageCircle className="size-6" aria-hidden />
@@ -245,7 +277,7 @@ export default function ChatWidget({ createClient = createChatClient }: { create
     );
   }
 
-  const welcome = session.welcome;
+  const welcome = session?.welcome ?? null;
   const showWelcome = welcome !== null && messages.length === 0 && conversation === null;
 
   return (
@@ -267,6 +299,7 @@ export default function ChatWidget({ createClient = createChatClient }: { create
 
       {/* data-sentry-mask：对话内容不进会话回放 */}
       <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3" aria-live="polite" data-sentry-mask>
+        {!session && <p className="text-center text-xs text-muted-foreground">{t('connecting')}</p>}
         {showWelcome && (
           <div className="space-y-2">
             <p className="max-w-[85%] rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-sm whitespace-pre-wrap text-foreground">
@@ -332,7 +365,7 @@ export default function ChatWidget({ createClient = createChatClient }: { create
             aria-label={t('placeholder')}
             className="max-h-32 min-h-9 resize-none"
           />
-          <Button type="button" size="icon" aria-label={t('send')} onClick={() => void submit()}>
+          <Button type="button" size="icon" aria-label={t('send')} disabled={!session} onClick={() => void submit()}>
             <Send aria-hidden />
           </Button>
         </div>
