@@ -11,7 +11,6 @@ describe('getCurrentAppConfig derives from brandConfig', () => {
     expect(cfg.features.discover).toBe(brandConfig.features.discover);
     expect(cfg.features.delegate).toBe(brandConfig.features.delegate);
     expect(cfg.features.retailer).toBe(brandConfig.features.retailer);
-    expect(cfg.features.chatwoot).toBe(brandConfig.features.chatwoot);
     expect(cfg.features.privateNode).toBe(brandConfig.features.privateNode);
     expect(cfg.features.selfHostedTunnels).toBe(brandConfig.features.selfHostedTunnels);
   });

@@ -43,6 +43,7 @@ const (
 func registerChatRoutes(api *gin.RouterGroup) {
 	g := api.Group("/chat")
 	{
+		g.GET("/enabled", api_chat_enabled)
 		g.POST("/session", api_chat_session)
 		g.GET("/messages", api_chat_messages_list)
 		g.POST("/messages", api_chat_messages_send)
@@ -281,6 +282,18 @@ func chatSubjectAdmitted(ctx context.Context, s chatSubject) bool {
 }
 
 // ---- handlers ----
+
+// ChatEnabledResp 挂件的入口探测结果。
+type ChatEnabledResp struct {
+	Enabled bool `json:"enabled"`
+}
+
+// api_chat_enabled: GET /api/chat/enabled
+// 挂件据此决定要不要给普通访客画入口（裁定 R26）。只读开关：不解析主体、不建 guest、不种 cookie、
+// 不碰数据库，所以不限流。只有正常开放才算 true——仅预览阶段的预览访客 / 邮件回链走 session，不走这里。
+func api_chat_enabled(c *gin.Context) {
+	Success(c, &ChatEnabledResp{Enabled: chatAccessFor(ReqBrand(c)) == chatAccessOn})
+}
 
 type chatSessionReq struct {
 	Path    string `json:"path"`

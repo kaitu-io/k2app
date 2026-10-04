@@ -1,6 +1,7 @@
 {
   "launcher": "チャットで相談",
   "title": "チャットで相談",
+  "connecting": "接続中…",
   "close": "閉じる",
   "placeholder": "メッセージを入力…",
   "send": "送信",

@@ -29,8 +29,6 @@ export interface BrandFeatures {
   wordgatePurchase: boolean;
   /** Stripe Checkout entry (Phase 6 wires the actual flow; gate reserved now). */
   stripeCheckout: boolean;
-  /** Chatwoot support chat widget. */
-  chatwoot: boolean;
   /** Dedicated private-node management page. Kaitu-only for now. */
   privateNode: boolean;
   /** Antiblock relay presentation layer (relay transport itself is engine-side).

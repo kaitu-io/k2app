@@ -2,7 +2,6 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import type { Metadata } from "next";
 import { routing } from "@/i18n/routing";
 import PayResultClient from "./PayResultClient";
-import ChatWidgetLazy from "@/components/chat/ChatWidgetLazy";
 
 type Locale = (typeof routing.locales)[number];
 
@@ -25,10 +24,5 @@ export default async function PayResultPage({
 }) {
   const { locale: rawLocale, uuid } = await params;
   setRequestLocale(rawLocale as Locale);
-  return (
-    <>
-      <PayResultClient orderUuid={uuid} />
-      <ChatWidgetLazy />
-    </>
-  );
+  return <PayResultClient orderUuid={uuid} />;
 }

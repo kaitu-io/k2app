@@ -5,7 +5,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/wordgate/qtoolkit/asynq"
-	"github.com/wordgate/qtoolkit/chatwoot"
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/qtoolkit/util"
 )
@@ -41,11 +40,6 @@ func SetupRouter() *gin.Engine {
 	// Slack Events API：客服在会话频道里发言即回复访客（自带签名校验，与 Host/品牌无关，故不挂 BrandResolver；
 	// 也不挂请求日志：它会在验签前整体读入并记录 body，handler 自己限 1MB 并只记不含正文的结构化日志）
 	r.POST("/webhook/slack/events", MiddleRecovery(), api_slack_events)
-
-	// Chatwoot → FastGPT AI bridge
-	chatwootWebhook := r.Group("/webhook")
-	chatwootWebhook.Use(log.MiddlewareRequestLog(true), MiddleRecovery())
-	chatwoot.Mount(chatwootWebhook, "/chatwoot", handleChatwootEvent)
 
 	// 任务队列触发接口（公开接口，无需认证，供外部 crontab 调用）
 	r.GET("/cron/execute", log.MiddlewareRequestLog(true), MiddleRecovery(), api_execute_cron_tasks)

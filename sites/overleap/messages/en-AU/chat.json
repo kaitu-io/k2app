@@ -1,6 +1,7 @@
 {
   "launcher": "Chat with us",
   "title": "Chat with us",
+  "connecting": "Connecting…",
   "close": "Close",
   "placeholder": "Type a message…",
   "send": "Send",

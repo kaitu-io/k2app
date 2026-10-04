@@ -1,7 +1,6 @@
 import * as Sentry from '@sentry/nextjs';
 import {
   dropInjectedMatchMediaCircularJsonErrors,
-  dropNativePostMessageRejections,
   dropOutdatedBrowserSyntaxErrors,
   dropRscNavigationFallbackRejections,
 } from '@/lib/sentry-filters';
@@ -22,9 +21,7 @@ if (dsn) {
     sendDefaultPii: false,
     debug: false,
     beforeSend: (event) => {
-      const a = dropNativePostMessageRejections(event);
-      if (!a) return null;
-      const b = dropOutdatedBrowserSyntaxErrors(a);
+      const b = dropOutdatedBrowserSyntaxErrors(event);
       if (!b) return null;
       const c = dropInjectedMatchMediaCircularJsonErrors(b);
       if (!c) return null;

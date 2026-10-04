@@ -1,6 +1,7 @@
 {
   "launcher": "Scrivici in chat",
   "title": "Scrivici in chat",
+  "connecting": "Connessione in corso…",
   "close": "Chiudi",
   "placeholder": "Scrivi un messaggio…",
   "send": "Invia",

@@ -1,6 +1,7 @@
 {
   "launcher": "在线咨询",
   "title": "在线咨询",
+  "connecting": "正在连接…",
   "close": "关闭",
   "placeholder": "输入消息…",
   "send": "发送",

@@ -25,7 +25,6 @@ require (
 	github.com/wordgate/qtoolkit/ai v1.5.25
 	github.com/wordgate/qtoolkit/appstore v1.5.32
 	github.com/wordgate/qtoolkit/asynq v1.5.36
-	github.com/wordgate/qtoolkit/chatwoot v1.5.25
 	github.com/wordgate/qtoolkit/db v1.5.25
 	github.com/wordgate/qtoolkit/geoip v1.5.28
 	github.com/wordgate/qtoolkit/log v1.5.25

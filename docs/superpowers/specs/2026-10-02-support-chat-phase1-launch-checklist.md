@@ -39,8 +39,8 @@
 
 ## 正式放量前必须做
 
-1. **入口探测**：暗发布期挂件不主动探测，开关打开后新访客仍看不到入口。需要：一个不建访客、可缓存的 enabled 探测接口；挂件按探测结果先画入口；建会话推迟到首次展开。见 `web/src/components/chat/gate.ts` 的 `shouldProbeSession`。
-2. **重估限流**：新建会话每实例 30/分钟、新建访客 600/分钟等为常量。每个无 cookie 的 session 请求都会落一行访客记录。
+1. ~~**入口探测**~~ 已完成（2026-10-04）：`GET /api/chat/enabled` 只读开关、不建访客；挂件按探测结果先画入口，访客第一次展开面板才建会话（`gate.ts` 的 `probeChatEnabled` / `shouldStartSession`，`ChatWidget` 的 `deferStart`）。kaitu.io 的挂件随之改为全站挂载，替换 Chatwoot。
+2. **重估限流**：新建会话每实例 30/分钟、新建访客 600/分钟等为常量。每个无 cookie 的 session 请求都会落一行访客记录（入口探测上线后只在访客展开面板时才发 session）。
 3. **真实浏览器看一眼** Cookie 横幅与挂件的相对位置（桌面与手机）。
 4. **服务端 Sentry**：本期只擦除了 `/api/chat/` 路由。`web/src/instrumentation.ts` 的 `sendDefaultPii` 加全量采样对其它 `/api/*` 代理请求的请求体与 cookie 仍然生效，属既有配置，需单独评估。
 

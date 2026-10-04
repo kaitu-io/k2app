@@ -42,7 +42,7 @@ function loadMessages(locale: string): Record<string, unknown> {
 }
 function renderAt(locale = 'en-GB') {
   return render(
-    <NextIntlClientProvider locale={locale} messages={loadMessages(locale)} onError={(e) => { throw e; }}>
+    <NextIntlClientProvider locale={locale as never} messages={loadMessages(locale)} onError={(e) => { throw e; }}>
       <PurchaseClient />
     </NextIntlClientProvider>,
   );

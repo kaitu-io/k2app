@@ -29,7 +29,7 @@ function loadMessages(locale: string): Record<string, unknown> {
 vi.mock('next-intl/server', () => ({
   getTranslations: async (opts: { locale: string; namespace?: string }) =>
     createTranslator({
-      locale: opts.locale,
+      locale: opts.locale as never,
       messages: loadMessages(opts.locale),
       namespace: opts.namespace as never,
       onError: (e) => {

@@ -52,9 +52,8 @@ describe('brand configs', () => {
     expect(KAITU.legalName).toBe('Overleap LLC');
   });
 
-  it('GA + chatwoot + in-house chat are configured', () => {
+  it('GA + in-house chat are configured', () => {
     expect(KAITU.gaMeasurementId).toBe('G-EH2PY4S0CX');
-    expect(KAITU.chatwootToken).toBe('ZfFNvQRuoKzkik6X4KCSgp1h');
     expect(KAITU.chatEnabled).toBe(true);
   });
 

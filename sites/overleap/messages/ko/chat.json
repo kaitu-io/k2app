@@ -1,6 +1,7 @@
 {
   "launcher": "문의하기",
   "title": "문의하기",
+  "connecting": "연결 중…",
   "close": "닫기",
   "placeholder": "메시지를 입력하세요…",
   "send": "보내기",

@@ -1,6 +1,7 @@
 {
   "launcher": "線上查詢",
   "title": "線上查詢",
+  "connecting": "正在連線…",
   "close": "關閉",
   "placeholder": "輸入訊息…",
   "send": "傳送",

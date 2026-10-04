@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"regexp"
@@ -37,6 +38,14 @@ const (
 	chatWelcomeText = "您好！请问需要什么帮助？"
 )
 
+// transferHumanMarker AI 回复末尾带它 = 请求转人工（访客看不到，入库前剥掉）。
+const transferHumanMarker = "[TRANSFER_HUMAN]"
+
+// systemPrompt 会话 AI 的共用系统提示（知识与转人工规则）；会话专用的输出约束见 chatAIFormatRules。
+//
+//go:embed data/system_prompt.md
+var systemPrompt string
+
 // chatAIAskTimeout 单次 AI 调用超时；变量以便测试缩短。必须小于 chatAILockTTL。
 var chatAIAskTimeout = 45 * time.Second
 
@@ -56,8 +65,8 @@ var chatAIAsk = func(ctx context.Context, system, question string, history []fil
 	return result.Content, nil
 }
 
-// chatAIFormatRules 会话专用的输出约束，追加在共用系统提示（data/system_prompt.md，Chatwoot 机器人也在用，
-// 所以不改那个文件）之后。挂件把回复当纯文本原样显示，Markdown 语法会变成满屏的星号和井号。
+// chatAIFormatRules 会话专用的输出约束，追加在共用系统提示（data/system_prompt.md）之后。
+// 挂件把回复当纯文本原样显示，Markdown 语法会变成满屏的星号和井号。
 // %s 是品牌注册表里的 DisplayName。
 const chatAIFormatRules = `
 

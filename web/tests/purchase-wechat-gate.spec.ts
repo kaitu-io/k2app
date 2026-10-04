@@ -10,8 +10,7 @@ const MOBILE_VIEWPORT = { width: 390, height: 844 } as const;
  *   1. Runs a real Chromium with an isolated context (no shared cache).
  *   2. Overrides the UA at the browser context level (every request sees it).
  *   3. Asserts DOM visibility AND the inline zIndex that guarantees the
- *      overlay stacks above CookieConsent (9999) and the Chatwoot widget
- *      (2147483000).
+ *      overlay stacks above CookieConsent (9999) and the chat widget.
  *
  * If this passes, we have verified the stack end-to-end short of a physical
  * WeChat Android device — which we cannot access.
@@ -37,7 +36,7 @@ test.describe('WeChat Android — purchase gate', () => {
     await expect(page.getByText('点击右上角的「···」菜单')).toBeVisible();
     await expect(page.getByText('选择「在浏览器打开」')).toBeVisible();
 
-    // The overlay's zIndex is the contract that beats CookieConsent / Chatwoot.
+    // The overlay's zIndex is the contract that beats CookieConsent / the chat widget.
     const overlay = page.locator('div[style*="2147483647"]');
     await expect(overlay).toBeVisible();
     const zIndex = await overlay.evaluate((el) => getComputedStyle(el).zIndex);
