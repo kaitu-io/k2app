@@ -118,7 +118,16 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 	}
 
 	// Step 1: Create TUN device (FD ready, but routes not yet set).
+	// Windows: samples the Wintun device while creating, logs DIAG:
+	// wintun-create-fail on error (tun_create_diag.go). No-op elsewhere.
+	var stopCreateDiag func(error)
+	if p.cfg.FileDescriptor <= 0 {
+		stopCreateDiag = startTUNCreateDiag(tunOpts.Name)
+	}
 	tunIf, err := tun.New(tunOpts)
+	if stopCreateDiag != nil {
+		stopCreateDiag(err)
+	}
 	if err != nil {
 		return fmt.Errorf("provider: create TUN: %w", err)
 	}
