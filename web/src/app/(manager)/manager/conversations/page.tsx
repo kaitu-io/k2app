@@ -97,8 +97,14 @@ function MessageBubble({ m }: { m: ChatMessage }) {
           {isNote && <Badge variant="outline">{"内部备注"}</Badge>}
           <span>{formatChatTime(m.createdAt)}</span>
         </div>
-        {m.kind === "image" ? (
-          // 访客提供的 URL 不可信：不渲染图片（避免管理员浏览器被动请求），只以纯文本展示
+        {m.kind === "image" && m.content.startsWith("/api/chat/images/") ? (
+          // 服务端签发的站内查看链接（302 到私有桶的短期地址）：直接显示，点开看原图
+          <a href={m.content} target="_blank" rel="noopener noreferrer" className="block">
+            {/* eslint-disable-next-line @next/next/no-img-element -- 签名的动态链接，不走 next/image 优化 */}
+            <img src={m.content} alt="[图片]" loading="lazy" referrerPolicy="no-referrer" className="max-h-64 max-w-full rounded" />
+          </a>
+        ) : m.kind === "image" ? (
+          // 其它形态的地址不可信：不渲染图片（避免管理员浏览器被动请求），只以纯文本展示
           <div>
             <div className="text-xs text-muted-foreground">{"[图片]"}</div>
             <div className="break-all text-xs">{m.content}</div>

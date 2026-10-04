@@ -21,5 +21,10 @@
   "eventTransferHuman": "An unser Support-Team weitergeleitet",
   "eventHandedToAi": "An den Assistenten zurückgegeben",
   "eventClosed": "Gespräch geschlossen",
-  "eventAutoClosed": "Gespräch nach längerer Inaktivität geschlossen"
+  "eventAutoClosed": "Gespräch nach längerer Inaktivität geschlossen",
+  "attachImage": "Bild senden",
+  "uploading": "Bild wird hochgeladen…",
+  "imageTooLarge": "Bilder dürfen höchstens 5 MB groß sein.",
+  "imageInvalid": "Es können nur PNG-, JPG-, GIF- oder WebP-Bilder gesendet werden.",
+  "imageFailed": "Das Bild wurde nicht gesendet. Bitte versuche es erneut."
 }

@@ -349,7 +349,7 @@ func chatSlackRound(ctx context.Context, lock *chatSlackLock, convID uint64) (cr
 	}
 	for i := range msgs {
 		m := &msgs[i]
-		if text, post := chatSlackMessageText(m); post {
+		if text, post := chatSlackMessageText(Brand(conv.Brand), m); post {
 			err := chatSlackDo(ctx, lock, func(c context.Context) error {
 				_, err := slack.PostMessage(c, conv.SlackChannelID, text, nil)
 				return err

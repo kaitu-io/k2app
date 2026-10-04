@@ -21,5 +21,10 @@
   "eventTransferHuman": "已轉接真人客服",
   "eventHandedToAi": "已轉回智慧助理",
   "eventClosed": "對話已關閉",
-  "eventAutoClosed": "對話因長時間沒有訊息已自動關閉"
+  "eventAutoClosed": "對話因長時間沒有訊息已自動關閉",
+  "attachImage": "傳送圖片",
+  "uploading": "圖片上傳中…",
+  "imageTooLarge": "圖片不能超過 5 MB。",
+  "imageInvalid": "只能傳送 PNG、JPG、GIF 或 WebP 圖片。",
+  "imageFailed": "圖片沒有傳送出去，請重試。"
 }

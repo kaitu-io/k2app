@@ -47,6 +47,8 @@ func registerChatRoutes(api *gin.RouterGroup) {
 		g.POST("/session", api_chat_session)
 		g.GET("/messages", api_chat_messages_list)
 		g.POST("/messages", api_chat_messages_send)
+		g.POST("/images", api_chat_images_upload)
+		g.GET("/images/:token", api_chat_images_view) // 能力链接：令牌即授权，不看品牌与 cookie
 		g.POST("/email", api_chat_email)
 		g.GET("/ws-token", api_chat_ws_token)
 		g.GET("/ws", api_chat_ws) // 品牌取自令牌，不依赖 ReqBrand
@@ -92,13 +94,18 @@ type ChatSessionResp struct {
 	Messages     []ChatMsgDTO `json:"messages"`
 	Welcome      *ChatWelcome `json:"welcome"`
 	WS           *ChatWSInfo  `json:"ws"`
+	Images       bool         `json:"images"` // 能不能发图片（服务端配了存储桶）
 }
 
 // chatMessageDTO 消息的完整 DTO（Meta 是合法 JSON 才原样输出，否则 null），含发送者真名——后台接口用。
-// 面向访客的出口一律用 chatVisitorMessageDTO。
+// 面向访客的出口一律用 chatVisitorMessageDTO。图片消息的 content 是对象 key，对外换成签名的站内查看链接。
 func chatMessageDTO(m *ConversationMessage) ChatMsgDTO {
+	content := m.Content
+	if m.Kind == MsgImage {
+		content = chatImagePath(m.ID, chatImageVisitorTTL)
+	}
 	d := ChatMsgDTO{ID: m.ID, SenderType: m.SenderType, SenderName: m.SenderName, Kind: m.Kind,
-		Content: m.Content, CreatedAt: m.CreatedAt}
+		Content: content, CreatedAt: m.CreatedAt}
 	if m.Meta != "" && json.Valid([]byte(m.Meta)) {
 		d.Meta = json.RawMessage(m.Meta)
 	}
@@ -374,6 +381,7 @@ func api_chat_session(c *gin.Context) {
 		Conversation: chatConversationDTO(conv),
 		Messages:     msgs,
 		Welcome:      chatWelcomeDTO(subj.Brand),
+		Images:       chatImagesEnabled(),
 	}
 	if u := chatWSURL(subj.Brand); u != "" {
 		if tok := signChatWSToken(subj, chatWSTokenTTL); tok != "" {
@@ -537,6 +545,120 @@ func api_chat_messages_send(c *gin.Context) {
 		Message      ChatMsgDTO   `json:"message"`
 		Conversation *ChatConvDTO `json:"conversation"`
 	}{dto, chatConversationDTO(conv)})
+}
+
+// api_chat_images_upload: POST /api/chat/images（multipart：file = 图片，clientId 同发文字消息）
+// 校验顺序与发文字一致：先校验请求、再解析主体、最后扣按主体与全局的额度；都过了才写 S3。
+// 类型按内容嗅探（png / jpeg / gif / webp），上限 5 MB。
+func api_chat_images_upload(c *gin.Context) {
+	ctx := c.Request.Context()
+	if !chatMessageLimiter.Allow(c.ClientIP()) {
+		Error(c, ErrorTooManyRequests, "too many requests")
+		return
+	}
+	store := chatImages()
+	if store == nil {
+		Error(c, ErrorInvalidArgument, "images not available")
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, chatImageMaxBody)
+	if err := c.Request.ParseMultipartForm(chatImageMaxBody); err != nil {
+		Error(c, ErrorInvalidArgument, "invalid image")
+		return
+	}
+	defer c.Request.MultipartForm.RemoveAll()
+	clientID := c.Request.FormValue("clientId")
+	if clientID == "" || len(clientID) > chatClientIDMaxLen {
+		Error(c, ErrorInvalidArgument, "invalid clientId")
+		return
+	}
+	fh, err := c.FormFile("file")
+	if err != nil || fh.Size <= 0 || fh.Size > chatImageMaxBytes {
+		Error(c, ErrorInvalidArgument, "invalid image")
+		return
+	}
+	f, err := fh.Open()
+	if err != nil {
+		Error(c, ErrorInvalidArgument, "invalid image")
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(f, chatImageMaxBytes+1))
+	_ = f.Close()
+	if err != nil || len(data) == 0 || len(data) > chatImageMaxBytes {
+		Error(c, ErrorInvalidArgument, "invalid image")
+		return
+	}
+	contentType := chatSniffImage(data)
+	if contentType == "" {
+		Error(c, ErrorInvalidArgument, "unsupported image type")
+		return
+	}
+	subj, ok := chatVisitorSubject(c)
+	if !ok {
+		return
+	}
+	if !chatSubjectSendAllow(ctx, subj) || !chatSendGlobalLimiter.Allow("*") {
+		Error(c, ErrorTooManyRequests, "too many requests")
+		return
+	}
+
+	conv, err := findOpenChatConversation(ctx, subj)
+	if err != nil {
+		log.Errorf(ctx, "api_chat_images_upload: %v", err)
+		Error(c, ErrorSystemError, "failed to load conversation")
+		return
+	}
+	key := chatImageKey(subj.Brand, contentType, time.Now())
+	if err := store.Put(ctx, key, contentType, data); err != nil {
+		log.Errorf(ctx, "api_chat_images_upload: put %s: %v", key, err)
+		Error(c, ErrorSystemError, "failed to store image")
+		return
+	}
+	meta, _ := json.Marshal(map[string]any{"type": contentType, "size": len(data)})
+	conv, msg, err := chatVisitorAppend(ctx, subj, conv, appendMessageInput{
+		SenderType: SenderVisitor, Kind: MsgImage, Content: key, Meta: string(meta), ClientID: &clientID,
+	})
+	if err != nil {
+		chatSendNewConvError(c, err)
+		return
+	}
+	Success(c, &struct {
+		Message      ChatMsgDTO   `json:"message"`
+		Conversation *ChatConvDTO `json:"conversation"`
+	}{chatVisitorMessageDTO(msg), chatConversationDTO(conv)})
+}
+
+// api_chat_images_view: GET /api/chat/images/:token —— 校验令牌，302 到短期 S3 下载地址。
+// 令牌无效、过期、消息不存在或不是图片一律 404（不区分原因）。
+func api_chat_images_view(c *gin.Context) {
+	ctx := c.Request.Context()
+	if !chatReadLimiter.Allow(c.ClientIP()) {
+		c.Status(http.StatusTooManyRequests)
+		return
+	}
+	id, err := parseChatImageToken(c.Param("token"), time.Now())
+	store := chatImages()
+	if err != nil || store == nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	var m ConversationMessage
+	if err := db.Get().WithContext(ctx).Where("id = ? AND kind = ?", id, MsgImage).First(&m).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Errorf(ctx, "api_chat_images_view: load %d: %v", id, err)
+		}
+		c.Status(http.StatusNotFound)
+		return
+	}
+	u, err := store.PresignGet(ctx, m.Content, chatImageS3TTL)
+	if err != nil {
+		log.Errorf(ctx, "api_chat_images_view: presign %d: %v", id, err)
+		c.Status(http.StatusBadGateway)
+		return
+	}
+	c.Header("Cache-Control", "private, max-age=60")
+	c.Header("Referrer-Policy", "no-referrer")
+	c.Redirect(http.StatusFound, u)
 }
 
 // chatVisitorAppend 把访客消息追加到 conv（nil = 主体还没有 open 会话，先开一个），返回消息最终所在的会话。

@@ -685,7 +685,7 @@ func TestSlackRender_EscapesVisitorControlledText(t *testing.T) {
 		assert.Contains(t, text, "a&lt;b&gt;&amp;"+vals[0]+"@e.com", name)
 	}
 
-	text, post := chatSlackMessageText(&ConversationMessage{SenderType: SenderStaff, SenderName: "<@U1>&", Kind: MsgText, Content: "hi"})
+	text, post := chatSlackMessageText(BrandKaitu, &ConversationMessage{SenderType: SenderStaff, SenderName: "<@U1>&", Kind: MsgText, Content: "hi"})
 	assert.True(t, post)
 	assert.Equal(t, "🧑‍💼 &lt;@U1&gt;&amp;: hi", text)
 }

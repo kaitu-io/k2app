@@ -21,5 +21,10 @@
   "eventTransferHuman": "Destek ekibimize aktarıldı",
   "eventHandedToAi": "Asistana geri devredildi",
   "eventClosed": "Görüşme kapatıldı",
-  "eventAutoClosed": "Görüşme, hareketsizlik nedeniyle kapatıldı"
+  "eventAutoClosed": "Görüşme, hareketsizlik nedeniyle kapatıldı",
+  "attachImage": "Görsel gönder",
+  "uploading": "Görsel yükleniyor…",
+  "imageTooLarge": "Görseller en fazla 5 MB olabilir.",
+  "imageInvalid": "Yalnızca PNG, JPG, GIF veya WebP görselleri gönderilebilir.",
+  "imageFailed": "Görsel gönderilemedi. Lütfen tekrar deneyin."
 }

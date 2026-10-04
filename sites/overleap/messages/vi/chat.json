@@ -21,5 +21,10 @@
   "eventTransferHuman": "Đã chuyển cho đội ngũ hỗ trợ",
   "eventHandedToAi": "Đã chuyển lại cho trợ lý",
   "eventClosed": "Cuộc trò chuyện đã đóng",
-  "eventAutoClosed": "Cuộc trò chuyện đã đóng do không hoạt động một thời gian"
+  "eventAutoClosed": "Cuộc trò chuyện đã đóng do không hoạt động một thời gian",
+  "attachImage": "Gửi hình ảnh",
+  "uploading": "Đang tải hình ảnh lên…",
+  "imageTooLarge": "Hình ảnh không được vượt quá 5 MB.",
+  "imageInvalid": "Chỉ có thể gửi hình ảnh PNG, JPG, GIF hoặc WebP.",
+  "imageFailed": "Không gửi được hình ảnh. Vui lòng thử lại."
 }

@@ -131,11 +131,18 @@ func chatSlackHistory(ctx context.Context, conv *Conversation, ids []uint64) str
 }
 
 // chatSlackMessageText 返回消息在频道里的文本；post=false 表示不发（内部备注、本就来自 Slack 的消息）。
-func chatSlackMessageText(m *ConversationMessage) (text string, post bool) {
+// b 是会话品牌：图片消息的查看链接挂在该品牌官网域名下。
+func chatSlackMessageText(b Brand, m *ConversationMessage) (text string, post bool) {
 	if m.Kind == MsgNote || (m.SlackTS != nil && *m.SlackTS != "") {
 		return "", false
 	}
 	body := chatSlackEscaper.Replace(m.Content)
+	if m.Kind == MsgImage {
+		body = "[图片]"
+		if u := chatImageURL(b, m.ID, chatImageSlackTTL); u != "" {
+			body = "<" + u + "|[图片] 点击查看>"
+		}
+	}
 	if m.Kind == MsgOptions {
 		if labels := chatSlackOptionLabels(m.Meta); len(labels) > 0 {
 			body = strings.TrimPrefix(body+"\n选项: "+chatSlackEscaper.Replace(strings.Join(labels, " / ")), "\n")

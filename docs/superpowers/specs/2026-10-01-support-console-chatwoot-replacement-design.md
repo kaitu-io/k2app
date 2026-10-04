@@ -203,7 +203,16 @@ guest 在会话中途通过验证码成为 user 时，会话主体不改写，�
 | `content`、`meta` | `meta` 为 JSON |
 
 支持图片消息。现有欢迎语明确引导访客发截图，支付失败截图也是人工介入的主要依据。
-上传复用现有 S3 上传路径，具体接口在实现计划中确定。
+
+实现（2026-10-04）：**不复用**日志桶 `kaitu-service-logs`——它对所有人公开读写，截图里可能有支付与邮箱信息。
+新建私有桶 `kaitu-chat-images`（屏蔽公开访问，`chat/` 前缀 180 天过期），配置键 `chat.images.bucket`，
+未配置时图片功能关闭（session 下发 `images: false`，挂件不画按钮）。
+- 上传 `POST /api/chat/images`（multipart：`file` + `clientId`），经 Center 写桶；按内容嗅探只收
+  png / jpeg / gif / webp，上限 5 MB，限流与发文字相同。消息 `kind=image`，`content` 存对象 key。
+- 查看 `GET /api/chat/images/<令牌>`：令牌（用途 `chat-image-v1`，只绑消息 id 与过期）校验后 302 到 5 分钟的
+  S3 下载地址。访客与后台拿站内相对路径（24 小时），Slack 频道拿挂在品牌官网域名下的绝对链接（30 天）。
+- AI 直接拿 15 分钟的 S3 下载地址（OpenAI 自己下载），历史里的截图也带上。
+- 客服从 Slack 发图给访客仍不支持。
 
 ### 4.3 备注与标签
 
@@ -531,6 +540,14 @@ Slack 回调（公开，签名校验）：`POST /webhook/slack/events`。
 - 停止容器组，删除目标组 `tokyo-alb-tg-chatwoot`、对应监听规则、`chat.anc.52j.me` 的 DNS，
   清理其数据库与缓存。
 - 历史会话不导出。
+
+#### 2026-10-04 实际执行情况
+
+- 代码清理全部完成（`d04e559d`），生产配置的 `chatwoot:` 段已删。挂件改为探测后对所有访客显示（R26）。
+- **运维清理不执行**：Chatwoot 实例 `chat.anc.52j.me` 不是开途独占，还服务 ANCBank、x.ancbank.com、
+  开路者（waymkr.app）、ANC 四合会议（allnationconnect.com）与一个邮件渠道；ALB `tokyo-alb` 80 端口的
+  默认规则也指向它的目标组。停容器、删目标组 / DNS、作废令牌都会影响这些业务。开途在 Chatwoot 里的
+  收件箱是 5「K2」和 10「K2 Support」，停用与否由运营决定。
 
 ## 11. 测试
 

@@ -19,6 +19,7 @@
 | `chat.preview_enabled` | `false` | 总开关关闭时是否放行 `?chat=preview` 与邮件回链。两者都为 false 即硬关 |
 | `chat.brands` | 空 | 开放的品牌列表。空 = 全部关闭，必须显式配 `[kaitu]` |
 | `chat.ws_urls.<brand>` | 空 | 访客 WebSocket 地址，须为 `wss://`，主机在该品牌 Hosts 内。空或配错 = 静默降级轮询 |
+| `chat.images.bucket` | 空 | 访客图片的私有 S3 桶（生产 `kaitu-chat-images`）。空 = 图片功能关闭，挂件不画发图片按钮。凭证走 `aws.use_imds` 实例角色；区域 `chat.images.region`，缺省 `aws.region` |
 | `slack.bot_token` / `slack.signing_secret` | — | 缺 signing_secret 时客服在频道里的回复到不了访客 |
 | `slack.chat_lobby_channel_id` | 空 | 总览频道。空 = Slack 镜像整体关闭 |
 | `manager.base_url` | 空 | 状态卡里的后台链接；不配则不渲染 |

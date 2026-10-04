@@ -21,5 +21,10 @@
   "eventTransferHuman": "Dialihkan ke tim dukungan kami",
   "eventHandedToAi": "Dikembalikan ke asisten",
   "eventClosed": "Percakapan ditutup",
-  "eventAutoClosed": "Percakapan ditutup setelah tidak aktif beberapa saat"
+  "eventAutoClosed": "Percakapan ditutup setelah tidak aktif beberapa saat",
+  "attachImage": "Kirim gambar",
+  "uploading": "Mengunggah gambar…",
+  "imageTooLarge": "Ukuran gambar maksimal 5 MB.",
+  "imageInvalid": "Hanya gambar PNG, JPG, GIF, atau WebP yang dapat dikirim.",
+  "imageFailed": "Gambar tidak terkirim. Silakan coba lagi."
 }

@@ -53,7 +53,14 @@ export interface SessionState {
   messages: ChatMessage[];
   welcome: ChatWelcome | null;
   ws: { url: string; token: string } | null;
+  /** 服务端配了图片存储：挂件才画"发图片"按钮。 */
+  images: boolean;
 }
+
+/** 与 api chatImageMaxBytes 一致。 */
+export const CHAT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+/** 与 api chatImageTypes 一致（服务端按内容再嗅探一次，这里只是提前拦住明显不行的）。 */
+export const CHAT_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const;
 
 export interface ChatClient {
   /**
@@ -65,6 +72,8 @@ export interface ChatClient {
   activate(): void;
   /** 自动生成 clientId；失败重试复用同一 clientId。 */
   send(kind: ChatSendKind, content: string): Promise<void>;
+  /** 上传一张图片作为访客消息（不做乐观气泡：成功后消息随响应进入列表）。主体丢失时重建会话重试一次。 */
+  sendImage(file: Blob): Promise<void>;
   leaveEmail(email: string): Promise<void>;
   /** 回调拿到的是全量列表：已确认的按 id 去重、升序，其后是未确认的乐观气泡。 */
   onMessages(cb: (msgs: ChatMessage[]) => void): () => void;
@@ -112,6 +121,8 @@ export interface ChatClientOptions {
   random?: () => number;
 }
 
+/** 图片上传的单次超时。 */
+const IMAGE_TIMEOUT_MS = 60_000;
 export const CHAT_CONTENT_MAX = 2000; // 与 api chatContentMaxRunes 一致（按字符数）
 
 const SEND_RETRY_DELAYS = [1000, 2000, 4000];
@@ -228,9 +239,9 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
     });
   }
 
-  async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+  async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown, timeoutMs = FETCH_TIMEOUT_MS): Promise<T> {
     const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+    const timeout = setTimeout(() => ctrl.abort(), timeoutMs);
     inflight.set(timeout, ctrl);
     try {
       let res: Response;
@@ -238,8 +249,11 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
         res = await doFetch(`/api/chat${path}`, {
           method,
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json', 'X-K2-Brand': siteBrand().id },
-          body: body === undefined ? undefined : JSON.stringify(body),
+          // FormData 由浏览器自己写 multipart 边界，不能手设 Content-Type
+          headers: body instanceof FormData
+            ? { 'X-K2-Brand': siteBrand().id }
+            : { 'Content-Type': 'application/json', 'X-K2-Brand': siteBrand().id },
+          body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
           signal: ctrl.signal,
         });
       } catch {
@@ -324,6 +338,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
       messages: Array.isArray(data?.messages) ? data.messages : [],
       welcome: data?.welcome ?? null,
       ws: data?.ws ?? null,
+      images: data?.images === true,
     };
     if (stopped || !state.enabled) return state;
     if (keepTransport) teardownTransport();
@@ -687,6 +702,36 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
             if (!hasBubble(clientId)) return;
           }
           dropBubble();
+          throw err;
+        }
+      }
+    },
+
+    async sendImage(file) {
+      const form = () => {
+        const f = new FormData();
+        f.append('clientId', randomId());
+        f.append('file', file);
+        return f;
+      };
+      let resessioned = false;
+      for (;;) {
+        try {
+          // 上传比发文字慢：给足时间，且不做自动重发（重发会多传一份）
+          const data = await call<{ message: ChatMessage; conversation?: unknown }>('POST', '/images', form(), IMAGE_TIMEOUT_MS);
+          resessionUnproven = false;
+          ingest([data?.message]);
+          const conv = asConversation(data?.conversation);
+          if (conv) setConversation(conv);
+          activated = true;
+          startTransport();
+          return;
+        } catch (err) {
+          if (stopped) throw err;
+          if (err instanceof ChatError && err.subjectLost && !resessioned) {
+            resessioned = true;
+            if (await resession()) continue;
+          }
           throw err;
         }
       }

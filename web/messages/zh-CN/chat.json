@@ -21,5 +21,10 @@
   "eventTransferHuman": "已转人工客服",
   "eventHandedToAi": "已转回智能助手",
   "eventClosed": "会话已关闭",
-  "eventAutoClosed": "会话因长时间无消息已自动关闭"
+  "eventAutoClosed": "会话因长时间无消息已自动关闭",
+  "attachImage": "发送图片",
+  "uploading": "图片上传中…",
+  "imageTooLarge": "图片不能超过 5 MB。",
+  "imageInvalid": "只能发送 PNG、JPG、GIF 或 WebP 图片。",
+  "imageFailed": "图片没有发出去，请重试。"
 }
