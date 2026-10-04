@@ -35,6 +35,7 @@ function fakeClient(state: Partial<SessionState> = {}) {
     },
     send: vi.fn(async () => {}),
     leaveEmail: vi.fn(async () => {}),
+    sendImage: vi.fn<(file: Blob) => Promise<void>>(async () => {}),
     onMessages: (cb: (m: ChatMessage[]) => void) => {
       listeners.add(cb);
       return () => { listeners.delete(cb); };
@@ -147,6 +148,62 @@ describe('ChatWidget', () => {
       expect(handled).toBe(true);
       expect(fc.client.start).toHaveBeenCalledTimes(1);
       expect(dialog()).not.toBeNull();
+    });
+  });
+
+  describe('images', () => {
+    const png = (size = 10) => new File([new Uint8Array(size)], 'shot.png', { type: 'image/png' });
+    const attach = () => screen.queryByRole('button', { name: 'attachImage' });
+    const fileInput = () => document.querySelector('input[type=file]') as HTMLInputElement;
+    const choose = (file: File) => fireEvent.change(fileInput(), { target: { files: [file] } });
+
+    it('no image button when the server has no image storage', async () => {
+      await mountOpen(fakeClient());
+      expect(attach()).toBeNull();
+      expect(document.querySelector('input[type=file]')).toBeNull();
+    });
+
+    it('choosing an image uploads it', async () => {
+      const fc = fakeClient({ images: true });
+      await mountOpen(fc);
+      expect(attach()).not.toBeNull();
+      const file = png();
+      choose(file);
+      await flush();
+      expect(fc.client.sendImage).toHaveBeenCalledWith(file);
+    });
+
+    it('rejects oversize and non-image files locally, without uploading', async () => {
+      const fc = fakeClient({ images: true });
+      await mountOpen(fc);
+      choose(png(5 * 1024 * 1024 + 1));
+      await flush();
+      expect(screen.getByRole('alert').textContent).toBe('imageTooLarge');
+      choose(new File(['<svg/>'], 'x.svg', { type: 'image/svg+xml' }));
+      await flush();
+      expect(screen.getByRole('alert').textContent).toBe('imageInvalid');
+      expect(fc.client.sendImage).not.toHaveBeenCalled();
+    });
+
+    it('a failed upload shows an error', async () => {
+      const fc = fakeClient({ images: true });
+      fc.client.sendImage.mockRejectedValueOnce(new ChatError('network', 0));
+      await mountOpen(fc);
+      choose(png());
+      await flush();
+      expect(screen.getByRole('alert').textContent).toBe('imageFailed');
+    });
+
+    it('pasting a screenshot into the input uploads it; pasting text does not', async () => {
+      const fc = fakeClient({ images: true });
+      await mountOpen(fc);
+      const file = png();
+      fireEvent.paste(input(), { clipboardData: { files: [file] } });
+      await flush();
+      expect(fc.client.sendImage).toHaveBeenCalledWith(file);
+      fireEvent.paste(input(), { clipboardData: { files: [] } });
+      await flush();
+      expect(fc.client.sendImage).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -34,7 +34,7 @@ const (
 	// chatAIFallbackTimeout 转人工兜底路径的独立超时（不继承可能已过期的 ctx）。
 	chatAIFallbackTimeout = 10 * time.Second
 
-	// 第 1 期不支持图片，欢迎语不承诺可以发截图
+	// 欢迎语固定文案（与访客语言无关）
 	chatWelcomeText = "您好！请问需要什么帮助？"
 )
 
@@ -53,8 +53,11 @@ var chatAIAskTimeout = 45 * time.Second
 var chatAILockFn = chatAILock
 
 // chatAIAsk 调 OpenAI filesearch 取回复（system 是系统提示，见 chatAISystemPrompt）；测试里替换，避免打到真实 OpenAI。
-var chatAIAsk = func(ctx context.Context, system, question string, history []filesearch.Message) (string, error) {
+var chatAIAsk = func(ctx context.Context, system, question string, images []string, history []filesearch.Message) (string, error) {
 	opts := []filesearch.Option{filesearch.WithSystemPrompt(system)}
+	for _, u := range images {
+		opts = append(opts, filesearch.WithImage(u))
+	}
 	if len(history) > 0 {
 		opts = append(opts, filesearch.WithHistory(history))
 	}
@@ -191,15 +194,28 @@ func chatAIHistory(ctx context.Context, convID, beforeID uint64) ([]filesearch.M
 		m := msgs[i]
 		role := "assistant"
 		content := m.Content
+		var images []string
 		if m.SenderType == SenderVisitor {
 			role = "user"
-			if m.Kind == MsgOptionReply {
+			switch m.Kind {
+			case MsgOptionReply:
 				content = chatOptionQuestion(content)
+			case MsgImage:
+				content, images = chatAIImageInput(ctx, &m)
 			}
 		}
-		hist = append(hist, filesearch.Message{Role: role, Content: content})
+		hist = append(hist, filesearch.Message{Role: role, Content: content, Images: images})
 	}
 	return hist, nil
+}
+
+// chatAIImageInput 图片消息交给 AI 的形式：一句说明 + S3 临时地址（OpenAI 自己下载）。
+// 存储不可用时只给说明文字，AI 会请访客描述问题或转人工。
+func chatAIImageInput(ctx context.Context, m *ConversationMessage) (string, []string) {
+	if u := chatImageAIURL(ctx, m.Content); u != "" {
+		return "[访客发来一张截图]", []string{u}
+	}
+	return "[访客发来一张截图，但图片暂时无法查看]", nil
 }
 
 // chatAIHandle 同步处理一个会话：取锁 → 回答最新访客消息 → 释放锁；
@@ -274,11 +290,15 @@ func chatAIReply(ctx context.Context, conv *Conversation, q *ConversationMessage
 		return fmt.Errorf("load history: %w", err)
 	}
 	question := q.Content
-	if q.Kind == MsgOptionReply {
+	var images []string
+	switch q.Kind {
+	case MsgOptionReply:
 		question = chatOptionQuestion(question)
+	case MsgImage:
+		question, images = chatAIImageInput(ctx, q)
 	}
 	askCtx, cancel := context.WithTimeout(ctx, chatAIAskTimeout)
-	reply, err := chatAIAsk(askCtx, chatAISystemPrompt(Brand(conv.Brand)), question, history)
+	reply, err := chatAIAsk(askCtx, chatAISystemPrompt(Brand(conv.Brand)), question, images, history)
 	cancel()
 	if err != nil || strings.TrimSpace(reply) == "" {
 		log.Errorf(ctx, "chat ai ask failed: conv=%d err=%v", conv.ID, err)

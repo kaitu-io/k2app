@@ -1186,4 +1186,67 @@ describe('chat-client', () => {
       client.stop();
     });
   });
+
+  describe('sendImage', () => {
+    const imageMsg = msg(9, { senderType: 'visitor', kind: 'image', content: '/api/chat/images/t' });
+
+    it('uploads multipart (clientId + file) without a JSON content type, and ingests the returned message', async () => {
+      const { client, f, last } = make({
+        'POST /api/chat/session': () => session({ ws: null, images: true }),
+        'GET /api/chat/messages': () => ({ messages: [] }),
+        'POST /api/chat/images': () => ({ message: imageMsg, conversation: { uuid: 'u', status: 'open', handler: 'ai' } }),
+      });
+      const s = await client.start('/p');
+      expect(s.images).toBe(true);
+      const file = new Blob(['png'], { type: 'image/png' });
+      await client.sendImage(file);
+      const call = f.of('POST /api/chat/images')[0];
+      const body = call.init.body as FormData;
+      expect(body).toBeInstanceOf(FormData);
+      expect(body.get('clientId')).toBe('cid-1');
+      expect(body.get('file')).toBeInstanceOf(Blob);
+      expect((call.init.headers as Record<string, string>)['Content-Type']).toBeUndefined();
+      expect(call.init.credentials).toBe('include');
+      expect(last().map((m) => m.id)).toEqual([9]);
+      client.stop();
+    });
+
+    it('images defaults to false when the server does not say so', async () => {
+      const { client } = make({ 'POST /api/chat/session': () => session({ ws: null }) });
+      expect((await client.start('/p')).images).toBe(false);
+      client.stop();
+    });
+
+    it('a lost visitor subject re-runs the session once and re-uploads once', async () => {
+      let n = 0;
+      const { client, f, last } = make({
+        'POST /api/chat/session': () => session({ ws: null, images: true }),
+        'GET /api/chat/messages': () => ({ messages: [] }),
+        'POST /api/chat/images': () => {
+          if (++n === 1) throw NO_SUBJECT;
+          return { message: imageMsg };
+        },
+      });
+      await client.start('/p');
+      await client.sendImage(new Blob(['x'], { type: 'image/png' }));
+      expect(f.of('POST /api/chat/session')).toHaveLength(2);
+      expect(f.of('POST /api/chat/images')).toHaveLength(2);
+      expect(last().map((m) => m.id)).toEqual([9]);
+      client.stop();
+    });
+
+    it('a network failure is reported at once and never re-uploads', async () => {
+      const { client, f } = make({
+        'POST /api/chat/session': () => session({ ws: null, images: true }),
+        'POST /api/chat/images': () => { throw new Error('offline'); },
+      });
+      await client.start('/p');
+      const err = await client.sendImage(new Blob(['x'], { type: 'image/png' })).catch((e) => e);
+      expect((err as ChatError).kind).toBe('network');
+      await tick(120000);
+      expect(f.of('POST /api/chat/images')).toHaveLength(1);
+      client.stop();
+    });
+  });
 });
+

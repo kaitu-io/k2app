@@ -204,7 +204,20 @@ describe('/manager/conversations', () => {
     expect(mockDetail).toHaveBeenCalledTimes(2);
   });
 
-  it('图片消息不渲染 img，URL 以纯文本展示', async () => {
+  it('服务端签发的图片链接显示为图片，点开看原图', async () => {
+    searchParamsState.current = new URLSearchParams('c=u1');
+    mockDetail.mockResolvedValue({
+      conversation: conv(),
+      truncated: false,
+      messages: [{ id: 9, senderType: 'visitor', senderName: '', kind: 'image', content: '/api/chat/images/abc.def', createdAt: 1 }],
+    });
+    render(<ConversationsPage />);
+    const img = await screen.findByRole('img', { name: '[图片]' });
+    expect(img.getAttribute('src')).toBe('/api/chat/images/abc.def');
+    expect(img.closest('a')?.getAttribute('href')).toBe('/api/chat/images/abc.def');
+  });
+
+  it('其它形态的图片地址不渲染 img，URL 以纯文本展示', async () => {
     searchParamsState.current = new URLSearchParams('c=u1');
     mockDetail.mockResolvedValue({
       conversation: conv(),

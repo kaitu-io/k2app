@@ -21,5 +21,10 @@
   "eventTransferHuman": "サポート担当者に引き継ぎました",
   "eventHandedToAi": "アシスタントに戻しました",
   "eventClosed": "会話を終了しました",
-  "eventAutoClosed": "しばらくやり取りがなかったため会話を終了しました"
+  "eventAutoClosed": "しばらくやり取りがなかったため会話を終了しました",
+  "attachImage": "画像を送信",
+  "uploading": "画像をアップロード中…",
+  "imageTooLarge": "画像は 5 MB 以下にしてください。",
+  "imageInvalid": "送信できるのは PNG、JPG、GIF、WebP の画像のみです。",
+  "imageFailed": "画像を送信できませんでした。もう一度お試しください。"
 }

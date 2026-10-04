@@ -1,14 +1,16 @@
 'use client';
 
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import { useTranslations } from 'next-intl';
-import { MessageCircle, Send, X } from 'lucide-react';
+import { ImagePlus, MessageCircle, Send, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { siteBrand } from '@/lib/brands';
 import { isEmbeddedPage } from '@/lib/funnel';
 import {
   CHAT_CONTENT_MAX,
+  CHAT_IMAGE_MAX_BYTES,
+  CHAT_IMAGE_TYPES,
   ChatError,
   createChatClient,
   type ChatClient,
@@ -32,7 +34,7 @@ import {
 /** 转人工后这么久没有客服消息，就请访客留邮箱。 */
 const EMAIL_PROMPT_AFTER_MS = 30_000;
 
-type SendError = 'rateLimited' | 'sendFailed' | 'tooLong';
+type SendError = 'rateLimited' | 'sendFailed' | 'tooLong' | 'imageTooLarge' | 'imageInvalid' | 'imageFailed';
 
 /**
  * 正在等人工的那段：`at` 是转人工的时刻（留邮箱表单的计时起点，与面板开合无关），
@@ -101,6 +103,7 @@ export default function ChatWidget({
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<SendError | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [emailState, setEmailState] = useState<'idle' | 'saved' | 'done'>(() =>
     readFlag(CHAT_EMAIL_FLAG) ? 'done' : 'idle',
   );
@@ -111,6 +114,7 @@ export default function ChatWidget({
   const entryRef = useRef<{ preview: boolean; resume: string | null } | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const wasOpenRef = useRef(false);
@@ -226,6 +230,37 @@ export default function ChatWidget({
   }, [wantsEmail, humanWait]);
 
   if (!available) return null;
+
+  /** 发一张图片：先在本地拦住明显不行的（类型、大小），服务端会按内容再判一次。 */
+  const uploadImage = async (file: File) => {
+    if (!session?.images || uploading) return;
+    if (!(CHAT_IMAGE_TYPES as readonly string[]).includes(file.type)) {
+      setError('imageInvalid');
+      return;
+    }
+    if (file.size > CHAT_IMAGE_MAX_BYTES) {
+      setError('imageTooLarge');
+      return;
+    }
+    setError(null);
+    setUploading(true);
+    try {
+      await clientRef.current?.sendImage(file);
+    } catch (err) {
+      setError(err instanceof ChatError && err.kind === 'rate_limited' ? 'rateLimited' : 'imageFailed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // 粘贴截图直接发送（剪贴板里有文字时照常粘贴文字）
+  const onInputPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!session?.images) return;
+    const file = [...e.clipboardData.files].find((f) => f.type.startsWith('image/'));
+    if (!file) return;
+    e.preventDefault();
+    void uploadImage(file);
+  };
 
   const fail = (err: unknown) =>
     setError(err instanceof ChatError && err.kind === 'rate_limited' ? 'rateLimited' : 'sendFailed');
@@ -358,13 +393,40 @@ export default function ChatWidget({
             {t(error)}
           </p>
         )}
+        {uploading && <p className="mb-2 text-xs text-muted-foreground">{t('uploading')}</p>}
         <div className="flex items-end gap-2">
+          {session?.images && (
+            <>
+              <input
+                ref={fileRef}
+                type="file"
+                accept={CHAT_IMAGE_TYPES.join(',')}
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = ''; // 同一张图可以再选一次
+                  if (file) void uploadImage(file);
+                }}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={t('attachImage')}
+                disabled={uploading}
+                onClick={() => fileRef.current?.click()}
+              >
+                <ImagePlus aria-hidden />
+              </Button>
+            </>
+          )}
           <Textarea
             ref={inputRef}
             rows={1}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onInputKeyDown}
+            onPaste={onInputPaste}
             placeholder={t('placeholder')}
             aria-label={t('placeholder')}
             className="max-h-32 min-h-9 resize-none"

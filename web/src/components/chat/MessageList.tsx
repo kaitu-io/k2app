@@ -24,6 +24,19 @@ function eventLabel(m: ChatMessage, events: MessageListLabels['events']): string
     : null;
 }
 
+/** 服务端下发的图片查看链接（签名的站内路径）。别的形态一律不当图片地址用。 */
+const IMAGE_PATH_PREFIX = '/api/chat/images/';
+
+function ImageContent({ src, alt }: { src: string; alt: string }) {
+  if (!src.startsWith(IMAGE_PATH_PREFIX)) return <>{alt}</>;
+  return (
+    <a href={src} target="_blank" rel="noopener noreferrer" className="block">
+      {/* eslint-disable-next-line @next/next/no-img-element -- 签名的动态链接，不走 next/image 优化 */}
+      <img src={src} alt={alt} loading="lazy" referrerPolicy="no-referrer" className="max-h-48 max-w-full rounded-lg object-contain" />
+    </a>
+  );
+}
+
 /** 纯文本渲染 + 只把 http(s) 链接变成 <a>。全程是 React 文本节点，不解析 HTML。 */
 function linkify(text: string): ReactNode[] {
   let offset = 0;
@@ -98,7 +111,7 @@ export default function MessageList({
         const label = m.senderType === 'ai' ? labels.ai : m.senderType === 'staff' ? labels.staff : undefined;
         return (
           <Bubble key={key} mine={mine} label={label} pending={m.pending}>
-            {m.kind === 'image' ? labels.image : m.kind === 'option_reply' ? optionLabel(m.content) : linkify(m.content)}
+            {m.kind === 'image' ? <ImageContent src={m.content} alt={labels.image} /> : m.kind === 'option_reply' ? optionLabel(m.content) : linkify(m.content)}
           </Bubble>
         );
       })}

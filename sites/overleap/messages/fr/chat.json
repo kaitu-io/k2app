@@ -21,5 +21,10 @@
   "eventTransferHuman": "Transféré à notre équipe de support",
   "eventHandedToAi": "Repris par l'assistant",
   "eventClosed": "Conversation clôturée",
-  "eventAutoClosed": "Conversation clôturée après une période d'inactivité"
+  "eventAutoClosed": "Conversation clôturée après une période d'inactivité",
+  "attachImage": "Envoyer une image",
+  "uploading": "Envoi de l’image…",
+  "imageTooLarge": "Les images ne doivent pas dépasser 5 Mo.",
+  "imageInvalid": "Seules les images PNG, JPG, GIF ou WebP peuvent être envoyées.",
+  "imageFailed": "L’image n’a pas été envoyée. Veuillez réessayer."
 }

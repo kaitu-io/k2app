@@ -33,3 +33,23 @@ describe('MessageList system events', () => {
     expect(screen.queryAllByRole('listitem')).toHaveLength(0);
   });
 });
+
+describe('MessageList images', () => {
+  it('renders a signed image path as an <img> that opens in a new tab', () => {
+    const m = msg(1, { senderType: 'visitor', kind: 'image', content: '/api/chat/images/abc.def' });
+    render(<MessageList messages={[m]} welcome={null} labels={labels} />);
+    const img = screen.getByRole('img', { name: '[img]' });
+    expect(img.getAttribute('src')).toBe('/api/chat/images/abc.def');
+    expect(img.closest('a')?.getAttribute('target')).toBe('_blank');
+  });
+
+  it.each(['chat/kaitu/202610/x.png', 'https://evil.example/x.png', 'javascript:alert(1)', ''])(
+    'never uses anything but a signed path as an image source: %s',
+    (content) => {
+      const m = msg(1, { senderType: 'visitor', kind: 'image', content });
+      render(<MessageList messages={[m]} welcome={null} labels={labels} />);
+      expect(screen.queryByRole('img')).toBeNull();
+      expect(screen.getByText('[img]')).toBeTruthy();
+    },
+  );
+});

@@ -21,5 +21,10 @@
   "eventTransferHuman": "Dipindahkan kepada pasukan sokongan kami",
   "eventHandedToAi": "Dikembalikan kepada pembantu",
   "eventClosed": "Perbualan ditutup",
-  "eventAutoClosed": "Perbualan ditutup selepas tempoh tidak aktif"
+  "eventAutoClosed": "Perbualan ditutup selepas tempoh tidak aktif",
+  "attachImage": "Hantar imej",
+  "uploading": "Memuat naik imej…",
+  "imageTooLarge": "Saiz imej mestilah tidak melebihi 5 MB.",
+  "imageInvalid": "Hanya imej PNG, JPG, GIF atau WebP boleh dihantar.",
+  "imageFailed": "Imej tidak dihantar. Sila cuba lagi."
 }

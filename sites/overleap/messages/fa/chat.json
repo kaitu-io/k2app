@@ -21,5 +21,10 @@
   "eventTransferHuman": "به تیم پشتیبانی منتقل شد",
   "eventHandedToAi": "به دستیار بازگردانده شد",
   "eventClosed": "گفتگو بسته شد",
-  "eventAutoClosed": "گفتگو پس از مدتی بی‌فعالیتی بسته شد"
+  "eventAutoClosed": "گفتگو پس از مدتی بی‌فعالیتی بسته شد",
+  "attachImage": "ارسال تصویر",
+  "uploading": "در حال بارگذاری تصویر…",
+  "imageTooLarge": "حجم تصویر نباید بیشتر از ۵ مگابایت باشد.",
+  "imageInvalid": "فقط تصاویر PNG، JPG، GIF یا WebP قابل ارسال هستند.",
+  "imageFailed": "تصویر ارسال نشد. لطفاً دوباره امتحان کنید."
 }
