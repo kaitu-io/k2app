@@ -25,6 +25,7 @@ Provider calls `handler.HandleTCP/HandleUDP` when connections arrive. `ClientTun
 - `provider.go` — Provider/ConnectionHandler interfaces, ProviderConfig, MTU constants, defaults
 - `stack.go` — sing-tun Handler adapter (converts sing-tun connections → ConnectionHandler)
 - `tun_desktop.go` — TUN device for macOS/Linux/Windows (sing-tun, requires root)
+- `tun_create_diag.go` / `_windows.go` / `_other.go` — `DIAG: wintun-create-fail`: samples Wintun devices (SetupAPI/CfgMgr, not sing-tun internals) while `tun.New` runs, logs the last-seen problem code on failure. Sampling/formatting is untagged and unit-tested everywhere; the enumeration was verified on a real Win10 VM (disabled adapter → `problem=22(DISABLED)`)
 - `tun_ios.go` — iOS PacketTunnelProvider (uses existing FD)
 - `tun_android.go` — Android VpnService (uses existing FD)
 - `mtu_ios.go` / `mtu_android.go` / `mtu_desktop.go` — Platform MTU limits (build-tagged)
