@@ -544,10 +544,13 @@ Slack 回调（公开，签名校验）：`POST /webhook/slack/events`。
 #### 2026-10-04 实际执行情况
 
 - 代码清理全部完成（`d04e559d`），生产配置的 `chatwoot:` 段已删。挂件改为探测后对所有访客显示（R26）。
-- **运维清理不执行**：Chatwoot 实例 `chat.anc.52j.me` 不是开途独占，还服务 ANCBank、x.ancbank.com、
-  开路者（waymkr.app）、ANC 四合会议（allnationconnect.com）与一个邮件渠道；ALB `tokyo-alb` 80 端口的
-  默认规则也指向它的目标组。停容器、删目标组 / DNS、作废令牌都会影响这些业务。开途在 Chatwoot 里的
-  收件箱是 5「K2」和 10「K2 Support」，停用与否由运营决定。
+- **2026-10-06 已下线**（用户确认 ANC 各业务都不再依赖 Chatwoot）：center-1/2 上的容器、镜像、`/apps/chatwoot`、
+  共享配置 `/data/app-configs/chatwoot` 已删；ALB `tokyo-alb` 80 端口删掉两条 Chatwoot 规则，默认动作改为固定 404；
+  目标组 `tokyo-alb-tg-chatwoot`、CloudFront `E27IOJJHN8ZT8C`、`chat.anc.52j.me` 的 DNS 已删。
+  配置与原规则备份在本机 `~/backups/chatwoot-teardown-20261006/`（含密钥，600）。
+  尚存的数据：RDS `tokyo-postgres` 的 `chatwoot_v4` 库与 `chatwoot_user`、S3 桶 `anc-chatwoot-tokyo`（约 221 MB），
+  ElastiCache db0 里的残留键（与其它服务共用 db0，不能 FLUSHDB）。
+- waymkr.app（开路者）同日整站 301 到 `https://www.kaitu.io/`（Amplify 应用 `d26itj3yciyc3r` 的重定向规则）。
 
 ## 11. 测试
 
