@@ -4,7 +4,6 @@ package provider
 
 import (
 	"net/netip"
-	"os"
 	"sync/atomic"
 	"testing"
 )
@@ -67,6 +66,13 @@ func (m *mockProcNamer) NameForPID(pid uint32) string {
 	return m.names[pid]
 }
 
+// testSelfPID stands in for the daemon's own PID. A fixed value, not
+// os.Getpid(): real Windows PIDs are multiples of 4, so the test process can
+// actually BE one of the fake owner PIDs below (8000, 8888, 9000) — its row is
+// then skipped as "self" and the test fails at random (CI run 37630907733).
+// Odd, so it can never be a real Windows PID either.
+const testSelfPID uint32 = 4243
+
 func newTestSearcher(tcp *mockTCPFetcher, udp *mockUDPFetcher, namer *mockProcNamer) *WindowsProcessSearcher {
 	return &WindowsProcessSearcher{
 		cache:       newProcessCache(processCacheCap, processCacheTTL),
@@ -75,13 +81,14 @@ func newTestSearcher(tcp *mockTCPFetcher, udp *mockUDPFetcher, namer *mockProcNa
 		tcp6Fetcher: &mockTCP6Fetcher{},
 		udp6Fetcher: &mockUDP6Fetcher{},
 		procNamer:   namer,
-		selfPID:     uint32(os.Getpid()),
+		selfPID:     testSelfPID,
 	}
 }
 
 // 192.168.1.5:54321 → app PID 8000
-//   dwLocalAddr = 0x0501A8C0 (LE uint32 of NBO [C0,A8,01,05])
-//   dwLocalPort low 16 = 0x31D4 (NBO of 0xD431)
+//
+//	dwLocalAddr = 0x0501A8C0 (LE uint32 of NBO [C0,A8,01,05])
+//	dwLocalPort low 16 = 0x31D4 (NBO of 0xD431)
 var chromeRow = tcpRowOwnerPID{
 	State:     5,
 	LocalAddr: 0x0501A8C0,
@@ -225,10 +232,10 @@ func TestWindowsFindProcess_PIDZeroSkipped(t *testing.T) {
 
 func TestWindowsFindProcess_SelfPIDSkipped(t *testing.T) {
 	row := chromeRow
-	row.OwningPID = uint32(os.Getpid())
+	row.OwningPID = testSelfPID
 	tcp := &mockTCPFetcher{rows: []tcpRowOwnerPID{row}}
 	s := newTestSearcher(tcp, &mockUDPFetcher{}, &mockProcNamer{names: map[uint32]string{
-		uint32(os.Getpid()): "k2.exe",
+		testSelfPID: "k2.exe",
 	}})
 	name, _, _ := s.FindProcess("tcp", netip.MustParseAddr("192.168.1.5"), 54321)
 	if name != "" {
@@ -378,9 +385,9 @@ func TestWindowsFindProcess_UDPFetcherError(t *testing.T) {
 // as authoritative.
 func TestWindowsFindProcess_MultipleMatches_ReturnsFirstNonSelf(t *testing.T) {
 	rows := []tcpRowOwnerPID{
-		{State: 1, LocalAddr: 0x0501A8C0, LocalPort: 0x000031D4, OwningPID: uint32(os.Getpid())}, // self
-		{State: 5, LocalAddr: 0x0501A8C0, LocalPort: 0x000031D4, OwningPID: 7777},                 // first non-self
-		{State: 5, LocalAddr: 0x0501A8C0, LocalPort: 0x000031D4, OwningPID: 8888},                 // shadowed
+		{State: 1, LocalAddr: 0x0501A8C0, LocalPort: 0x000031D4, OwningPID: testSelfPID}, // self
+		{State: 5, LocalAddr: 0x0501A8C0, LocalPort: 0x000031D4, OwningPID: 7777},        // first non-self
+		{State: 5, LocalAddr: 0x0501A8C0, LocalPort: 0x000031D4, OwningPID: 8888},        // shadowed
 	}
 	tcp := &mockTCPFetcher{rows: rows}
 	namer := &mockProcNamer{names: map[uint32]string{
