@@ -253,8 +253,11 @@ func reconcileStripeSubscription(ctx context.Context, sub *Subscription, now int
 	// 活跃且周期在未来 → cover-through 权益(与 credit 路径同一收敛不变式)。原子条件
 	// UPDATE,不先读整行再比较——避免与并发 credit 事务的 lost-update。
 	if status == "active" && periodEnd > now {
+		// revoked 门进 SQL：本轮读到的 sub 可能早于并发的收回（全额退款 / 拒付 / 撤回），
+		// 先读后判会把刚收回的会员又延长回去。
 		res := db.Get().Model(&User{}).
 			Where("id = ? AND expired_at < ?", sub.UserID, periodEnd).
+			Where("NOT EXISTS (SELECT 1 FROM subscriptions WHERE id = ? AND status = ?)", sub.ID, "revoked").
 			Update("expired_at", periodEnd)
 		if res.Error != nil {
 			return changed, res.Error

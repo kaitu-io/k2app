@@ -910,6 +910,53 @@ type SubscriptionCredit struct {
 	Kind                  string    `gorm:"column:kind;type:varchar(16);not null" json:"kind"` // purchase|renewal|grace
 }
 
+// StatutoryRefund 是一笔 Stripe 付款的 14 天撤回处理记录（spec 2026-10-07 A 期 §3.3）。
+// 一次撤回请求（RequestID）由一条 primary（通知前最近一笔付款，按天折算）和若干
+// post_notice（通知后才扣的续费，全额）组成，每条对应一张 invoice。
+//
+// ActiveInvoiceID = InvoiceID（pending/done 时）或 NULL（abandoned 时）：MySQL 没有
+// 部分索引，用可空列 + 唯一索引表达"一笔付款同时只能有一条有效处理"；作废后可重新处理，
+// 已发出的退款靠 Stripe 退款 metadata 查重复用，不会退两次。
+type StatutoryRefund struct {
+	ID                     uint64  `gorm:"primarykey" json:"id"`
+	CreatedAt              int64   `gorm:"autoCreateTime" json:"createdAt"`
+	UpdatedAt              int64   `gorm:"autoUpdateTime" json:"updatedAt"`
+	RequestID              string  `gorm:"type:varchar(64);not null;index" json:"requestId"`
+	UserID                 uint64  `gorm:"not null;index" json:"userId"`
+	ProviderSubscriptionID string  `gorm:"type:varchar(64);not null" json:"providerSubscriptionId"`
+	InvoiceID              string  `gorm:"type:varchar(64);not null;index" json:"invoiceId"`
+	ActiveInvoiceID        *string `gorm:"type:varchar(64);uniqueIndex" json:"-"`
+	PaymentIntentID        string  `gorm:"type:varchar(64);index" json:"paymentIntentId"`
+	Kind                   string  `gorm:"type:varchar(16);not null" json:"kind"` // primary | post_notice
+	Amount                 int64   `gorm:"not null" json:"amount"`               // 计划退款额（最小货币单位）
+	RefundedAmount         int64   `gorm:"not null;default:0" json:"refundedAmount"`
+	Currency               string  `gorm:"type:varchar(8)" json:"currency"`
+	UsedDays               int     `json:"usedDays"`
+	TotalDays              int     `json:"totalDays"`
+	FullRefund             bool    `json:"fullRefund"`
+	NoticeAt               int64   `gorm:"not null" json:"noticeAt"`
+	Mode                   string  `gorm:"type:varchar(16);not null" json:"mode"` // withdrawal | termination
+	StripeRefundID         string  `gorm:"type:varchar(64)" json:"stripeRefundId"`
+	RefundNote             string  `gorm:"type:varchar(255)" json:"refundNote"`
+	Status                 string  `gorm:"type:varchar(16);not null;index" json:"status"` // pending | done | abandoned
+	OperatorID             uint64  `json:"operatorId"`
+	Source                 string  `gorm:"type:varchar(16)" json:"source"` // admin（B 期加 user）
+	Reason                 string  `gorm:"type:varchar(255)" json:"reason"`
+}
+
+// SubscriptionConsent 记录结账时用户勾选的条款同意（含"要求立即开始服务"），
+// 是 14 天撤回按天折算的依据（spec A 期 §4）。不自动删除：加州 ARL 要求留存 ≥3 年。
+type SubscriptionConsent struct {
+	ID                     uint64 `gorm:"primarykey" json:"id"`
+	CreatedAt              int64  `gorm:"autoCreateTime" json:"createdAt"`
+	UserID                 uint64 `gorm:"not null;index" json:"userId"`
+	CheckoutSessionID      string `gorm:"type:varchar(128);not null;uniqueIndex" json:"checkoutSessionId"`
+	ProviderSubscriptionID string `gorm:"type:varchar(64);index" json:"providerSubscriptionId"`
+	TextVersion            string `gorm:"type:varchar(32);not null" json:"textVersion"`
+	AcceptedAt             int64  `gorm:"not null" json:"acceptedAt"`
+	Country                string `gorm:"type:varchar(8)" json:"country"`
+}
+
 // StripeWebhookEvent 是 Stripe webhook 的事件级幂等去重表：同一 event id 只处理一次
 // （check → process → record，同 apple LastEventID 模式；并发窗口内的金额安全由
 // SubscriptionCredit UNIQUE(provider, transaction_id) + 行锁硬保证）。

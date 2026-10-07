@@ -118,6 +118,8 @@ func Migrate() error {
 		&Subscription{},
 		&SubscriptionCredit{},
 		&StripeWebhookEvent{},
+		&StatutoryRefund{},
+		&SubscriptionConsent{},
 		&Message{},
 		&Secret{},
 		&SlaveNode{},
