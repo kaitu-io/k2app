@@ -66,3 +66,5 @@ require (
 )
 
 replace github.com/kaitu-io/kuic => ./third_party/kuic
+
+replace github.com/xtaci/smux/v2 => ./third_party/smux
