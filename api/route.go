@@ -384,6 +384,10 @@ func SetupRouter() *gin.Engine {
 		admin.POST("/wallet/withdraws/:id/approve", api_admin_approve_withdraw)
 		admin.POST("/wallet/withdraws/:id/complete", api_admin_complete_withdraw)
 		admin.POST("/orders/:uuid/refund", api_admin_refund_order)
+		// Stripe 14 天撤回（overleap；spec 2026-10-07 A 期 §3.6）
+		admin.GET("/users/:uuid/stripe-withdrawal", api_admin_stripe_withdrawal_quote)
+		admin.POST("/users/:uuid/stripe-withdrawal", api_admin_stripe_withdrawal)
+		admin.POST("/stripe-withdrawals/:request_id/abandon", api_admin_stripe_withdrawal_abandon)
 
 		// 订单管理
 		// 订单管理 — GET 已移至 opsAdmin 组（Support + Marketing 可读）

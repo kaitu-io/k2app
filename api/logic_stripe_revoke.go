@@ -105,6 +105,7 @@ func isStripeResourceMissing(err error) bool {
 //     全额退款 / 拒付后一天都不收回。按差值扣，赠送时长照样保留。
 //   - 不能用 CurrentPeriodEnd 当上限：对账会把它推到未付的下一期，会多扣。
 //   - 先被"提前结束"截断过的订阅 PaidThrough 已收回，再收回扣 0，不会重复扣。
+//
 // reason 必须是英文。
 func revokeStripeSubscriptionInTx(ctx context.Context, tx *gorm.DB, providerSubID, reason string) (found, revokedNow bool, err error) {
 	var sub Subscription
