@@ -1,4 +1,4 @@
-# Overleap 支付 A 期：堵漏 + 撤回执行器 — 实施设计（v4）
+# Overleap 支付 A 期：堵漏 + 撤回执行器 — 实施设计（v5）
 
 日期：2026-10-07 · 分支 `feat/overleap-trial-payment` · 上位 spec：`2026-10-07-overleap-trial-payment-design.md`
 
@@ -7,6 +7,7 @@
 - v2 → v3（review：后端 7/10、文案 6/10）：执行器改为以 `StatutoryRefund` 行为续跑锚点、顺序改为 退款→收回→取消、退款 id 立即落库并按 metadata 查重；时间以**用户提出撤回的时刻** `noticeAt` 计；同意文案收窄；营销词表不再宣传法定权利；补墓碑行字段、截断规则的基准、审批注册、商家地址、同意记录披露。
 
 - v3 → v4（review：后端 8/10、文案 8/10）：撤回按"请求"而非"用户"续跑，每用户至多一个未完成请求、可作废；通知后被扣的续费全额退；退前查 charge 已退 / 拒付；webhook 识别我们自己的撤回退款；`FullRefund` 只用于撤回模式；条款 8.3(c) 与结账同意的续费价措辞对齐。
+- v4 → v5（review：后端 8/10、文案 9/10）：作废行不再占用 invoice 唯一键；通知后的续费从 Stripe 已付 invoice 列表枚举、续跑与取消后都重新枚举；退款额封顶在 charge 剩余可退额；作废会补完收回与取消并报告；可按 request_id 续跑；termination 的时刻限定在近 48 小时。
 
 **A 期目标**：(1) 关掉今天就存在的退款 / 钱包后门；(2) 条款改成最终政策，且政策里的每一句都有代码或明确的操作流程兑现。不做试用、不做用户自助按钮（B 期）。
 
@@ -89,7 +90,7 @@ var stripeSubscriptionByPaymentIntent = func(key, pi string) (subID string, err 
 1. `pi == ""` → 告警"无法归属，人工处理"，`nil`。
 2. 查 `subID`：err → 返回 err；空 → 告警"非订阅扣款"，`nil`。
 3. `withDeadlockRetry` 跑 `revokeStripeSubscriptionInTx`；`found=false` → 取远端订阅建墓碑行（§1.3）。
-4. 取消（共用 `cancelStripeSubscriptionIfLive(subID, reason)`）：取远端订阅（`stripeFetchSubscription`），`resource_missing` 或状态 `canceled` / `incomplete_expired` → 跳过；否则 `stripeCancelSubscription`（新 seam，`prorate=false`、`invoice_now=false`、`cancellation_details.comment=reason`）。返回 `resource_missing` → 视为完成并告警；其他错误 → 返回 err（500 重投；第 3 步因 revoked 短路，只重试取消）。
+4. 取消（共用 `cancelStripeSubscriptionIfLive(subID, reason)`）：取远端订阅（`stripeFetchSubscription`），`resource_missing` 或状态 `canceled` / `incomplete_expired` → 跳过；否则 `stripeCancelSubscription`（新 seam，`prorate=false`、`invoice_now=false`、`cancellation_details.comment=reason`）。返回 `resource_missing` → 视为完成并告警；其他错误 → 再 Get 一次，已 `canceled` 即视为完成（并发取消的另一方先到）；仍未取消 → 返回 err（500 重投；第 3 步因 revoked 短路，只重试取消）。
 5. 告警 `[STRIPE-REFUND]` / `[STRIPE-DISPUTE]`：charge/dispute id、金额、user_id、sub、每一步结果。
 
 ### 2.3 提前结束的截断
@@ -104,11 +105,11 @@ var stripeSubscriptionByPaymentIntent = func(key, pi string) (subID string, err 
 
 请求：`{UserUUID, SubscriptionID?（可选，缺省取该用户最新一条非 revoked 的 Stripe 订阅）, NoticeAt（必填）, Mode: withdrawal|termination, OperatorID, Source}`。
 
-`NoticeAt` = 用户提出撤回的时刻（邮件时间等），由客服填写；窗口和已用天数都按它算，不按执行时刻。`NoticeAt` 晚于当前时间 → 拒绝。
+`NoticeAt` = 用户提出撤回的时刻（邮件时间等），由客服填写；窗口和已用天数都按它算，不按执行时刻。`NoticeAt` 晚于当前时间 → 拒绝。`mode=termination` 时 `NoticeAt` 必须在当前时间前 48 小时内（防止倒填时刻多退）。
 
 计划由两类条目组成，每条对应一张 invoice：
 1. **主条目**：该订阅里 `paid_at ≤ NoticeAt` 的最新一张已入账 invoice（候选取 `SubscriptionCredit WHERE provider=stripe AND original_transaction_id=subID ORDER BY id DESC`，逐张取 invoice 核对 `paid_at`）。不用 `ProviderLatestRef`（重放旧 invoice 会把它拨回去）。没有 `paid_at ≤ NoticeAt` 的 → 拒绝（通知早于任何付款，不是撤回）。按 §3.2 折算。
-2. **通知后条目**：同一订阅里 `paid_at > NoticeAt` 的已入账 invoice（客服处理晚了、期间又续费）→ 各自**全额**退（合同在通知时已结束，这笔不该扣）。
+2. **通知后条目**：同一订阅里 `paid_at > NoticeAt` 的已付 invoice（客服处理晚了、期间又续费）→ 各自**全额**退（合同在通知时已结束，这笔不该扣）。**从 Stripe 枚举**（`invoice.List{Subscription, Status: "paid"}`，迭代并检查 `Err()`），不从本地 `SubscriptionCredit`——入账失败 / 延迟的 invoice 也要算进来。枚举在新建、每次续跑、以及第 5 步取消之后各做一次，缺的条目追加到同一 RequestID。
 
 ### 3.2 主条目的资格与金额（纯函数，B 期用户按钮复用）
 
@@ -139,7 +140,8 @@ type StatutoryRefund struct {
     RequestID string `index`                  // 同一请求的所有条目共享
     UserID uint64 `index`
     ProviderSubscriptionID string
-    InvoiceID string `uniqueIndex`              // 一笔付款只处理一次
+    InvoiceID string `index`
+    ActiveInvoiceID *string `uniqueIndex`       // = InvoiceID（pending/done 时），abandoned 时置 NULL——一笔付款同时只能有一条有效处理；作废后可重新处理
     PaymentIntentID string `index`
     Kind string                                 // primary | post_notice
     Amount int64; Currency string; UsedDays, TotalDays int; FullRefund bool
@@ -155,36 +157,37 @@ type StatutoryRefund struct {
 
 ### 3.4 `executeStripeWithdrawal(ctx, req)`
 
-1. **续跑或拒绝**：该用户有 `pending` 行 →
-   - 请求的 (订阅, NoticeAt, Mode) 与那批行一致 → 续跑那批（不重新判定资格；窗口过期、订阅已 revoked 都不影响）。
-   - 不一致 → 返回错误，写明未完成请求的 RequestID 与 invoice，让客服先续跑或作废它。
+1. **续跑或拒绝**：请求带 `request_id` → 续跑那个请求（必须属于该用户且有 `pending` 行）。不带时，该用户有 `pending` 行 →
+   - (订阅, NoticeAt, Mode) 与那批行一致 → 续跑那批（不重新判定资格；窗口过期、订阅已 revoked 都不影响）。
+   - 不一致 → 返回错误，写明未完成请求的 RequestID 与 invoice，让客服用 `request_id` 续跑或先作废。
+   续跑时先重新枚举通知后条目（§3.1）。
 2. **新建**：按 §3.1 / §3.2 生成计划；主条目不合格 → 返回原因。新 RequestID，所有条目插 `pending`（唯一索引挡重复）。
 3. **逐条退款**（`Amount > 0` 且 `StripeRefundID` 为空）：
-   - 先查 charge 状态（seam：PaymentIntent 的 `latest_charge`）：已全额退款或有拒付 → 不退，写 `RefundNote`，继续。
+   - 先查 charge 状态（seam：取 PaymentIntent 时 `AddExpand("latest_charge")`）：`Refunded` 或 `Disputed` → 不退，写 `RefundNote`，继续（拒付胜诉后 `Disputed` 仍为 true，也跳过——客服人工处理）。否则退款额封顶在 `charge.Amount − charge.AmountRefunded`，被封顶时差额写进 `RefundNote`。
    - 查重：`stripeFindWithdrawalRefund(pi, invoiceID)` 用 `refund.List{PaymentIntent}` 迭代（`for it.Next()` 后检查 `it.Err()`，出错即中止，**不能**当"没找到"），找 `metadata.center_withdrawal == invoiceID`。
    - 没有 → `refund.New{PaymentIntent, Amount, Metadata{center_withdrawal: invoiceID, center_request: RequestID}}`，`Params.SetIdempotencyKey("withdraw-"+invoiceID)`。幂等键 Stripe 只留 24 小时，查重才是主防线。
    - **退款 id 立即单独提交**到该行。
 4. **收回**：`revokeStripeSubscriptionInTx(reason="Withdrawal within 14 days - <主 invoice>"`；termination 用 `"Service terminated by Overleap - <sub>"`)，已 revoked 短路。先收回再取消：取消触发的 `customer.subscription.deleted` 遇 revoked 短路。
-5. **取消**：`cancelStripeSubscriptionIfLive`。
+5. **取消**：`cancelStripeSubscriptionIfLive`。之后再枚举一次通知后条目；有新增 → 追加行并回到第 3 步处理它们。
 6. 该请求所有行置 `done`；告警频道记一条。
 
 任一步失败返回错误；重提同一请求从第 1 步续跑。执行器在调 Stripe 时从不持有数据库事务，没有锁顺序问题；两个并发执行在 24 小时内用同一幂等键，Stripe 只产生一笔退款。
 
-**作废**：`POST /app/stripe-withdrawals/:request_id/abandon {reason}` 把该请求的 `pending` 行置 `abandoned`（已退的款不撤回，记录保留）。用于卡死的请求（例如 Stripe 持续拒绝退款），之后人工处理。
+**作废**：`POST /app/stripe-withdrawals/:request_id/abandon {reason}`：若该请求任一行已有退款 id，先补做收回与取消（避免"钱退了、会员还在"）；然后把 `pending` 行置 `abandoned`、`ActiveInvoiceID=NULL`（已退的款不撤回，记录保留）；返回并告警已完成的步骤（各行退款 id、是否已收回、是否已取消）。用于卡死的请求（例如 Stripe 持续拒绝退款），之后人工处理或重新发起——重新发起时 metadata 查重会找到已发出的退款，不会重复退。
 
 ### 3.5 与 §2 webhook 的交互
 
-- `revokeStripeForChargeLoss` 与部分退款告警：先按 PI 查 `StatutoryRefund`。有 → 这是我们自己的撤回退款：收回原因用撤回原因，告警标 `[WITHDRAWAL]` 而不是 `[STRIPE-REFUND]`；收回与取消照常执行（都幂等）。
+- `revokeStripeForChargeLoss` 与部分退款告警：先按 PI 查 `StatutoryRefund`（只认 `status IN (pending, done)`）。有 → 这是我们自己的撤回退款：收回原因用撤回原因，告警标 `[WITHDRAWAL]` 而不是 `[STRIPE-REFUND]`；收回与取消照常执行（都幂等）。
 - `cancelStripeSubscriptionIfLive`：Cancel 返回非 404 错误 → 再 Get 一次，状态已 `canceled` 即视为完成（并发取消的另一方先到）。
 
 ### 3.6 入口（A 期只给后台）
 
 - `/app`（`AdminRequired()`，即超管同步执行，审批行与 `order_refund` 一样是留痕）：
   - `GET /app/users/:uuid/stripe-withdrawal?notice_at=&subscription_id=&mode=` → 计划预览（每条的金额、天数、是否全额、原因）。
-  - `POST /app/users/:uuid/stripe-withdrawal {notice_at, subscription_id?, mode, reason}` → `SubmitApproval("stripe_withdrawal", …)`。
+  - `POST /app/users/:uuid/stripe-withdrawal {notice_at, subscription_id?, mode, reason, request_id?}` → `SubmitApproval("stripe_withdrawal", …)`。
   - `POST /app/stripe-withdrawals/:request_id/abandon`。
 - `worker_integration.go` 注册 `RegisterApprovalCallback("stripe_withdrawal", …)`；`logic_approval.go` 的 `actionDisplayNames` 加"Stripe 撤回退款"。
-- MCP（`tools/kaitu-center`）：`quote_stripe_withdrawal`、`withdraw_stripe_subscription`、`abandon_stripe_withdrawal`，照 `admin-orders.ts` 的退款工具写；`notice_at` 必填。
+- MCP（`tools/kaitu-center`）：`quote_stripe_withdrawal`、`withdraw_stripe_subscription`（可带 `request_id` 续跑）、`abandon_stripe_withdrawal`，照 `admin-orders.ts` 的退款工具写；`notice_at` 必填。
 - 客服流程写进 `docs/customer-service/README.md`：收到撤回请求 → 记下用户消息时间 → quote → 回邮件确认金额 → withdraw（14 天内完成）。**不要在 Stripe 后台手工部分退款**。条款 8.3 的主动终止用 `mode=termination`。
 
 ## 4. 结账同意（折算的依据）
@@ -303,13 +306,13 @@ type SubscriptionConsent struct {
 | 20 | 超 24 小时续跑 | 退款已在 Stripe、行上无 id → 按 metadata 找到，不新建；查重迭代器出错 → 中止，不新建 | 去掉查重 / 忽略 `it.Err()` |
 | 21 | 执行中途到达 deleted 事件 | 遇 revoked 短路，历史是 "Withdrawal…" | 把取消挪到收回前 |
 | 22 | 请求不一致 | 有 invoice X 的 pending 请求，再提 Y（或不同 mode）→ 报错，X 未被续跑 | 按用户续跑 |
-| 23 | 作废 | abandon 后可提新请求；已退款记录保留 | — |
-| 24 | 通知后被扣的续费 | 第 13 天通知、第 30 天续费入账、第 31 天执行 → 主条目折算 + 续费全额 | 只退主条目 |
-| 25 | charge 已退 / 拒付中 | 不调退款，写 RefundNote，收回与取消照做 | 去掉检查 |
+| 23 | 作废 | 同一 invoice：退款后卡住 → abandon（补做收回与取消、返回报告）→ 重新发起 → metadata 找到已发退款，不重复退 | 作废不清 ActiveInvoiceID / 不补收回 |
+| 24 | 通知后被扣的续费 | 第 13 天通知、第 30 天续费、第 31 天执行 → 主条目折算 + 续费全额；该续费未入账（`invoice.paid` 失败）也被枚举到；计划建好后、取消前又扣一笔 → 追加并全额退 | 从本地 credit 枚举 / 不重新枚举 |
+| 25 | charge 已退 / 拒付中 / 部分已退 | 前两者不调退款、写 RefundNote、收回与取消照做；部分已退 → 封顶到剩余额 | 去掉检查 / 去掉封顶 |
 | 26 | 全额撤回时 webhook 先到 | 历史只有一条且是撤回原因；告警标 `[WITHDRAWAL]` | 去掉按 PI 查 StatutoryRefund |
 | 27 | 并发取消 | Cancel 返回非 404 错误、再 Get 为 canceled → 成功 | 不再 Get |
-| 28 | termination 模式 | 跳过合格性、折算；0 元只收回与取消 | termination 也全额 |
-| 29 | 审批 | 注册回调、显示名；POST 建审批单 | 不注册 |
+| 28 | termination 模式 | 跳过合格性、折算；0 元只收回与取消；`NoticeAt` 超出 48 小时 → 拒 | termination 也全额 |
+| 29 | 审批与续跑 | 注册回调、显示名；POST 建审批单；带 `request_id` 续跑；§3.5 查找忽略 abandoned 行 | 不注册 / 查找不过滤状态 |
 | 30 | 结账参数 | `consent_collection`、`custom_text` 存在 | 删参数 |
 | 31 | `checkout.session.completed` | 写 `SubscriptionConsent`；重投不重复；国家为空可写 | — |
 | 32 | 钱包路由守卫 | 生产 `SetupRouter()` 枚举 `/api/wallet*`，≥7；overleap 全部 `ErrorNotSupported`；kaitu `GET /api/wallet` 不是；无用户 → 拒 | 去掉任一路由的门 |
@@ -325,7 +328,7 @@ type SubscriptionConsent struct {
 
 - `api/CLAUDE.md` 支付段：Stripe 收回规则、revoked 终态三道门、提前结束截断、撤回执行器与续跑、"不要在 Stripe 后台手工部分退款"。
 - 上位 spec §8 分期表：A 期内容同步为 v3。
-- 内部说明：已用天数按 24 小时计，从 `max(周期起点, 付款时刻)` 起；后台立即取消时，用户若有超出该周期的赠送时长则不截断（"赠送时长不误伤"，有意为之）。
+- 内部说明：已用天数按 24 小时计，从 `max(周期起点, 付款时刻)` 起；后台立即取消时，用户若有超出该周期的赠送时长则不截断（"赠送时长不误伤"，有意为之）；拒付胜诉后 charge 的 `Disputed` 仍为 true，执行器会跳过退款，需人工处理。
 
 ## 9. 上线清单（顺序有依赖）
 
