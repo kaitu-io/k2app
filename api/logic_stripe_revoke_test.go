@@ -223,19 +223,20 @@ func TestStripeRevoke(t *testing.T) {
 		assert.Contains(t, f.alertText(), "partial refund, membership kept")
 	})
 
-	// #3 赠送时长保护：到期超出周期末 → 不动到期，但订阅 revoked
-	t.Run("GiftTimePreserved", func(t *testing.T) {
+	// #3 赠送时长保护：先有 30 天赠送再买（叠加），到期 = 周期末 + 30 天
+	// → 只扣掉付费那段，剩 30 天；订阅 revoked。（旧规则"到期超出周期末就不动"= 白拿整期）
+	t.Run("GiftTimePreserved_PaidPartClawed", func(t *testing.T) {
 		f := installStripeFakes(t)
 		now := time.Now().Unix()
 		u := createStripeTestUser(t, BrandOverleap)
 		subID, pi := "sub_"+stripeUniq(), "pi_"+stripeUniq()
-		seedStripeSub(t, u, subID, now+30*day, now+60*day)
+		seedStripeSub(t, u, subID, now+365*day, now+395*day)
 		f.subByPI[pi] = subID
-		f.remote[subID] = liveRemoteSub(subID, u.UUID, "price_x", now+30*day)
+		f.remote[subID] = liveRemoteSub(subID, u.UUID, "price_x", now+365*day)
 
-		require.Equal(t, 200, post(t, chargeRefundedPayload("evt_"+stripeUniq(), "ch_3", pi, 999, 999, true)))
+		require.Equal(t, 200, post(t, chargeRefundedPayload("evt_"+stripeUniq(), "ch_3", pi, 7900, 7900, true)))
 
-		assert.InDelta(t, now+60*day, reloadUser(t, u.ID).ExpiredAt, 1)
+		assert.InDelta(t, now+30*day, reloadUser(t, u.ID).ExpiredAt, 5)
 		assert.Equal(t, "revoked", reloadStripeSub(t, subID).Status)
 	})
 
@@ -461,15 +462,15 @@ func TestStripeRevoke(t *testing.T) {
 		assert.Empty(t, refundHistories(t, u.ID))
 	})
 
-	t.Run("DeletedEarly_GiftTimeNotClipped", func(t *testing.T) {
+	t.Run("DeletedEarly_GiftTimeKept", func(t *testing.T) {
 		installStripeFakes(t)
 		now := time.Now().Unix()
 		u := createStripeTestUser(t, BrandOverleap)
 		subID := "sub_" + stripeUniq()
-		// 本地周期被推到 +120d（未付），事件周期 +30d，用户 +90d：90d 超出已付周期 = 赠送时长，不截
+		// 本地周期被推到 +120d（未付），事件周期 +30d，用户 +90d（含 60 天赠送）：只扣没给到的 30 天
 		seedStripeSub(t, u, subID, now+120*day, now+90*day)
 		require.Equal(t, 200, post(t, subDeletedPayload("evt_"+stripeUniq(), subID, now, now+30*day)))
-		assert.Equal(t, now+90*day, reloadUser(t, u.ID).ExpiredAt)
+		assert.Equal(t, now+60*day, reloadUser(t, u.ID).ExpiredAt)
 	})
 
 	// #29a dispute.closed → 只告警

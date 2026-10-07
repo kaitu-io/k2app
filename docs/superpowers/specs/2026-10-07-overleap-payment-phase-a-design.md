@@ -43,7 +43,7 @@ func revokeStripeSubscriptionInTx(ctx, tx, providerSubID, reason string) (found,
 ```
 
 1. `FOR UPDATE` 订阅行（provider=stripe）。找不到 → `(false,false,nil)`；已 `revoked` → `(true,false,nil)`。
-2. `FOR UPDATE` 用户行。用户到期落在 `(now, sub.CurrentPeriodEnd]` 才砍到 now（叠加的赠送时长不误伤）；写 `UserProHistory{Type: VipRefund, Days: -n, Reason: reason}`。
+2. `FOR UPDATE` 用户行。从用户到期里扣掉这笔订阅**尚未用掉的时长** `CurrentPeriodEnd − now`，最低扣到 now；写 `UserProHistory{Type: VipRefund, Days: -n, Reason: reason}`。（实施时由安全审查纠正：原写的 Apple 规则"到期落在 `(now, CurrentPeriodEnd]` 才砍到 now"在叠加入账下失效——先有赠送时长再买，到期整个落在窗口外，全额退款 / 拒付后一天都不收回。按差值扣，赠送时长照样保留。）
 3. 订阅置 `revoked`、`auto_renew=false`。
 
 `reason` 一律英文（overleap 用户在 `/api/user/pro-histories` 看得到）：`"Stripe full refund - ch_…"`、`"Stripe dispute - dp_…"`、`"Withdrawal within 14 days - in_…"`。
@@ -76,7 +76,7 @@ func revokeStripeSubscriptionInTx(ctx, tx, providerSubID, reason string) (found,
 | `charge.refunded` | 部分 | 只告警——不变（我们自己的撤回退款在 §3 已处理会员） |
 | `charge.dispute.created` | 任意（含 `warning_needs_response` 询问） | 收回 → 取消 → 告警 |
 | `charge.dispute.closed` | — | 只告警（结果、金额、user、是否有关联的 `StatutoryRefund`）；胜诉后客服按条款 7.7 恢复、按 §3.6 补退撤回款 |
-| `customer.subscription.deleted` | 提前结束：`ended_at < 事件自身 items.data[0].current_period_end − 3600` | 截断会员（§2.3），订阅置 `expired` |
+| `customer.subscription.deleted` | 提前结束：`ended_at < 事件自身 items.data[0].current_period_end − 3600` | 按差值扣减会员（§2.3），订阅置 `expired` |
 
 ### 2.1 归属：charge / dispute → Stripe 订阅
 
@@ -96,7 +96,7 @@ var stripeSubscriptionByPaymentIntent = func(key, pi string) (subID string, err 
 
 ### 2.3 提前结束的截断
 
-`markStripeSubscriptionDeleted` 增加：事件里 `ended_at < items.data[0].current_period_end − 3600` 时（后台立即取消、或 `cancel_at` 设在期中），在同一事务里按"先订阅行、再用户行"加锁：用户到期落在 `(ended_at, 事件周期末]` → 截到 `max(ended_at, 0)`，写历史 `"Stripe subscription ended early - sub_…"`。**只截短，不延长**。基准用事件自身的周期末，不用本地 `CurrentPeriodEnd`（扣款重试期间对账会把本地值推到未付周期）。
+`markStripeSubscriptionDeleted` 增加：事件里 `ended_at < items.data[0].current_period_end − 3600` 时（后台立即取消、或 `cancel_at` 设在期中），在同一事务里按"先订阅行、再用户行"加锁：从用户到期里扣掉没给到的那段 `事件周期末 − ended_at`，最低扣到 `ended_at`（按差值扣，赠送时长不误伤），写历史 `"Stripe subscription ended early - sub_…"`。**只截短，不延长**。基准用事件自身的周期末，不用本地 `CurrentPeriodEnd`（扣款重试期间对账会把本地值推到未付周期）。
 
 不受影响的情形：期末自然结束（`ended_at` ≈ 周期末）；扣款重试失败后被取消（此时到期早已过，cover-through 只在 `active` 时发生）。
 
