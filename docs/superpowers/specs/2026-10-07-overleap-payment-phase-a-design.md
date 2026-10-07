@@ -74,7 +74,7 @@ func revokeStripeSubscriptionInTx(ctx, tx, providerSubID, reason string) (found,
 | `charge.refunded` | 全额：`ch.Refunded \|\| (ch.Amount > 0 && ch.AmountRefunded >= ch.Amount)` | 收回 → 取消 Stripe 订阅 → 告警 |
 | `charge.refunded` | 部分 | 只告警——不变（我们自己的撤回退款在 §3 已处理会员） |
 | `charge.dispute.created` | 任意（含 `warning_needs_response` 询问） | 收回 → 取消 → 告警 |
-| `charge.dispute.closed` | — | 不自动处理；胜诉后客服按条款 7.7 恢复（运营说明） |
+| `charge.dispute.closed` | — | 只告警（结果、金额、user、是否有关联的 `StatutoryRefund`）；胜诉后客服按条款 7.7 恢复、按 §3.6 补退撤回款 |
 | `customer.subscription.deleted` | 提前结束：`ended_at < 事件自身 items.data[0].current_period_end − 3600` | 截断会员（§2.3），订阅置 `expired` |
 
 ### 2.1 归属：charge / dispute → Stripe 订阅
@@ -188,7 +188,7 @@ type StatutoryRefund struct {
   - `POST /app/stripe-withdrawals/:request_id/abandon`。
 - `worker_integration.go` 注册 `RegisterApprovalCallback("stripe_withdrawal", …)`；`logic_approval.go` 的 `actionDisplayNames` 加"Stripe 撤回退款"。
 - MCP（`tools/kaitu-center`）：`quote_stripe_withdrawal`、`withdraw_stripe_subscription`（可带 `request_id` 续跑）、`abandon_stripe_withdrawal`，照 `admin-orders.ts` 的退款工具写；`notice_at` 必填。
-- 客服流程写进 `docs/customer-service/README.md`：收到撤回请求 → 记下用户消息时间 → quote → 回邮件确认金额 → withdraw（14 天内完成）。**不要在 Stripe 后台手工部分退款**。条款 8.3 的主动终止用 `mode=termination`。
+- 客服流程写进 `docs/customer-service/README.md`：收到撤回请求 → 记下用户消息时间 → quote → 回邮件确认金额 → withdraw（14 天内完成）。**不要在 Stripe 后台手工部分退款**。条款 8.3 的主动终止用 `mode=termination`。必须**直接**跑执行器结束服务，不要先用别的方式停掉账号再补跑（超过 48 小时执行器会拒绝原时刻，改用当前时刻会多收用户没享受服务的天数）。执行器因拒付跳过退款的请求（`RefundNote` 记了拒付）：拒付结案判我们胜、或只是询问时，按已存的金额在用户通知后 14 天内人工补退（条款 7.4）；`charge.dispute.closed` 加进告警，让客服知道结案。
 
 ## 4. 结账同意（折算的依据）
 
