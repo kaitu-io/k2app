@@ -366,13 +366,14 @@ ${Using:StrFunc} UnStrRep
   FileClose $9
 
   ; Step 2b: Versioned shortcut icon (see K2_SET_SHORTCUT_ICON above)
-  !if "${INSTALLERICON}" != ""
-    !define K2_SHORTCUT_ICON "$INSTDIR\app-${VERSION}.ico"
-    Delete "$INSTDIR\app-*.ico"
-    File "/oname=${K2_SHORTCUT_ICON}" "${INSTALLERICON}"
-  !else
-    !define K2_SHORTCUT_ICON "$INSTDIR\${MAINBINARYNAME}.exe"
+  ; INSTALLERICON comes from bundle.windows.nsis.installerIcon in tauri.conf*.json.
+  ; Without it shortcuts would keep the exe path and the stale cached logo, so fail the build.
+  !if "${INSTALLERICON}" == ""
+    !error "bundle.windows.nsis.installerIcon must be set: versioned shortcut icon needs it"
   !endif
+  !define K2_SHORTCUT_ICON "$INSTDIR\app-${VERSION}.ico"
+  Delete "$INSTDIR\app-*.ico"
+  File "/oname=${K2_SHORTCUT_ICON}" "${INSTALLERICON}"
 
   ; Step 3: Create taskbar shortcut
   DetailPrint "Creating taskbar shortcut..."
