@@ -356,6 +356,13 @@ type SubscriptionConsent struct {
 10. 条款 8.3 主动终止时 App Store 订阅只指向 Apple；Apple 拒退时我们是否需要补偿未用部分（CRA Sch 2）。
 11. 条款 4.2 违规终止"不退款"。
 
+## 11. 不做
+
+- 用户自助撤回按钮、`DataSubscription` 撤回字段、试用、提醒邮件（B 期）。
+- 拒付胜诉自动恢复。
+- 邀请码跨品牌绑定。
+- kaitu 品牌任何行为变化（钱包门对 kaitu 恒放行；kaitu 不走 Stripe）。
+
 ## 12. 实施记录（2026-10-08）
 
 实施中由安全审查 / 测试纠正、与上文设计不同的地方（以代码为准）：
@@ -366,10 +373,3 @@ type SubscriptionConsent struct {
 4. **钱包路由**是 8 个（不是 7 个）。
 5. **按设计保留、写明**：任一张 invoice 全额退款 / 拒付都终止整个订阅（"全额退款 = 终止合作"）；无同意记录的订阅撤回全额退。
 6. **后续（不在 A 期）**：Apple 的 `revokeSubscription`（开途 + overleap 共用）有同样的叠加入账收回放行问题，待决定是否修；对账推进 `CurrentPeriodEnd` 后续费入账的 `priorPeriodEnd` 偏大、可能少算赠送时长（原有问题）。
-
-## 11. 不做
-
-- 用户自助撤回按钮、`DataSubscription` 撤回字段、试用、提醒邮件（B 期）。
-- 拒付胜诉自动恢复。
-- 邀请码跨品牌绑定。
-- kaitu 品牌任何行为变化（钱包门对 kaitu 恒放行；kaitu 不走 Stripe）。
