@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"github.com/kaitu-io/k2/rule"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -74,5 +75,26 @@ func TestRuleRefreshLoop_FiresImmediately(t *testing.T) {
 		// good
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("refreshAction did not fire within 100ms of loop start")
+	}
+}
+
+// A cold cache must be seeded from the embedded archive BEFORE the networked
+// refresh starts. EnsureBundles holds .ensure.lock for the whole download (up
+// to 30s), and the connect path's SeedFromEmbedIfEmpty waits at most 10s for
+// that lock — so a connect right after daemon start on a fresh install, with a
+// slow rule source, failed with 504 "no bundle on disk after embedded seed"
+// (reproduced on testlab Win11, 0.4.11 and 0.4.12). appext.PrefetchRules
+// already seeds first; this pins the daemon to the same order. A cancelled ctx
+// makes the download fail immediately, so only the seed can leave bundles.
+func TestDoRefreshRules_SeedsColdCacheBeforeDownload(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	d := &Daemon{}
+	d.doRefreshRules(ctx, dir)
+
+	if n := len(rule.ListRegions(dir)); n == 0 {
+		t.Fatal("cold cache still empty after doRefreshRules: embedded seed did not run before the download")
 	}
 }

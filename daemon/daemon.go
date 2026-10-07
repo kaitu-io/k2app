@@ -617,6 +617,13 @@ func (d *Daemon) runRuleRefreshLoop(ctx context.Context, interval time.Duration)
 // doRefreshRules is the default refreshAction — performs a bounded
 // EnsureBundles call with a 30s overall timeout.
 func (d *Daemon) doRefreshRules(ctx context.Context, dir string) {
+	// Seed a cold cache first (an extract, no network), as appext.PrefetchRules
+	// does. EnsureBundles holds .ensure.lock for the whole download, and the
+	// connect path's own seed only waits 10s for that lock — a connect right
+	// after daemon start on a fresh install would otherwise 504 on a slow source.
+	if err := rule.SeedFromEmbedIfEmpty(dir); err != nil {
+		slog.Warn("rule refresh: seed from embed failed", "err", err, "dir", dir)
+	}
 	dlCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if err := rule.EnsureBundles(dlCtx, dir, rule.DefaultSources); err != nil {
