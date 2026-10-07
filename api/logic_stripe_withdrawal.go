@@ -33,8 +33,6 @@ const (
 	withdrawStatusDone      = "done"
 	withdrawStatusAbandoned = "abandoned"
 
-	consentTextVersion = "2026-10-v1"
-
 	withdrawWindowDays    = 14
 	terminationNoticeSlop = 48 * 3600
 	annualPeriodMinDays   = 360
