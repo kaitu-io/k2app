@@ -17,6 +17,37 @@ ${Using:StrFunc} UnStrRep
 !define SERVICE_NAME "kaitu"
 !define SERVICE_EXE "k2.exe"
 
+; Versioned shortcut icon (K2_SHORTCUT_ICON). Explorer caches a shortcut's icon by the icon FILE
+; PATH and never re-reads it when that file is replaced in place — not on
+; reboot, `ie4uinit -ClearIconCache`, or SHChangeNotify (Win11, 2026-10-07:
+; after the logo change, upgraded installs kept the old icon while the same
+; exe copied to a new path showed the new one). Every shortcut therefore
+; points at a per-version .ico, so each upgrade is a cache miss. Defined in
+; NSIS_HOOK_POSTINSTALL, not here: this file is included before the template
+; defines INSTALLERICON / VERSION.
+
+; Re-point an existing .lnk's icon without recreating it (keeps its target,
+; arguments and AppUserModelId). No-op when the shortcut is absent.
+!macro K2_SET_SHORTCUT_ICON shortcut icon
+  ${If} ${FileExists} "${shortcut}"
+    Push $0
+    Push $1
+    !insertmacro ComHlpr_CreateInProcInstance ${CLSID_ShellLink} ${IID_IShellLink} r0 ""
+    ${If} $0 P<> 0
+      ${IUnknown::QueryInterface} $0 '("${IID_IPersistFile}",.r1)'
+      ${If} $1 P<> 0
+        ${IPersistFile::Load} $1 '("${shortcut}", ${STGM_READWRITE})'
+        ${IShellLink::SetIconLocation} $0 '("${icon}", 0)'
+        ${IPersistFile::Save} $1 '("${shortcut}", 1)'
+        ${IUnknown::Release} $1 ""
+      ${EndIf}
+      ${IUnknown::Release} $0 ""
+    ${EndIf}
+    Pop $1
+    Pop $0
+  ${EndIf}
+!macroend
+
 ; ============================================================================
 ; NSIS_HOOK_PREINIT - System Requirements Check
 ; ============================================================================
@@ -334,16 +365,33 @@ ${Using:StrFunc} UnStrRep
   FileWrite $9 "post_install_sc_query_output=$1$\r$\n"
   FileClose $9
 
+  ; Step 2b: Versioned shortcut icon (see K2_SET_SHORTCUT_ICON above)
+  ; INSTALLERICON comes from bundle.windows.nsis.installerIcon in tauri.conf*.json.
+  ; Without it shortcuts would keep the exe path and the stale cached logo, so fail the build.
+  !if "${INSTALLERICON}" == ""
+    !error "bundle.windows.nsis.installerIcon must be set: versioned shortcut icon needs it"
+  !endif
+  !define K2_SHORTCUT_ICON "$INSTDIR\app-${VERSION}.ico"
+  Delete "$INSTDIR\app-*.ico"
+  File "/oname=${K2_SHORTCUT_ICON}" "${INSTALLERICON}"
+
   ; Step 3: Create taskbar shortcut
   DetailPrint "Creating taskbar shortcut..."
   ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" "User Pinned"
   ${If} $0 != ""
-    CreateShortCut "$0\TaskBar\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe" "" "$INSTDIR\${MAINBINARYNAME}.exe" 0
+    CreateShortCut "$0\TaskBar\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe" "" "${K2_SHORTCUT_ICON}" 0
   ${Else}
     StrCpy $0 "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"
     CreateDirectory "$0"
-    CreateShortCut "$0\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe" "" "$INSTDIR\${MAINBINARYNAME}.exe" 0
+    CreateShortCut "$0\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe" "" "${K2_SHORTCUT_ICON}" 0
   ${EndIf}
+
+  ; Step 3b: Desktop + Start menu shortcuts were created by the template
+  ; (and skipped entirely in update mode) with the exe's icon — re-point them.
+  !insertmacro K2_SET_SHORTCUT_ICON "$DESKTOP\${PRODUCTNAME}.lnk" "${K2_SHORTCUT_ICON}"
+  !insertmacro K2_SET_SHORTCUT_ICON "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk" "${K2_SHORTCUT_ICON}"
+  !insertmacro K2_SET_SHORTCUT_ICON "$SMPROGRAMS\${PRODUCTNAME}.lnk" "${K2_SHORTCUT_ICON}"
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 
   ; Step 4: Clear Windows PCA records (prevents forced admin elevation)
   DetailPrint "Clearing compatibility records..."
@@ -393,6 +441,8 @@ ${Using:StrFunc} UnStrRep
   DetailPrint "============================================"
   DetailPrint "Preparing for uninstallation..."
   DetailPrint "============================================"
+
+  Delete "$INSTDIR\app-*.ico"
 
   ; Step 1: Stop desktop application
   DetailPrint "Stopping desktop application..."

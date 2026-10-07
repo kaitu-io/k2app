@@ -53,6 +53,7 @@
       "signCommand": "bash windows-sign.sh %1",
       "nsis": {
         "installMode": "perMachine",
+        "installerIcon": "icons/icon.ico",
         "languages": ["SimpChinese", "English"],
         "installerHooks": "installer-hooks.nsh"
       }

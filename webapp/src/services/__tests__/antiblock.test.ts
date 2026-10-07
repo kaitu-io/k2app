@@ -328,9 +328,12 @@ describe('antiblock — ts freshness + single-record store + resolveEntries', ()
       }) as typeof document.head.appendChild,
     );
     await resolveEntries();
-    await new Promise((r) => setTimeout(r, 30)); // let background upgrade land
+    // The background upgrade (slow mirror + signature verify) has no fixed
+    // latency — a fixed 30ms sleep flaked on a loaded CI runner (run 37642444855).
+    await vi.waitFor(() => {
+      expect(JSON.parse(store['k2_entry_cfg']!).ts).toBe(200);
+    }, { timeout: 2000 });
     const rec = JSON.parse(store['k2_entry_cfg']!);
-    expect(rec.ts).toBe(200);
     expect(rec.entries).toEqual(['https://new.example']);
   });
 
