@@ -38,6 +38,7 @@ const (
 	withdrawWindowDays    = 14
 	terminationNoticeSlop = 48 * 3600
 	annualPeriodMinDays   = 360
+	withdrawalLockSec     = 600
 )
 
 // withdrawInvoice 一张已付 invoice 中撤回需要的事实（从 Stripe 读，适配点在 parseWithdrawInvoice）。
@@ -65,9 +66,10 @@ type withdrawQuote struct {
 
 // stripeChargeState PI 最新一笔 charge 的退款 / 拒付状态。
 type stripeChargeState struct {
-	Refunded  bool
-	Disputed  bool
-	Remaining int64 // amount - amount_refunded
+	Refunded       bool
+	Disputed       bool
+	AmountRefunded int64 // 这笔 charge 上已有的退款（不含我们按 metadata 找到的自家撤回退款——那种情况在查重时已返回）
+	Remaining      int64 // amount - amount_refunded
 }
 
 // SDK 测试替换点。
@@ -114,7 +116,8 @@ var (
 			return stripeChargeState{}, fmt.Errorf("payment intent %s has no charge", pi)
 		}
 		ch := p.LatestCharge
-		return stripeChargeState{Refunded: ch.Refunded, Disputed: ch.Disputed, Remaining: ch.Amount - ch.AmountRefunded}, nil
+		return stripeChargeState{Refunded: ch.Refunded, Disputed: ch.Disputed, AmountRefunded: ch.AmountRefunded,
+			Remaining: ch.Amount - ch.AmountRefunded}, nil
 	}
 
 	stripeCreateWithdrawalRefund = func(key, pi string, amount int64, invoiceID, requestID string) (string, int64, error) {
@@ -123,10 +126,15 @@ var (
 			Amount:        stripe.Int64(amount),
 			Metadata:      map[string]string{"center_withdrawal": invoiceID, "center_request": requestID},
 		}
-		params.SetIdempotencyKey("withdraw-" + invoiceID)
+		// 金额进幂等键：作废后按新金额重新发起时，不会撞上 24 小时内同键不同参数的报错。
+		params.SetIdempotencyKey(fmt.Sprintf("withdraw-%s-%d", invoiceID, amount))
 		r, err := refund.Client{B: stripe.GetBackend(stripe.APIBackend), Key: key}.New(params)
 		if err != nil {
 			return "", 0, err
+		}
+		// 幂等窗口内可能拿回一笔之前失败 / 取消的退款：不能当成功记账。
+		if r.Status == stripe.RefundStatusFailed || r.Status == stripe.RefundStatusCanceled {
+			return "", 0, fmt.Errorf("refund %s status %s", r.ID, r.Status)
 		}
 		return r.ID, r.Amount, nil
 	}
@@ -395,6 +403,11 @@ func executeStripeWithdrawal(ctx context.Context, req *withdrawalRequest) (*with
 	requestID := rows[0].RequestID
 	subID := rows[0].ProviderSubscriptionID
 	key := stripeSecretKey()
+	release, err := lockWithdrawalRequest(requestID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 
 	if rows, err = appendPostNoticeRows(ctx, rows); err != nil {
 		return nil, err
@@ -501,6 +514,24 @@ func openOrCreateWithdrawal(ctx context.Context, req *withdrawalRequest) ([]Stat
 	return rows, nil
 }
 
+// lockWithdrawalRequest 抢占请求的占位锁（primary 行的 LockedUntil，条件 UPDATE）。
+// 已被占用 → 报错，让操作员稍后重试。release 清锁；进程崩溃时锁在 withdrawalLockSec 后自然过期。
+func lockWithdrawalRequest(requestID string) (release func(), err error) {
+	now := time.Now().Unix()
+	res := getDB().Model(&StatutoryRefund{}).
+		Where("request_id = ? AND kind = ? AND locked_until < ?", requestID, withdrawKindPrimary, now).
+		Update("locked_until", now+withdrawalLockSec)
+	if res.Error != nil {
+		return nil, res.Error
+	}
+	if res.RowsAffected != 1 {
+		return nil, fmt.Errorf("withdrawal request %s is being processed by another operator — retry in a few minutes", requestID)
+	}
+	return func() {
+		getDB().Model(&StatutoryRefund{}).Where("request_id = ? AND kind = ?", requestID, withdrawKindPrimary).Update("locked_until", 0)
+	}, nil
+}
+
 func hasPending(rows []StatutoryRefund) bool {
 	for _, r := range rows {
 		if r.Status == withdrawStatusPending {
@@ -536,14 +567,15 @@ func refundWithdrawalRow(ctx context.Context, key string, row *StatutoryRefund) 
 		row.RefundNote = fmt.Sprintf("skipped: charge refunded=%v disputed=%v", st.Refunded, st.Disputed)
 		return save(map[string]any{"refund_note": row.RefundNote})
 	}
-	amount = row.Amount
+	// 这笔 charge 上已有别的退款（如运营手工补偿）：应退总额不超过计划额，先扣掉已退的；
+	// 再封顶到 charge 剩余可退额。
+	amount = min(row.Amount-st.AmountRefunded, st.Remaining)
 	note := ""
-	if st.Remaining < amount {
-		note = fmt.Sprintf("capped from %d to %d (charge already partly refunded)", amount, st.Remaining)
-		amount = st.Remaining
+	if amount < row.Amount {
+		note = fmt.Sprintf("reduced from %d to %d (charge already refunded %d)", row.Amount, max(amount, 0), st.AmountRefunded)
 	}
 	if amount <= 0 {
-		row.RefundNote = "skipped: nothing left to refund on the charge"
+		row.RefundNote = "skipped: " + note
 		return save(map[string]any{"refund_note": row.RefundNote})
 	}
 
@@ -577,6 +609,11 @@ func abandonStripeWithdrawal(ctx context.Context, requestID string, operatorID u
 	if len(rows) == 0 || !hasPending(rows) {
 		return nil, fmt.Errorf("request %s has no pending rows", requestID)
 	}
+	release, err := lockWithdrawalRequest(requestID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	key := stripeSecretKey()
 	refunded := false
 	for i := range rows {

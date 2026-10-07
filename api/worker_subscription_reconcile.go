@@ -11,6 +11,7 @@ import (
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // =====================================================================
@@ -250,22 +251,41 @@ func reconcileStripeSubscription(ctx context.Context, sub *Subscription, now int
 		}
 	}
 
-	// 活跃且周期在未来 → cover-through 权益(与 credit 路径同一收敛不变式)。原子条件
-	// UPDATE,不先读整行再比较——避免与并发 credit 事务的 lost-update。
+	// 活跃且周期在未来 → cover-through 权益(与 credit 路径同一收敛不变式)。事务内先锁订阅行
+	// 再锁用户行（与 creditStripeInvoice / 收回原语同序）：revoked 在锁内判，并发收回已提交则
+	// 不延长；补出来的这段同步累加进 PaidThrough，之后全额退款 / 拒付才扣得掉。
 	if status == "active" && periodEnd > now {
-		// revoked 门进 SQL：本轮读到的 sub 可能早于并发的收回（全额退款 / 拒付 / 撤回），
-		// 先读后判会把刚收回的会员又延长回去。
-		res := db.Get().Model(&User{}).
-			Where("id = ? AND expired_at < ?", sub.UserID, periodEnd).
-			Where("NOT EXISTS (SELECT 1 FROM subscriptions WHERE id = ? AND status = ?)", sub.ID, "revoked").
-			Update("expired_at", periodEnd)
-		if res.Error != nil {
-			return changed, res.Error
+		var granted int64
+		err := withDeadlockRetry(ctx, 3, func(tx *gorm.DB) error {
+			granted = 0
+			var cur Subscription
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&cur, sub.ID).Error; err != nil {
+				return err
+			}
+			if cur.Status == "revoked" {
+				return nil
+			}
+			var u User
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&u, sub.UserID).Error; err != nil {
+				return err
+			}
+			if u.ExpiredAt >= periodEnd {
+				return nil
+			}
+			granted = periodEnd - max(u.ExpiredAt, now)
+			if err := tx.Model(&User{}).Where("id = ?", u.ID).Update("expired_at", periodEnd).Error; err != nil {
+				return err
+			}
+			return tx.Model(&Subscription{}).Where("id = ?", cur.ID).
+				Update("paid_through", max(cur.PaidThrough, now)+granted).Error
+		})
+		if err != nil {
+			return changed, err
 		}
-		if res.RowsAffected > 0 {
+		if granted > 0 {
 			changed = true
-			log.Warnf(ctx, "[SUB-RECONCILE] stripe cover-through user %d expiry→%d (sub=%s)",
-				sub.UserID, periodEnd, sub.ProviderSubscriptionID)
+			log.Warnf(ctx, "[SUB-RECONCILE] stripe cover-through user %d expiry→%d (+%ds, sub=%s)",
+				sub.UserID, periodEnd, granted, sub.ProviderSubscriptionID)
 		}
 	}
 	return changed, nil

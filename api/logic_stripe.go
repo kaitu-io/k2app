@@ -223,9 +223,6 @@ func creditStripeInvoice(ctx context.Context, tx *gorm.DB, f *stripeInvoiceFacts
 		sub.Environment = "sandbox"
 	}
 	sub.Status = deriveVerifiedStatus(sub.CurrentPeriodEnd, sub.Status, now)
-	if !alreadyCredited && f.PeriodEnd > sub.PaidThrough {
-		sub.PaidThrough = f.PeriodEnd
-	}
 	if err := tx.Save(&sub).Error; err != nil {
 		return err
 	}
@@ -255,10 +252,19 @@ func creditStripeInvoice(ctx context.Context, tx *gorm.DB, f *stripeInvoiceFacts
 	}
 
 	// Cover-through 收敛不变式——与 creditAppleTransaction 逐字对称,见彼处注释。
+	granted := creditSeconds
 	if covered := coverThrough(user.ExpiredAt, f.PeriodEnd); covered > user.ExpiredAt {
 		log.Warnf(ctx, "[creditStripeInvoice] cover-through corrected user %d expiry %d→%d (invoice=%s)",
 			userID, user.ExpiredAt, covered, f.InvoiceID)
+		granted += covered - user.ExpiredAt
 		user.ExpiredAt = covered
+	}
+	// PaidThrough 按"实际发放的付费时长"累加，不取 invoice 周期末：入账晚到（webhook 重试
+	// 最多 3 天）时 applyGiftCredit 从 now 起算整期，周期末会比实际发放的短，退款就少扣。
+	// 消耗按日历推进：剩余付费时长 = PaidThrough − now。
+	if err := tx.Model(&Subscription{}).Where("id = ?", sub.ID).
+		Update("paid_through", max(sub.PaidThrough, now)+granted).Error; err != nil {
+		return err
 	}
 
 	if user.IsActivated == nil || !*user.IsActivated {
@@ -315,14 +321,13 @@ func applyStripeSubscriptionUpdate(ctx context.Context, s *stripe.Subscription) 
 		}
 		return err
 	}
-	if sub.Status == "revoked" {
-		return nil // terminal：绝不复活
-	}
 	updates := map[string]any{"auto_renew": !s.CancelAtPeriodEnd}
 	if st := stripeSubStatus(s.Status); st != "" {
 		updates["status"] = st
 	}
-	if err := getDB().Model(&Subscription{}).Where("id = ?", sub.ID).Updates(updates).Error; err != nil {
+	// revoked 门进 SQL：上面的读与这里的写之间，并发的收回（全额退款 / 拒付）可能已提交，
+	// 不带条件的写会把 revoked 覆盖回 active，三道终态门随之失效。
+	if err := getDB().Model(&Subscription{}).Where("id = ? AND status <> ?", sub.ID, "revoked").Updates(updates).Error; err != nil {
 		return err
 	}
 	log.Infof(ctx, "[StripeWebhook] sub %s autoRenew=%v status=%v", s.ID, updates["auto_renew"], updates["status"])
@@ -365,8 +370,9 @@ func markStripeSubscriptionDeleted(ctx context.Context, s *stripe.Subscription) 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, sub.UserID).Error; err != nil {
 			return fmt.Errorf("lock user %d: %w", sub.UserID, err)
 		}
-		cut := min(max(min(sub.PaidThrough, eventPeriodEnd)-s.EndedAt, 0), max(user.ExpiredAt-s.EndedAt, 0))
-		if sub.PaidThrough > s.EndedAt {
+		paidThrough := stripePaidThrough(&sub)
+		cut := min(max(min(paidThrough, eventPeriodEnd)-s.EndedAt, 0), max(user.ExpiredAt-s.EndedAt, 0))
+		if paidThrough > s.EndedAt {
 			if err := tx.Model(&Subscription{}).Where("id = ?", sub.ID).Update("paid_through", s.EndedAt).Error; err != nil {
 				return err
 			}

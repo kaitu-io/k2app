@@ -947,6 +947,9 @@ type StatutoryRefund struct {
 	OperatorID             uint64  `json:"operatorId"`
 	Source                 string  `gorm:"type:varchar(16)" json:"source"` // admin（B 期加 user）
 	Reason                 string  `gorm:"type:varchar(255)" json:"reason"`
+	// LockedUntil 只在 primary 行上用：执行 / 作废期间的占位锁（条件 UPDATE 抢占），防止同一请求
+	// 被并发续跑——幂等键 24 小时后失效，两路都没查到自家退款就会各建一笔。
+	LockedUntil int64 `gorm:"not null;default:0" json:"-"`
 }
 
 // SubscriptionConsent 记录结账时用户勾选的条款同意（含"要求立即开始服务"），

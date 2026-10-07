@@ -429,7 +429,8 @@ func TestStripeWithdrawalExecutor(t *testing.T) {
 		}{
 			{"disputed", stripeChargeState{Disputed: true, Remaining: 7900}, 0, "disputed=true", 0},
 			{"refunded", stripeChargeState{Refunded: true}, 0, "refunded=true", 0},
-			{"partly refunded → capped", stripeChargeState{Remaining: 500}, 500, "capped", 1},
+			// 运营此前已手工退 7400 → 只再退 计划额 − 7400（总额不超过计划额），want 在下面按计划额算
+			{"partly refunded → reduced", stripeChargeState{AmountRefunded: 7400, Remaining: 500}, -7400, "reduced", 1},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				f, w := installStripeFakes(t), installWithdrawFakes(t)
@@ -439,7 +440,11 @@ func TestStripeWithdrawalExecutor(t *testing.T) {
 				res, err := executeStripeWithdrawal(ctx, &withdrawalRequest{UserID: fx.u.ID, NoticeAt: now - 60, Mode: withdrawModeWithdrawal})
 				require.NoError(t, err)
 				assert.Equal(t, tc.calls, w.createCount())
-				assert.Equal(t, tc.want, res.Rows[0].RefundedAmount)
+				want := tc.want
+				if want < 0 {
+					want += res.Rows[0].Amount
+				}
+				assert.Equal(t, want, res.Rows[0].RefundedAmount)
 				assert.Contains(t, res.Rows[0].RefundNote, tc.note)
 				assert.Equal(t, "revoked", reloadStripeSub(t, fx.subID).Status)
 				assert.Equal(t, []string{fx.subID}, f.cancels())
@@ -463,6 +468,29 @@ func TestStripeWithdrawalExecutor(t *testing.T) {
 		assert.Equal(t, "Withdrawal within 14 days - "+fx.inv.InvoiceID, hs[0].Reason)
 		assert.Contains(t, f.alertText(), "[WITHDRAWAL]")
 		assert.NotContains(t, f.alertText(), "[STRIPE-REFUND]")
+	})
+
+	// 同一请求被并发续跑：占位锁被占 → 第二路报错，不碰 Stripe
+	t.Run("ConcurrentResumeLocked", func(t *testing.T) {
+		f, w := installStripeFakes(t), installWithdrawFakes(t)
+		now := time.Now().Unix()
+		fx := seedWithdrawFixture(t, f, w, now-2*tDay, 365, 7900, stripe.InvoiceBillingReasonSubscriptionCreate, true)
+		f.cancelErr = errors.New("stripe down")
+		req := &withdrawalRequest{UserID: fx.u.ID, NoticeAt: now - 60, Mode: withdrawModeWithdrawal}
+		_, err := executeStripeWithdrawal(ctx, req)
+		require.Error(t, err)
+		reqID := withdrawRows(t, fx.u.ID)[0].RequestID
+		release, err := lockWithdrawalRequest(reqID) // 另一位操作员正在执行
+		require.NoError(t, err)
+		_, err = executeStripeWithdrawal(ctx, req)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "being processed")
+		_, err = abandonStripeWithdrawal(ctx, reqID, 1, "x")
+		require.Error(t, err)
+		release()
+		_, err = executeStripeWithdrawal(ctx, req)
+		require.NoError(t, err)
+		assert.Equal(t, 1, w.createCount())
 	})
 
 	// #27 并发取消：Cancel 报非 404 错误，再 Get 已 canceled → 成功

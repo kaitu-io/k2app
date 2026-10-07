@@ -431,6 +431,67 @@ func TestStripeRevoke(t *testing.T) {
 		assert.Contains(t, f.alertText(), "on revoked sub")
 	})
 
+	// 老行 PaidThrough=0 → 按 CurrentPeriodEnd 扣（fail-closed）
+	t.Run("LegacyZeroPaidThrough_FailClosed", func(t *testing.T) {
+		f := installStripeFakes(t)
+		now := time.Now().Unix()
+		u := createStripeTestUser(t, BrandOverleap)
+		subID, pi := "sub_"+stripeUniq(), "pi_"+stripeUniq()
+		seedStripeSubPaid(t, u, subID, now+30*day, 0, now+30*day)
+		f.subByPI[pi] = subID
+		f.remote[subID] = liveRemoteSub(subID, u.UUID, "price_x", now+30*day)
+		require.Equal(t, 200, post(t, chargeRefundedPayload("evt_"+stripeUniq(), "ch_lg", pi, 999, 999, true)))
+		assert.InDelta(t, time.Now().Unix(), reloadUser(t, u.ID).ExpiredAt, 5)
+	})
+
+	// 对账补出来的会员（入账失败、Stripe 显示已付）之后全额退款 → 补出来的这段也收回
+	t.Run("ReconcileCoverThroughThenRefund_Revoked", func(t *testing.T) {
+		f := installStripeFakes(t)
+		now := time.Now().Unix()
+		u := createStripeTestUser(t, BrandOverleap)
+		subID, pi := "sub_"+stripeUniq(), "pi_"+stripeUniq()
+		sub := seedStripeSubPaid(t, u, subID, now+2*day, now+2*day, now+2*day)
+		f.remote[subID] = liveRemoteSub(subID, u.UUID, "price_x", now+32*day)
+		_, err := reconcileStripeSubscription(context.Background(), sub, now)
+		require.NoError(t, err)
+		require.Equal(t, now+32*day, reloadUser(t, u.ID).ExpiredAt)
+
+		f.subByPI[pi] = subID
+		require.Equal(t, 200, post(t, chargeRefundedPayload("evt_"+stripeUniq(), "ch_rc", pi, 999, 999, true)))
+		assert.InDelta(t, time.Now().Unix(), reloadUser(t, u.ID).ExpiredAt, 5)
+	})
+
+	// 入账晚到：周期 10 天前就开始，invoice.paid 今天才入账 → 从今天起发了整期 30 天；
+	// 此时全额退款必须扣掉这 30 天（按周期末算只扣 20 天，白拿 10 天）
+	t.Run("LateCreditThenRefund_FullyRevoked", func(t *testing.T) {
+		f := installStripeFakes(t)
+		now := time.Now().Unix()
+		u := createStripeTestUser(t, BrandOverleap)
+		p := createStripeTestPlan(t)
+		subID, pi := "sub_"+stripeUniq(), "pi_"+stripeUniq()
+		require.Equal(t, 200, post(t, invoicePaidPayload("evt_"+stripeUniq(), "in_"+stripeUniq(), subID, u.UUID, p.PID, p.StripePriceID, now-10*day, now+20*day)))
+		require.InDelta(t, now+30*day, reloadUser(t, u.ID).ExpiredAt, 5)
+		f.subByPI[pi] = subID
+		f.remote[subID] = liveRemoteSub(subID, u.UUID, p.StripePriceID, now+20*day)
+		require.Equal(t, 200, post(t, chargeRefundedPayload("evt_"+stripeUniq(), "ch_late", pi, 999, 999, true)))
+		assert.InDelta(t, time.Now().Unix(), reloadUser(t, u.ID).ExpiredAt, 5)
+	})
+
+	// subscription.updated 不能把 revoked 写回 active
+	t.Run("UpdateNeverResurrectsRevoked", func(t *testing.T) {
+		installStripeFakes(t)
+		now := time.Now().Unix()
+		u := createStripeTestUser(t, BrandOverleap)
+		subID := "sub_" + stripeUniq()
+		sub := seedStripeSub(t, u, subID, now+30*day, now)
+		require.NoError(t, db.Get().Model(&Subscription{}).Where("id = ?", sub.ID).
+			Updates(map[string]any{"status": "revoked", "auto_renew": false}).Error)
+		require.Equal(t, 200, post(t, subscriptionEventPayload("evt_"+stripeUniq(), "customer.subscription.updated", subID, false, "active")))
+		s := reloadStripeSub(t, subID)
+		assert.Equal(t, "revoked", s.Status)
+		assert.False(t, s.AutoRenew)
+	})
+
 	// #12 对账 cover-through 遇 revoked → 到期不变
 	t.Run("ReconcileSkipsRevoked", func(t *testing.T) {
 		f := installStripeFakes(t)
