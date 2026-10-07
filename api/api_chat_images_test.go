@@ -247,7 +247,8 @@ func TestChatImages_ViewRejects(t *testing.T) {
 }
 
 func TestChatImages_SlackShowsLinkUnderBrandSite(t *testing.T) {
-	m := &ConversationMessage{ID: 7, SenderType: SenderVisitor, Kind: MsgImage, Content: "chat/overleap/202610/x.png"}
+	chatTokenSecret(t) // 查看链接要签名；mock-only CI 没有 jwt.secret
+	m :=&ConversationMessage{ID: 7, SenderType: SenderVisitor, Kind: MsgImage, Content: "chat/overleap/202610/x.png"}
 	text, post := chatSlackMessageText(BrandOverleap, m)
 	require.True(t, post)
 	assert.Contains(t, text, "<"+BrandOverleap.Config().BaseURL+"/api/chat/images/")
