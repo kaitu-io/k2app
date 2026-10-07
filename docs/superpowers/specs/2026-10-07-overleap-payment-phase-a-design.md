@@ -1,7 +1,9 @@
-# Overleap 支付 A 期：堵漏 — 实施设计
+# Overleap 支付 A 期：堵漏 + 撤回执行器 — 实施设计（v2）
 
-日期：2026-10-07 · 分支 `feat/overleap-trial-payment` · 上位 spec：`docs/superpowers/specs/2026-10-07-overleap-trial-payment-design.md` §3.2、§8
-目标：今天就存在的退款 / 钱包后门全部关掉，条款改成最终退款政策。不引入试用、不做自助撤回按钮（B 期）。
+日期：2026-10-07 · 分支 `feat/overleap-trial-payment` · 上位 spec：`2026-10-07-overleap-trial-payment-design.md`
+v1 → v2：经两路 review（后端 6/10、文案 4/10）修订。主要变化：撤回执行器（后台触发）与结账同意从 B 期提前到 A 期——条款承诺的"折算退款并结束会员"必须在 A 期就能执行，折算也必须有"用户要求立即开始"的同意记录做依据。
+
+**A 期目标**：(1) 关掉今天就存在的退款 / 钱包后门；(2) 条款改成最终政策，且政策里的每一句都有代码能兑现。不做试用、不做用户自助按钮（B 期）。
 
 ## 0. 现状（已核对代码与生产库，2026-10-07）
 
@@ -9,170 +11,258 @@
 |---|---|---|
 | Stripe `charge.refunded` | 只发 Slack，会员不收回、订阅不取消 | `api/logic_stripe.go` `recordStripeRefundAlert` |
 | Stripe `charge.dispute.created` | 只发 Slack | `recordStripeDisputeAlert` |
-| 后台 / MCP `refund_order` | 退款打进钱包，不看品牌；overleap 的 Apple 订单也能退 | `api_admin_order_refund.go` → approval → `ProcessOrderRefund`（唯一执行点，`logic_order.go:124`） |
+| Stripe 后台"立即取消" | `customer.subscription.deleted` → 只置 `expired`，`expired_at` 不动，会员用到期末 | `markStripeSubscriptionDeleted` |
+| 迟到 `invoice.paid` | revoked 状态不复活，但**时长照加** | `creditStripeInvoice` |
+| 每日对账 | cover-through 的 `UPDATE users` 不看订阅是否 revoked | `worker_subscription_reconcile.go:255` |
+| 后台 / MCP `refund_order` | 退款进钱包，不看品牌 | `ProcessOrderRefund`（唯一执行点，`logic_order.go:124`，唯一调用方 `logic_approval_callbacks.go:505`） |
 | 钱包 `/api/wallet/*`（7 个路由） | 后端不看品牌 | `route.go:221-235` |
-| webapp | overleap `features.wallet=false`，界面已隐藏 | `webapp/src/brands/overleap/index.ts:59` |
-| 条款 | §7 "7 天内可退，退到钱包"、§8 加密货币提现 | `sites/overleap/public/legal/terms-of-service.md` |
-| 帮助页 | "If {brand} doesn't work for you, email us and we'll sort it out."（22 种语言） | `sites/overleap/messages/*/help.json` `billing.items.refund` |
-| 生产数据 | overleap 7 个用户；订单 0；钱包余额 0；提现账户 0；分销商 0；被邀请 0；订阅 1 条（apple, expired） | 2026-10-07 只读查询 |
+| 分销返现入钱包 | 不看收款人品牌 | `addCashbackIncomeInTx`（`logic_wallet.go:165`） |
+| 结账 | 无条款同意、无"立即开始"确认 | `api_stripe.go` Checkout 参数 |
+| 条款 / 帮助页 | §7 "7 天可退到钱包"、§8 加密货币提现；帮助页 "email us and we'll sort it out" | `sites/overleap/public/legal/terms-of-service.md`、`messages/*/help.json`（20 个语言） |
+| 生产数据 | overleap 7 个用户；订单 / 钱包余额 / 提现账户 / 分销商 / 被邀请均为 0；Stripe 订阅 0；Apple 订阅 1（expired） | 2026-10-07 只读查询 |
 
-结论：所有闸门对现有数据零影响，不需要迁移。
+所有改动对现有数据零影响，无迁移。
 
-## 1. Stripe 全额退款 / 拒付 → 收回会员 + 取消订阅
+## 1. 统一的 Stripe 收回原语
 
-### 1.1 规则
+新函数（`logic_stripe_revoke.go`），**不复用** Apple 的 `revokeSubscription`（它不锁订阅行、加锁顺序与入账相反、原因文案写死中文）：
+
+```go
+// revokeStripeSubscription 收回一条 Stripe 订阅撑着的会员并置 revoked。幂等。
+// 锁顺序与 creditStripeInvoice 一致：先订阅行，再用户行。调用方包 withDeadlockRetry。
+func revokeStripeSubscriptionInTx(ctx, tx, providerSubID, reason string) (revoked bool, err error)
+```
+
+1. `SELECT … FOR UPDATE` 订阅行（provider=stripe）。找不到 → `(false, nil)`；已是 `revoked` → `(false, nil)`。
+2. `FOR UPDATE` 用户行。规则同 Apple：用户到期落在 `(now, sub.CurrentPeriodEnd]` 才砍到 now（叠加的赠送时长不误伤）；写 `UserProHistory{Type: VipRefund, Days: -n, Reason: reason}`。
+3. 订阅置 `revoked`、`auto_renew=false`。
+
+`reason` 一律英文（overleap 用户在 `/api/user/pro-histories` 看得到），例：`"Stripe full refund - ch_…"`、`"Stripe dispute - dp_…"`、`"Withdrawal within 14 days - in_…"`。
+
+**revoked 是终态，三处补门**：
+- `creditStripeInvoice`：锁到订阅行后，若非首张且 `sub.Status == "revoked"` → 告警 `[STRIPE-CREDIT] invoice on revoked sub` 并 `return nil`，不加时长、不改订阅行。
+- `reconcileStripeSubscription` 的 cover-through：`UPDATE users … WHERE id=? AND expired_at<? AND NOT EXISTS (SELECT 1 FROM subscriptions WHERE id=? AND status='revoked')`。
+- 已有：`applyStripeSubscriptionUpdate` / `markStripeSubscriptionDeleted` 对 revoked 短路。
+
+**墓碑行**：本地没有订阅行（首张 invoice 入账曾失败）时，收回路径用 Stripe 订阅的 `metadata.user_uuid`（结账时写入，`api_stripe.go:90`）建一行 `status=revoked` 的订阅。之后 Stripe 重投那张 invoice，会命中上面 `creditStripeInvoice` 的门，不会补发整期会员。`user_uuid` 缺失 → 告警，不建行。
+
+## 2. Stripe 事件 → 收回 + 取消
 
 | 事件 | 条件 | 动作 |
 |---|---|---|
-| `charge.refunded` | **全额**：`ch.Refunded \|\| (ch.Amount > 0 && ch.AmountRefunded >= ch.Amount)` | 收回会员、本地订阅置 `revoked`、取消 Stripe 订阅、Slack 告警 |
-| `charge.refunded` | 部分退款 | 只告警（运营补偿，保留服务）——现状不变 |
-| `charge.dispute.created` | 任意 | 收回会员、置 `revoked`、取消 Stripe 订阅、Slack 告警 |
-| `charge.dispute.closed` | — | 不处理（胜诉也不自动恢复，人工判断）——现状不变 |
+| `charge.refunded` | 全额：`ch.Refunded \|\| (ch.Amount > 0 && ch.AmountRefunded >= ch.Amount)` | 收回 + 取消 Stripe 订阅 + 告警 |
+| `charge.refunded` | 部分 | 只告警（运营补偿或我们自己的撤回退款，§3 已处理会员）——不变 |
+| `charge.dispute.created` | 任意（含 `warning_needs_response` 询问） | 收回 + 取消 + 告警 |
+| `charge.dispute.closed` | — | 不自动处理；胜诉后客服按条款 7.7 恢复（运营说明） |
+| `customer.subscription.deleted` | `ended_at < sub.CurrentPeriodEnd`（后台立即取消，而非期末自然结束） | **会员截到 `ended_at`**（同 `(now, periodEnd]` 规则），订阅置 `expired`。这是"部分退款 + 立即取消"的手工路径兜底，后台没走执行器也不会漏收 |
 
-"全额退款 = 终止合作"是运营规则：想补偿又保留服务就做部分退款。写进告警文案和 `docs/` 运营说明（见 §5）。
-
-### 1.2 归属：charge → Stripe 订阅
-
-basil 版本的 Charge 已经没有 `invoice` 字段（stripe-go v82 `Charge` 结构里没有），不能从 charge 直接拿到订阅。现有代码按 customer 取"最新一条订阅"只够告警用，不能用来收回会员：同一个 customer 取消后再订阅会有多条订阅，退的可能是旧的那条。
-
-做法：用 `payment_intent` 查 Invoice Payments 精确定位。
-
-```
-stripeLookupSubscriptionByPaymentIntent(key, pi) (subID string, err error)
-  invoicepayment.List{payment: {type: payment_intent, payment_intent: pi}, expand: [data.invoice]}
-  → 第一条的 invoice.parent.subscription_details.subscription.id
-  没有结果 / 没有 parent 订阅 → ("", nil)  // 不是订阅扣款
-  API 错误 → ("", err)
-```
-
-- charge 的 PI：`ch.PaymentIntent.ID`；dispute 的 PI：`d.PaymentIntent.ID`（dispute 事件里 `charge` 只是 ID 字符串，但 `payment_intent` 也在，省一次取 charge）。
-- 是包级 `var`（对标 `stripeNewCheckoutSession`），测试替换，不打真 Stripe。key 逐调用传入。
-
-### 1.3 处理函数
+### 2.1 归属：charge / dispute → Stripe 订阅
 
 ```go
-// revokeStripeForChargeLoss 是全额退款 / 拒付的共同落点。reason 进告警和 UserProHistory。
-func revokeStripeForChargeLoss(ctx, cfg StripeConfig, pi, reason string) error
+var stripeSubscriptionByPaymentIntent = func(key, pi string) (subID string, err error)
 ```
 
-步骤：
-1. `pi == ""` → 告警"无法归属，人工处理"，返回 nil（重投也不会变出 PI）。
-2. `subID, err := stripeLookupSubscriptionByPaymentIntent(cfg.SecretKey, pi)`：`err` → 返回 err（500，Stripe 重投）；`subID == ""` → 告警"不是订阅扣款，人工处理"，返回 nil。
-3. 查本地 `Subscription{provider=stripe, provider_subscription_id=subID}`：
-   - 找到且 `status != revoked` → `revokeSubscription(ctx, &sub, "")`（`logic_apple_iap.go:512` 现成函数，provider 无关；`txnID=""` 跳过订单侧，Stripe 没有订单）。它的收回规则：只有用户到期落在 `(now, sub.CurrentPeriodEnd]` 里才砍到 now，叠加的赠送时长不误伤；写 `UserProHistory{VipRefund}`；订阅置 `revoked`。
-   - 已是 `revoked` → 跳过（重投 / 先退款后拒付）。
-   - 找不到（入账从没成功过）→ 不动本地，继续第 4 步。
-   - DB 错误 → 返回 err。
-4. `stripeCancelSubscription(cfg.SecretKey, subID, reason)`：先 Get，状态已是 `canceled` / `incomplete_expired` 就跳过；否则 `Cancel(prorate=false, invoice_now=false, cancellation_details.comment=reason)`。错误 → 返回 err（500 重投；第 3 步因 `revoked` 跳过，只重试取消）。
-5. 告警：`[STRIPE-REFUND]` / `[STRIPE-DISPUTE]`，带 charge/dispute id、金额、user_id、sub、"membership revoked, subscription canceled"。
+- `invoicepayment.Client.List{Payment: {Type: "payment_intent", PaymentIntent: pi}, Status: "paid", Expand: ["data.invoice"]}`。返回的是 `*Iter`：**必须** `for it.Next()` 后检查 `it.Err()`；`Err != nil` → 返回 err（500 重投）。只取第一条的 `invoice.parent.subscription_details.subscription.id`；没有 → `("", nil)`。
+- charge 取 `ch.PaymentIntent.ID`，dispute 取 `d.PaymentIntent.ID`（v82 两者 JSON 里的裸 ID 都能反序列化进 `.ID`，已核对）。
 
-顺序理由：先收回会员（本地、事务内、立即生效），再调外部 API 取消。取消失败靠重投补，收回不会因外部故障而延迟。
+### 2.2 处理流程 `revokeStripeForChargeLoss(ctx, pi, reason, alertTag)`
 
-后续事件的交互：取消后 Stripe 发 `customer.subscription.deleted` / `updated` → `markStripeSubscriptionDeleted` / `applyStripeSubscriptionUpdate` 都有 `revoked` 终态短路（已有），不会被改回 `expired` / `active`。之后若有 `invoice.paid`（理论上不会，已取消）→ `creditStripeInvoice` 用 `deriveVerifiedStatus`，revoked 不复活（已有）。
+1. `pi == ""` → 告警"无法归属，人工处理"，`nil`。
+2. 查 `subID`：err → 返回 err；空 → 告警"非订阅扣款"，`nil`。
+3. `withDeadlockRetry`：`revokeStripeSubscriptionInTx`。没有本地行 → 第 4 步拿到远端订阅后建墓碑行。
+4. 取远端订阅（复用已有 seam `stripeFetchSubscription`）：`resource_missing` → 视为已取消；状态 `canceled` / `incomplete_expired` → 跳过取消；否则 `stripeCancelSubscription(subID, reason)`（新 seam，`prorate=false`、`invoice_now=false`、`cancellation_details.comment=reason`）。取消返回 `resource_missing` → 视为完成并告警；其他错误 → 返回 err（500 重投，第 3 步因 revoked 跳过，只重试取消）。
+5. 告警 `[STRIPE-REFUND]` / `[STRIPE-DISPUTE]`：charge/dispute id、金额、user_id、sub、每一步结果。
 
-### 1.4 告警内容保留
+seam 拆成"取"和"取消"两个，"已取消 → 跳过"分支可测。
 
-`recordStripeRefundAlert` 的部分退款分支保持现状（文案改为 "partial refund — membership kept"）。全额分支和拒付分支在动作完成后告警，失败时告警写明哪一步失败。
+## 3. 撤回执行器（14 天折算，后台触发）
 
-## 2. 钱包对 overleap 关闭
+### 3.1 资格与金额（纯函数，B 期用户按钮复用）
 
-### 2.1 品牌能力位
+```go
+type withdrawQuote struct {
+    Eligible  bool; Reason string          // 不合格的原因（英文，给客服看）
+    InvoiceID, PaymentIntentID, Currency string
+    AmountPaid, RefundAmount int64        // 最小货币单位
+    UsedDays, TotalDays int; WindowEndsAt int64
+}
+func quoteStripeWithdrawal(credit SubscriptionCredit, inv stripeInvoiceForWithdraw, now int64) withdrawQuote
+```
 
-`BrandConfig` 加 `Wallet bool`（注释：钱包——订单退款入钱包、提现、分销返现结算）。kaitu `true`，overleap `false`。
+- 对象：订阅的最近一张已入账 invoice（`sub.ProviderLatestRef`），从 Stripe 取 `amount_paid`、`currency`、`status_transitions.paid_at`、付款 PI（`invoice.payments` 展开 `data.payment.payment_intent`）、计费周期（与 `extractStripeInvoiceFacts` 同一取法：period end 最大的那条 line）。seam：`stripeInvoiceForWithdraw(key, invoiceID)`。
+- 合格的付款：该 invoice 的 `SubscriptionCredit.Kind == "purchase"`（新订阅的首付；换档 = 新订阅，Billing Portal 换档已被对账哨兵禁止），**或** `Kind == "renewal"` 且周期 ≥ 360 天（年付续费）。月付续费不合格。
+- 窗口：`now <= paid_at + 14×86400`。
+- 金额：`TotalDays = round((end-start)/86400)`；`UsedDays = min(TotalDays, floor((now-start)/86400) + 1)`（含付款当天）；`RefundAmount = AmountPaid × (TotalDays-UsedDays) / TotalDays`，整数向下取整。`AmountPaid == 0`（全额优惠券）→ 不合格。B 期试用转付费时首张付费 invoice 的周期从试用结束起算，试用天数天然不计入。
+- 已有 `StatutoryRefund` 记录 → 不合格（"already withdrawn"）。
 
-导出进跨层契约 `contracts/api-contract.json`（`brands.<b>.wallet`），webapp 契约测试断言 `brand.features.wallet === contract.brands[b].wallet`——两层的开关从此不能漂移。重生成：`cd api && UPDATE_CONTRACT=1 go test -count=1 -run TestExportContract ./...`。web/ 契约测试只读它关心的字段，不受影响（实现时跑一遍确认）。
+### 3.2 执行
 
-### 2.2 闸门
+新表：
+```go
+type StatutoryRefund struct {
+    ID uint64; CreatedAt, UpdatedAt int64
+    UserID uint64 `index`; ProviderSubscriptionID string
+    InvoiceID string `uniqueIndex`           // 一笔付款只能撤回一次
+    Amount int64; Currency string; UsedDays, TotalDays int
+    StripeRefundID string; Status string     // pending | done
+    OperatorID uint64; Source string         // "admin"（B 期加 "user"）
+}
+```
 
-| 位置 | 改动 |
-|---|---|
-| 新中间件 `WalletRequired()` | 读 `ReqUser(c)`，`!Brand(u.Brand).Config().Wallet` → `Error(c, ErrorNotSupported, "wallet is not available for this brand")` + Abort |
-| `route.go` 7 个 `/api/wallet/*` 路由 | 每个在 `AuthRequired()` 之后加 `WalletRequired()`（必须在鉴权后：要读用户品牌，不读请求品牌——跨品牌 staff 免检时请求品牌不可信） |
-| `ProcessOrderRefund`（唯一执行点） | 锁用户行后：`!Brand(user.Brand).Config().Wallet` → 返回错误"该品牌没有钱包，不能退款到钱包"。审批执行与任何未来调用方都过这道门 |
-| `api_admin_refund_order` | 预校验加同一判断（Preload User），返回 `ErrorNotSupported` + 中文说明"overleap 的 Stripe 订单请在 Stripe 后台退款（全额退款会自动收回会员），Apple 订单由 Apple 处理"。不建审批单 |
+`executeStripeWithdrawal(ctx, userID, operatorID, source)`：
+1. 找用户最新一条未 revoked 的 Stripe 订阅；取 invoice；`quote`。不合格 → 返回带原因的错误。
+2. 插 `StatutoryRefund{status=pending}`（唯一索引挡并发 / 重复）。已有 `pending`（上次中途失败）→ 继续用它，不重算金额。
+3. Stripe 退款：`refund.New{PaymentIntent, Amount, Metadata{center_withdrawal: invoiceID}}`，幂等键 `withdraw-<invoiceID>`（重试不会退两次）。seam `stripeCreateRefund`。
+4. 取消订阅（同 §2.2 第 4 步）。
+5. `revokeStripeSubscriptionInTx(reason="Withdrawal within 14 days - <invoice>")`。
+6. `StatutoryRefund` 置 `done`、写 refund id。告警频道发一条记录。
 
-后台提现审批（`/admin/wallet/withdraws/*`）不加门：overleap 用户建不出提现单，审批端没有可审的对象。
+任一步失败返回错误，操作员重试从第 2 步续上（pending 行 + 幂等键 + revoked 短路保证不重复）。Stripe 随后发来的 `charge.refunded` 是部分退款，只告警；`customer.subscription.deleted` 遇到 revoked 短路。
 
-### 2.3 结构守卫
+### 3.3 入口（A 期只给后台）
 
-`TestWalletRoutes_AllGated`：启动真实 `SetupRouter`（或现有 brand_isolation 测试的路由构造方式），遍历 `r.Routes()` 中前缀 `/api/wallet` 的全部路由，用 overleap 用户逐个请求，断言都返回 `ErrorNotSupported`。以后新增钱包路由忘了加门，这个测试直接红。kaitu 用户对 `GET /api/wallet` 断言不返回 `ErrorNotSupported`（正向对照，防止门把所有人都拦了还是绿）。
+- `GET /app/users/:uuid/stripe-withdrawal` → quote（客服先告诉用户金额）。
+- `POST /app/users/:uuid/stripe-withdrawal` → `SubmitApproval("stripe_withdrawal", …)`，执行回调 = `executeStripeWithdrawal`（对标 `order_refund`）。
+- MCP（`tools/kaitu-center`）：`quote_stripe_withdrawal`、`withdraw_stripe_subscription` 两个工具，照 `admin-orders.ts` 的 refund 工具写。
+- 运营说明写进 `docs/customer-service/` 内部文档（见 §6）：收到撤回请求 → quote → 回邮件确认金额 → withdraw；不要在 Stripe 后台手工部分退款（那样会员只会在立即取消时被截断，见 §2 兜底）。
 
-## 3. 条款与帮助页（只改 overleap 站）
+## 4. 结账同意（折算的法律依据）
 
-### 3.1 `terms-of-service.md`
+`api_stripe_checkout` 的 Checkout 参数加：
+- `consent_collection.terms_of_service = "required"`；
+- `custom_text.terms_of_service_acceptance.message`（v1，≤1200 字符，Stripe 支持 markdown 链接）：
 
-- `Last updated: 2026-10`。
-- §7 改名 "Cancellation and Refunds"，全文：
+> I agree to the [Terms of Service](https://overleap.io/terms). My subscription starts now and renews automatically at the price shown until I cancel. I ask for the service to begin immediately, and understand that if I withdraw within 14 days of a payment, my refund will be reduced for the days already used.
 
-> 7.1 **Cancelling**: You can cancel automatic renewal at any time. You keep access until the end of the period you've paid for, and you won't be charged again.
+`checkout.session.completed`（现在只打日志）改为：`consent.terms_of_service == "accepted"` 时写
+
+```go
+type SubscriptionConsent struct {
+    ID uint64; CreatedAt int64
+    UserID uint64 `index`                      // client_reference_id = user UUID → id
+    CheckoutSessionID string `uniqueIndex`
+    ProviderSubscriptionID string; TextVersion string // "2026-10-v1"
+    AcceptedAt int64                             // event.created
+    Country string                               // customer_details.address.country
+}
+```
+
+保留期：不自动删（≥3 年，加州 ARL）。用户找不到 → 告警并 `nil`（同意记录缺失不阻断入账）。
+
+**部署前置（硬性）**：Stripe Dashboard → Settings → Public details 填 Terms of service URL，否则带 `consent_collection` 的 Checkout 创建直接报错，购买全断。顺序：先填 URL → 再部署 api。
+
+## 5. 钱包对 overleap 关闭
+
+- `BrandConfig.Wallet bool`（kaitu true / overleap false），导出进契约 `brands.<b>.wallet`；webapp 契约测试断言 `features.wallet === contract.brands[b].wallet`（web/ 只比品牌 id 集合，不受影响——已核对）。
+- 中间件 `WalletRequired()`：`ReqUser(c) == nil` → `ErrorNotLogin`；`!Wallet` → `ErrorNotSupported`。7 个 `/api/wallet*` 路由都挂在 `AuthRequired()` 之后（读用户品牌：`AuthRequired` 对 admin 免品牌检查，请求品牌对 admin 不可信）。
+- `ProcessOrderRefund` 锁用户行后拒绝无钱包品牌；`api_admin_refund_order` 预校验同样拒绝，返回中文说明（"overleap 订单：Stripe 用撤回工具；Apple 由 Apple 退款"），不建审批单。
+- `addCashbackIncomeInTx`：收款人品牌无钱包 → 不入账，告警，返回 nil（返现侧本就非致命）。
+- **不做（记为后续）**：邀请码跨品牌绑定（overleap 用户绑了 kaitu 分销商的码，返现进 kaitu 钱包）——品牌隔离问题，与退款无关，生产为 0。
+
+## 6. 文案（只改 overleap）
+
+### 6.1 `terms-of-service.md`
+
+`Last updated: 2026-10`。§7 全文替换：
+
+> ### 7. Cancellation, Withdrawal and Refunds
 >
-> 7.2 **14-day cancellation right**: You can cancel within 14 days after any payment for a subscription bought on our website — the first payment, and each renewal of an annual plan — and receive a refund. Because you ask us to start the Service as soon as you subscribe, the refund is reduced in proportion to the days you have already used. Your access ends when the refund is issued.
+> 7.1 **Turning off renewal**: You can turn off automatic renewal at any time. You keep access until the end of the period you've paid for and won't be charged again. Turning off renewal does not by itself withdraw from the contract or give you a refund.
 >
-> 7.3 **How to request it**: Email support@overleap.io from your account's email address. We'll confirm the amount and refund it to your original payment method within 5 business days.
+> 7.2 **14-day right to withdraw**: For subscriptions billed by us (not through the App Store), you may withdraw within 14 days after each of these payments: (a) the first payment for a new subscription, including a subscription to a different plan; and (b) each renewal payment of an annual plan. Renewal payments of monthly plans are not covered.
 >
-> 7.4 **App Store purchases**: Subscriptions bought through Apple's App Store are billed by Apple. Refunds are handled by Apple under its own policy; we can't issue them. If Apple refunds a purchase, the access it paid for ends.
+> 7.3 **Refund amount**: Because you asked us to start the Service immediately, the refund is reduced in proportion to the days of the paid period that have passed when you tell us you are withdrawing, counting the day of payment. Your subscription and your access end when the refund is issued.
 >
-> 7.5 **No other refunds**: Apart from Sections 7.2 and 7.4, payments are non-refundable, including for partially used periods. Nothing in these Terms limits rights you have under the laws of your country.
+> 7.4 **How to withdraw**: Tell us by email at support@overleap.io (ideally from your account's email address, so we can find you quickly) or in any other clear way. You may use the model withdrawal form at the end of these Terms, but you don't have to. We will confirm the amount and refund it to your original payment method within 5 business days, and in any case within 14 days.
 >
-> 7.6 **Chargebacks**: If a payment is fully refunded or disputed with your bank or card issuer, the subscription it paid for ends and your access stops immediately.
+> 7.5 **App Store purchases**: Subscriptions bought through Apple's App Store are billed by Apple. Refunds are handled by Apple under its own policy; we can't issue them. If Apple refunds a purchase, the access it paid for ends.
+>
+> 7.6 **Other refunds**: Apart from Sections 7.2–7.5, payments are not refundable, including for partly used periods. If the Service is not provided as described or with reasonable care, you may be entitled to a remedy such as a price reduction under consumer law. Nothing in these Terms limits rights you have under the laws of your country.
+>
+> 7.7 **Chargebacks**: If a payment is fully refunded or disputed with your bank or card issuer, the subscription it paid for ends and your access stops. If a dispute is resolved in our favour, contact us and we will restore your access for the rest of the paid period.
 
-- 删除 §8 "Wallet and Withdrawals"，后面各节编号前移（§9→§8 …）；全文 grep "Section"/"§" 交叉引用一并改。
-- 原 §9.1（新 §8.1）："After account deletion, your subscription will immediately terminate without refund." → "Deleting your account ends your subscription immediately. If you're entitled to a refund under Section 7.2, request it before deleting your account."
-- 原 §9.3(c) 保持（"unless otherwise required by law"），追加 "or provided in Section 7"。
-- §4.2 "without refund" 保持（违规终止）。
+- 删除 §8 "Wallet and Withdrawals"，后续节号前移（§9→§8 …）。已核对：全站只有 ToS 4.3→4.2、隐私 4.2→1.4 两处带节号的引用，都不受影响。
+- 新 §8.1：
+  > **User Termination**: You may terminate this Agreement at any time by deleting your account. Deleting your account does not cancel a renewing subscription — cancel it first on your account page (or in your App Store settings), or you will continue to be charged. Unused time is not refunded on deletion; if you are entitled to a refund under Section 7.2, request it before deleting your account.
+- 新 §8.3 末尾加："If we terminate under Section 8.2(b) or 8.2(d), we will refund the unused part of any prepaid period."（执行：客服用 MCP 后台退款 + 截断会员，量极小，人工）。
+- 文末加 "Model withdrawal form"（CCR Sch 3 模板）：
+  > To Overleap LLC, support@overleap.io: I hereby give notice that I withdraw from my contract for the following service: Overleap subscription. Ordered on: ___ · Name: ___ · Account email: ___ · Date: ___
 
-措辞说明：7.2 写成"网站购买"统一规则，不提国家（全球统一）；"each renewal of an annual plan" 对应 DMCCA 的 12 个月以上续费；月付续费不在内（spec §3.1）。
+### 6.2 `delete-account.md`
 
-### 3.2 `delete-account.md:41`
+- 更新日期。第 41 行 → "Unused subscription time is **not** refunded and cannot be restored afterwards. If you're within 14 days of your first payment for a subscription on our website, or of an annual renewal, email support@overleap.io before deleting your account to withdraw with a prorated refund (Terms, Section 7)."
+- §5 加一条："Deleting your account does not cancel a renewing subscription. Cancel it first on your account page, or in your App Store settings for iPhone purchases."
 
-→ "Unused subscription time is **not** refunded and cannot be restored afterwards. If you're within 14 days of a payment on our website, email support@overleap.io before deleting your account to request a prorated refund (see our Terms, Section 7)."
+### 6.3 站点 messages（20 个语言）
 
-### 3.3 帮助页 `billing.items.refund.answer`（22 种语言）
+- `help.json` `billing.items.refund.answer`（英文基准）："You can withdraw and get a refund for the days you haven't used within 14 days of your first payment for a subscription on our website, or of an annual renewal. Email support@overleap.io. App Store purchases are refunded by Apple."
+- `help.json` `billing.items.manage.answer` 末尾加一句："Cancelling stops renewal; it doesn't refund — see “Can I get a refund?”"
+- `pricing.json` `faqSubtitle`："Payment, cancelling and what the plan covers."
+- 翻译：邮箱、App Store、Apple 原样；de/fr 用法定词（Widerruf / rétractation）但范围必须是"首付 + 年付续费"；ar/fa 邮箱放在句末无尾随标点。
 
-英文：
-> "Within 14 days of a payment on our website you can cancel and get a refund for the days you haven't used — email support@overleap.io. Purchases made in the App Store are refunded by Apple."
+### 6.4 其他
 
-其余 21 种语言翻译同义，保留 `{brand}` 以外的占位符约定（本句无占位符）。en-GB / en-AU 用同一英文。
+- webapp `DeleteAccountDialog.tsx:148`：`deleteLoseWallet` 只在 `features.wallet` 时显示。
+- `.agents/product-marketing-context.md:269` 英文必用词 "7-day refund" → "14-day withdrawal"（只描述 overleap；中文那行是开途的，不动）。
+- kb 分支 `docs/customer-service/overleap/04`：退款段改成"有 14 天折算撤回（首付 / 年付续费）；机器人不判资格、不报金额；收集账号邮箱和付款日期 → 转人工"。另在 `docs/customer-service/README.md` 加客服撤回操作流程（§3.3）。
 
-### 3.4 客服知识库（kb 分支 `feat/support-kb-brands`）
+## 7. 测试（先红后绿；每条实现后做变异验证，变异用 scratchpad 备份还原）
 
-`docs/customer-service/overleap/02`、`04` 里的退款段落改成 §3.1 的口径（机器人仍不承诺退款，引导写邮件 / 转人工）。在 kb 工作树里改并提交，随 kb 分支合并。
-
-## 4. 测试（每条先写、先红、再实现；实现后做变异验证）
-
-| # | 测试 | 断言 | 变异（必须让它红） |
+| # | 测试 | 断言 | 变异 |
 |---|---|---|---|
-| 1 | 全额退款 → 收回 + 取消 | 用户到期≈now；sub `revoked`；有 `VipRefund` 历史；cancel 被调且参数为该 subID | 删掉 revoke 调用 |
-| 2 | 部分退款 | 用户到期不变；sub 状态不变；cancel 未调 | 把全额判定改成 `AmountRefunded > 0` |
-| 3 | 赠送时长保护 | 用户到期 > 周期末 → 到期不变，sub `revoked`，cancel 被调 | — （验证复用函数的既有规则） |
-| 4 | 取消失败后重投 | 第一次 cancel 返错 → handler 返错（500）；第二次：不重复写历史，cancel 再次被调 | 去掉 `revoked` 跳过 |
-| 5 | 无 PI / 非订阅扣款 | 返回 nil（200），无任何写入，cancel 未调 | — |
-| 6 | 本地无订阅行 | cancel 仍被调；无本地写入 | 本地找不到时提前 return |
-| 7 | 查询 API 出错 | handler 返错（500） | 把错误吞掉返回 nil |
-| 8 | 拒付 | 同 #1 | 删 dispute 分支调用 |
-| 9 | 钱包路由全覆盖 | overleap 用户访问全部 `/api/wallet*` → `ErrorNotSupported`；kaitu `GET /api/wallet` 不是 | 去掉任意一个路由的门 |
-| 10 | `ProcessOrderRefund` 拒 overleap | 返回错误；订单 / 用户 / 钱包均未改 | 删门 |
-| 11 | `api_admin_refund_order` 拒 overleap | `ErrorNotSupported`；`approvals` 表无新行 | 删预校验 |
-| 12 | 契约 | golden 含 `wallet`；webapp 断言 features.wallet 与契约一致 | webapp overleap 改 `wallet:true` |
+| 1 | 全额退款 | 到期≈now；sub revoked；`VipRefund` 历史且 Reason 是英文；cancel 被调 | 删 revoke 调用 |
+| 2 | 部分退款 | 无任何变化；cancel 未调 | 全额判定改 `AmountRefunded > 0` |
+| 3 | 赠送时长保护 | 到期 > 周期末 → 不动到期，sub revoked | 去掉 `<= CurrentPeriodEnd` |
+| 4 | 取消失败后重投 | 第一次 500；第二次不重复写历史、cancel 再调 | 去掉 revoked 短路 |
+| 5 | 远端已取消 | 不调 cancel | 去掉状态跳过 |
+| 6 | cancel 返回 resource_missing | 200 | 把 resource_missing 当错误 |
+| 7 | invoice payments 迭代器出错 | 500 | 忽略 `it.Err()` |
+| 8 | 无 PI / 非订阅扣款 | 200，无写入 | — |
+| 9 | 本地无订阅行 | 建墓碑行（revoked、正确 user）；cancel 被调 | 不建墓碑 |
+| 10 | 墓碑后迟到 `invoice.paid` | 不加时长，告警 | 删 creditStripeInvoice 的 revoked 门 |
+| 11 | 收回后迟到的续费 invoice | 同上 | 同上 |
+| 12 | 对账 cover-through 遇 revoked | 到期不变 | 删 NOT EXISTS |
+| 13 | 先全额退款后拒付 | 第二次不改数据、不调 cancel | — |
+| 14 | 拒付 | 同 #1 | 删 dispute 分支 |
+| 15 | 后台立即取消（`ended_at` < 周期末） | 到期截到 ended_at；期末自然结束的 deleted 不截 | 删截断 |
+| 16 | quote 纯函数表驱动 | 首付 / 年付续费合格；月付续费、超 14 天、0 元、已撤回不合格；天数与金额边界（第 1 天、第 14 天、跨月、整除与取整） | 改 `+1`、改 `<=` |
+| 17 | 执行器 | 退款金额与幂等键正确；cancel；revoke；记录 done；重复执行被唯一索引挡；pending 续跑不重算 | 去掉幂等键 / pending 续跑 |
+| 18 | 结账参数 | `consent_collection`、`custom_text` 存在 | 删参数 |
+| 19 | `checkout.session.completed` | 写 `SubscriptionConsent`；重投不重复 | — |
+| 20 | 钱包路由守卫 | 用生产 `SetupRouter()` 枚举 `/api/wallet*`，数量 ≥7；overleap 全部 `ErrorNotSupported`；kaitu `GET /api/wallet` 不是；无用户 → 拒 | 去掉任一路由的门 |
+| 21 | `ProcessOrderRefund` / `api_admin_refund_order` 拒 overleap | 无写入、无审批单；含"已有 pending 审批被执行"路径 | 删门 |
+| 22 | 返现收款人无钱包 | 不入账 | 删门 |
+| 23 | 契约 | golden 含 `wallet`；webapp 断言一致 | webapp overleap 改 `wallet:true` |
+| 24 | webapp 删号对话框 | overleap 不显示钱包行，kaitu 显示 | — |
 
-既有测试 `ChargeRefunded_PassiveAlert_200`（全额、无 PI）按新规则仍是 200 且无写入（落在 #5），保留并改名。
+环境：worktree 已拷 `center/config.yml`；DB 走 devdb（当前 pve）；`-v` 下 0 SKIP；handler 测试单跑与全量各一次。webapp `yarn test`；`tools/kaitu-center` 的测试；`sites/overleap` 的 lint / build。
 
-运行：api 新 worktree 先 `cp ../k2app/center/config.yml center/`（否则 DB 测试静默 SKIP，判据 `-v` 下 0 SKIP）；DB 走 devdb 闸门。handler 测试单跑和全量各跑一次。webapp `yarn test` 契约测试；`sites/overleap` 的 lint / test（看它的 CLAUDE.md）。
+## 8. 文档
 
-## 5. 文档
+- `api/CLAUDE.md` 支付段：Stripe 收回规则、revoked 终态三道门、撤回执行器、"不要在 Stripe 后台手工部分退款"。
+- 上位 spec §8 分期表：A 期内容同步为 v2。
 
-- `api/CLAUDE.md` 支付段：Stripe 全额退款 / 拒付自动收回 + 取消；部分退款只告警；"全额退款 = 终止合作"。
-- 上位 spec §3.2 表格的"改成"列已覆盖，不重复。
+## 9. 上线清单（顺序有依赖）
 
-## 6. 上线清单
+1. **Stripe Dashboard**（用户操作）：填 Terms of service URL；webhook 端点确认订阅了 `charge.refunded`、`charge.dispute.created`、`checkout.session.completed`、`customer.subscription.deleted`；Billing Portal 关闭"立即取消"（只留期末取消）；打开退款收据邮件。
+2. 合并 → `make deploy-api`（center-deploy）。
+3. `git push origin main:website`（overleap 站条款 / 帮助页）。
+4. `webapp/x.y.z-overleap` tag（删号对话框）。
+5. MCP 工具：`tools/kaitu-center` 按其 CLAUDE.md 发布。
+6. kb 分支合并后按 `scripts/sync-kb.sh` 同步 overleap 知识库。
 
-1. 合并 → `make deploy-api`（center-deploy）。
-2. Stripe Dashboard（用户操作）：确认 webhook 端点订阅了 `charge.refunded`、`charge.dispute.created`（新代码依赖它们；没订阅的话收回不会触发）；Billing Portal 关闭"立即取消并按比例退款"（只留期末取消）。
-3. overleap 站点按 `sites/overleap/CLAUDE.md` 的发布方式发布（条款 + 帮助页）。
-4. webapp 只有契约测试改动，不需要 `webapp/*` tag。
+## 10. 请英国 / 欧盟律师确认（不阻塞 A 期上线，上线后尽快）
 
-## 7. 不做
+1. VPN 是"服务"还是"数字内容"（决定能否折算）。
+2. CCR reg 16：确认邮件需含"要求立即开始"的确认（Stripe 收据不含）——可能需要 A 期后补一封我们自己的订阅确认邮件（B 期欢迎邮件里做）。
+3. 欧盟撤回按钮（CRD Art 11a，2026-06-19 生效）：A 期只有邮件渠道是否可接受到 B 期上按钮。
+4. DMCCA 续费冷静期的触发范围与折算基数。
+5. 拒付期间即停止服务是否可接受。
+6. 条款 12.3 适用法律未定义、10.2 责任上限。
 
-- 自助撤回按钮、`StatutoryRefund` 表、试用（B 期）。
-- 拒付胜诉自动恢复会员。
-- kaitu 品牌的任何行为变化（kaitu 不走 Stripe；钱包门对 kaitu 恒放行）。
+## 11. 不做
+
+- 用户自助撤回按钮、`DataSubscription` 撤回字段、试用、提醒邮件（B 期）。
+- 拒付胜诉自动恢复。
+- 邀请码跨品牌绑定。
+- kaitu 品牌任何行为变化（钱包门对 kaitu 恒放行；kaitu 不走 Stripe）。
