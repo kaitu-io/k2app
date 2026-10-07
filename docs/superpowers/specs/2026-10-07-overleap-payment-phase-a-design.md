@@ -189,7 +189,7 @@ type StatutoryRefund struct {
   - `POST /app/stripe-withdrawals/:request_id/abandon`。
 - `worker_integration.go` 注册 `RegisterApprovalCallback("stripe_withdrawal", …)`；`logic_approval.go` 的 `actionDisplayNames` 加"Stripe 撤回退款"。
 - MCP（`tools/kaitu-center`）：`quote_stripe_withdrawal`、`withdraw_stripe_subscription`（可带 `request_id` 续跑）、`abandon_stripe_withdrawal`，照 `admin-orders.ts` 的退款工具写；`notice_at` 必填。
-- 客服流程写进 `docs/customer-service/README.md`：收到撤回请求 → 记下用户消息时间 → quote → 回邮件确认金额 → withdraw（14 天内完成）。**不要在 Stripe 后台手工部分退款**。条款 8.3 的主动终止用 `mode=termination`。必须**直接**跑执行器结束服务，不要先用别的方式停掉账号再补跑（超过 48 小时执行器会拒绝原时刻，改用当前时刻会多收用户没享受服务的天数）。执行器因拒付跳过退款的请求（`RefundNote` 记了拒付）：拒付结案判我们胜、或只是询问时，按已存的金额在用户通知后 14 天内人工补退（条款 7.4）；`charge.dispute.closed` 加进告警，让客服知道结案。
+- 客服流程写进 `docs/customer-service/README.md`：收到撤回请求 → 记下用户消息时间 → quote → 回邮件确认金额 → withdraw（14 天内完成）。**不要在 Stripe 后台手工部分退款**。条款 8.3 的主动终止用 `mode=termination`。必须**直接**跑执行器结束服务，不要先用别的方式停掉账号再补跑（超过 48 小时执行器会拒绝原时刻，改用当前时刻会多收用户没享受服务的天数）。执行器因拒付跳过退款的请求（`RefundNote` 记了拒付）：拒付结案判我们胜、或只是询问时，按已存的金额在用户通知后 14 天内人工补退（条款 7.4），并把补退的退款 id 写进该行 `RefundNote`；`charge.dispute.closed` 加进告警，让客服知道结案。
 
 ## 4. 结账同意（折算的依据）
 
@@ -313,6 +313,7 @@ type SubscriptionConsent struct {
 | 26 | 全额撤回时 webhook 先到 | 历史只有一条且是撤回原因；告警标 `[WITHDRAWAL]` | 去掉按 PI 查 StatutoryRefund |
 | 27 | 并发取消 | Cancel 返回非 404 错误、再 Get 为 canceled → 成功 | 不再 Get |
 | 28 | termination 模式 | 跳过合格性、折算；0 元只收回与取消；`NoticeAt` 超出 48 小时 → 拒 | termination 也全额 |
+| 29a | `charge.dispute.closed` | 告警含结果与关联的 `StatutoryRefund`；200；无写入 | 从事件 switch 删掉该分支 |
 | 29 | 审批与续跑 | 注册回调、显示名；POST 建审批单；带 `request_id` 续跑；§3.5 查找忽略 abandoned 行 | 不注册 / 查找不过滤状态 |
 | 30 | 结账参数 | `consent_collection`、`custom_text` 存在 | 删参数 |
 | 31 | `checkout.session.completed` | 写 `SubscriptionConsent`；重投不重复；国家为空可写 | — |
@@ -334,7 +335,7 @@ type SubscriptionConsent struct {
 ## 9. 上线清单（顺序有依赖）
 
 1. **用户提供** Overleap LLC 邮寄地址（填 `{ADDRESS}`）。
-2. **Stripe Dashboard**（用户操作）：填 Terms of service URL；webhook 端点确认订阅了 `charge.refunded`、`charge.dispute.created`、`checkout.session.completed`、`customer.subscription.deleted`；Billing Portal 关闭"立即取消"（只留期末取消）；打开退款收据邮件。
+2. **Stripe Dashboard**（用户操作）：填 Terms of service URL；webhook 端点确认订阅了 `charge.refunded`、`charge.dispute.created`、`charge.dispute.closed`、`checkout.session.completed`、`customer.subscription.deleted`；Billing Portal 关闭"立即取消"（只留期末取消）；打开退款收据邮件。
 3. 合并 → `make deploy-api`（center-deploy）。
 4. `git push origin main:website`（overleap 条款 / 隐私 / 帮助页）。
 5. `webapp/x.y.z-overleap` tag（删号对话框）。
