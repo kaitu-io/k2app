@@ -7,13 +7,15 @@ import appext.Appext
 /**
  * Application entry point. Runs before any Activity / Capacitor plugin.
  *
- * Prefetches rule bundles so the first Connect finds the cache warm and
- * doesn't block on a cold 10-second download inside engine.Start inside
- * K2VpnService. K2VpnService runs in the same process, so `cacheDir` is
- * shared on disk and in memory semantics.
+ * Refreshes rule bundles in the background so a newer rule set is usually on
+ * disk before the user connects. engine.Start (inside K2VpnService) never
+ * waits for it — the connect path is local-only and serves whatever is on
+ * disk (#3889); if this lands a new set after the engine loaded the old one,
+ * the engine's post-connect updater hot-reloads it. K2VpnService runs in the
+ * same process, so `cacheDir` is shared on disk and in memory semantics.
  *
- * Non-fatal: any failure just means the first connect takes longer;
- * engine.Start retries internally via rule.EnsureBundles singleflight.
+ * Non-fatal: a failure only means the engine keeps the cached (or embedded)
+ * rules until its updater's next check succeeds.
  */
 class MainApplication : Application() {
     companion object {
