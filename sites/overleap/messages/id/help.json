@@ -26,7 +26,7 @@
     "items": {
       "manage": {
         "question": "Bagaimana cara mengelola atau membatalkan langganan?",
-        "answer": "Buka halaman akun Anda dan pilih Kelola langganan. Di sana Anda bisa membatalkan, mengganti kartu, atau mengunduh faktur. Setelah dibatalkan, paket Anda tetap aktif hingga akhir periode yang sudah dibayar."
+        "answer": "Buka halaman akun Anda dan pilih Kelola langganan. Di sana Anda bisa membatalkan, mengganti kartu, atau mengunduh faktur. Setelah dibatalkan, paket Anda tetap aktif hingga akhir periode yang sudah dibayar. Pembatalan menghentikan perpanjangan, tetapi tidak mengembalikan dana — lihat “Bisakah saya meminta pengembalian dana?”"
       },
       "charge": {
         "question": "Kapan saya ditagih?",
@@ -34,7 +34,7 @@
       },
       "refund": {
         "question": "Bisakah saya meminta pengembalian dana?",
-        "answer": "Jika {brand} tidak cocok untuk Anda, kirim email kepada kami dan kami akan menyelesaikannya."
+        "answer": "Anda dapat menarik diri dari kontrak dan mendapatkan pengembalian dana untuk hari yang belum digunakan dalam 14 hari setelah pembayaran pertama untuk langganan yang ditagih oleh kami (bukan melalui App Store), atau setelah perpanjangan tahunan. Kirim email ke support@overleap.io. Pembelian di App Store dikembalikan dananya oleh Apple."
       },
       "devices": {
         "question": "Saya sudah mencapai batas lima perangkat",

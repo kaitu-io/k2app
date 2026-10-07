@@ -26,7 +26,7 @@
     "items": {
       "manage": {
         "question": "Aboneliğimi nasıl yönetir veya iptal ederim?",
-        "answer": "Hesap sayfanızı açın ve Aboneliği yönet'i seçin. Buradan iptal edebilir, kartınızı değiştirebilir veya faturaları indirebilirsiniz. İptal etmeniz planınızı ödediğiniz dönemin sonuna kadar etkin tutar."
+        "answer": "Hesap sayfanızı açın ve Aboneliği yönet'i seçin. Buradan iptal edebilir, kartınızı değiştirebilir veya faturaları indirebilirsiniz. İptal etmeniz planınızı ödediğiniz dönemin sonuna kadar etkin tutar. İptal, yenilemeyi durdurur ancak iade sağlamaz — bkz. “İade alabilir miyim?”"
       },
       "charge": {
         "question": "Ne zaman ücretlendirilirim?",
@@ -34,7 +34,7 @@
       },
       "refund": {
         "question": "İade alabilir miyim?",
-        "answer": "{brand} sizin için işe yaramazsa bize e-posta gönderin, çözelim."
+        "answer": "Tarafımızca faturalandırılan (App Store üzerinden alınmayan) bir aboneliğin ilk ödemesinden veya yıllık bir yenilemeden sonraki 14 gün içinde cayma hakkınızı kullanarak kullanmadığınız günlerin ücretini geri alabilirsiniz. support@overleap.io adresine e-posta gönderin. App Store satın alımlarının iadesini Apple yapar."
       },
       "devices": {
         "question": "Beş cihaz sınırına ulaştım",

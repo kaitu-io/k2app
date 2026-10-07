@@ -26,7 +26,7 @@
     "items": {
       "manage": {
         "question": "Come gestisco o disdico l'abbonamento?",
-        "answer": "Apri la pagina del tuo account e scegli Gestisci abbonamento. Lì puoi disdire, cambiare carta o scaricare le fatture. Disdire mantiene il piano attivo fino alla fine del periodo già pagato."
+        "answer": "Apri la pagina del tuo account e scegli Gestisci abbonamento. Lì puoi disdire, cambiare carta o scaricare le fatture. Disdire mantiene il piano attivo fino alla fine del periodo già pagato. La disdetta interrompe il rinnovo, ma non dà diritto a un rimborso: vedi «Posso ottenere un rimborso?»"
       },
       "charge": {
         "question": "Quando vengo addebitato?",
@@ -34,7 +34,7 @@
       },
       "refund": {
         "question": "Posso ottenere un rimborso?",
-        "answer": "Se {brand} non fa per te, scrivici e risolveremo la questione."
+        "answer": "Puoi recedere e ottenere il rimborso dei giorni non utilizzati entro 14 giorni dal primo pagamento di un abbonamento fatturato da noi (non tramite l'App Store), o da un rinnovo annuale. Scrivi a support@overleap.io. Gli acquisti sull'App Store vengono rimborsati da Apple."
       },
       "devices": {
         "question": "Ho raggiunto il limite di cinque dispositivi",

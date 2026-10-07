@@ -26,7 +26,7 @@
     "items": {
       "manage": {
         "question": "¿Cómo gestiono o cancelo mi suscripción?",
-        "answer": "Abre la página de tu cuenta y elige Gestionar suscripción. Allí puedes cancelar, cambiar tu tarjeta o descargar facturas. Si cancelas, tu plan sigue activo hasta el final del periodo que has pagado."
+        "answer": "Abre la página de tu cuenta y elige Gestionar suscripción. Allí puedes cancelar, cambiar tu tarjeta o descargar facturas. Si cancelas, tu plan sigue activo hasta el final del periodo que has pagado. Cancelar detiene la renovación, pero no supone un reembolso; consulta «¿Puedo pedir un reembolso?»"
       },
       "charge": {
         "question": "¿Cuándo se me cobra?",
@@ -34,7 +34,7 @@
       },
       "refund": {
         "question": "¿Puedo pedir un reembolso?",
-        "answer": "Si {brand} no te funciona, escríbenos y lo solucionamos."
+        "answer": "Puedes desistir y recibir el reembolso de los días que no hayas usado en los 14 días siguientes a tu primer pago de una suscripción facturada por nosotros (no a través de la App Store), o a una renovación anual. Escribe a support@overleap.io. Las compras en la App Store las reembolsa Apple."
       },
       "devices": {
         "question": "He alcanzado el límite de cinco dispositivos",

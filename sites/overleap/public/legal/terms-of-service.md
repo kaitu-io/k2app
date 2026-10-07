@@ -1,4 +1,4 @@
-**Last updated: 2026-09**
+**Last updated: 2026-10**
 
 ### 1. Agreement Acceptance and Effectiveness
 
@@ -73,98 +73,100 @@
 
 6.5 **Taxes**: Displayed prices may not include applicable taxes. You are responsible for paying all taxes associated with your purchase.
 
-### 7. Refund Policy
+### 7. Cancellation, Withdrawal and Refunds
 
-7.1 **Refund Conditions**: If you are not satisfied with the Service, you may request a refund within 7 days of initial purchase. Refund requests must meet the following conditions:
-- (a) First-time purchase of that package type;
-- (b) Account data usage has not exceeded 1GB;
-- (c) Account is in good standing and has not been suspended for violations.
+7.1 **Turning off renewal**: You can turn off automatic renewal at any time. You keep access until the end of the period you've paid for and won't be charged again. Turning off renewal does not by itself withdraw from the contract or give you a refund.
 
-7.2 **Refund Method**: Approved refunds will be returned to your account as wallet balance. Wallet balance can be used to:
-- (a) Purchase or renew any package service;
-- (b) Request withdrawal to a cryptocurrency wallet.
+7.2 **14-day right to withdraw**: For subscriptions billed by us (not through the App Store), you may withdraw within 14 days after each of these payments: (a) the first payment for a new subscription, including a subscription to a different plan; and (b) each renewal payment of an annual plan. Renewal payments of monthly plans are not covered.
 
-7.3 **Refund Processing Time**: Refund requests will be reviewed and processed within 3-5 business days. Refunds are immediately available once credited to your wallet.
+7.3 **Refund amount**: Because you asked us to start the Service immediately, the refund is reduced in proportion to the days of the paid period that have passed when you tell us you are withdrawing, counting the day of payment. Your subscription and your access end when the refund is issued.
 
-7.4 **Non-Refundable Cases**: The refund policy does not apply to:
-- (a) Requests exceeding the 7-day refund period;
-- (b) Data usage exceeding 1GB;
-- (c) Accounts suspended or terminated for violations;
-- (d) Promotional packages or products explicitly marked as non-refundable.
+7.4 **How to withdraw**: Tell us by email at support@overleap.io (ideally from your account's email address, so we can find you quickly) or in any other clear way. You may use the model withdrawal form at the end of these Terms, but you don't have to. We will confirm the amount and refund it to your original payment method within 5 business days, and in any case within 14 days.
 
-### 8. Wallet and Withdrawals
+7.5 **App Store purchases**: Subscriptions bought through Apple's App Store are billed by Apple. Refunds are handled by Apple under its own policy; we can't issue them. If Apple refunds a purchase, the access it paid for ends.
 
-8.1 **Wallet Balance Sources**: Wallet balance may come from refunds, promotional rewards, or other activity rewards.
+7.6 **Other refunds**: Apart from Sections 7.2–7.5 and 8.3, payments are not refundable, including for partly used periods. If the Service is not provided as described or with reasonable care, you may be entitled to a remedy such as a price reduction under consumer law. Nothing in these Terms limits rights you have under the laws of your country.
 
-8.2 **Withdrawal Methods**: We support withdrawing wallet balance to cryptocurrency wallets, with supported currencies including:
-- (a) USDT (TRC20/ERC20 networks)
-- (b) USDC (ERC20 network)
-- (c) Other mainstream cryptocurrencies (subject to actual support)
+7.7 **Chargebacks**: If a payment is fully refunded or disputed with your bank or card issuer, the subscription it paid for ends and your access stops. If a dispute is resolved in our favour, contact us and we will restore your access for the rest of the paid period.
 
-8.3 **Withdrawal Fees**: Withdrawals may incur fees, with specific fees displayed at the time of withdrawal request.
+### 8. Agreement Termination
 
-8.4 **Processing Time**: Withdrawal requests will be processed within 1-3 business days. Blockchain confirmation time depends on network conditions.
+8.1 **User Termination**: You may terminate this Agreement at any time by deleting your account. Deleting your account does not cancel a renewing subscription — cancel it first on your account page (or in your App Store settings), or you will continue to be charged. Unused time is not refunded on deletion; if you are entitled to a refund under Section 7.2, request it before deleting your account.
 
-8.5 **Address Responsibility**: Please ensure you provide the correct wallet address and blockchain network. Losses due to incorrect addresses are the user's sole responsibility and cannot be recovered.
-
-8.6 **Minimum Withdrawal Amount**: Withdrawals have a minimum amount limit, subject to the display on the withdrawal page.
-
-### 9. Agreement Termination
-
-9.1 **User Termination**: You may terminate this Agreement at any time by deleting your account. After account deletion, your subscription will immediately terminate without refund.
-
-9.2 **Our Termination**: We reserve the right to suspend or terminate your account under the following circumstances:
+8.2 **Our Termination**: We reserve the right to suspend or terminate your account under the following circumstances:
 - (a) You violate any terms of this Agreement;
 - (b) Your account has been inactive for an extended period (over 12 months);
 - (c) As required by law or to cooperate with law enforcement investigations;
 - (d) We decide to discontinue providing the Service.
 
-9.3 **Termination Consequences**: Upon Agreement termination:
+8.3 **Termination Consequences**: Upon Agreement termination:
 - (a) Your access to the Service will immediately cease;
 - (b) Your account data will be handled according to the Privacy Policy;
-- (c) Unused subscription time will not be refunded unless otherwise required by law;
+- (c) Unused subscription time will not be refunded, except as set out in Section 7, at the end of this Section, or where required by law;
 - (d) Provisions of this Agreement regarding liability limitations, disclaimers, and dispute resolution remain in effect.
 
-### 10. Limitation of Liability
+If we terminate under Section 8.2(b) or 8.2(d), we will refund the unused part of any prepaid period for subscriptions billed by us. For subscriptions bought through the App Store, you can request a refund from Apple.
 
-10.1 **Service Disclaimers**: To the maximum extent permitted by law, we are not liable for:
+### 9. Limitation of Liability
+
+9.1 **Service Disclaimers**: To the maximum extent permitted by law, we are not liable for:
 - (a) Losses caused by service interruptions or unavailability;
 - (b) Data loss or damage;
 - (c) Third-party content you access through the Service;
 - (d) Any indirect, incidental, special, punitive, or consequential damages.
 
-10.2 **Liability Cap**: In no event shall our total liability exceed the total service fees you paid to us in the 12 months preceding the claim.
+9.2 **Liability Cap**: In no event shall our total liability exceed the total service fees you paid to us in the 12 months preceding the claim.
 
-10.3 **Third-Party Actions**: We are not responsible for the actions of third parties, including but not limited to:
+9.3 **Third-Party Actions**: We are not responsible for the actions of third parties, including but not limited to:
 - (a) Websites or services you access;
 - (b) Payment processor actions;
 - (c) Network service provider actions.
 
-10.4 **Unforeseeable Losses**: We are not liable for any losses that we could not reasonably foresee.
+9.4 **Unforeseeable Losses**: We are not liable for any losses that we could not reasonably foresee.
 
-### 11. Terms Changes
+### 10. Terms Changes
 
-11.1 **Right to Modify**: We reserve the right to modify this Agreement at any time. Modified terms will take effect upon posting.
+10.1 **Right to Modify**: We reserve the right to modify this Agreement at any time. Modified terms will take effect upon posting.
 
-11.2 **Change Notification**: Significant term changes will be notified through:
+10.2 **Change Notification**: Significant term changes will be notified through:
 - (a) Posting announcements in prominent locations on the website or app;
 - (b) Email notification to registered users;
 - (c) In-app push notifications.
 
-11.3 **Continued Use**: Continuing to use the Service after notification of term changes indicates your acceptance of the modified terms. If you do not agree to the modified terms, you should immediately stop using the Service.
+10.3 **Continued Use**: Continuing to use the Service after notification of term changes indicates your acceptance of the modified terms. If you do not agree to the modified terms, you should immediately stop using the Service.
 
-11.4 **Historical Versions**: You may contact us to obtain historical versions of this Agreement.
+10.4 **Historical Versions**: You may contact us to obtain historical versions of this Agreement.
 
-### 12. Contact Information and Dispute Resolution
+### 11. Contact Information and Dispute Resolution
 
-12.1 **Contact Information**: If you have any questions or complaints about this Agreement, please contact us:
+11.1 **Contact Information**: If you have any questions or complaints about this Agreement, please contact us:
 
 **Email**: legal@overleap.io
 
-12.2 **Dispute Resolution**: Any disputes arising from or related to this Agreement should first be resolved through friendly negotiation between the parties.
+**Post**: Overleap LLC, {ADDRESS}
 
-12.3 **Applicable Law**: The interpretation and enforcement of this Agreement shall be governed by applicable laws and regulations.
+11.2 **Dispute Resolution**: Any disputes arising from or related to this Agreement should first be resolved through friendly negotiation between the parties.
 
-12.4 **Severability**: If any provision of this Agreement is found to be invalid or unenforceable, that provision shall be modified to the minimum extent necessary, and the remaining provisions shall continue in effect.
+11.3 **Applicable Law**: The interpretation and enforcement of this Agreement shall be governed by applicable laws and regulations.
 
-12.5 **Entire Agreement**: This Agreement (including the Privacy Policy and other referenced policies) constitutes the entire agreement between you and us regarding the Service, superseding all prior oral or written agreements.
+11.4 **Severability**: If any provision of this Agreement is found to be invalid or unenforceable, that provision shall be modified to the minimum extent necessary, and the remaining provisions shall continue in effect.
+
+11.5 **Entire Agreement**: This Agreement (including the Privacy Policy and other referenced policies) constitutes the entire agreement between you and us regarding the Service, superseding all prior oral or written agreements.
+
+### Model withdrawal form
+
+(Complete and return this form only if you wish to withdraw from the contract.)
+
+To: Overleap LLC, {ADDRESS}, support@overleap.io
+
+I hereby give notice that I cancel my contract for the supply of the following service: Overleap subscription.
+
+Ordered on: ___
+
+Name: ___
+
+Address: ___
+
+Account email: ___
+
+Date: ___

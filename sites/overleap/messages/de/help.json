@@ -26,7 +26,7 @@
     "items": {
       "manage": {
         "question": "Wie verwalte oder kündige ich mein Abonnement?",
-        "answer": "Öffne deine Kontoseite und wähle Abonnement verwalten. Dort kannst du kündigen, deine Karte ändern oder Rechnungen herunterladen. Nach der Kündigung bleibt dein Tarif bis zum Ende des bezahlten Zeitraums aktiv."
+        "answer": "Öffne deine Kontoseite und wähle Abonnement verwalten. Dort kannst du kündigen, deine Karte ändern oder Rechnungen herunterladen. Nach der Kündigung bleibt dein Tarif bis zum Ende des bezahlten Zeitraums aktiv. Die Kündigung beendet die Verlängerung, ist aber keine Erstattung – siehe „Kann ich eine Rückerstattung bekommen?“"
       },
       "charge": {
         "question": "Wann wird abgebucht?",
@@ -34,7 +34,7 @@
       },
       "refund": {
         "question": "Kann ich eine Rückerstattung bekommen?",
-        "answer": "Wenn {brand} für dich nicht funktioniert, schreib uns, dann finden wir eine Lösung."
+        "answer": "Du kannst innerhalb von 14 Tagen nach deiner ersten Zahlung für ein Abonnement, das wir selbst abrechnen (nicht über den App Store), oder nach einer jährlichen Verlängerung dein Widerrufsrecht ausüben und bekommst die nicht genutzten Tage erstattet. Schreib an support@overleap.io. Käufe im App Store erstattet Apple."
       },
       "devices": {
         "question": "Ich habe das Limit von fünf Geräten erreicht",
