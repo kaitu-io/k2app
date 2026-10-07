@@ -504,7 +504,15 @@ func TestEngineReload(t *testing.T) {
 	}
 }
 
-func TestEngineReload_ClearsTmpRules(t *testing.T) {
+// TestEngineReload_KeepsTmpRules: a hot reload keeps DNS-learned pins. A pin
+// is the only bridge from a domain decision to the IP the app later connects
+// to, and nothing re-learns a dropped pin until the domain is resolved upstream
+// again: the DNS middleware's cache-hit path returns without pinning, and the
+// app itself caches the answer for the TTL we hand it (min 10 min). Dropping
+// pins therefore misroutes every already-resolved domain for minutes to hours,
+// while keeping them only delays a changed domain's new decision until its next
+// upstream resolve — when the pin is overwritten under the new rules.
+func TestEngineReload_KeepsTmpRules(t *testing.T) {
 	b := mustBundle(t, []krs.NamedSet{
 		{Name: "google", DomainSuffixes: []string{"google.com"}},
 	})
@@ -516,18 +524,22 @@ func TestEngineReload_ClearsTmpRules(t *testing.T) {
 	eng := NewEngine(routes, Target(0), []*krs.Bundle{b}, false)
 	defer eng.Close()
 
-	// Set a tmp rule for 8.8.8.8 → proxy.
 	eng.SetTmpRule("8.8.8.8", Target(2))
 	if got := eng.Match("8.8.8.8"); got != Target(2) {
 		t.Fatalf("before reload: Match(8.8.8.8) = %v, want proxy", got)
 	}
 
-	// Reload with the same routes — tmp rules must be cleared.
 	if err := eng.Reload(routes, []*krs.Bundle{b}); err != nil {
 		t.Fatalf("Reload() error: %v", err)
 	}
+	if got := eng.Match("8.8.8.8"); got != Target(2) {
+		t.Errorf("after reload: Match(8.8.8.8) = %v, want proxy (pin kept)", got)
+	}
+
+	// A later DNS answer under the new rules still overwrites the pin.
+	eng.SetTmpRule("8.8.8.8", Target(0))
 	if got := eng.Match("8.8.8.8"); got != Target(0) {
-		t.Errorf("after reload: Match(8.8.8.8) = %v, want direct (tmp cleared)", got)
+		t.Errorf("re-pin after reload: Match(8.8.8.8) = %v, want direct", got)
 	}
 }
 
@@ -673,7 +685,7 @@ func TestEngineSetTmpRule_DIAGInvalidIPSilent(t *testing.T) {
 	}
 }
 
-func TestEngineReload_DIAGEmitsCleared(t *testing.T) {
+func TestEngineReload_DIAGEmitsPinsKept(t *testing.T) {
 	buf := captureSlog(t)
 	eng := NewEngine([]RouteEntry{{Target: Target(0)}}, Target(0), nil, false) // ≥1 route so pins activate
 	defer eng.Close()
@@ -690,8 +702,8 @@ func TestEngineReload_DIAGEmitsCleared(t *testing.T) {
 	if !strings.Contains(out, "DIAG: rule-tmp-reload") {
 		t.Fatalf("missing rule-tmp-reload log:\n%s", out)
 	}
-	if !strings.Contains(out, `cleared=2`) {
-		t.Errorf("expected cleared=2 (we pinned 2 IPs):\n%s", out)
+	if !strings.Contains(out, `pinsKept=2`) {
+		t.Errorf("expected pinsKept=2 (we pinned 2 IPs):\n%s", out)
 	}
 }
 

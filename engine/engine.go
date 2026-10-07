@@ -206,21 +206,15 @@ func (e *Engine) Start(cfg Config) error {
 
 	startTime := time.Now()
 
-	// 1. Rule bundles: ensure on disk before building the rule engine.
-	// Cold start: downloads the tarball from DefaultSources (up to 10s
-	// hard timeout). Warm cache: ~microsecond mtime check, no HTTP.
-	//
-	// If fresh download fails but stale .krs bundles are already on disk (from
-	// the embedded seed above or a prior successful connect), fall through to
-	// the stale cache — the background StartUpdater (started below) hot-reloads
-	// via rule.Engine.Reload() once a mirror becomes reachable. Only true
-	// cold-start with no bundles at all is fatal, preserving the routes=0
-	// all-direct guard.
+	// 1. Rule bundles: make sure a cache exists before building the rule
+	// engine — local only (embedded seed when empty, else whatever is on disk,
+	// however old). No network on the connect path; the background updater
+	// started below refreshes from the rule sources and hot-reloads.
 	sources := client.RuleSources
 	if len(sources) == 0 {
 		sources = rule.DefaultSources
 	}
-	if ee := e.prefetchRulesForStart(ctx, client, sources, cfg.NetworkExtension); ee != nil {
+	if ee := e.prefetchRulesForStart(client); ee != nil {
 		return e.fail(ee)
 	}
 
@@ -243,6 +237,12 @@ func (e *Engine) Start(cfg Config) error {
 
 	// 1b. Build outbound map (via URL → Target index) and rule engine.
 	outboundMap := buildOutboundMap(client.Routes)
+	// Fingerprint the on-disk set BEFORE loading it, so the background updater
+	// reloads exactly when the disk moves past what this engine serves (e.g.
+	// the app-start prefetch landing a download right after we loaded). Taken
+	// before, a swap racing the load can only cause one extra reload, never a
+	// missed one.
+	loadedRuleSig := rule.BundleSignature(client.CacheDir)
 	ruleEngine := buildRuleEngine(client, outboundMap, cfg.NetworkExtension)
 
 	// 1c. (Phase 1 dark instrumentation) Wire rule-miss telemetry reporter
@@ -599,19 +599,23 @@ func (e *Engine) Start(cfg Config) error {
 		func() {},
 	)
 
-	// Start rule bundle updater (24h background check + reload).
+	// Start rule bundle updater: an immediate check, then every hour. It is
+	// the engine's only rule refresh — the connect path above is local-only —
+	// and hot-reloads only when the on-disk set differs from loadedRuleSig.
 	//
 	// Skipped on the NetworkExtension path: the rebuild closure heap-loads the
 	// full corpus (LoadNamed, ~19 MB) and ReloadNamed would swap the mmap engine
 	// back to a heap one — reintroducing the jetsam pressure this whole path
-	// exists to remove. NE cold-start downloads still happen above via
-	// EnsureBundles; NE sessions are short, so periodic mid-session refresh is
-	// unnecessary. Desktop daemon + Android keep the updater.
+	// exists to remove. The iOS main app's PrefetchRules refreshes the shared
+	// App-Group cache and the next NE start picks it up; NE sessions are short,
+	// so mid-session refresh is unnecessary. Desktop daemon + Android keep the
+	// updater.
 	if client.CacheDir != "" && !cfg.NetworkExtension {
 		rebuildFn := func(cacheDir string) ([]rule.RouteEntry, []rule.NamedBundle, error) {
 			return rebuildEntriesForUpdater(client.Routes, outboundMap, cacheDir)
 		}
-		rule.StartUpdaterNamed(ctx, ruleEngine, client.CacheDir, sources, rebuildFn)
+		rule.StartUpdaterNamed(ctx, ruleEngine, client.CacheDir, sources, rebuildFn,
+			rule.WithLoadedSignature(loadedRuleSig))
 	}
 
 	e.setStateLocked(StateConnected)
@@ -1106,18 +1110,26 @@ func (e *Engine) setStateLocked(s string) {
 	e.state = s
 }
 
-// fail records an error, cancels any in-flight context, resets to
-// disconnected, and returns the error. The OnStatus event carries both
-// the disconnected state and the classified error atomically.
-// prefetchRulesForStart warms the rule cache before the engine builds routes.
-// On the Network Extension the networked EnsureBundles is skipped entirely —
-// the NE runs in a ~50MB jetsam process and must never download. It seeds the
-// embedded floor (so every region is present and missingConfiguredRegions
-// won't false-504) and relies on the main app's PrefetchRules for CDN refresh
-// into the shared App-Group cache. Returns a non-nil *EngineError only on a
-// genuine cold-start (no bundles at all on the non-NE path); the caller fails
-// the Start with it.
-func (e *Engine) prefetchRulesForStart(ctx context.Context, client *config.ClientConfig, sources []string, networkExtension bool) *EngineError {
+// prefetchRulesForStart makes sure a rule cache exists before the engine
+// builds routes. It is strictly local: it seeds the binary-embedded floor when
+// the cache has no bundles (an extract, no network) and otherwise trusts
+// whatever is on disk, however old. It never fetches from a rule source.
+//
+// Refresh is owned by the two background paths: the platform's app-start
+// PrefetchRules (appext / iOS main app) and the post-connect updater
+// (rule.StartUpdaterNamed), which downloads, then hot-reloads the running
+// engine when the on-disk set changed. Ticket #3889: a networked EnsureBundles
+// here joined the app-start prefetch's in-flight download through singleflight
+// (inheriting its 30s budget, not this path's own) and held Start — and every
+// stop/start queued behind it on the platform's engine executor — for 11–28s
+// on a slow mainland path, while a usable cache sat on disk.
+//
+// The embedded archive always carries cn.krs, which satisfies
+// missingConfiguredRegions for every region, so after a successful seed the
+// cache is always usable. Returns a non-nil *EngineError only when no bundle
+// exists even after seeding (seed failed: unwritable cacheDir, broken embed);
+// the caller fails the Start with it, preserving the routes=0 guard.
+func (e *Engine) prefetchRulesForStart(client *config.ClientConfig) *EngineError {
 	if client.CacheDir == "" {
 		// Defensive: platforms are expected to provide CacheDir. Empty means
 		// the gate is a no-op, re-exposing the routes=0 cold-start bug if
@@ -1127,40 +1139,23 @@ func (e *Engine) prefetchRulesForStart(ctx context.Context, client *config.Clien
 			"risk", "routes=0 cold-start bug may reappear if bundles absent")
 		return nil
 	}
-	// Always seed the offline floor — instant, no network. Censorship-proof and
-	// satisfies the missingConfiguredRegions 504 guard even on the NE path.
-	if err := rule.SeedFromEmbedIfEmpty(client.CacheDir); err != nil {
-		slog.Warn("engine: seed from embed failed", "err", err, "cacheDir", client.CacheDir)
+	seedErr := rule.SeedFromEmbedIfEmpty(client.CacheDir)
+	if seedErr != nil {
+		slog.Warn("engine: seed from embed failed", "err", seedErr, "cacheDir", client.CacheDir)
 	}
-	if networkExtension {
-		// The NE must never run networked EnsureBundles — OOM risk in the
-		// jetsam process. The main app's PrefetchRules owns CDN refresh into
-		// the shared App-Group cache; the NE only reads it.
-		slog.Info("engine: NE path — skipping networked rule refresh (main app owns it)",
-			"cacheDir", client.CacheDir)
-		return nil
-	}
-	ensureCtx, cancelEnsure := context.WithTimeout(ctx, 10*time.Second)
-	defer cancelEnsure()
-	if ensureErr := rule.EnsureBundles(ensureCtx, client.CacheDir, sources); ensureErr != nil {
-		existing := rule.ListRegions(client.CacheDir) // count-only; no heap expand
-		if len(existing) == 0 {
-			// True cold start: no disk cache to fall back to.
-			return &EngineError{
-				Code:     ErrCodeRuleBundlesUnavailable,
-				Category: CategoryServer,
-				Message:  fmt.Sprintf("rule bundles unavailable: %v", ensureErr),
-			}
+	if len(rule.ListRegions(client.CacheDir)) == 0 { // count-only; no heap expand
+		return &EngineError{
+			Code:     ErrCodeRuleBundlesUnavailable,
+			Category: CategoryServer,
+			Message:  fmt.Sprintf("rule bundles unavailable: no bundle on disk after embedded seed (seed err: %v)", seedErr),
 		}
-		slog.Warn("DIAG: rule-bundle-stale",
-			"err", ensureErr.Error(),
-			"bundleCount", len(existing),
-			"cacheDir", client.CacheDir,
-		)
 	}
 	return nil
 }
 
+// fail records an error, cancels any in-flight context, resets to
+// disconnected, and returns the error. The OnStatus event carries both
+// the disconnected state and the classified error atomically.
 func (e *Engine) fail(err error) error {
 	e.mu.Lock()
 	e.lastError = ClassifyError(err)

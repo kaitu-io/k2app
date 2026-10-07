@@ -387,8 +387,16 @@ constructor runs before the engine is reachable by any other goroutine:
 2. `SetTmpRule` — `e.tmp[addr] = target` + `tmpLRUTouch`, plus
    `tmpLRUEvictOldest` at cap (which deletes from all three).
 3. `Close` — `e.tmp = make(...)` + `tmpLRUReset()`.
-4. `reload` — same pair (shared by `Reload` / `ReloadWithClosers` /
-   `ReloadNamed`).
+
+`reload` (shared by `Reload` / `ReloadWithClosers` / `ReloadNamed`) touches
+**none** of the three: pins survive a hot reload (since 2026-10, #3889). A pin
+is the only bridge from a domain decision to the IP the app later connects to,
+and nothing re-learns a dropped pin until that domain is resolved upstream
+again — a DNS **cache hit returns without pinning** (`core/dns/middleware.go`
+step 6), and the app caches the answer for the TTL we hand it (min 10 min).
+Clearing therefore routed every already-resolved domain by IP alone for minutes
+to hours. A kept pin only delays a domain whose decision changed until its next
+upstream resolve or prefresh, which overwrites it under the new rules.
 
 Helpers live in `tmp_lru.go`; none of them take a lock of their own, by design
 (`Engine.mu` is standalone and never nested inside another lock).
@@ -396,12 +404,16 @@ Helpers live in `tmp_lru.go`; none of them take a lock of their own, by design
 ### DIAG
 
 - `DIAG: rule-tmp-pin` (INFO) — first pin of an IP, or target change on an
-  already-pinned IP. Duplicates are suppressed (the DNS pipeline re-pins on
-  every cache hit). Carries `evictedIP` when that add displaced an entry.
+  already-pinned IP. Duplicates are suppressed (upstream re-resolves and
+  prefreshes re-pin the same answer; cache hits do not pin at all). Carries
+  `evictedIP` when that add displaced an entry.
 - `DIAG: rule-tmp-lru-desync` (WARN) — at cap but eviction found nothing to
   evict. Unreachable while the three structures stay in lockstep; it exists so
   the desync failure mode is not silent.
-- `DIAG: rule-tmp-reload` (INFO) — reload cleared the cache.
+- `DIAG: rule-tmp-reload` (INFO) — a hot reload swapped in a new route set;
+  `pinsKept` is how many DNS-learned pins carried over (the field was `cleared`
+  before #3889, when reload dropped them). The updater only reloads when the
+  on-disk set changed, so this no longer fires after every connect.
 - `DIAG: rule-tmp-evict` — **removed**. Eviction now rides along as
   `rule-tmp-pin`'s `evictedIP` field. Grepping production logs for the old name
   returns nothing.
@@ -414,7 +426,11 @@ exactly what `rule-tmp-pin`'s duplicate suppression exists to avoid.
 
 - `ensure.go` — `EnsureBundles`: TTL-gated refresh (`bundlesShortTTL` fast path,
   `bundlesFreshTTL` hard backstop), cross-process serialized by `flock_*.go`,
-  in-process by singleflight.
+  in-process by singleflight. **Never on the connect path** (#3889): a
+  singleflight joiner waits on the leader's ctx, not its own, so a connect-time
+  call with a 10s budget joined the app-start prefetch's 30s download and held
+  `engine.Start` for up to 30s. Callers are background only — the platform's
+  app-start `PrefetchRules` and the updater.
 - `manifest.go` — parses k2-rules `dist/manifest.json` (schema v2); newest-wins
   by parsed RFC3339 time, never by string compare.
 - `downloader.go` — Happy Eyeballs race across `DefaultSources` (GitHub origin +
@@ -425,7 +441,16 @@ exactly what `rule-tmp-pin`'s duplicate suppression exists to avoid.
   replace it with the full production archive beforehand, but **no target in
   this repo's Makefile does that** — the refresh is out-of-band. (An earlier
   comment named a `make fetch-rules-embed` target; no such target exists.)
-- `updater.go` — background re-check tick; hot-reloads via `ReloadNamed`.
+- `updater.go` — post-connect refresh: an immediate check, then every
+  `defaultCheckInterval` (1h). Each check (`refreshAndReload`) runs
+  `ensureBundles`, then hot-reloads via `ReloadNamed` **iff**
+  `BundleSignature` (`signature.go`: every `.krs` name/size/mtime + manifest
+  version) differs from the set the engine serves — seeded by
+  `WithLoadedSignature`, taken in `engine.Start` just before the load. The
+  decision is "disk differs from engine", not "this call downloaded": the
+  app-start prefetch can land a new set after the engine loaded the old one,
+  leaving the cache fresh and the updater with nothing to download. An empty
+  signature (no `.krs` on disk) never replaces a working set.
 - `loadnamed.go` (heap `*krs.Bundle`) vs `opennamed.go` (mmap `NamedDiskBundle`).
   The iOS NE path **must** use `OpenNamed`: `LoadNamed` expands the full corpus
   onto the dirty heap (~19 MB); mmap keeps resident dirty heap in the tens of KB.

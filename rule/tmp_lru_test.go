@@ -110,48 +110,35 @@ func TestSetTmpRule_TouchRefreshesFreshness(t *testing.T) {
 	}
 }
 
-// TestReload_ResetsLRUStructuresInSync verifies that reload() clears
-// tmpOrder/tmpIndex in lockstep with e.tmp, not just the map. If only the map
-// were cleared, tmpOrder/tmpIndex would retain stale pre-reload entries;
-// eventually tmpLRUEvictOldest would pop one of those stale entries and its
-// `delete(e.tmp, entry.addr)` would be a no-op, letting e.tmp silently grow
-// past tmpRuleCap. Mutation check: removing the tmpLRUReset() call from
-// reload() (leaving only `e.tmp = make(...)`) must turn this red.
-func TestReload_ResetsLRUStructuresInSync(t *testing.T) {
+// TestReload_KeepsLRUStructuresInSync verifies that reload() leaves e.tmp,
+// tmpOrder and tmpIndex untouched together: pins survive a hot reload (see
+// TestEngineReload_KeepsTmpRules) and the LRU keeps evicting the oldest
+// pre-reload pin first. Mutation check: resetting only one of the three
+// structures in reload() must turn this red.
+func TestReload_KeepsLRUStructuresInSync(t *testing.T) {
 	route := []RouteEntry{{Target: Target(0), NetworkMatch: "tcp"}}
 	e := NewEngine(route, Target(2), nil, false)
 
-	// Fill to exactly cap under the pre-reload rule set.
 	for i := 0; i < tmpRuleCap; i++ {
 		e.SetTmpRule(tmpTestIP(10, i), Target(1))
 	}
-	if got := e.tmpLen(); got != tmpRuleCap {
-		t.Fatalf("setup: tmp size = %d, want %d", got, tmpRuleCap)
-	}
-
-	// Reload with a fresh route set. Existing (tested elsewhere) behavior:
-	// old pins are untrustworthy under new routes. This test's concern: the
-	// LRU order/index must be reset in lockstep, not just the tmp map.
 	if err := e.Reload(route, nil); err != nil {
 		t.Fatalf("Reload: %v", err)
 	}
-
-	// Refill with a disjoint address range (172.x, vs 10.x pre-reload) up to
-	// cap again. Nothing here should evict yet — the live map started at 0
-	// after reload.
-	for i := 0; i < tmpRuleCap; i++ {
-		e.SetTmpRule(tmpTestIP(172, i), Target(1))
-	}
 	if got := e.tmpLen(); got != tmpRuleCap {
-		t.Fatalf("after post-reload refill: tmp size = %d, want %d", got, tmpRuleCap)
+		t.Fatalf("tmp size after reload = %d, want %d (pins kept)", got, tmpRuleCap)
 	}
 
-	// One more distinct pin must evict exactly one LIVE entry, keeping size
-	// at cap.
+	// One more distinct pin evicts exactly the oldest pre-reload entry.
 	e.SetTmpRule("203.0.113.10", Target(1))
 	if got := e.tmpLen(); got != tmpRuleCap {
-		t.Fatalf("tmp size after post-reload overflow = %d, want %d "+
-			"(LRU structures must reset in lockstep with e.tmp on reload)", got, tmpRuleCap)
+		t.Fatalf("tmp size after overflow = %d, want %d", got, tmpRuleCap)
+	}
+	if e.hasTmpRule(tmpTestIP(10, 0)) {
+		t.Error("oldest pre-reload pin should have been evicted first")
+	}
+	if !e.hasTmpRule(tmpTestIP(10, 1)) {
+		t.Error("second-oldest pre-reload pin should still be present")
 	}
 }
 

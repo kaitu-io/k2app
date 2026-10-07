@@ -2173,19 +2173,19 @@ func TestEngineStart_RuleBundlesUnavailable(t *testing.T) {
 	}
 }
 
-// TestEngineStart_RuleBundlesStaleCacheFallback verifies that when fresh
-// rule bundle download fails but at least one stale .k2b is on disk, Engine.Start
-// MUST fall through to the stale cache instead of returning ErrCodeRuleBundlesUnavailable.
-// The background StartUpdater hot-reloads fresh bundles once a mirror becomes
-// reachable. Regression of this fallback would resurface support ticket #620 —
-// users with a working stale cache cannot connect when jsdelivr/GitHub mirrors
-// are blocked (common in China).
+// TestEngineStart_RuleBundlesStaleCacheFallback verifies that a stale cache
+// on disk is used as-is: Start must neither fail with
+// ErrCodeRuleBundlesUnavailable nor contact a rule source (the connect path is
+// local-only since #3889 — refresh is the background updater's job, which only
+// starts after a successful connect). Regression of the fallback would
+// resurface ticket #620 — users with a working stale cache unable to connect
+// while jsdelivr/GitHub mirrors are blocked.
 func TestEngineStart_RuleBundlesStaleCacheFallback(t *testing.T) {
 	dir := t.TempDir()
 
-	// Pre-seed a valid .k2b on disk — mimics the state after a prior successful
-	// connect. bundles.version is intentionally absent, so isVersionFresh returns
-	// false and EnsureBundles will attempt (and fail) a download.
+	// Pre-seed a valid .krs on disk — mimics the state after a prior successful
+	// connect. bundles.version is intentionally absent (never fresh), the state
+	// in which the pre-#3889 connect path went to the network.
 	var buf bytes.Buffer
 	if err := krs.WriteBundle(&buf, &krs.Bundle{Sets: []krs.NamedSet{
 		{Name: "overseas", DomainSuffixes: []string{"example.com"}},
@@ -2196,21 +2196,16 @@ func TestEngineStart_RuleBundlesStaleCacheFallback(t *testing.T) {
 		t.Fatalf("write stale .krs: %v", err)
 	}
 
-	// Capture slog to assert the DIAG event is emitted.
-	var records []slog.Record
-	var recMu sync.Mutex
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slogHandlerFunc(func(_ context.Context, r slog.Record) error {
-		recMu.Lock()
-		records = append(records, r)
-		recMu.Unlock()
-		return nil
-	})))
-	defer slog.SetDefault(prev)
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
 
 	client := &config.ClientConfig{
 		CacheDir:    dir,
-		RuleSources: []string{"http://127.0.0.1:1/"}, // connection refused — fast fail
+		RuleSources: []string{srv.URL + "/"},
 		Server:      "k2v5://udid:tok@127.0.0.1:65534?insecure=1",
 		Routes: []config.RouteConfig{
 			{Via: "k2v5://udid:tok@127.0.0.1:65534?insecure=1", Match: rule.MatchConfig{All: true}},
@@ -2228,23 +2223,12 @@ func TestEngineStart_RuleBundlesStaleCacheFallback(t *testing.T) {
 		var engErr *EngineError
 		if errors.As(err, &engErr) && engErr.Code == ErrCodeRuleBundlesUnavailable {
 			t.Fatalf("regression: Start failed with ErrCodeRuleBundlesUnavailable=%d "+
-				"despite stale .k2b on disk; engine must fall through to stale cache. msg=%q",
+				"despite stale .krs on disk; engine must use the stale cache. msg=%q",
 				ErrCodeRuleBundlesUnavailable, engErr.Message)
 		}
 	}
-
-	// DIAG event must be emitted for support visibility.
-	recMu.Lock()
-	defer recMu.Unlock()
-	var found bool
-	for _, r := range records {
-		if strings.Contains(r.Message, "DIAG: rule-bundle-stale") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("expected `DIAG: rule-bundle-stale` log when falling through to stale cache; got %d records", len(records))
+	if n := hits.Load(); n != 0 {
+		t.Errorf("Start made %d rule-source requests, want 0 (connect path is local-only)", n)
 	}
 }
 
@@ -2622,62 +2606,6 @@ func TestBuildRouteEntries_AllInvalidInlineDropped(t *testing.T) {
 	if len(entries) != 0 {
 		t.Errorf("all-invalid inline route should produce 0 entries, got %d", len(entries))
 	}
-}
-
-// TestPrefetchRulesForStart_NESkipsNetwork locks the decision logic: the
-// Network Extension path makes ZERO rule-source requests even when a download
-// is due (stale cache), while the non-NE path attempts a network refresh. The
-// NE runs in a ~50MB jetsam process and must never download — the main app's
-// PrefetchRules owns CDN refresh into the shared App-Group cache.
-func TestPrefetchRulesForStart_NESkipsNetwork(t *testing.T) {
-	var hits atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits.Add(1)
-		http.NotFound(w, r) // make every fetch fail so EnsureBundles keeps trying (counts attempts)
-	}))
-	defer srv.Close()
-
-	// stalePopulatedCache writes a minimal .krs + an aged bundles.version so the
-	// cache is non-empty (SeedFromEmbedIfEmpty no-ops) AND stale (past shortTTL),
-	// so the non-NE path WILL attempt a network refresh.
-	stalePopulatedCache := func(t *testing.T) string {
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "cn.krs"), []byte("x"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "bundles.version"), []byte("2026-06-01T00:00:00Z\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		old := time.Now().Add(-2 * time.Hour)
-		_ = os.Chtimes(filepath.Join(dir, "bundles.version"), old, old)
-		return dir
-	}
-
-	t.Run("NE skips network", func(t *testing.T) {
-		hits.Store(0)
-		dir := stalePopulatedCache(t)
-		e := New()
-		client := &config.ClientConfig{CacheDir: dir}
-		if ee := e.prefetchRulesForStart(context.Background(), client, []string{srv.URL + "/"}, true /*NE*/); ee != nil {
-			t.Fatalf("NE prefetch returned error: %v", ee)
-		}
-		if hits.Load() != 0 {
-			t.Errorf("NE made %d rule-source requests, want 0 (NE must never download)", hits.Load())
-		}
-	})
-
-	t.Run("non-NE attempts network", func(t *testing.T) {
-		hits.Store(0)
-		dir := stalePopulatedCache(t)
-		e := New()
-		client := &config.ClientConfig{CacheDir: dir}
-		// Non-NE with a stale cache → EnsureBundles attempts (manifest + fallback).
-		// It returns nil (stale cache exists as fallback), but it MUST have tried.
-		_ = e.prefetchRulesForStart(context.Background(), client, []string{srv.URL + "/"}, false)
-		if hits.Load() == 0 {
-			t.Error("non-NE path made no rule-source requests, want >= 1")
-		}
-	})
 }
 
 // TestBuildRouteEntries_ProtocolNormalized pins the normalization at the
