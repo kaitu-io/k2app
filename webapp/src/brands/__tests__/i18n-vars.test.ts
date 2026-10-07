@@ -30,7 +30,7 @@ describe.runIf(isKaitu)('brand i18n variables (active brand = kaitu)', () => {
       brand: '开途',
       brandDomain: 'Kaitu.io',
       brandBaseUrl: 'https://www.kaitu.io',
-      supportEmail: 'support@kaitu.me',
+      supportEmail: 'support@kaitu.io',
     });
   });
 });

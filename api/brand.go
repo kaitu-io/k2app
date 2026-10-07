@@ -69,7 +69,7 @@ var brandRegistry = map[Brand]*BrandConfig{
 		WebOrigins:         []string{"https://www.kaitu.io", "https://kaitu.io"},
 		RedirectRootDomain: "kaitu.io",
 		BaseURL:            "https://www.kaitu.io",
-		SupportEmail:       "support@kaitu.me",
+		SupportEmail:       "support@kaitu.io",
 		EDMFromName:        "Kaitu Team",
 		// 2026-09-22 起 nextpay 是 kaitu 网页/app 下单渠道；wordgate 过渡期保留——
 		// 在途 WordGate 订单的 webhook 哨兵检查 AllowsPayment(wordgate)，拿掉会拒掉在途付款。

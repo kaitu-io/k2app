@@ -7,7 +7,7 @@ export const KAITU_BRAND: WebappBrandConfig = {
   productName: 'Kaitu',
   domainLabel: 'Kaitu.io',
   baseURL: 'https://www.kaitu.io',
-  supportEmail: 'support@kaitu.me',
+  supportEmail: 'support@kaitu.io',
   // Verbatim pre-split value (was Tunnels.tsx DEPLOY_COMMAND). k2s install
   // script is k2-protocol infra hosted on kaitu.io only.
   k2sInstallUrl: 'curl -fsSL https://kaitu.io/i/k2s | sudo sh',

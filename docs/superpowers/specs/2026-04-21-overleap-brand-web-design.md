@@ -65,7 +65,7 @@ export type Brand = {
   defaultLocale: Locale;         // "zh-CN" / "en-US"
   allowedLocales: Locale[];      // Kaitu: all 7 / Overleap: ['en-US','en-GB','en-AU']
   logoPath: string;              // "/kaitu-icon.png" / "/overleap-icon.png"
-  contactEmail: string;          // "support@kaitu.me" / "support@overleap.io"
+  contactEmail: string;          // "support@kaitu.io" / "support@overleap.io"
   taglineZh?: string;            // "愿上帝为你开路" (kaitu only, overleap omits)
   ogImagePath: string;           // per-brand OG image
 };

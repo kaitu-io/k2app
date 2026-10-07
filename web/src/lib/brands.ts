@@ -74,7 +74,7 @@ export const KAITU: Brand = {
   defaultLocale: 'zh-CN',
   allowedLocales: ['zh-CN', 'zh-TW', 'zh-HK'],
   logoPath: '/kaitu-icon.png',
-  contactEmail: 'support@kaitu.me',
+  contactEmail: 'support@kaitu.io',
   privacyEmail: 'privacy@kaitu.io',
   legalEmail: 'legal@kaitu.io',
   ogImagePath: '/images/og-default.png',

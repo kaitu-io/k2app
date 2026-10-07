@@ -24,7 +24,7 @@ describe('brand registry', () => {
     expect(KAITU_BRAND.productName).toBe('Kaitu');
     expect(KAITU_BRAND.domainLabel).toBe('Kaitu.io');
     expect(KAITU_BRAND.baseURL).toBe('https://www.kaitu.io');
-    expect(KAITU_BRAND.supportEmail).toBe('support@kaitu.me');
+    expect(KAITU_BRAND.supportEmail).toBe('support@kaitu.io');
     expect(KAITU_BRAND.defaultLocale).toBe('zh-CN');
     expect(KAITU_BRAND.names.zhHans).toBe('开途');
     expect(KAITU_BRAND.names.zhHant).toBe('開途');

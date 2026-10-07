@@ -14,7 +14,7 @@
       ],
       "redirectRootDomain": "kaitu.io",
       "baseURL": "https://www.kaitu.io",
-      "supportEmail": "support@kaitu.me",
+      "supportEmail": "support@kaitu.io",
       "edmFromName": "Kaitu Team",
       "paymentChannels": [
         "nextpay",

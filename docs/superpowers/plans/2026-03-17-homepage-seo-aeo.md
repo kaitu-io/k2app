@@ -119,7 +119,7 @@ const JSON_LD_CONTENT = JSON.stringify([
     url: 'https://kaitu.io',
     logo: 'https://kaitu.io/kaitu-icon.png',
     sameAs: ['https://github.com/kaitu-io'],
-    contactPoint: { '@type': 'ContactPoint', email: 'support@kaitu.me', contactType: 'customer support' },
+    contactPoint: { '@type': 'ContactPoint', email: 'support@kaitu.io', contactType: 'customer support' },
   },
   {
     '@context': 'https://schema.org',
