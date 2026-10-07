@@ -1,10 +1,12 @@
-# Overleap 支付 A 期：堵漏 + 撤回执行器 — 实施设计（v3）
+# Overleap 支付 A 期：堵漏 + 撤回执行器 — 实施设计（v4）
 
 日期：2026-10-07 · 分支 `feat/overleap-trial-payment` · 上位 spec：`2026-10-07-overleap-trial-payment-design.md`
 
 修订记录：
 - v1 → v2（review：后端 6/10、文案 4/10）：撤回执行器与结账同意从 B 期提前到 A 期——条款承诺的"折算退款并结束会员"必须在 A 期就能执行，折算也必须有"用户要求立即开始"的同意做依据。
 - v2 → v3（review：后端 7/10、文案 6/10）：执行器改为以 `StatutoryRefund` 行为续跑锚点、顺序改为 退款→收回→取消、退款 id 立即落库并按 metadata 查重；时间以**用户提出撤回的时刻** `noticeAt` 计；同意文案收窄；营销词表不再宣传法定权利；补墓碑行字段、截断规则的基准、审批注册、商家地址、同意记录披露。
+
+- v3 → v4（review：后端 8/10、文案 8/10）：撤回按"请求"而非"用户"续跑，每用户至多一个未完成请求、可作废；通知后被扣的续费全额退；退前查 charge 已退 / 拒付；webhook 识别我们自己的撤回退款；`FullRefund` 只用于撤回模式；条款 8.3(c) 与结账同意的续费价措辞对齐。
 
 **A 期目标**：(1) 关掉今天就存在的退款 / 钱包后门；(2) 条款改成最终政策，且政策里的每一句都有代码或明确的操作流程兑现。不做试用、不做用户自助按钮（B 期）。
 
@@ -98,74 +100,92 @@ var stripeSubscriptionByPaymentIntent = func(key, pi string) (subID string, err 
 
 ## 3. 撤回执行器（14 天折算，后台触发）
 
-### 3.1 资格与金额（纯函数，B 期用户按钮复用）
+### 3.1 一次撤回请求 = 一个计划
+
+请求：`{UserUUID, SubscriptionID?（可选，缺省取该用户最新一条非 revoked 的 Stripe 订阅）, NoticeAt（必填）, Mode: withdrawal|termination, OperatorID, Source}`。
+
+`NoticeAt` = 用户提出撤回的时刻（邮件时间等），由客服填写；窗口和已用天数都按它算，不按执行时刻。`NoticeAt` 晚于当前时间 → 拒绝。
+
+计划由两类条目组成，每条对应一张 invoice：
+1. **主条目**：该订阅里 `paid_at ≤ NoticeAt` 的最新一张已入账 invoice（候选取 `SubscriptionCredit WHERE provider=stripe AND original_transaction_id=subID ORDER BY id DESC`，逐张取 invoice 核对 `paid_at`）。不用 `ProviderLatestRef`（重放旧 invoice 会把它拨回去）。没有 `paid_at ≤ NoticeAt` 的 → 拒绝（通知早于任何付款，不是撤回）。按 §3.2 折算。
+2. **通知后条目**：同一订阅里 `paid_at > NoticeAt` 的已入账 invoice（客服处理晚了、期间又续费）→ 各自**全额**退（合同在通知时已结束，这笔不该扣）。
+
+### 3.2 主条目的资格与金额（纯函数，B 期用户按钮复用）
 
 ```go
-type withdrawTarget struct {             // 从 Stripe 取，seam stripeInvoiceForWithdraw(key, invoiceID)
+type withdrawTarget struct {             // seam stripeInvoiceForWithdraw(key, invoiceID)
     InvoiceID, PaymentIntentID, Currency string
-    PaidAmount int64                       // 已付那条 invoice payment 的 amount_paid（不是 invoice.amount_paid）
+    PaidAmount int64                       // status=paid 那条 invoice payment 的 amount_paid（不是 invoice.amount_paid）
     PaidAt, PeriodStart, PeriodEnd int64
     CreditKind string                       // 本地 SubscriptionCredit.Kind
     HasConsent bool                         // 本地有该订阅的 SubscriptionConsent
 }
-type withdrawQuote struct {
-    Eligible bool; Reason string            // 英文，给客服看
-    UsedDays, TotalDays int; RefundAmount int64; FullRefund bool
-    WindowEndsAt int64
-}
-func quoteStripeWithdrawal(t withdrawTarget, noticeAt int64) withdrawQuote
+func quoteStripeWithdrawal(t withdrawTarget, noticeAt int64, mode string) withdrawQuote
 ```
 
-- **对象**：该订阅最新一条 `SubscriptionCredit`（`provider=stripe AND original_transaction_id=subID ORDER BY id DESC`）对应的 invoice。不用 `ProviderLatestRef`（重放旧 invoice 会把它拨回去）。
-- **取 invoice**：`invoice.Get` 展开 `payments`；取 `status == "paid"` 的那条 payment，用它的 `amount_paid` 和 `payment.payment_intent`（ID）；`status_transitions.paid_at`；周期与 `extractStripeInvoiceFacts` 同一取法（period end 最大的 line）。
-- **合格的付款**：`CreditKind == "purchase"`（新订阅首付；换档 = 新订阅），或 `CreditKind == "renewal"` 且周期 ≥ 360 天（年付续费）。月付续费不合格。
-- **时刻**：`noticeAt` = 用户提出撤回的时刻（邮件时间等），**必填**，由客服填写；窗口和已用天数都按它算，不按执行时刻算。`noticeAt` 晚于当前时间 → 拒绝。
-- **窗口**：付款日 D = `paid_at` 的 UTC 日期；截止 = D+16 日 00:00 UTC（第 14 天结束再留 1 天余量）。`noticeAt < 截止` 合格。
-- **已用天数**：使用起点 `u = max(PeriodStart, PaidAt)`（扣款重试导致晚付时，没服务的天数不算用户的）；`TotalDays = max(1, round((PeriodEnd − u) / 86400))`；`UsedDays = clamp(floor((noticeAt − u) / 86400) + 1, 1, TotalDays)`（含付款当天，按 24 小时计）。
-- **金额**：`RefundAmount = PaidAmount × (TotalDays − UsedDays) / TotalDays`，整数向下取整。
-- **无同意记录**（`HasConsent=false`，webhook 写入曾失败）→ 没有折算依据：`FullRefund=true`，`RefundAmount = PaidAmount`，执行时告警。
-- `PaidAmount == 0`（全额优惠券）→ 不合格（没有可退的钱；用户仍可关续费）。
+- **取 invoice**：`invoice.Get` 加 `AddExpand("payments")`；取 `status == "paid"` 的 payment，用它的 `amount_paid` 与 `payment.payment_intent`（裸 ID）；`status_transitions.paid_at`；周期与 `extractStripeInvoiceFacts` 同一取法。
+- **合格（仅 `mode=withdrawal`）**：`CreditKind == "purchase"`（新订阅首付；换档 = 新订阅），或 `CreditKind == "renewal"` 且周期 ≥ 360 天（年付续费）；月付续费不合格。窗口：付款日 D = `paid_at` 的 UTC 日期，`NoticeAt < D+16 日 00:00 UTC`（第 14 天结束再留 1 天余量）。
+- **`mode=termination`**（条款 8.3：我们主动终止）：跳过上面的合格性。
+- **已用天数**：使用起点 `u = max(PeriodStart, PaidAt)`（扣款重试导致晚付时，没服务的天数不算用户的）；`TotalDays = max(1, round((PeriodEnd − u)/86400))`；`UsedDays = clamp(floor((NoticeAt − u)/86400) + 1, 1, TotalDays)`（含付款当天，按 24 小时计）。`NoticeAt ≥ PeriodEnd` → 退款 0。
+- **金额**：`PaidAmount × (TotalDays − UsedDays) / TotalDays`，向下取整。
+- **无同意记录**：仅 `mode=withdrawal` 时 → `FullRefund=true`，退 `PaidAmount`（没有折算依据），执行时告警。`mode=termination` 不看同意，照常折算。
+- `PaidAmount == 0` 或算出 0：不退款，但收回与取消照做（withdrawal 模式下 `PaidAmount == 0` 直接不合格：没有可退的钱，用户关续费即可）。
 
-### 3.2 `StatutoryRefund` 表
+### 3.3 `StatutoryRefund` 表
 
 ```go
 type StatutoryRefund struct {
     ID uint64; CreatedAt, UpdatedAt int64
+    RequestID string `index`                  // 同一请求的所有条目共享
     UserID uint64 `index`
     ProviderSubscriptionID string
-    InvoiceID string `uniqueIndex`              // 一笔付款只能撤回一次
-    PaymentIntentID string
+    InvoiceID string `uniqueIndex`              // 一笔付款只处理一次
+    PaymentIntentID string `index`
+    Kind string                                 // primary | post_notice
     Amount int64; Currency string; UsedDays, TotalDays int; FullRefund bool
-    NoticeAt int64
+    NoticeAt int64; Mode string                 // withdrawal | termination
     StripeRefundID string
-    Status string                               // pending | done
-    Mode string                                 // withdrawal | termination（条款 8.3）
+    RefundNote string                           // 跳过退款的原因（charge 已退 / 拒付中 / 金额 0）
+    Status string                               // pending | done | abandoned
     OperatorID uint64; Source string             // admin（B 期加 user）
 }
 ```
 
-### 3.3 `executeStripeWithdrawal(ctx, req)`
+**每个用户同时最多一个未完成请求**（存在 `pending` 行即视为有未完成请求）。
 
-`req = {UserUUID, NoticeAt, Mode, OperatorID, Source}`。顺序：**退款 → 收回 → 取消 → 完成**。
+### 3.4 `executeStripeWithdrawal(ctx, req)`
 
-1. **续跑优先**：该用户有 `status=pending` 的行 → 直接用行里存的字段，不重新算资格（窗口过期、订阅已 revoked 都不影响续跑）。
-2. 否则新建：取该用户最新一条非 revoked 的 Stripe 订阅 → 目标 invoice → `quote`。`Mode=withdrawal` 不合格 → 返回带原因的错误。`Mode=termination`（条款 8.3：我们主动终止）→ 跳过合格性，按 `noticeAt = 终止时刻` 折算未用部分。插 `pending` 行（唯一索引挡并发 / 重复）。
-3. **退款**（`Amount > 0` 且 `StripeRefundID` 为空时）：
-   - 先查重：`stripeFindWithdrawalRefund(pi, invoiceID)` 列出该 PI 的退款，找 `metadata.center_withdrawal == invoiceID`。找到 → 用它。
-   - 没有 → `refund.New{PaymentIntent, Amount, Metadata{center_withdrawal: invoiceID}}`，`Params.SetIdempotencyKey("withdraw-"+invoiceID)`（Stripe 只保留 24 小时，所以查重才是主防线，幂等键是第二道）。
-   - **退款 id 立即单独提交**到行上，再进下一步。
-4. **收回**：`revokeStripeSubscriptionInTx(reason)`（已 revoked 短路）。先收回再取消：取消触发的 `customer.subscription.deleted` 遇 revoked 短路，撤回的历史记录不会被截断规则抢先写成"ended early"。
+1. **续跑或拒绝**：该用户有 `pending` 行 →
+   - 请求的 (订阅, NoticeAt, Mode) 与那批行一致 → 续跑那批（不重新判定资格；窗口过期、订阅已 revoked 都不影响）。
+   - 不一致 → 返回错误，写明未完成请求的 RequestID 与 invoice，让客服先续跑或作废它。
+2. **新建**：按 §3.1 / §3.2 生成计划；主条目不合格 → 返回原因。新 RequestID，所有条目插 `pending`（唯一索引挡重复）。
+3. **逐条退款**（`Amount > 0` 且 `StripeRefundID` 为空）：
+   - 先查 charge 状态（seam：PaymentIntent 的 `latest_charge`）：已全额退款或有拒付 → 不退，写 `RefundNote`，继续。
+   - 查重：`stripeFindWithdrawalRefund(pi, invoiceID)` 用 `refund.List{PaymentIntent}` 迭代（`for it.Next()` 后检查 `it.Err()`，出错即中止，**不能**当"没找到"），找 `metadata.center_withdrawal == invoiceID`。
+   - 没有 → `refund.New{PaymentIntent, Amount, Metadata{center_withdrawal: invoiceID, center_request: RequestID}}`，`Params.SetIdempotencyKey("withdraw-"+invoiceID)`。幂等键 Stripe 只留 24 小时，查重才是主防线。
+   - **退款 id 立即单独提交**到该行。
+4. **收回**：`revokeStripeSubscriptionInTx(reason="Withdrawal within 14 days - <主 invoice>"`；termination 用 `"Service terminated by Overleap - <sub>"`)，已 revoked 短路。先收回再取消：取消触发的 `customer.subscription.deleted` 遇 revoked 短路。
 5. **取消**：`cancelStripeSubscriptionIfLive`。
-6. 行置 `done`；告警频道记一条。
+6. 该请求所有行置 `done`；告警频道记一条。
 
-任一步失败返回错误；重试（新的审批单）从第 1 步续跑。Stripe 随后的 `charge.refunded` 是部分退款，只告警；`FullRefund` 时是全额退款 → §2 流程遇 revoked 短路，取消已完成则跳过。
+任一步失败返回错误；重提同一请求从第 1 步续跑。执行器在调 Stripe 时从不持有数据库事务，没有锁顺序问题；两个并发执行在 24 小时内用同一幂等键，Stripe 只产生一笔退款。
 
-### 3.4 入口（A 期只给后台）
+**作废**：`POST /app/stripe-withdrawals/:request_id/abandon {reason}` 把该请求的 `pending` 行置 `abandoned`（已退的款不撤回，记录保留）。用于卡死的请求（例如 Stripe 持续拒绝退款），之后人工处理。
 
-- 路由在 `/app`（`AdminRequired()`）：`GET /app/users/:uuid/stripe-withdrawal?notice_at=` → quote；`POST /app/users/:uuid/stripe-withdrawal {notice_at, mode, reason}` → `SubmitApproval("stripe_withdrawal", …)`。
-- `worker_integration.go` 注册 `RegisterApprovalCallback("stripe_withdrawal", executeApprovalStripeWithdrawal)`；`logic_approval.go` 的 `actionDisplayNames` 加中文名。超管请求同步执行，失败审批单记 `failed`，重提即续跑（§3.3 第 1 步）。
-- MCP（`tools/kaitu-center`）：`quote_stripe_withdrawal`、`withdraw_stripe_subscription`，照 `admin-orders.ts` 的退款工具写；`notice_at` 必填。
-- 客服流程写进 `docs/customer-service/README.md`：收到撤回请求 → 记下用户消息时间 → quote → 回邮件确认金额 → withdraw。**不要在 Stripe 后台手工部分退款**。条款 8.3 的主动终止用 `mode=termination`。
+### 3.5 与 §2 webhook 的交互
+
+- `revokeStripeForChargeLoss` 与部分退款告警：先按 PI 查 `StatutoryRefund`。有 → 这是我们自己的撤回退款：收回原因用撤回原因，告警标 `[WITHDRAWAL]` 而不是 `[STRIPE-REFUND]`；收回与取消照常执行（都幂等）。
+- `cancelStripeSubscriptionIfLive`：Cancel 返回非 404 错误 → 再 Get 一次，状态已 `canceled` 即视为完成（并发取消的另一方先到）。
+
+### 3.6 入口（A 期只给后台）
+
+- `/app`（`AdminRequired()`，即超管同步执行，审批行与 `order_refund` 一样是留痕）：
+  - `GET /app/users/:uuid/stripe-withdrawal?notice_at=&subscription_id=&mode=` → 计划预览（每条的金额、天数、是否全额、原因）。
+  - `POST /app/users/:uuid/stripe-withdrawal {notice_at, subscription_id?, mode, reason}` → `SubmitApproval("stripe_withdrawal", …)`。
+  - `POST /app/stripe-withdrawals/:request_id/abandon`。
+- `worker_integration.go` 注册 `RegisterApprovalCallback("stripe_withdrawal", …)`；`logic_approval.go` 的 `actionDisplayNames` 加"Stripe 撤回退款"。
+- MCP（`tools/kaitu-center`）：`quote_stripe_withdrawal`、`withdraw_stripe_subscription`、`abandon_stripe_withdrawal`，照 `admin-orders.ts` 的退款工具写；`notice_at` 必填。
+- 客服流程写进 `docs/customer-service/README.md`：收到撤回请求 → 记下用户消息时间 → quote → 回邮件确认金额 → withdraw（14 天内完成）。**不要在 Stripe 后台手工部分退款**。条款 8.3 的主动终止用 `mode=termination`。
 
 ## 4. 结账同意（折算的依据）
 
@@ -173,7 +193,7 @@ type StatutoryRefund struct {
 - `consent_collection.terms_of_service = "required"`；
 - `custom_text.terms_of_service_acceptance.message`（v1，≤1200 字符，markdown 链接）：
 
-> I agree to the [Terms of Service](https://overleap.io/terms). My subscription starts now and renews automatically at the price shown until I cancel. I ask for the service to begin immediately. I understand that if I withdraw within 14 days of my first payment, or of an annual renewal, my refund will be reduced for the days already used.
+> I agree to the [Terms of Service](https://overleap.io/terms). My subscription starts now and renews automatically at the regular price shown (or a new price you tell me about in advance) until I cancel. I ask for the service to begin immediately. I understand that if I withdraw within 14 days of my first payment, or of an annual renewal, my refund will be reduced for the days already used.
 
 （`https://overleap.io/terms` 已验证 307 到 `/en-GB/terms`。）
 
@@ -228,6 +248,7 @@ type SubscriptionConsent struct {
 - 删除 §8 "Wallet and Withdrawals"，后续节号前移（§9→§8 …）。全站只有 ToS 4.3→4.2、隐私 4.2→1.4 两处带节号的引用，都不受影响。
 - 新 §8.1：
   > **User Termination**: You may terminate this Agreement at any time by deleting your account. Deleting your account does not cancel a renewing subscription — cancel it first on your account page (or in your App Store settings), or you will continue to be charged. Unused time is not refunded on deletion; if you are entitled to a refund under Section 7.2, request it before deleting your account.
+- 新 §8.3(c) 改为："(c) Unused subscription time will not be refunded, except as set out in Section 7, at the end of this Section, or where required by law;"
 - 新 §8.3 末尾加：
   > If we terminate under Section 8.2(b) or 8.2(d), we will refund the unused part of any prepaid period for subscriptions billed by us. For subscriptions bought through the App Store, you can request a refund from Apple.
 - 新 §11.1 联系方式加商家邮寄地址：`Overleap LLC, {ADDRESS}`。
@@ -240,12 +261,12 @@ type SubscriptionConsent struct {
 
 ### 6.2 隐私政策与删号页
 
-- `privacy-policy.md` 4.3 后补："This includes records of the subscription terms you agreed to at checkout (time, country and wording), kept as proof of your consent." 更新日期。
-- `delete-account.md`：更新日期。第 41 行 → "Unused subscription time is **not** refunded and cannot be restored afterwards. If you're within 14 days of your first payment for a subscription on our website, or of an annual renewal, email support@overleap.io before deleting your account to withdraw with a prorated refund (Terms, Section 7)." §4 保留数据清单加"Subscription consent records — kept with payment records"。§5 加："Deleting your account does not cancel a renewing subscription. Cancel it first on your account page, or in your App Store settings for iPhone purchases."
+- `privacy-policy.md` 1.3 末尾加 "and the billing country your payment provider gives us"。4.3 后补："This includes records of the subscription terms you agreed to at checkout (time, country and wording), kept as proof of your consent." 更新日期。
+- `delete-account.md`：更新日期。第 41 行 → "Unused subscription time is **not** refunded and cannot be restored afterwards. If you're within 14 days of your first payment for a subscription billed by us (not through the App Store), or of an annual renewal, email support@overleap.io before deleting your account to withdraw with a prorated refund (Terms, Section 7)." §4 保留数据清单加"Subscription consent records — kept with payment records"。§5 加："Deleting your account does not cancel a renewing subscription. Cancel it first on your account page, or in your App Store settings for iPhone purchases."
 
 ### 6.3 站点 messages（20 个语言）
 
-- `help.json` `billing.items.refund.answer`（英文基准）："You can withdraw and get a refund for the days you haven't used within 14 days of your first payment for a subscription on our website, or of an annual renewal. Email support@overleap.io. App Store purchases are refunded by Apple."
+- `help.json` `billing.items.refund.answer`（英文基准）："You can withdraw and get a refund for the days you haven't used within 14 days of your first payment for a subscription billed by us (not through the App Store), or of an annual renewal. Email support@overleap.io. App Store purchases are refunded by Apple."
 - `help.json` `billing.items.manage.answer` 末尾加："Cancelling stops renewal; it doesn't refund — see “Can I get a refund?”"
 - `pricing.json` `faqSubtitle`："Payment, cancelling and what the plan covers."
 - 翻译：邮箱、App Store、Apple 原样；de/fr 用法定词（Widerruf / rétractation）但范围必须是"首付 + 年付续费"；ar/fa 邮箱放在分句末尾、后面不跟标点。
@@ -275,22 +296,28 @@ type SubscriptionConsent struct {
 | 13 | 先全额退款后拒付 | 第二次不改数据、不调 cancel | — |
 | 14 | 拒付 | 同 #1 | 删 dispute 分支 |
 | 15 | deleted 截断 | 立即取消 → 截到 ended_at；期末自然结束不截；本地周期被推远时以事件周期为准；绝不延长 | 删截断 / 改用本地周期 |
-| 16 | quote 表驱动 | 首付 / 年付续费合格；月付续费、窗口外、0 元不合格；窗口截止 D+16 00:00 前后；用户第 13 天提出、第 16 天执行 → 合格且 used=13；晚付按 `max(start, paid_at)`；无同意 → 全额；`noticeAt` 在未来 → 拒 | 改 `+1`、改窗口、改起点 |
+| 16 | quote 表驱动 | 首付 / 年付续费合格；月付续费、窗口外、0 元不合格；窗口截止 D+16 00:00 前后；第 13 天通知、第 16 天执行 → 合格且 used=13；晚付按 `max(start, paid_at)`；无同意：withdrawal 全额、termination 仍折算；`NoticeAt` 在未来 / 早于任何付款 → 拒；`NoticeAt ≥ PeriodEnd` → 0 | 改 `+1`、改窗口、改起点、termination 也全额 |
 | 17 | invoice 解析 | 先失败后成功的两条 payment 取 paid 那条及其 amount_paid | 取第一条 |
 | 18 | 执行器正常路径 | 退款金额、metadata、幂等键；收回；取消；done | — |
-| 19 | 执行器续跑 | 在退款后 / 收回后 / 取消后失败各一次 → 续跑完成，不重复退款、不重算资格（窗口已过仍续跑） | 续跑前先算资格 |
-| 20 | 超 24 小时续跑 | 退款已在 Stripe、行上无 id → 按 metadata 找到，不新建 | 去掉查重 |
+| 19 | 执行器续跑 | 在退款后 / 收回后 / 取消后失败各一次 → 续跑完成，不重复退款、不重判资格（窗口已过仍续跑） | 续跑前先判资格 |
+| 20 | 超 24 小时续跑 | 退款已在 Stripe、行上无 id → 按 metadata 找到，不新建；查重迭代器出错 → 中止，不新建 | 去掉查重 / 忽略 `it.Err()` |
 | 21 | 执行中途到达 deleted 事件 | 遇 revoked 短路，历史是 "Withdrawal…" | 把取消挪到收回前 |
-| 22 | termination 模式 | 跳过合格性，折算未用部分 | — |
-| 23 | 审批 | 注册回调、显示名；POST 建审批单 | 不注册 |
-| 24 | 结账参数 | `consent_collection`、`custom_text` 存在 | 删参数 |
-| 25 | `checkout.session.completed` | 写 `SubscriptionConsent`；重投不重复；国家为空可写 | — |
-| 26 | 钱包路由守卫 | 生产 `SetupRouter()` 枚举 `/api/wallet*`，≥7；overleap 全部 `ErrorNotSupported`；kaitu `GET /api/wallet` 不是；无用户 → 拒 | 去掉任一路由的门 |
-| 27 | `ProcessOrderRefund` / `api_admin_refund_order` 拒 overleap | 无写入、无审批单；含已有 pending 审批被执行 | 删门 |
-| 28 | 返现收款人无钱包 | 不入账 | 删门 |
-| 29 | 契约 | golden 含 `wallet`；webapp 断言一致 | webapp overleap 改 `wallet:true` |
-| 30 | webapp 删号对话框 | overleap 无钱包行，kaitu 有 | — |
-| 31 | MCP 工具 | 参数校验（`notice_at` 必填）、调用路径 | — |
+| 22 | 请求不一致 | 有 invoice X 的 pending 请求，再提 Y（或不同 mode）→ 报错，X 未被续跑 | 按用户续跑 |
+| 23 | 作废 | abandon 后可提新请求；已退款记录保留 | — |
+| 24 | 通知后被扣的续费 | 第 13 天通知、第 30 天续费入账、第 31 天执行 → 主条目折算 + 续费全额 | 只退主条目 |
+| 25 | charge 已退 / 拒付中 | 不调退款，写 RefundNote，收回与取消照做 | 去掉检查 |
+| 26 | 全额撤回时 webhook 先到 | 历史只有一条且是撤回原因；告警标 `[WITHDRAWAL]` | 去掉按 PI 查 StatutoryRefund |
+| 27 | 并发取消 | Cancel 返回非 404 错误、再 Get 为 canceled → 成功 | 不再 Get |
+| 28 | termination 模式 | 跳过合格性、折算；0 元只收回与取消 | termination 也全额 |
+| 29 | 审批 | 注册回调、显示名；POST 建审批单 | 不注册 |
+| 30 | 结账参数 | `consent_collection`、`custom_text` 存在 | 删参数 |
+| 31 | `checkout.session.completed` | 写 `SubscriptionConsent`；重投不重复；国家为空可写 | — |
+| 32 | 钱包路由守卫 | 生产 `SetupRouter()` 枚举 `/api/wallet*`，≥7；overleap 全部 `ErrorNotSupported`；kaitu `GET /api/wallet` 不是；无用户 → 拒 | 去掉任一路由的门 |
+| 33 | `ProcessOrderRefund` / `api_admin_refund_order` 拒 overleap | 无写入、无审批单；含已有 pending 审批被执行 | 删门 |
+| 34 | 返现收款人无钱包 | 不入账 | 删门 |
+| 35 | 契约 | golden 含 `wallet`；webapp 断言一致 | webapp overleap 改 `wallet:true` |
+| 36 | webapp 删号对话框 | overleap 无钱包行，kaitu 有 | — |
+| 37 | MCP 工具 | 参数校验（`notice_at` 必填）、调用路径 | — |
 
 环境：worktree 已拷 `center/config.yml`；DB 走 devdb（当前 pve）；`-v` 下 0 SKIP；handler 测试单跑与全量各一次。webapp `yarn test`；`tools/kaitu-center` 测试；`sites/overleap` lint / build。
 
@@ -298,7 +325,7 @@ type SubscriptionConsent struct {
 
 - `api/CLAUDE.md` 支付段：Stripe 收回规则、revoked 终态三道门、提前结束截断、撤回执行器与续跑、"不要在 Stripe 后台手工部分退款"。
 - 上位 spec §8 分期表：A 期内容同步为 v3。
-- 内部说明：已用天数按 24 小时计，从 `max(周期起点, 付款时刻)` 起。
+- 内部说明：已用天数按 24 小时计，从 `max(周期起点, 付款时刻)` 起；后台立即取消时，用户若有超出该周期的赠送时长则不截断（"赠送时长不误伤"，有意为之）。
 
 ## 9. 上线清单（顺序有依赖）
 
@@ -321,6 +348,8 @@ type SubscriptionConsent struct {
 7. "立即开始"的请求与条款同意捆绑在一个勾选里；欧盟指引倾向单独、明确的主动请求。
 8. `custom_text` 只有英文，而 Stripe Checkout 会按用户语言本地化。
 9. 14 天内在 Billing Portal 点"取消"是否本身构成 reg 32(3) 的撤回声明。
+10. 条款 8.3 主动终止时 App Store 订阅只指向 Apple；Apple 拒退时我们是否需要补偿未用部分（CRA Sch 2）。
+11. 条款 4.2 违规终止"不退款"。
 
 ## 11. 不做
 
