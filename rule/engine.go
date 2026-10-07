@@ -760,7 +760,17 @@ func (e *Engine) Close() {
 }
 
 // Reload atomically replaces the engine's routes and bundles.
-// TmpRules are cleared — DNS queries will re-learn them against the new rules.
+//
+// TmpRules (DNS-learned per-IP pins) are KEPT. A pin is the only bridge from a
+// domain decision to the IP the app later connects to, and nothing re-learns a
+// dropped pin until that domain is resolved upstream again: the DNS
+// middleware's cache-hit path returns without pinning, and apps cache the
+// answer for the TTL we hand them (min 10 min). Clearing would misroute every
+// already-resolved domain by IP alone for minutes to hours. Keeping them only
+// delays a domain whose decision changed until its next upstream resolve,
+// which overwrites the pin under the new rules. Target values are outbound
+// indices from the (unchanged) client config, so a kept pin stays meaningful.
+//
 // Thread-safe: callers of Match/MatchConn block briefly during swap.
 //
 // Concurrency: builds new data outside lock, swaps under WLock, closes old
@@ -778,18 +788,16 @@ func (e *Engine) ReloadWithClosers(routes []RouteEntry, closers []func() error) 
 
 func (e *Engine) reload(routes []RouteEntry, bundles []*krs.Bundle, closers []func() error) error {
 	e.mu.Lock()
-	cleared := len(e.tmp)
+	pinsKept := len(e.tmp)
 	oldBundles := e.bundles
 	oldClosers := e.closers
 	e.bundles = bundles
 	e.closers = closers
 	e.routes = routes
-	e.tmp = make(map[netip.Addr]Target)
-	e.tmpLRUReset()
 	e.mu.Unlock()
 
 	slog.Info("DIAG: rule-tmp-reload",
-		"cleared", cleared, "routes", len(routes), "bundles", len(bundles))
+		"pinsKept", pinsKept, "routes", len(routes), "bundles", len(bundles))
 
 	_ = oldBundles                // heap Bundle has no explicit Close — GC'd.
 	runClosers(oldClosers)        // disk: munmap previous mappings (outside lock).

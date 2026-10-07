@@ -24,13 +24,24 @@ const defaultCheckInterval = 1 * time.Hour
 type UpdaterOption func(*updaterConfig)
 
 type updaterConfig struct {
-	interval time.Duration
+	interval  time.Duration
+	loadedSig string
 }
 
 // WithCheckInterval overrides the default 1h check interval.
 func WithCheckInterval(d time.Duration) UpdaterOption {
 	return func(c *updaterConfig) {
 		c.interval = d
+	}
+}
+
+// WithLoadedSignature tells the updater which on-disk bundle set the engine
+// was built from (BundleSignature taken just before the engine loaded it). The
+// updater then reloads only when the disk set differs. Without it the first
+// check always reloads (the pre-signature behavior).
+func WithLoadedSignature(sig string) UpdaterOption {
+	return func(c *updaterConfig) {
+		c.loadedSig = sig
 	}
 }
 
@@ -89,7 +100,9 @@ func StartUpdaterNamed(
 	}
 
 	safego.Go(func() {
-		if err := DownloadAndReloadNamed(ctx, engine, cacheDir, sources, rebuild); err != nil {
+		loaded := cfg.loadedSig
+		var err error
+		if loaded, err = refreshAndReload(ctx, engine, cacheDir, sources, rebuild, loaded); err != nil {
 			slog.Warn("rule: updater initial check failed", "err", err)
 		}
 
@@ -100,10 +113,57 @@ func StartUpdaterNamed(
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := DownloadAndReloadNamed(ctx, engine, cacheDir, sources, rebuild); err != nil {
+				if loaded, err = refreshAndReload(ctx, engine, cacheDir, sources, rebuild, loaded); err != nil {
 					slog.Warn("rule: updater cycle failed", "err", err)
 				}
 			}
 		}
 	})
+}
+
+// refreshAndReload is one updater check: refresh the cache from the rule
+// sources (ensureBundles; forced past the freshness gate while the cache is
+// the embedded floor), then hot-reload the engine iff the on-disk bundle set
+// differs from loaded — the signature of the set the engine currently serves.
+// Returns the signature the engine serves afterwards.
+//
+// The reload decision is "disk differs from engine", not "this call
+// downloaded": the connect path never downloads, so the app-start prefetch can
+// swap a new set onto disk after the engine loaded the old one, and by the
+// time this runs the cache reads fresh and ensureBundles fetches nothing. For
+// the same reason a failed fetch still reloads a disk set someone else changed.
+// An unchanged set never reloads — each reload is a full heap rebuild.
+//
+// The signature is taken BEFORE rebuild reads the files, so a swap racing the
+// rebuild leaves the returned signature behind the disk and the next check
+// reloads again; it can never record a set the engine does not serve.
+func refreshAndReload(
+	ctx context.Context,
+	engine *Engine,
+	cacheDir string,
+	sources []string,
+	rebuild RebuildFuncNamed,
+	loaded string,
+) (string, error) {
+	ensureErr := ensureBundles(ctx, cacheDir, sources, wasEmbedSeeded(cacheDir))
+	if engine == nil || rebuild == nil {
+		return loaded, ensureErr
+	}
+	if ctx.Err() != nil {
+		return loaded, ctx.Err() // engine stopping — never reload a closed engine
+	}
+	sig := BundleSignature(cacheDir)
+	if sig == "" || sig == loaded {
+		// "" = no bundle on disk right now (mid-swap or wiped): never swap the
+		// engine's working set for an empty one.
+		return loaded, ensureErr
+	}
+	routes, named, err := rebuild(cacheDir)
+	if err != nil {
+		return loaded, fmt.Errorf("rule: rebuild after download: %w", err)
+	}
+	if err := engine.ReloadNamed(routes, named); err != nil {
+		return loaded, err
+	}
+	return sig, ensureErr
 }

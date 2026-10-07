@@ -307,10 +307,12 @@ func (e *Engine) NotifyNetEvent(event *NetEvent) {
 	})
 }
 
-// PrefetchRules downloads the rule bundle tarball in the background. Call at
-// native service entry (K2Plugin.load / macOS sysext init) — before the first
-// engine.Start — so Engine.Start finds the cache already warm and doesn't
-// block on a cold download.
+// PrefetchRules refreshes the rule bundle cache in the background. Call at
+// app/service entry (Android MainApplication, iOS AppDelegate) so a newer rule
+// set is usually on disk before the user connects. engine.Start never waits
+// for it (#3889): the connect path is local-only and serves whatever is on
+// disk; if this lands a new set after the engine loaded the old one, the
+// engine's post-connect updater sees the on-disk set change and hot-reloads.
 //
 // cacheDir is the base directory (bundles live in cacheDir + "/rules"),
 // matching the layout engine.Start uses via clientCfg.CacheDir.
