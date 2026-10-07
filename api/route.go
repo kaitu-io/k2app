@@ -385,7 +385,6 @@ func SetupRouter() *gin.Engine {
 		admin.POST("/wallet/withdraws/:id/complete", api_admin_complete_withdraw)
 		admin.POST("/orders/:uuid/refund", api_admin_refund_order)
 		// Stripe 14 天撤回（overleap；spec 2026-10-07 A 期 §3.6）
-		admin.GET("/users/:uuid/stripe-withdrawal", api_admin_stripe_withdrawal_quote)
 		admin.POST("/users/:uuid/stripe-withdrawal", api_admin_stripe_withdrawal)
 		admin.POST("/stripe-withdrawals/:request_id/abandon", api_admin_stripe_withdrawal_abandon)
 
@@ -511,6 +510,8 @@ func SetupRouter() *gin.Engine {
 		// 订单查看（只读）— Support + Marketing 可访问
 		opsAdmin.GET("/orders", RoleRequired(readRoles), api_admin_list_orders)
 		opsAdmin.GET("/orders/:uuid", RoleRequired(readRoles), api_admin_get_order_detail)
+		// Stripe 撤回预览（只读）：客服报价用；执行 / 作废仍在超管 /app 组（spec A 期 §3.6）
+		opsAdmin.GET("/users/:uuid/stripe-withdrawal", RoleRequired(readRoles), api_admin_stripe_withdrawal_quote)
 
 		// 设备日志 + 工单
 		opsAdmin.GET("/device-logs", RoleRequired(allOpsRoles), api_admin_list_device_logs)

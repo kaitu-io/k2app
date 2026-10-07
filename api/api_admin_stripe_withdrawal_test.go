@@ -150,3 +150,35 @@ func TestAdminStripeWithdrawalEndpoints(t *testing.T) {
 		assert.Equal(t, int(ErrorNotSupported), resp.Code)
 	})
 }
+
+// 预览在 staff 组（客服可报价），执行 / 作废只给超管——经生产路由验证。
+func TestStripeWithdrawalRouteRoles(t *testing.T) {
+	skipIfNoConfig(t)
+	require.NoError(t, Migrate())
+	testInitConfig()
+	gin.SetMode(gin.TestMode)
+	r := SetupRouter()
+
+	support, key := createBrandIsoAccessKeyUser(t, BrandKaitu, false)
+	require.NoError(t, db.Get().Model(&User{}).Where("id = ?", support.ID).Update("roles", RoleUser|RoleSupport).Error)
+	target := createStripeTestUser(t, BrandOverleap)
+
+	call := func(method, path string) int {
+		req := httptest.NewRequest(method, path, bytes.NewReader([]byte(`{"noticeAt":1,"mode":"withdrawal","reason":"xx"}`)))
+		req.Host = "kaitu.io"
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Access-Key", key)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		var body struct {
+			Code int `json:"code"`
+		}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body), w.Body.String())
+		return body.Code
+	}
+	quote := call(http.MethodGet, "/app/users/"+target.UUID+"/stripe-withdrawal?notice_at=1")
+	assert.NotEqual(t, int(ErrorForbidden), quote, "support can quote")
+	assert.NotEqual(t, int(ErrorNotLogin), quote)
+	assert.Equal(t, int(ErrorForbidden), call(http.MethodPost, "/app/users/"+target.UUID+"/stripe-withdrawal"), "support cannot execute")
+	assert.Equal(t, int(ErrorForbidden), call(http.MethodPost, "/app/stripe-withdrawals/wdr_x/abandon"), "support cannot abandon")
+}

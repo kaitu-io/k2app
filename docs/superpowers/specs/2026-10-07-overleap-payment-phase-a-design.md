@@ -373,3 +373,4 @@ type SubscriptionConsent struct {
 4. **钱包路由**是 8 个（不是 7 个）。
 5. **按设计保留、写明**：任一张 invoice 全额退款 / 拒付都终止整个订阅（"全额退款 = 终止合作"）；无同意记录的订阅撤回全额退。
 6. **后续（不在 A 期）**：Apple 的 `revokeSubscription`（开途 + overleap 共用）有同样的叠加入账收回放行问题，待决定是否修；对账推进 `CurrentPeriodEnd` 后续费入账的 `priorPeriodEnd` 偏大、可能少算赠送时长（原有问题）。
+7. **终审修正**：`subscription.deleted` 截断不用 `CurrentPeriodEnd` 兜底（PaidThrough 为 0 的老行只告警不截——截断走普通续费失败，按可能已被对账推远的周期末截会误扣赠送时长）；预览路由放到 staff 组（客服有 `orders` 读权限可报价），执行 / 作废仍只给超管；同意记录按 `client_reference_id` 显式匹配，空值不落记录。

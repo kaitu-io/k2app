@@ -50,6 +50,14 @@ func TestStripeCheckoutConsent(t *testing.T) {
 	assert.Equal(t, "GB", rows[0].Country)
 	assert.Equal(t, int64(1790000000), rows[0].AcceptedAt)
 
+	// client_reference_id 为空：不能匹配到任意用户
+	eEmpty, emptySess := "evt_"+stripeUniq(), "cs_"+stripeUniq()
+	t.Cleanup(func() { db.Get().Unscoped().Where("checkout_session_id = ?", emptySess).Delete(&SubscriptionConsent{}) })
+	require.Equal(t, 200, post(checkoutCompletedPayload(eEmpty, emptySess, "", "sub_"+stripeUniq(), "accepted", "GB"), eEmpty))
+	var stray int64
+	db.Get().Model(&SubscriptionConsent{}).Where("checkout_session_id = ?", emptySess).Count(&stray)
+	assert.Zero(t, stray, "empty client_reference_id must not attach consent to any user")
+
 	e3 := "evt_" + stripeUniq()
 	require.Equal(t, 200, post(checkoutCompletedPayload(e3, "cs_"+stripeUniq(), u.UUID, "sub_"+stripeUniq(), "accepted", ""), e3))
 	e4 := "evt_" + stripeUniq()

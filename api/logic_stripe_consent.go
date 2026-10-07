@@ -39,8 +39,14 @@ func recordStripeCheckoutConsent(ctx context.Context, raw []byte, eventCreated i
 		log.Warnf(ctx, "[StripeConsent] session %s completed without terms acceptance", s.ID)
 		return nil
 	}
+	if s.ClientReferenceID == "" {
+		// GORM 会忽略零值条件 → 空 uuid 会匹配任意用户。我们的 Checkout 恒带 client_reference_id；
+		// 空的只可能是同一 Stripe 账号上别处建的 Checkout。
+		alertStripeRevoke(ctx, "[STRIPE-CONSENT]", "session %s has no client_reference_id — consent not recorded", s.ID)
+		return nil
+	}
 	var u User
-	if err := getDB().Select("id").Where(&User{UUID: s.ClientReferenceID}).First(&u).Error; err != nil {
+	if err := getDB().Select("id").Where("uuid = ?", s.ClientReferenceID).First(&u).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			alertStripeRevoke(ctx, "[STRIPE-CONSENT]", "session %s client_reference_id %q matches no user — consent not recorded", s.ID, s.ClientReferenceID)
 			return nil

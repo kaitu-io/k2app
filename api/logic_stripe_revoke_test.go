@@ -370,6 +370,19 @@ func TestStripeRevoke(t *testing.T) {
 		assert.Empty(t, refundHistories(t, u.ID))
 	})
 
+	// 迁移前的老行（PaidThrough=0）续费失败被取消：周期末可能已被对账推到未付期，
+	// 不能按它截 → 只告警不截，叠加的赠送时长保留
+	t.Run("Deleted_LegacyZeroPaidThrough_NotClipped", func(t *testing.T) {
+		f := installStripeFakes(t)
+		now := time.Now().Unix()
+		u := createStripeTestUser(t, BrandOverleap)
+		subID := "sub_" + stripeUniq()
+		seedStripeSubPaid(t, u, subID, now+25*day, 0, now+40*day)
+		require.Equal(t, 200, post(t, subDeletedPayload("evt_"+stripeUniq(), subID, now, now+25*day)))
+		assert.Equal(t, now+40*day, reloadUser(t, u.ID).ExpiredAt)
+		assert.Contains(t, f.alertText(), "no paid_through")
+	})
+
 	// 先后台立即取消（截断一次），再全额退款 → 不重复扣，赠送时长保留
 	t.Run("DeletedThenFullRefund_NoDoubleCut", func(t *testing.T) {
 		f := installStripeFakes(t)
