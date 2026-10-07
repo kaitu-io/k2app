@@ -222,17 +222,17 @@ func SetupRouter() *gin.Engine {
 		log.Debugf(ctx, "registering /api/wallet group")
 		{
 			// 获取钱包信息（余额实时计算）
-			wallet.GET("", AuthRequired(), api_get_wallet)
+			wallet.GET("", AuthRequired(), WalletRequired(), api_get_wallet)
 			// 获取钱包变动记录
-			wallet.GET("/changes", AuthRequired(), api_get_wallet_changes)
+			wallet.GET("/changes", AuthRequired(), WalletRequired(), api_get_wallet_changes)
 			// 提现账户管理
-			wallet.GET("/withdraw-accounts", AuthRequired(), api_get_withdraw_accounts)
-			wallet.POST("/withdraw-accounts", AuthRequired(), api_create_withdraw_account)
-			wallet.PUT("/withdraw-accounts/:id/set-default", AuthRequired(), api_set_default_withdraw_account)
-			wallet.DELETE("/withdraw-accounts/:id", AuthRequired(), api_delete_withdraw_account)
+			wallet.GET("/withdraw-accounts", AuthRequired(), WalletRequired(), api_get_withdraw_accounts)
+			wallet.POST("/withdraw-accounts", AuthRequired(), WalletRequired(), api_create_withdraw_account)
+			wallet.PUT("/withdraw-accounts/:id/set-default", AuthRequired(), WalletRequired(), api_set_default_withdraw_account)
+			wallet.DELETE("/withdraw-accounts/:id", AuthRequired(), WalletRequired(), api_delete_withdraw_account)
 			// 提现申请
-			wallet.GET("/withdraws", AuthRequired(), api_get_withdraw_requests)
-			wallet.POST("/withdraws", AuthRequired(), api_create_withdraw_request)
+			wallet.GET("/withdraws", AuthRequired(), WalletRequired(), api_get_withdraw_requests)
+			wallet.POST("/withdraws", AuthRequired(), WalletRequired(), api_create_withdraw_request)
 		}
 
 		// 推送通知管理（必须登录：从 JWT 获取用户和设备信息）

@@ -138,6 +138,15 @@ func ProcessOrderRefund(ctx context.Context, orderID uint64, refundReason string
 		if order.RefundAmount > 0 {
 			return fmt.Errorf("订单已有退款金额记录，无法退款（数据异常）")
 		}
+		// 品牌门：本函数把钱打进钱包，没有钱包的品牌（overleap）一律拒绝，且必须先于任何读写
+		// （包括权益反算）。这里是钱包退款的唯一执行点——审批回调与任何未来调用方都经过它，
+		// api_admin_refund_order 的预校验只是提前报错。品牌是出生属性，用预加载的用户即可。
+		if order.User == nil {
+			return fmt.Errorf("订单关联用户为空")
+		}
+		if !Brand(order.User.Brand).Config().Wallet {
+			return fmt.Errorf("%s", walletRefundUnavailableMsg)
+		}
 		// ---------- 2. 撤销授权 ----------
 		// 分渠道反算已发放的权益时长——IAP 与网页订单的记账形态不同，见 orderEntitlementSecondsInTx。
 		//

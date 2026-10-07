@@ -50,6 +50,10 @@ type BrandConfig struct {
 	// 访客会话是否由 AI 先接待。AI 的系统提示（data/system_prompt.md）与知识库只写了开途的产品与价格，
 	// 别的品牌接上会把开途的内容答给它的访客，所以为 false：会话一建出来就是人工，Slack 里 !ai 也被拒。
 	ChatAI bool
+	// Wallet 钱包：订单退款进钱包、钱包提现、分销返现结算。overleap 没有钱包——它的退款走
+	// Stripe 撤回执行器原路退回 / Apple 自己退款；钱包入口与提现在后端按此位拒绝。
+	// 导出进跨层契约，webapp features.wallet 必须与之一致。
+	Wallet bool
 }
 
 func (bc *BrandConfig) AllowsPayment(channel string) bool {
@@ -78,6 +82,7 @@ var brandRegistry = map[Brand]*BrandConfig{
 		GeoDetect:         false,
 		GeoDefaultCountry: "cn",
 		ChatAI:            true,
+		Wallet:            true,
 	},
 	BrandOverleap: {
 		ID:                 BrandOverleap,
@@ -94,6 +99,7 @@ var brandRegistry = map[Brand]*BrandConfig{
 		GeoDetect:         true,
 		GeoDefaultCountry: "gb",
 		ChatAI:            false,
+		Wallet:            false,
 	},
 }
 

@@ -163,6 +163,16 @@ func AddCashbackIncome(ctx context.Context, userID uint64, orderID uint64, amoun
 // addCashbackIncomeInTx 在给定事务中添加返现收入
 // 此函数用于在已有事务中执行，确保与订单支付的原子性
 func addCashbackIncomeInTx(ctx context.Context, tx *gorm.DB, userID uint64, orderID uint64, amount int64, freezeDays int, remark string) error {
+	// 品牌门：收款人品牌没有钱包（overleap）→ 不入账、告警。返现侧本就非致命，返回 nil
+	// 不阻断订单入账。
+	var payee User
+	if err := tx.Select("id", "brand").First(&payee, userID).Error; err != nil {
+		return fmt.Errorf("load cashback payee %d: %w", userID, err)
+	}
+	if !Brand(payee.Brand).Config().Wallet {
+		alertStripeRevoke(ctx, "[CASHBACK]", "cashback %d for order %d skipped: payee user %d brand %s has no wallet", amount, orderID, userID, payee.Brand)
+		return nil
+	}
 	// 1. 查找或创建钱包
 	var wallet Wallet
 	err := tx.Where(&Wallet{UserID: userID}).First(&wallet).Error

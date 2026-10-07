@@ -56,6 +56,7 @@ type contractBrand struct {
 	SupportEmail       string   `json:"supportEmail"`
 	EDMFromName        string   `json:"edmFromName"`
 	PaymentChannels    []string `json:"paymentChannels"`
+	Wallet             bool     `json:"wallet"`
 }
 
 type contractCORSGroup struct {
@@ -108,6 +109,7 @@ func exportBrands(t *testing.T) map[string]contractBrand {
 			SupportEmail:       cfg.SupportEmail,
 			EDMFromName:        cfg.EDMFromName,
 			PaymentChannels:    cfg.PaymentChannels,
+			Wallet:             cfg.Wallet,
 		}
 	}
 	return out

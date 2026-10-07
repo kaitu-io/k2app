@@ -20,7 +20,8 @@
         "nextpay",
         "wordgate",
         "apple_iap"
-      ]
+      ],
+      "wallet": true
     },
     "overleap": {
       "id": "overleap",
@@ -40,7 +41,8 @@
       "paymentChannels": [
         "stripe",
         "apple_iap"
-      ]
+      ],
+      "wallet": false
     }
   },
   "cors": {

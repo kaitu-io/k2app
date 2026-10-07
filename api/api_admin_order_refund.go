@@ -8,6 +8,9 @@ import (
 	"github.com/wordgate/qtoolkit/log"
 )
 
+// walletRefundUnavailableMsg 无钱包品牌的订单退款被拒时给运营的说明。
+const walletRefundUnavailableMsg = "该用户的品牌没有钱包，不能退款到钱包：overleap 的 Stripe 订阅用撤回工具（stripe-withdrawal），Apple 订单由 Apple 退款"
+
 // api_admin_refund_order 管理员发起订单退款（走 SubmitApproval）
 func api_admin_refund_order(c *gin.Context) {
 	orderUUID := c.Param("uuid")
@@ -33,6 +36,15 @@ func api_admin_refund_order(c *gin.Context) {
 	}
 	if order.IsRefunded != nil && *order.IsRefunded {
 		Error(c, ErrorConflict, "订单已退款")
+		return
+	}
+	var owner User
+	if err := getDB().Select("id", "brand").First(&owner, order.UserID).Error; err != nil {
+		Error(c, ErrorNotFound, "订单用户不存在")
+		return
+	}
+	if !Brand(owner.Brand).Config().Wallet {
+		Error(c, ErrorNotSupported, walletRefundUnavailableMsg)
 		return
 	}
 
