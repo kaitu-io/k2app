@@ -35,7 +35,7 @@ Account → Login Email → **Modify**. (Available to active subscribers.)
 - **In the app:** Account → scroll to the bottom → **Delete Account** → Confirm. Deletion takes effect immediately.
 - **Without the app:** email privacy@overleap.io with the subject "Delete account". It's completed within 30 days of confirmation.
 
-Unused subscription time is not refunded when an account is deleted. If the user has an active subscription, remind them to cancel it first so they aren't charged again.
+Unused subscription time is not refunded when an account is deleted. Deleting the account does not cancel a renewing subscription: if the user has an active subscription, remind them to cancel it first so they aren't charged again. If they are within 14 days of a payment that may qualify for withdrawal (see Billing & Refunds), they should request the withdrawal before deleting the account.
 
 ## Managing your subscription on the web
 
