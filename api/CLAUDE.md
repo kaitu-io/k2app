@@ -305,10 +305,15 @@ Critical admin operations (EDM, campaigns, plans, withdrawals, hard delete, lice
 - **Single credit point**: `creditStripeInvoice` (`logic_stripe.go`) — `invoice.paid` 是唯一 bind+credit 事件；`subscription_data.metadata`(`user_uuid`/`plan_pid`/`brand`) 随每张 invoice 回传，事件自足。INV1 幂等键 `SubscriptionCredit(provider="stripe", transaction_id=invoice id)`；INV9 绑定键 = Stripe subscription id；INV3 叠加走 `applyGiftCredit`/`applyRenewalCredit`。入账 plan 查找用 `planByPIDForCredit`（不过滤 `is_active`——下架不停续费入账）。
 - **Event-level idempotency**: `stripe_webhook_events` 表按 event id 去重（check → process → record）。
 - **SDK-shape adapter**: `extractStripeInvoiceFacts` 是 stripe-go(v82/basil) invoice 形态的唯一适配点（`invoice.parent.subscription_details.*`、period 取 invoice line）。升 SDK 只改它。
-- **Refund/dispute = passive**: `charge.refunded`/`charge.dispute.created` 只记账+Slack 告警，不自动 clawback、不置 `revoked`；主动退款走 admin 后续迭代。
 - **Manage surface**: `DataSubscription.Manage.Kind == "stripe_portal"` → 客户端调 portal 端点换 URL 再跳转。
 - **多币种展示价**: `DataPlan.CurrencyPrices`（`logic_stripe_price.go`）—— Stripe 套餐的 `/api/plans` 附带 `{币种→最小单位}`（主币 + `currency_options` 全部币种），从 Stripe Price 取（`expand=currency_options`）、进程内缓存 1h、失败只记日志字段省略（客户端回落 `Price` 美元）。Price 主币 **USD**（账号结算币；只有主币=结算币 Adaptive Pricing 才生效），GBP/EUR 为固定本币价，Checkout 按属地自动选币——建价只走 `scripts/stripe-setup-overleap.sh`（spec `2026-09-04-overleap-site-decoupling-and-uk-positioning-design.md` §4）。
 - **Reminders**: `processRenewalReminders` 跳过 `usersWithLiveAutoRenew`（apple/stripe 活跃自动续订用户不收"手动续费"邮件）。
+- **收回（spec `2026-10-07-overleap-payment-phase-a-design.md`）**: `charge.refunded` **全额**与 `charge.dispute.created`（任一张 invoice，含询问）→ `revokeStripeForChargeLoss`：收回会员 + 取消 Stripe 订阅 + 告警（"全额退款 = 终止合作"；想补偿又保留服务就做部分退款，部分退款只告警）。归属靠 PI → Invoice Payments → 订阅；本地无行建 **revoked 墓碑**。`subscription.deleted` 提前结束（`ended_at` 早于事件自身周期末 >1h）按差值截断。
+- **扣减量只看 `Subscription.PaidThrough`**（已发放的付费时长覆盖到的时刻，入账 / 对账 cover-through 按实际发放累加，扣减后回收）：**不要**用 `CurrentPeriodEnd`（对账会推到未付的下一期 → 扣掉赠送时长），也**不要**用 Apple 的"到期落在 `(now, 周期末]` 才砍"（叠加入账下整段放行）。PaidThrough 为 0 的老行退回 `CurrentPeriodEnd`（fail-closed）。
+- **revoked 是终态，四道门**：`creditStripeInvoice` 不加时长、对账 cover-through 锁内跳过、`subscription.updated` 写带 `status<>revoked`、`subscription.deleted` 短路。新增任何改 Stripe 订阅 / 用户到期的路径都要过这四道门的同款检查。
+- **14 天撤回执行器**（`logic_stripe_withdrawal.go`，后台 `/app/users/:uuid/stripe-withdrawal` + MCP `withdraw_stripe_subscription`）：一次请求 = primary（`notice_at` 前最近一笔付款，按天折算，含付款当天；首付或周期 ≥360 天的续费才合格，按 `billing_reason` 判）+ 通知后扣的款（全额，从 Stripe 已付 invoice 枚举）。顺序 退款 → 收回 → 取消 → 完成；以 `StatutoryRefund` pending 行续跑（不重判资格），退款先按 metadata 查自家退款（幂等键只留 24h）；primary 行 `LockedUntil` 是请求占位锁；`ActiveInvoiceID` 唯一（作废置 NULL 释放）。**客服不要在 Stripe 后台手工部分退款**——会员不会被收回。
+- **结账同意**：Checkout 带 `consent_collection` + `custom_text`（`stripeConsentMessage`，改文案必改 `consentTextVersion`），`checkout.session.completed` 落 `SubscriptionConsent`。无同意记录的订阅撤回时全额退（没有折算依据）。**部署前置**：Stripe Dashboard 必须先填 Terms of service URL，否则 Checkout 创建直接报错。
+- **钱包**：`BrandConfig.Wallet`（overleap false，进契约）；`WalletRequired()` 挂全部 `/api/wallet*`（`AuthRequired` 之后，读用户品牌），`ProcessOrderRefund` / `api_admin_refund_order` / `addCashbackIncomeInTx` 按品牌拒绝。新钱包路由忘挂门，`TestWalletRoutes_AllGatedForBrandsWithoutWallet`（枚举生产 `SetupRouter`）会红。
 
 ### Apple IAP brand split (Phase A) + remaining seams
 

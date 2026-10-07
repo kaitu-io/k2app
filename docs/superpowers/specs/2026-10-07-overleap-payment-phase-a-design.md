@@ -356,6 +356,17 @@ type SubscriptionConsent struct {
 10. 条款 8.3 主动终止时 App Store 订阅只指向 Apple；Apple 拒退时我们是否需要补偿未用部分（CRA Sch 2）。
 11. 条款 4.2 违规终止"不退款"。
 
+## 12. 实施记录（2026-10-08）
+
+实施中由安全审查 / 测试纠正、与上文设计不同的地方（以代码为准）：
+
+1. **扣减量**：收回与提前结束截断都只扣 `Subscription.PaidThrough`（已发放付费时长覆盖到的时刻）以内的部分，见 §1.1 的更正。PaidThrough 在入账、对账 cover-through 时按**实际发放的时长**累加（入账晚到时按 invoice 周期末记会少扣），扣减后回收（避免两条路径重复扣）；为 0 的老行退回 `CurrentPeriodEnd`。
+2. **revoked 第四道门**：`subscription.updated` 的写带 `status<>revoked`（先读后写之间并发收回会被覆盖）；对账 cover-through 改为事务内先锁订阅行再判断。
+3. **执行器**：合格性按 Stripe invoice 的 `billing_reason` 判（`subscription_create` = 首付，`subscription_cycle` + 周期 ≥360 天 = 年付续费），不读本地 `SubscriptionCredit.Kind`——primary 与通知后条目统一从 Stripe 已付 invoice 列表取。新增请求占位锁（primary 行 `LockedUntil`）；退款额 = min(计划额 − charge 上已有退款, charge 剩余)；退款返回失败 / 取消状态不当成功；幂等键带金额。
+4. **钱包路由**是 8 个（不是 7 个）。
+5. **按设计保留、写明**：任一张 invoice 全额退款 / 拒付都终止整个订阅（"全额退款 = 终止合作"）；无同意记录的订阅撤回全额退。
+6. **后续（不在 A 期）**：Apple 的 `revokeSubscription`（开途 + overleap 共用）有同样的叠加入账收回放行问题，待决定是否修；对账推进 `CurrentPeriodEnd` 后续费入账的 `priorPeriodEnd` 偏大、可能少算赠送时长（原有问题）。
+
 ## 11. 不做
 
 - 用户自助撤回按钮、`DataSubscription` 撤回字段、试用、提醒邮件（B 期）。
