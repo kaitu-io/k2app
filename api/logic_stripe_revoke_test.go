@@ -104,12 +104,19 @@ func liveRemoteSub(subID, userUUID, priceID string, periodEnd int64) *stripe.Sub
 	}
 }
 
-// seedStripeSub 建一条本地 Stripe 订阅并把用户到期设为 userExpiry。
+// seedStripeSub 建一条本地 Stripe 订阅（已付费覆盖到 periodEnd）并把用户到期设为 userExpiry。
 func seedStripeSub(t *testing.T, u *User, subID string, periodEnd, userExpiry int64) *Subscription {
+	t.Helper()
+	return seedStripeSubPaid(t, u, subID, periodEnd, periodEnd, userExpiry)
+}
+
+// seedStripeSubPaid 同上，但已付费覆盖点 paidThrough 与本地周期末 periodEnd 可以不同
+// （对账会把 periodEnd 推到未付的下一期）。
+func seedStripeSubPaid(t *testing.T, u *User, subID string, periodEnd, paidThrough, userExpiry int64) *Subscription {
 	t.Helper()
 	sub := &Subscription{
 		UserID: u.ID, Provider: SubscriptionProviderStripe, ProviderSubscriptionID: subID,
-		ProductID: "price_x", CurrentPeriodEnd: periodEnd, AutoRenew: true, Status: "active", Environment: "sandbox",
+		ProductID: "price_x", CurrentPeriodEnd: periodEnd, PaidThrough: paidThrough, AutoRenew: true, Status: "active", Environment: "sandbox",
 	}
 	require.NoError(t, db.Get().Create(sub).Error)
 	require.NoError(t, db.Get().Model(&User{}).Where("id = ?", u.ID).Update("expired_at", userExpiry).Error)
@@ -337,6 +344,52 @@ func TestStripeRevoke(t *testing.T) {
 		assert.Contains(t, f.alertText(), "on revoked sub")
 	})
 
+	// 对账把本地周期末推到未付的下一期（+60d），已付只到 +30d；用户 = 已付 + 20 天赠送
+	// → 只扣付费的 30 天，赠送 20 天保留。
+	t.Run("Revoke_InflatedPeriodEnd_GiftKept", func(t *testing.T) {
+		f := installStripeFakes(t)
+		now := time.Now().Unix()
+		u := createStripeTestUser(t, BrandOverleap)
+		subID, pi := "sub_"+stripeUniq(), "pi_"+stripeUniq()
+		seedStripeSubPaid(t, u, subID, now+60*day, now+30*day, now+50*day)
+		f.subByPI[pi] = subID
+		f.remote[subID] = liveRemoteSub(subID, u.UUID, "price_x", now+60*day)
+		require.Equal(t, 200, post(t, disputePayload("evt_"+stripeUniq(), "charge.dispute.created", "dp_inf", pi, "needs_response")))
+		assert.InDelta(t, now+20*day, reloadUser(t, u.ID).ExpiredAt, 5)
+	})
+
+	// 扣款重试失败后被取消：那一期没付过钱（已付只到 5 天前），用户还有赠送时长 → 不扣
+	t.Run("Deleted_UnpaidPeriod_GiftKept", func(t *testing.T) {
+		installStripeFakes(t)
+		now := time.Now().Unix()
+		u := createStripeTestUser(t, BrandOverleap)
+		subID := "sub_" + stripeUniq()
+		seedStripeSubPaid(t, u, subID, now+25*day, now-5*day, now+40*day)
+		require.Equal(t, 200, post(t, subDeletedPayload("evt_"+stripeUniq(), subID, now, now+25*day)))
+		assert.Equal(t, now+40*day, reloadUser(t, u.ID).ExpiredAt)
+		assert.Empty(t, refundHistories(t, u.ID))
+	})
+
+	// 先后台立即取消（截断一次），再全额退款 → 不重复扣，赠送时长保留
+	t.Run("DeletedThenFullRefund_NoDoubleCut", func(t *testing.T) {
+		f := installStripeFakes(t)
+		now := time.Now().Unix()
+		u := createStripeTestUser(t, BrandOverleap)
+		subID, pi := "sub_"+stripeUniq(), "pi_"+stripeUniq()
+		seedStripeSubPaid(t, u, subID, now+30*day, now+30*day, now+50*day)
+		require.Equal(t, 200, post(t, subDeletedPayload("evt_"+stripeUniq(), subID, now, now+30*day)))
+		assert.Equal(t, now+20*day, reloadUser(t, u.ID).ExpiredAt)
+
+		f.subByPI[pi] = subID
+		rs := liveRemoteSub(subID, u.UUID, "price_x", now+30*day)
+		rs.Status = stripe.SubscriptionStatusCanceled
+		f.remote[subID] = rs
+		require.Equal(t, 200, post(t, chargeRefundedPayload("evt_"+stripeUniq(), "ch_dd", pi, 999, 999, true)))
+		assert.InDelta(t, now+20*day, reloadUser(t, u.ID).ExpiredAt, 2)
+		assert.Equal(t, "revoked", reloadStripeSub(t, subID).Status)
+		assert.Len(t, refundHistories(t, u.ID), 1)
+	})
+
 	// #10 墓碑撞键：取远端订阅的瞬间，并发的 invoice.paid 建了本地行 → 重跑收回，最终 revoked
 	t.Run("TombstoneCollision_RerunsRevoke", func(t *testing.T) {
 		f := installStripeFakes(t)
@@ -370,6 +423,8 @@ func TestStripeRevoke(t *testing.T) {
 		f.remote[subID] = liveRemoteSub(subID, u.UUID, p.StripePriceID, now+30*day)
 		require.Equal(t, 200, post(t, chargeRefundedPayload("evt_"+stripeUniq(), "ch_11", pi, 999, 999, true)))
 		cut := reloadUser(t, u.ID).ExpiredAt
+		// 经真实入账流程付费的订阅，全额退款后会员确实被收回（入账必须记 PaidThrough）
+		assert.InDelta(t, time.Now().Unix(), cut, 5)
 
 		require.Equal(t, 200, post(t, invoicePaidPayload("evt_"+stripeUniq(), "in_"+stripeUniq(), subID, "", p.PID, p.StripePriceID, now+30*day, now+60*day)))
 		assert.Equal(t, cut, reloadUser(t, u.ID).ExpiredAt)

@@ -88,10 +88,14 @@ func isStripeResourceMissing(err error) bool {
 // revokeStripeSubscriptionInTx 收回一条 Stripe 订阅撑着的会员并置 revoked。幂等。
 // found=false：本地没有这条订阅；revokedNow=false 且 found=true：之前已 revoked。
 //
-// 收回量 = 这笔订阅尚未用掉的时长 (CurrentPeriodEnd − now)，从用户到期里扣，最低扣到 now。
-// 不能用 Apple 那条"到期落在 (now, CurrentPeriodEnd] 才砍到 now"：Stripe 入账是叠加的
-// （applyGiftCredit），先有赠送时长再买年付，到期 = 周期末 + 赠送，整个落在窗口外 →
-// 全额退款 / 拒付后一天都不收回。按差值扣，赠送时长照样保留。reason 必须是英文。
+// 收回量 = 这笔订阅已付费、尚未用掉的时长 (PaidThrough − now)，从用户到期里扣，最低扣到
+// now，并把 PaidThrough 收回到 now。
+//   - 不能用 Apple 那条"到期落在 (now, CurrentPeriodEnd] 才砍到 now"：Stripe 入账是叠加的
+//     （applyGiftCredit），先有赠送时长再买年付，到期 = 周期末 + 赠送，整个落在窗口外 →
+//     全额退款 / 拒付后一天都不收回。按差值扣，赠送时长照样保留。
+//   - 不能用 CurrentPeriodEnd 当上限：对账会把它推到未付的下一期，会多扣。
+//   - 先被"提前结束"截断过的订阅 PaidThrough 已收回，再收回扣 0，不会重复扣。
+// reason 必须是英文。
 func revokeStripeSubscriptionInTx(ctx context.Context, tx *gorm.DB, providerSubID, reason string) (found, revokedNow bool, err error) {
 	var sub Subscription
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -110,7 +114,7 @@ func revokeStripeSubscriptionInTx(ctx context.Context, tx *gorm.DB, providerSubI
 		return true, false, fmt.Errorf("lock user %d: %w", sub.UserID, err)
 	}
 	now := time.Now().Unix()
-	if cut := min(max(sub.CurrentPeriodEnd-now, 0), max(user.ExpiredAt-now, 0)); cut > 0 {
+	if cut := min(max(sub.PaidThrough-now, 0), max(user.ExpiredAt-now, 0)); cut > 0 {
 		if err := tx.Model(&User{}).Where("id = ?", user.ID).Update("expired_at", user.ExpiredAt-cut).Error; err != nil {
 			return true, false, err
 		}
@@ -129,7 +133,7 @@ func revokeStripeSubscriptionInTx(ctx context.Context, tx *gorm.DB, providerSubI
 			user.ID, user.ExpiredAt, sub.CurrentPeriodEnd, now, providerSubID)
 	}
 	if err := tx.Model(&Subscription{}).Where("id = ?", sub.ID).
-		Updates(map[string]any{"status": "revoked", "auto_renew": false}).Error; err != nil {
+		Updates(map[string]any{"status": "revoked", "auto_renew": false, "paid_through": min(sub.PaidThrough, now)}).Error; err != nil {
 		return true, false, err
 	}
 	return true, true, nil

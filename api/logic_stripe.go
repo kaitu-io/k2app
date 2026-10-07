@@ -223,6 +223,9 @@ func creditStripeInvoice(ctx context.Context, tx *gorm.DB, f *stripeInvoiceFacts
 		sub.Environment = "sandbox"
 	}
 	sub.Status = deriveVerifiedStatus(sub.CurrentPeriodEnd, sub.Status, now)
+	if !alreadyCredited && f.PeriodEnd > sub.PaidThrough {
+		sub.PaidThrough = f.PeriodEnd
+	}
 	if err := tx.Save(&sub).Error; err != nil {
 		return err
 	}
@@ -329,10 +332,10 @@ func applyStripeSubscriptionUpdate(ctx context.Context, s *stripe.Subscription) 
 // markStripeSubscriptionDeleted 落地 customer.subscription.deleted：标记 expired + 关
 // auto_renew。期末自然结束时权益不回收——expired_at 已等于最后周期末，自然过期（同 Apple
 // EXPIRED 语义）。提前结束（后台立即取消、期中 cancel_at：ended_at 比事件自身的周期末早
-// 超过 earlyEndToleranceSec）→ 从用户到期里扣掉没给到的那段 (周期末 − ended_at)，最低扣到
-// ended_at；按差值扣，叠加的赠送时长不误伤（见 revokeStripeSubscriptionInTx 的说明）。
-// 周期末用事件自身的，不用本地 CurrentPeriodEnd——扣款重试期间对账会把本地值推到未付周期。
-// 锁顺序：订阅行 → 用户行（同 creditStripeInvoice）。
+// 超过 earlyEndToleranceSec）→ 从用户到期里扣掉已付费却没给到的那段
+// (min(PaidThrough, 事件周期末) − ended_at)，最低扣到 ended_at，并把 PaidThrough 收回到
+// ended_at。按差值扣，叠加的赠送时长不误伤；未付的那期（扣款重试失败后被取消）PaidThrough
+// 早于 ended_at，扣 0。锁顺序：订阅行 → 用户行（同 creditStripeInvoice）。
 func markStripeSubscriptionDeleted(ctx context.Context, s *stripe.Subscription) error {
 	var eventPeriodEnd int64
 	if s.Items != nil && len(s.Items.Data) > 0 && s.Items.Data[0] != nil {
@@ -362,7 +365,12 @@ func markStripeSubscriptionDeleted(ctx context.Context, s *stripe.Subscription) 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, sub.UserID).Error; err != nil {
 			return fmt.Errorf("lock user %d: %w", sub.UserID, err)
 		}
-		cut := min(eventPeriodEnd-s.EndedAt, max(user.ExpiredAt-s.EndedAt, 0))
+		cut := min(max(min(sub.PaidThrough, eventPeriodEnd)-s.EndedAt, 0), max(user.ExpiredAt-s.EndedAt, 0))
+		if sub.PaidThrough > s.EndedAt {
+			if err := tx.Model(&Subscription{}).Where("id = ?", sub.ID).Update("paid_through", s.EndedAt).Error; err != nil {
+				return err
+			}
+		}
 		if cut <= 0 {
 			return nil
 		}

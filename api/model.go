@@ -884,6 +884,11 @@ type Subscription struct {
 	Status           string `gorm:"column:status;type:varchar(24)" json:"status"` // active|grace|billing_retry|expired|revoked
 	// LastEventID webhook 幂等（Apple: notificationUUID；Stripe: event id）。
 	LastEventID string `gorm:"column:last_event_id;type:varchar(64)" json:"-"`
+	// PaidThrough 这条订阅已付费、已入账的权益覆盖到的时刻（unix 秒；仅 Stripe 维护）。
+	// 入账时只增（= 已入账 invoice 的周期末）；收回 / 提前结束扣减后同步回收到扣减点。
+	// 一切扣减都以它为上限，不用 CurrentPeriodEnd——对账会把 CurrentPeriodEnd 推到未付的
+	// 下一期，按它扣会把赠送时长当付费时长扣掉；两条路径先后扣时也靠它避免重复扣。
+	PaidThrough int64 `gorm:"column:paid_through;not null;default:0" json:"-"`
 }
 
 // Subscription.Provider / SubscriptionCredit.Provider 的取值域。二者共用同一套字面量——
