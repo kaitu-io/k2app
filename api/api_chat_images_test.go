@@ -263,7 +263,7 @@ func TestChatAI_SeesVisitorImage(t *testing.T) {
 	var gotImgs []string
 	var gotHist []filesearch.Message
 	orig := chatAIAsk
-	chatAIAsk = func(_ context.Context, _, q string, imgs []string, h []filesearch.Message) (string, error) {
+	chatAIAsk = func(_ context.Context, _, _, q string, imgs []string, h []filesearch.Message) (string, error) {
 		gotQ, gotImgs, gotHist = q, imgs, h
 		return "收到截图", nil
 	}

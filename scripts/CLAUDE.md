@@ -35,7 +35,7 @@ Node-side ops scripts are **not** here — they live in `docker/scripts/` (`prov
 
 ## Manual-only (no Makefile / workflow caller)
 
-`k2-quick-diag.sh` (client log triage), `check-nat-type.py` / `check-game-udp.py` (UDP NAT + game-protocol probes through a live tunnel), `test-k2r-webapp.sh`, `test-macos-ne-build.sh`, `test-publish-mobile.sh`, `test_version_propagation.sh`, `test-windows-service-smoke.ps1` (admin; k2 service install → ping → reinstall → uninstall), `stripe-setup-overleap.sh`, `asc-iap-setup.mjs`, `k2subs-uat/` (daemon on `:11777`), `enterprise-router/` (OpenWrt image), plus the Windows k2 test launchers below.
+`sync-kb.sh <brand> <vector_store_id|--create>` (uploads `docs/customer-service/<brand>/NN-*.md` to that brand's OpenAI vector store — the chat AI knowledge base; **nothing syncs it automatically**, so a doc edit is invisible to the bot until this runs. Store ids live in center `config.yml` `openai.filesearch.stores.<BrandConfig.ChatAIStore>`), `k2-quick-diag.sh` (client log triage), `check-nat-type.py` / `check-game-udp.py` (UDP NAT + game-protocol probes through a live tunnel), `test-k2r-webapp.sh`, `test-macos-ne-build.sh`, `test-publish-mobile.sh`, `test_version_propagation.sh`, `test-windows-service-smoke.ps1` (admin; k2 service install → ping → reinstall → uninstall), `stripe-setup-overleap.sh`, `asc-iap-setup.mjs`, `k2subs-uat/` (daemon on `:11777`), `enterprise-router/` (OpenWrt image), plus the Windows k2 test launchers below.
 
 ## Windows k2 Test Workflow (needs repair)
 
