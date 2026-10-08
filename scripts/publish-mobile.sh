@@ -17,9 +17,10 @@ set -euo pipefail
 #   ios/beta/latest.json                         ← this script publishes
 #
 # --brand=kaitu|overleap selects the S3/CDN prefix and artifact filename
-# prefix. Falls back to $K2_BRAND, then "kaitu". overleap has no live App
-# Store listing yet (Phase 0) — if OVERLEAP_APPSTORE_URL is unset, the ios
-# manifest publish is skipped with a warning (see below).
+# prefix. Falls back to $K2_BRAND, then "kaitu". The App Store link is built
+# from each brand's App Store Connect app id (kaitu 6448744655, overleap
+# 6759199298) — known before the listing goes live, so nothing waits on review.
+# OVERLEAP_APPSTORE_URL overrides overleap's.
 # overleap android is Play-only: --platform=android exits 0 without touching
 # S3, and --platform=both narrows to ios.
 #
@@ -64,7 +65,7 @@ BRAND_PRODUCT=$([ "$BRAND" = "overleap" ] && echo "Overleap" || echo "Kaitu")
 S3_PREFIX="${BRAND}"
 CDN_PRIMARY="https://d13jc1jqzlg4yt.cloudfront.net/${BRAND}"
 if [ "$BRAND" = "overleap" ]; then
-    APPSTORE_URL="${OVERLEAP_APPSTORE_URL:-}"
+    APPSTORE_URL="${OVERLEAP_APPSTORE_URL:-https://apps.apple.com/app/id6759199298}"
 else
     APPSTORE_URL="https://apps.apple.com/app/id6448744655"
 fi
@@ -77,9 +78,8 @@ fi
 # Overleap Android ships through Google Play only: no CDN APK, no android
 # manifest (the app's APK self-update lane is off — see k2_apk_updates in
 # mobile/android/app/src/overleap/res/values/brand.xml). Placed before the
-# artifact validation and the iOS-skip block below so that --platform=both
-# narrows to iOS first, and the iOS block may then still exit 0 on its own
-# (OVERLEAP_APPSTORE_URL unset). exit 0: expected state, CI legs stay green.
+# artifact validation so that --platform=both narrows to iOS first.
+# exit 0: expected state, CI legs stay green.
 if [ "$BRAND" = overleap ] && [ "$PLATFORM" != ios ]; then
     echo "WARN: overleap android is Play-only — skipping android manifest."
     if [ "$PLATFORM" = android ]; then
@@ -242,25 +242,6 @@ fi
 # For beta versions, we write ios/beta/latest.json (unused but consistent).
 # For stable versions, we write both ios/latest.json and ios/beta/latest.json.
 
-IOS_SKIPPED=false
-if [ "$PLATFORM" != "android" ] && [ -z "$APPSTORE_URL" ]; then
-    echo "WARN: overleap App Store listing not yet live (OVERLEAP_APPSTORE_URL unset) — skipping ios manifest."
-    if [ "$PLATFORM" = "ios" ]; then
-        # iOS was the ONLY thing requested — nothing at all will be
-        # published, so stop here. Running on would leak the PLATFORM
-        # override into the CDN invalidation (firing /${BRAND}/android/*
-        # for a run that wrote nothing) and print a false success line.
-        # exit 0: this is an expected pending-Phase-0 state, not an error —
-        # CI matrix legs must stay green.
-        echo "Nothing published (overleap iOS manifest skipped — OVERLEAP_APPSTORE_URL unset)."
-        exit 0
-    fi
-    # Both platforms requested: android half still publishes below; the
-    # override narrows the rest of the run (incl. CDN paths) to android,
-    # which is exactly what was actually published.
-    IOS_SKIPPED=true
-    PLATFORM="android"
-fi
 
 if [ "$PLATFORM" != "android" ]; then
 echo "Processing ios..."
@@ -304,9 +285,6 @@ if [ "$DRY_RUN" = false ] && ! use_local; then
 fi
 
 PLATFORM_LABEL="${PLATFORM:-mobile}"
-if [ "$IOS_SKIPPED" = true ]; then
-    PLATFORM_LABEL="android (ios manifest skipped — OVERLEAP_APPSTORE_URL unset)"
-fi
 echo ""
 if [ "$CHANNEL" = "beta" ]; then
     echo "Published ${PLATFORM_LABEL} v${VERSION} beta manifests successfully."
