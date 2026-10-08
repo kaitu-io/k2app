@@ -560,6 +560,15 @@ ${Using:StrFunc} UnStrRep
   DetailPrint "Waiting for file handles (5 seconds)..."
   Sleep 5000
 
+  ; Step 5b: Files the template does not know about. Tauri's uninstaller only
+  ; deletes what it bundled, then a plain RMDir "$INSTDIR" — so anything else
+  ; left here keeps the whole install directory alive. wintun.dll is extracted
+  ; by k2 at runtime (k2/daemon/wintun EnsureExtracted); install-diag.log is
+  ; written by POSTINSTALL above (rewritten on every install, nothing to keep).
+  ; Named files only — never RMDir /r $INSTDIR, the user picks that path.
+  Delete "$INSTDIR\wintun.dll"
+  Delete "$INSTDIR\install-diag.log"
+
   ; Step 6: Remove shortcuts
   DetailPrint "Removing shortcuts..."
   Delete "$DESKTOP\${PRODUCTNAME}.lnk"
@@ -573,6 +582,15 @@ ${Using:StrFunc} UnStrRep
   ${Else}
     Delete "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\${PRODUCTNAME}.lnk"
   ${EndIf}
+
+  ; Hand the template back the context its un.onInit set (SetContext: perMachine
+  ; = all). The template removes the Start-menu shortcut via $SMPROGRAMS right
+  ; after this hook; left on "current" it looked in the user's own Start menu
+  ; and the all-users shortcut survived every uninstall.
+  !if "${INSTALLMODE}" != "perMachine"
+    !error "PREUNINSTALL restores SetShellVarContext all: revisit it if installMode changes"
+  !endif
+  SetShellVarContext all
 
   ; Step 7: Remove installation directory from system PATH
   DetailPrint "Removing from system PATH..."
