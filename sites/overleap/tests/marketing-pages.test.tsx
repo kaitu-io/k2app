@@ -190,14 +190,16 @@ describe('/support', () => {
 });
 
 describe('/install', () => {
-  it('nothing published → four "coming soon" cards, no null-versioned link', async () => {
+  it('no desktop artifacts → desktop "coming soon", stores still linked, no null-versioned link', async () => {
     const html = await renderPage('install', 'en-GB');
     for (const p of ['windows', 'macos', 'ios', 'android']) expect(html).toContain(`data-testid="install-card-${p}"`);
-    expect(html.match(/data-available="false"/g)).toHaveLength(4);
+    expect(html.match(/data-available="false"/g)).toHaveLength(2);
+    expect(html).toContain('href="https://apps.apple.com/app/id6759199298"');
+    expect(html).toContain('href="https://play.google.com/store/apps/details?id=io.overleap"');
     expect(html).not.toContain('_null_');
   });
 
-  it('links published desktop artifacts from the CDN and keeps unpublished stores as coming soon', async () => {
+  it('links published desktop artifacts from the CDN alongside the live store listings', async () => {
     const { desktopLinks } = await vi.importActual<typeof import('@/lib/downloads')>('@/lib/downloads');
     downloadsMock.fetchAllDownloadLinks.mockResolvedValue({
       desktop: { beta: null, stable: { version: '0.4.10', links: desktopLinks('0.4.10') } },
@@ -206,8 +208,8 @@ describe('/install', () => {
     const html = await renderPage('install', 'en-US');
     expect(html).toContain('href="https://d13jc1jqzlg4yt.cloudfront.net/overleap/desktop/0.4.10/Overleap_0.4.10_x64.exe"');
     expect(html).toContain('href="https://d13jc1jqzlg4yt.cloudfront.net/overleap/desktop/0.4.10/Overleap_0.4.10_universal.pkg"');
-    expect(html.match(/data-available="true"/g)).toHaveLength(2);
-    expect(html.match(/data-available="false"/g)).toHaveLength(2);
+    expect(html.match(/data-available="true"/g)).toHaveLength(4);
+    expect(html).not.toContain('data-available="false"');
     expect(html).toContain('"softwareVersion":"0.4.10"');
   });
 
