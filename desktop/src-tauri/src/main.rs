@@ -2,6 +2,8 @@
 
 mod app_list;
 mod channel;
+#[cfg(target_os = "macos")]
+mod dock_icon;
 mod icon_protocol;
 mod installed_apps;
 mod log_upload;
@@ -213,6 +215,10 @@ fn main() {
             // Initialize native storage (load from disk)
             let state = app.handle().state::<storage::StorageState>();
             storage::init(app.handle(), &state);
+            // Before any window/webview work: it samples whether this is a
+            // first launch from files the webapp writes (see dock_icon.rs).
+            #[cfg(target_os = "macos")]
+            dock_icon::refresh(app.handle());
             // Check for --minimized argument (autostart)
             let args: Vec<String> = std::env::args().collect();
             let should_minimize = args.contains(&"--minimized".to_string());
