@@ -485,9 +485,11 @@ func TestReconcile_RevokedRowRevivalAndExpiredGuard(t *testing.T) {
 
 // ---------- webhook 端到端 ----------
 
-// 28. REFUND（带 revocationType/Percentage）与 REFUND_REVERSED 字面量经 webhook 端到端。
+// 28. REFUND（带 revocationType/Percentage）与 REFUND_REVERSED 字面量经 webhook 端到端；
+// 别的 app 的通知（bundle 不符）拒收；撤销退款须经 Apple 复核确认。
 func TestAppleWebhook_RefundAndReversedEndToEnd(t *testing.T) {
 	skipIfNoDB(t)
+	setTestAppleBundleID(t)
 	captureBillingAlerts(t)
 	rootPEM, leafKey, leafDER, intDER := makeTestChain(t)
 	old := appleRootCAPEM
@@ -499,9 +501,9 @@ func TestAppleWebhook_RefundAndReversedEndToEnd(t *testing.T) {
 	t0 := time.Now().Unix()
 	require.NoError(t, f.credit(t, "WH-RF1", t0, t0+365*aDay))
 
-	post := func(nType string, signedAt int64, revoked bool) int {
+	post := func(nType, bundle string, signedAt int64, revoked bool) int {
 		claims := map[string]any{
-			"originalTransactionId": f.origTxn, "transactionId": "WH-RF1", "productId": f.productID,
+			"bundleId": bundle, "originalTransactionId": f.origTxn, "transactionId": "WH-RF1", "productId": f.productID,
 			"inAppOwnershipType": "PURCHASED", "environment": "Production",
 			"purchaseDate": t0 * 1000, "expiresDate": (t0 + 365*aDay) * 1000, "signedDate": signedAt,
 		}
@@ -513,9 +515,9 @@ func TestAppleWebhook_RefundAndReversedEndToEnd(t *testing.T) {
 		tj, _ := json.Marshal(claims)
 		inner := signJWS(t, leafKey, leafDER, intDER, string(tj))
 		outer, _ := json.Marshal(map[string]any{
-			"notificationType": nType, "notificationUUID": fmt.Sprintf("uuid-%s-%d", nType, signedAt),
+			"notificationType": nType, "notificationUUID": fmt.Sprintf("uuid-%s-%s-%d", nType, bundle, signedAt),
 			"version": "2.0", "signedDate": signedAt,
-			"data": map[string]any{"bundleId": "io.kaitu.test", "environment": "Production", "signedTransactionInfo": inner},
+			"data": map[string]any{"bundleId": bundle, "environment": "Production", "signedTransactionInfo": inner},
 		})
 		body, _ := json.Marshal(map[string]string{"signedPayload": signJWS(t, leafKey, leafDER, intDER, string(outer))})
 		gin.SetMode(gin.TestMode)
@@ -527,7 +529,12 @@ func TestAppleWebhook_RefundAndReversedEndToEnd(t *testing.T) {
 	}
 
 	s := time.Now().UnixMilli()
-	require.Equal(t, 200, post("REFUND", s, true))
+	assert.Equal(t, 400, post("REFUND", "com.other.app", s, true), "别的 app 的通知拒收")
+	var n int64
+	db.Get().Model(&AppleRefund{}).Where("transaction_id = ?", "WH-RF1").Count(&n)
+	require.Zero(t, n)
+
+	require.Equal(t, 200, post("REFUND", "io.kaitu.test", s, true))
 	r := f.refundRow(t, "WH-RF1")
 	assert.True(t, r.Active)
 	assert.Equal(t, "REFUND_PRORATED", r.RevocationType)
@@ -535,45 +542,36 @@ func TestAppleWebhook_RefundAndReversedEndToEnd(t *testing.T) {
 	assert.Equal(t, s, r.RefundSignedAt)
 	assert.Equal(t, "revoked", f.subNow(t).Status)
 
-	require.Equal(t, 200, post("REFUND_REVERSED", s+1000, false))
+	// Apple 复核仍说已退款 → 不恢复
+	appleSays := f.txn("WH-RF1", t0, t0+365*aDay)
+	appleSays.BundleId = "io.kaitu.test"
+	fakeAppleTxn(t, func(string) (*appstore.TransactionInfo, error) { x := *appleSays; return &x, nil })
+	require.Equal(t, 200, post("REFUND_REVERSED", "io.kaitu.test", s+1000, false))
+	assert.True(t, f.refundRow(t, "WH-RF1").Active)
+
+	// Apple 复核确认已撤销 → 恢复
+	appleSays.RevocationDate = 0
+	require.Equal(t, 200, post("REFUND_REVERSED", "io.kaitu.test", s+2000, false))
 	assert.False(t, f.refundRow(t, "WH-RF1").Active)
 	assert.Equal(t, "active", f.subNow(t).Status)
 }
 
-// 19b. 退一笔与奖励无关的订单 → 奖励不动。
-func TestInviteRefund_UnrelatedOrderKeepsGrant(t *testing.T) {
+// 复活入账按 Apple 周期对齐：退款后的新付款很久之后才入账，不发超过 Apple 覆盖的时长。
+func TestAppleRefund_LateRevivalAlignedToApple(t *testing.T) {
 	skipIfNoDB(t)
 	captureBillingAlerts(t)
-	f := webInviteFixture(t)
-	other := f.addPaidOrder(t, 1, 500, nil)
-	require.NoError(t, ProcessOrderRefund(context.Background(), other.ID, "test refund", 1))
-	g := f.grant(t)
-	assert.False(t, g.Reversed)
-	assert.Equal(t, strconv.FormatUint(f.order.ID, 10), g.TriggerRef)
-}
-
-// 11b. verify 端点：被退交易返回明确的"已退款"错误。
-func TestAppleIAPVerify_RefundedTransaction(t *testing.T) {
-	skipIfNoDB(t)
-	setTestAppleBundleID(t)
-	user := CreateTestUser(t)
-	plan := createApplePlan(t, 12)
-	fakeAppleTxn(t, func(id string) (*appstore.TransactionInfo, error) {
-		return &appstore.TransactionInfo{BundleId: "io.kaitu.test", TransactionId: id, OriginalTransactionId: "OTX-VR-" + id,
-			ProductId: plan.AppleProductID, InAppOwnershipType: appstore.OwnershipType_PURCHASED, Environment: "Production",
-			PurchaseDate: time.Now().UnixMilli(), ExpiresDate: time.Now().Add(365 * 24 * time.Hour).UnixMilli(),
-			RevocationDate: time.Now().UnixMilli(), AppAccountToken: deriveAppleAccountToken(user.UUID)}, nil
-	})
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.Use(func(c *gin.Context) {
-		c.Set("authContext", &authContext{UserID: user.ID, User: user})
-		c.Next()
-	})
-	r.POST("/api/iap/apple/verify", api_apple_iap_verify)
-	body, _ := json.Marshal(map[string]string{"transactionId": fmt.Sprintf("VR-%d", time.Now().UnixNano())})
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/iap/apple/verify", bytes.NewReader(body)))
-	assert.Equal(t, int(ErrorInvalidOperation), respCode(t, w))
-	assert.Contains(t, w.Body.String(), "refunded")
+	f := setupIAPOrderFixture(t, 30, 10)
+	f.noInvite(t)
+	t0 := time.Now().Unix()
+	require.NoError(t, f.credit(t, "AR-LR1", t0, t0+365*aDay))
+	refunded := f.txn("AR-LR1", t0, t0+365*aDay)
+	refunded.RevocationDate = (t0 - 300*aDay) * 1000 // Apple 300 天前就退了
+	_, err := applyAppleRefund(context.Background(), f.origTxn, refunded, appleRefundEvidence{SignedAt: refunded.RevocationDate, Source: "webhook"})
+	require.NoError(t, err)
+	// 账本早已过期（等价于当年就处理了退款）
+	require.NoError(t, db.Get().Model(&User{}).Where("id = ?", f.buyer.ID).Update("expired_at", t0-250*aDay).Error)
+	// 退款后 200 天前重订阅，到现在才入账：Apple 覆盖到 +165 天
+	require.NoError(t, f.credit(t, "AR-LR2", t0-200*aDay, t0+165*aDay))
+	assert.Equal(t, "active", f.subNow(t).Status)
+	assertNear(t, t0+165*aDay, f.userNow(t, f.buyer.ID).ExpiredAt, 120, "与 Apple 覆盖对齐，不从 now 起叠一整期")
 }

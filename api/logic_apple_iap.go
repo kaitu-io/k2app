@@ -266,8 +266,14 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 			log.Warnf(ctx, "[creditAppleTransaction] txn %s is %dd old at first-bind; credited %ds forward from now — may exceed Apple's remaining coverage, Phase 2 reconciliation will cap",
 				info.TransactionId, (now-info.PurchaseDate/1000)/86400, creditSeconds)
 		}
-		newExpiry := applyGiftCredit(user.ExpiredAt, creditSeconds, now)
-		creditSeconds = newExpiry - max(user.ExpiredAt, now) // audited net add (Go 1.21+ builtin max)
+		base := now
+		if revival {
+			// 复活按 Apple 的周期对齐：从 max(到期, 购买时刻) 起叠，不从 now 起——这笔付款若很久之后
+			// 才被入账（漏通知、对账补入），从 now 起叠会发出超过 Apple 实际覆盖的时长。
+			base = min(now, info.PurchaseDate/1000)
+		}
+		newExpiry := applyGiftCredit(user.ExpiredAt, creditSeconds, base)
+		creditSeconds = max(newExpiry-max(user.ExpiredAt, now), 0) // audited net add (Go 1.21+ builtin max)
 		user.ExpiredAt = newExpiry
 		kind = "purchase"
 	} else {

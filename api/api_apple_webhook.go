@@ -77,6 +77,23 @@ func api_apple_webhook(c *gin.Context) {
 		return
 	}
 
+	// 信任边界：Apple 根证书签的是所有 app 的通知，签名有效 ≠ 是本品牌 app 的通知。
+	// 通知与交易的 bundleId 都必须是这条订阅所属品牌的 bundle；对不上一律 400（不重试）。
+	var owner User
+	if err := db.Get().Select("brand").First(&owner, sub.UserID).Error; err != nil {
+		log.Errorf(c, "[AppleWebhook] load owner of otx=%s: %v", otx, err)
+		c.AbortWithStatus(500)
+		return
+	}
+	wantBundle := appleBundleIDForBrand(Brand(owner.Brand))
+	if wantBundle == "" || asn.Payload.Data.BundleId != wantBundle ||
+		(asn.TransactionInfo.BundleId != "" && asn.TransactionInfo.BundleId != wantBundle) {
+		log.Warnf(c, "[AppleWebhook] bundle mismatch otx=%s: payload=%s txn=%s want=%s",
+			otx, asn.Payload.Data.BundleId, asn.TransactionInfo.BundleId, wantBundle)
+		c.AbortWithStatus(400)
+		return
+	}
+
 	// 幂等：同一通知 UUID 已处理过则跳过（Apple 偶发重送）。
 	if sub.LastEventID != "" && sub.LastEventID == uuid {
 		log.Infof(c, "[AppleWebhook] duplicate notification uuid=%s otx=%s, already processed", uuid, otx)
@@ -120,7 +137,21 @@ func api_apple_webhook(c *gin.Context) {
 		}
 
 	case appleNotificationRefundReversed:
-		if err := reverseAppleRefund(c, otx, asn.TransactionInfo, asn.Payload.SignedDate, "webhook"); err != nil {
+		// 恢复时长是授予动作：与入账一样向 Apple 认证 API 复核（第二层信任锚点），
+		// 只有 Apple 现在确认这笔交易不再是已退款，才恢复。
+		info, err := fetchAppleTransaction(c, wantBundle, asn.TransactionInfo.TransactionId)
+		if err != nil {
+			log.Errorf(c, "[AppleWebhook] refund reversal re-verify failed otx=%s: %v", otx, err)
+			c.AbortWithStatus(500)
+			return
+		}
+		if info.TransactionId != asn.TransactionInfo.TransactionId || info.OriginalTransactionId != otx ||
+			info.BundleId != wantBundle || info.RevocationDate != 0 {
+			log.Warnf(c, "[AppleWebhook] refund reversal for txn %s not confirmed by Apple (revocationDate=%d), ignored",
+				asn.TransactionInfo.TransactionId, info.RevocationDate)
+			break
+		}
+		if err := reverseAppleRefund(c, otx, info, asn.Payload.SignedDate, "webhook"); err != nil {
 			log.Errorf(c, "[AppleWebhook] refund reversal failed otx=%s: %v", otx, err)
 			c.AbortWithStatus(500)
 			return
