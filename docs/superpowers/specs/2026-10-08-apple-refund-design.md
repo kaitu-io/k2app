@@ -304,3 +304,15 @@ Apple 退款（§3.3 第 6b 步）与后台网页退款（`ProcessOrderRefund`�
 **钱包与端到端**
 27. `ProcessOrderRefund`、后台预校验、在途审批执行均拒绝 IAP 订单，消息明确；存量已退钱包的 IAP 单再遇 Apple 退款 → 不扣时长、邀请照撤、双退告警。
 28. `REFUND_REVERSED` 字面量 payload 经 webhook 端到端。
+
+## 8. 实现记录（2026-10-08）
+
+代码：`api/logic_apple_refund.go`、`api/logic_purchase_refund.go`，改动 `logic_apple_iap.go` / `worker_subscription_reconcile.go` / `api_apple_webhook.go` / `logic_order.go` / `logic_invite.go` / `logic_retailer.go` / `logic_wallet.go`。测试 `logic_apple_refund_test.go`、`logic_apple_refund_flows_test.go`（§7 全部条目 + 补充），变异验证 71 条全部被抓。
+
+与设计的差异（均经审查）：
+1. 沙盒交易：Tier 照设（属于权益），只不消耗首单资格。
+2. 安全审查追加：webhook 校验通知与交易的 bundleId 属于该订阅品牌；`REFUND_REVERSED` 恢复前经 `fetchAppleTransaction` 复核（Apple 确认 revocationDate 已消失、交易 / otx / bundle 一致）——授予动作一律过第二层信任锚点。
+3. 复活入账只发 Apple 剩余覆盖期：`newPeriodEnd − max(购买时刻, now)`，叠在 `max(到期, now)` 上（迟到入账不超发；正常复活 = 整期）。
+4. 改锚同时按订单 id 与 Apple 交易号排除正在退款的这笔。
+5. "可能不存在的行"（`AppleRefund`、`InviteRewardGrant`）先普通读再按主键加锁，避免间隙锁死锁；邀请扣减读 `expired_at` 用当前读。
+6. 双退哨兵 `[DOUBLE-REFUND]` 改为事务提交后发。
