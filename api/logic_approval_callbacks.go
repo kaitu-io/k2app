@@ -479,9 +479,10 @@ func executeApprovalWithdrawComplete(ctx context.Context, params json.RawMessage
 // ===================== Order Refund =====================
 
 type orderRefundApprovalParams struct {
-	OrderID    uint64 `json:"orderId"`
-	Reason     string `json:"reason"`
-	OperatorID uint64 `json:"operatorId"`
+	OrderID           uint64 `json:"orderId"`
+	Reason            string `json:"reason"`
+	OperatorID        uint64 `json:"operatorId"`
+	KeepInviteRewards bool   `json:"keepInviteRewards,omitempty"` // 审批单即留痕
 }
 
 func executeApprovalOrderRefund(ctx context.Context, params json.RawMessage) error {
@@ -502,5 +503,5 @@ func executeApprovalOrderRefund(ctx context.Context, params json.RawMessage) err
 		return fmt.Errorf("订单已退款")
 	}
 
-	return ProcessOrderRefund(ctx, p.OrderID, p.Reason, p.OperatorID)
+	return ProcessOrderRefund(ctx, p.OrderID, p.Reason, p.OperatorID, OrderRefundOptions{KeepInviteRewards: p.KeepInviteRewards})
 }

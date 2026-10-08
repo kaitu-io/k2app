@@ -121,8 +121,18 @@ func processOrderCashbackInTx(ctx context.Context, tx *gorm.DB, orderID uint64) 
 //  5. 更新订单状态（IsRefunded/RefundedAt/RefundAmount/RefundReason）
 //
 // operatorID 必传：落到 wallet_changes.operator_id，用于审计追溯
-func ProcessOrderRefund(ctx context.Context, orderID uint64, refundReason string, operatorID uint64) error {
-	return getDB().Transaction(func(tx *gorm.DB) error {
+// OrderRefundOptions ProcessOrderRefund 的可选项。
+type OrderRefundOptions struct {
+	KeepInviteRewards bool // 不撤回这笔购买触发的邀请奖励（服务故障类善意退款）
+}
+
+func ProcessOrderRefund(ctx context.Context, orderID uint64, refundReason string, operatorID uint64, opts ...OrderRefundOptions) error {
+	var opt OrderRefundOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+	var alerts []string
+	err := getDB().Transaction(func(tx *gorm.DB) error {
 		// ---------- 1. 加行锁加载订单 + 预校验 ----------
 		var order Order
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -147,14 +157,11 @@ func ProcessOrderRefund(ctx context.Context, orderID uint64, refundReason string
 		if !Brand(order.User.Brand).Config().Wallet {
 			return fmt.Errorf("%s", walletRefundUnavailableMsg)
 		}
+		// App Store 订单只能由 Apple 退（spec 2026-10-08 §3.9）。已在途的审批单执行时也在这里得到明确失败。
+		if order.Channel == OrderChannelAppleIAP {
+			return fmt.Errorf("%s", appleIAPWalletRefundMsg)
+		}
 		// ---------- 2. 撤销授权 ----------
-		// 分渠道反算已发放的权益时长——IAP 与网页订单的记账形态不同，见 orderEntitlementSecondsInTx。
-		//
-		// 历史（2026-08 之前）：这里整个拒绝 IAP 订单，理由有二。资金侧那条（"Apple 已原路退款，
-		// 再打钱包等于退两次"）是把 Apple 退款当成了前提，而后台退款的实际用法是 **Apple 未退款时
-		// 由客服主动补偿到钱包**，两者并不冲突；真正会双退的场景是后台退款之后用户又向 Apple 申请
-		// 并成功，那条路径由 revokeIAPOrderCashbackInTx 的双退哨兵告警覆盖。授权侧那条是真 bug
-		// （按 VipPurchase 反算恒为 0），已由分渠道查询修掉。
 		entitlementSeconds, err := orderEntitlementSecondsInTx(tx, &order)
 		if err != nil {
 			return err
@@ -261,52 +268,31 @@ func ProcessOrderRefund(ctx context.Context, orderID uint64, refundReason string
 			return fmt.Errorf("更新订单退款状态失败: %v", err)
 		}
 
-		log.Infof(ctx, "order refunded: uuid=%s user=%d amount=%d reason=%s operator=%d channel=%s",
-			order.UUID, order.UserID, order.PayAmount, refundReason, operatorID, order.Channel)
-		if order.Channel == OrderChannelAppleIAP {
-			// 退款不等于退订：Apple 侧的订阅仍然活着，下个计费周期照常扣款并由 DID_RENEW 建出新订单。
-			// 要真正停止续费只能由用户在 Apple 设置里取消——后台没有任何接口能代劳。
-			log.Warnf(ctx, "order %s is apple_iap: wallet refunded, but the Apple subscription stays active — next renewal will create a NEW paid order unless the user cancels in Apple settings",
-				order.UUID)
+		// ---------- 6. 退款后续：邀请奖励、分销付费人数（与 Apple 退款共用，spec 2026-10-08 §3.5）----------
+		// 在权益扣减与订单状态写库之后：邀请扣减基于重读的 expired_at，改锚时这笔单已是已退款。
+		fu, err := onPaidOrderRefundedInTx(ctx, tx, user.ID, purchaseKeys{OrderID: order.ID}, &order, opt.KeepInviteRewards)
+		if err != nil {
+			return fmt.Errorf("退款后续处理失败: %v", err)
 		}
+		alerts = fu.Alerts
 
+		log.Infof(ctx, "order refunded: uuid=%s user=%d amount=%d reason=%s operator=%d channel=%s keepInvite=%v",
+			order.UUID, order.UserID, order.PayAmount, refundReason, operatorID, order.Channel, opt.KeepInviteRewards)
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	sendBillingAlerts(ctx, alerts)
+	return nil
 }
 
-// orderEntitlementSecondsInTx 反算一笔订单实际发放了多少权益时长（秒），供退款撤销授权使用。
-//
-// 两条渠道的权益记账形态完全不同，必须分口径查——混用是 IAP 订单一度被整个挡在后台退款之外的
-// 两条理由之一：
-//   - 网页订单：addProExpiredDays（logic_member.go）写 UserProHistory{type=purchase,
-//     reference_id=order.ID}，按天记账，订单 id 就是 reference。
-//   - IAP 订单：creditAppleTransaction 写 UserProHistory{type=apple_sub,
-//     reference_id=SubscriptionCredit.ID}——reference_id 是 credit 行的 id，**不是订单 id**，
-//     所以按 (type=purchase, reference_id=orderID) 查恒得 0，权益一天都扣不掉而钱照打。
-//     精确值在 SubscriptionCredit.CreditedSeconds（UserProHistory.Days 是 floor 后的展示值），
-//     故经 orders.apple_transaction_id 反查该表。
+// orderEntitlementSecondsInTx 反算一笔网页订单实际发放了多少权益时长（秒），供退款撤销授权使用。
+// addProExpiredDays（logic_member.go）写 UserProHistory{type=purchase, reference_id=order.ID}，按天记账。
+// App Store 订单不走本路径（ProcessOrderRefund 已拒绝，由 Apple 退款经 applyAppleRefund 收回）。
 //
 // 返回 0 表示查不到发放记录（脏数据），调用方按"跳过扣权益但继续退款"处理。
 func orderEntitlementSecondsInTx(tx *gorm.DB, order *Order) (int64, error) {
-	if order.Channel == OrderChannelAppleIAP {
-		if order.AppleTransactionID == "" {
-			// 建单侧（createAppleIAPOrderInTx）恒写此列，为空说明订单被手工改过或来自更早的
-			// 数据形态。此时无从反查发放了多少权益，继续退款会只打钱不扣权益——拒绝，交给人工。
-			return 0, fmt.Errorf("IAP 订单 %s 缺少 apple_transaction_id，无法反算已发放权益", order.UUID)
-		}
-		var seconds int64
-		if err := tx.Model(&SubscriptionCredit{}).
-			Select("COALESCE(SUM(credited_seconds), 0)").
-			Where(&SubscriptionCredit{
-				Provider:      SubscriptionProviderApple,
-				TransactionID: order.AppleTransactionID,
-			}).
-			Scan(&seconds).Error; err != nil {
-			return 0, fmt.Errorf("查询 IAP 入账时长失败: %v", err)
-		}
-		return seconds, nil
-	}
-
 	// SUM 订单直接关联的 VipPurchase 天数（不含邀请奖励）
 	var purchaseDays int64
 	if err := tx.Model(&UserProHistory{}).

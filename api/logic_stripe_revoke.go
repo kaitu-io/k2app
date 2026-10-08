@@ -80,10 +80,10 @@ var alertStripeRevoke = func(ctx context.Context, tag, format string, args ...an
 	}
 }
 
-// stripePaidThrough 扣减上限。PaidThrough 为 0（该列上线前入账的老行）时退回 CurrentPeriodEnd：
+// subscriptionPaidThrough 扣减上限。PaidThrough 为 0（该列上线前入账的老行）时退回 CurrentPeriodEnd：
 // 宁可多扣，不能因为缺数据整段放行（fail-closed）。墓碑行同样为 0，但墓碑生来就是 revoked，
 // 走不到扣减。
-func stripePaidThrough(sub *Subscription) int64 {
+func subscriptionPaidThrough(sub *Subscription) int64 {
 	if sub.PaidThrough > 0 {
 		return sub.PaidThrough
 	}
@@ -125,7 +125,7 @@ func revokeStripeSubscriptionInTx(ctx context.Context, tx *gorm.DB, providerSubI
 		return true, false, fmt.Errorf("lock user %d: %w", sub.UserID, err)
 	}
 	now := time.Now().Unix()
-	if cut := min(max(stripePaidThrough(&sub)-now, 0), max(user.ExpiredAt-now, 0)); cut > 0 {
+	if cut := min(max(subscriptionPaidThrough(&sub)-now, 0), max(user.ExpiredAt-now, 0)); cut > 0 {
 		if err := tx.Model(&User{}).Where("id = ?", user.ID).Update("expired_at", user.ExpiredAt-cut).Error; err != nil {
 			return true, false, err
 		}

@@ -297,6 +297,9 @@ type Order struct {
 	// NextpayOrderID 最近一次 NextPay 订单 uuid（仅 Channel=nextpay）。webhook 用
 	// ObjectID(=本表 uuid) 关联订单，此列只做对账与双付判定；耐久链接重建 checkout 后会更新。
 	NextpayOrderID string `gorm:"type:varchar(36);index" json:"nextpayOrderId,omitempty"`
+	// RetailerCountedID 这笔单计入了哪个分销商配置的 paid_user_count（0 = 未计入，含全部存量单）。
+	// 退款时据此精确扣回，不靠"首单"推断（spec 2026-10-08 Apple 退款 §3.5）。
+	RetailerCountedID uint64 `gorm:"column:retailer_counted_id;not null;default:0" json:"-"`
 }
 
 const (
@@ -884,7 +887,7 @@ type Subscription struct {
 	Status           string `gorm:"column:status;type:varchar(24)" json:"status"` // active|grace|billing_retry|expired|revoked
 	// LastEventID webhook 幂等（Apple: notificationUUID；Stripe: event id）。
 	LastEventID string `gorm:"column:last_event_id;type:varchar(64)" json:"-"`
-	// PaidThrough 这条订阅已付费、已入账的权益覆盖到的时刻（unix 秒；仅 Stripe 维护）。
+	// PaidThrough 这条订阅已付费、已入账的权益覆盖到的时刻（unix 秒；Stripe 与 Apple 都维护）。
 	// 入账时只增（= 已入账 invoice 的周期末）；收回 / 提前结束扣减后同步回收到扣减点。
 	// 一切扣减都以它为上限，不用 CurrentPeriodEnd——对账会把 CurrentPeriodEnd 推到未付的
 	// 下一期，按它扣会把赠送时长当付费时长扣掉；两条路径先后扣时也靠它避免重复扣。
@@ -914,6 +917,60 @@ type SubscriptionCredit struct {
 	CreditedSeconds       int64     `gorm:"column:credited_seconds;not null" json:"creditedSeconds"`
 	Kind                  string    `gorm:"column:kind;type:varchar(16);not null" json:"kind"` // purchase|renewal|grace
 }
+
+// AppleRefund 一笔 Apple 交易的退款状态（每笔交易一行，spec 2026-10-08 §3.1）。
+// 退款 / 撤销退款的先后按 Apple 给出的时刻判定（毫秒），不按到达顺序：
+// Active = 最近被采纳的证据是退款（RefundSignedAt > ReversedSignedAt）。
+type AppleRefund struct {
+	ID                    uint64    `gorm:"primarykey" json:"id"`
+	CreatedAt             time.Time `json:"createdAt"`
+	UpdatedAt             time.Time `json:"updatedAt"`
+	UserID                uint64    `gorm:"column:user_id;not null;index" json:"userId"`
+	SubscriptionID        uint64    `gorm:"column:subscription_id;not null;index" json:"subscriptionId"`
+	OriginalTransactionID string    `gorm:"column:original_transaction_id;type:varchar(64);not null;index" json:"originalTransactionId"`
+	TransactionID         string    `gorm:"column:transaction_id;type:varchar(64);not null;uniqueIndex" json:"transactionId"`
+	// RefundSignedAt 最近一次被采纳的退款证据时刻（毫秒）：webhook 取通知 signedDate，对账取 revocationDate。
+	RefundSignedAt int64 `gorm:"column:refund_signed_at;not null;default:0" json:"refundSignedAt"`
+	// ReversedSignedAt 最近一次被采纳的撤销退款证据时刻（毫秒）——只用于判先后。
+	ReversedSignedAt int64 `gorm:"column:reversed_signed_at;not null;default:0" json:"reversedSignedAt"`
+	// RestoredAt 撤销退款实际恢复的处理时刻（秒）——只用于再次退款的封顶。
+	RestoredAt           int64  `gorm:"column:restored_at;not null;default:0" json:"restoredAt"`
+	Active               bool   `gorm:"column:active;not null;default:false" json:"active"`
+	RevocationDate       int64  `gorm:"column:revocation_date;not null;default:0" json:"revocationDate"` // 毫秒（Apple 原值）；缺失记处理时刻
+	RevocationReason     int32  `gorm:"column:revocation_reason;not null;default:0" json:"revocationReason"`
+	RevocationType       string `gorm:"column:revocation_type;type:varchar(32)" json:"revocationType"` // 审计
+	RevocationPercentage int32  `gorm:"column:revocation_percentage;not null;default:0" json:"revocationPercentage"`
+	Credited             bool   `gorm:"column:credited;not null;default:false" json:"credited"`
+	CutSeconds           int64  `gorm:"column:cut_seconds;not null;default:0" json:"cutSeconds"` // 本轮退款收回的付费时长
+	MarkedRevoked        bool   `gorm:"column:marked_revoked;not null;default:false" json:"markedRevoked"`
+	ConflictAlertedAt    int64  `gorm:"column:conflict_alerted_at;not null;default:0" json:"-"`
+	Source               string `gorm:"column:source;type:varchar(16)" json:"source"` // webhook | reconcile
+	Note                 string `gorm:"column:note;type:varchar(255)" json:"note"`
+}
+
+// InviteRewardGrant 一次"被邀请首购奖励"（spec 2026-10-08 §3.1）。被邀请人唯一 → 一生一次；
+// 记录触发它的那笔购买（TriggerKind/TriggerRef），退款时精确撤回双方。
+type InviteRewardGrant struct {
+	ID                uint64    `gorm:"primarykey" json:"id"`
+	CreatedAt         time.Time `json:"createdAt"`
+	UpdatedAt         time.Time `json:"updatedAt"`
+	InviteeUserID     uint64    `gorm:"column:invitee_user_id;not null;uniqueIndex" json:"inviteeUserId"`
+	InviterUserID     uint64    `gorm:"column:inviter_user_id;not null;index" json:"inviterUserId"`
+	InviteCodeID      uint64    `gorm:"column:invite_code_id;not null" json:"inviteCodeId"`
+	TriggerKind       string    `gorm:"column:trigger_kind;type:varchar(16);not null;index:idx_invite_grant_trigger" json:"triggerKind"` // apple_txn | order
+	TriggerRef        string    `gorm:"column:trigger_ref;type:varchar(64);not null;index:idx_invite_grant_trigger" json:"triggerRef"`
+	InviteeSeconds    int64     `gorm:"column:invitee_seconds;not null;default:0" json:"inviteeSeconds"`
+	InviterSeconds    int64     `gorm:"column:inviter_seconds;not null;default:0" json:"inviterSeconds"`
+	Reversed          bool      `gorm:"column:reversed;not null;default:false" json:"reversed"`
+	InviteeCutSeconds int64     `gorm:"column:invitee_cut_seconds;not null;default:0" json:"inviteeCutSeconds"`
+	InviterCutSeconds int64     `gorm:"column:inviter_cut_seconds;not null;default:0" json:"inviterCutSeconds"`
+}
+
+// InviteRewardGrant.TriggerKind 取值。
+const (
+	InviteTriggerAppleTxn = "apple_txn"
+	InviteTriggerOrder    = "order"
+)
 
 // StatutoryRefund 是一笔 Stripe 付款的 14 天撤回处理记录（spec 2026-10-07 A 期 §3.3）。
 // 一次撤回请求（RequestID）由一条 primary（通知前最近一笔付款，按天折算）和若干

@@ -120,6 +120,8 @@ func Migrate() error {
 		&StripeWebhookEvent{},
 		&StatutoryRefund{},
 		&SubscriptionConsent{},
+		&AppleRefund{},
+		&InviteRewardGrant{},
 		&Message{},
 		&Secret{},
 		&SlaveNode{},

@@ -370,7 +370,7 @@ func markStripeSubscriptionDeleted(ctx context.Context, s *stripe.Subscription) 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, sub.UserID).Error; err != nil {
 			return fmt.Errorf("lock user %d: %w", sub.UserID, err)
 		}
-		// 这里不用 stripePaidThrough 的 CurrentPeriodEnd 兜底：截断走的是普通续费失败 / 期中取消，
+		// 这里不用 subscriptionPaidThrough 的 CurrentPeriodEnd 兜底：截断走的是普通续费失败 / 期中取消，
 		// 不是退款；PaidThrough 为 0 的老行若按（可能已被对账推到未付期的）周期末扣，会误扣叠加的
 		// 赠送时长。老行只告警不截。
 		paidThrough := sub.PaidThrough

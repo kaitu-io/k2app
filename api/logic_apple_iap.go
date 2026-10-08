@@ -84,10 +84,31 @@ func deriveVerifiedStatus(effectivePeriodEnd int64, existingStatus string, now i
 	if existingStatus == "revoked" {
 		return "revoked"
 	}
-	if effectivePeriodEnd > now {
+	return deriveActiveOrExpired(effectivePeriodEnd, now)
+}
+
+// deriveActiveOrExpired 是离开 revoked 的唯一入口（spec 2026-10-08 §3.4）：退款后的新付款
+// 复活订阅、Apple 撤销退款恢复订阅，都必须调它——传 sub.Status 给 deriveVerifiedStatus 会
+// 静默停在 revoked。
+func deriveActiveOrExpired(periodEnd, now int64) string {
+	if periodEnd > now {
 		return "active"
 	}
 	return "expired"
+}
+
+// errAppleTxnRevoked 被退款的交易永不入账（spec 2026-10-08 §3.4）。verify 端点映射成用户可读
+// 错误；webhook 与对账视为已处理。
+var errAppleTxnRevoked = errors.New("apple transaction has been refunded")
+
+// lastActiveAppleRefundAt 这条订阅链上仍生效、且曾把订阅置为 revoked 的退款里最晚的
+// revocationDate（毫秒）；无则 0。复活判据：新付款的 purchaseDate 必须严格晚于它。
+func lastActiveAppleRefundAt(tx *gorm.DB, otx string) (int64, error) {
+	var at int64
+	err := tx.Model(&AppleRefund{}).
+		Where("original_transaction_id = ? AND active = ? AND marked_revoked = ?", otx, true, true).
+		Select("COALESCE(MAX(revocation_date), 0)").Scan(&at).Error
+	return at, err
 }
 
 // creditAppleTransaction is the single Apple→ledger entry point. It (1) enforces
@@ -159,18 +180,44 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		return dErr
 	}
 
+	// 入账门：被退款的交易若还没入过账，就永远不入（漏入账后事后经 verify / 对账补入 = 退款后
+	// 白拿）。门在 upsert 之前：不建订阅行、不改任何状态。已入账的被退交易走下面的
+	// alreadyCredited 分支，只刷新 plan-state，状态停在 revoked。
+	if info.RevocationDate > 0 && !alreadyCredited {
+		log.Warnf(ctx, "[creditAppleTransaction] txn %s was refunded at %d and never credited — not crediting (user %d)",
+			info.TransactionId, info.RevocationDate, userID)
+		return errAppleTxnRevoked
+	}
+
+	// 复活：订阅因退款被置 revoked 后，又来了一笔退款之后才发生的新付款（重订阅，或 Apple 在
+	// 退款后照常续订）。这笔按首购口径入账——时长 = 这一期本身、叠在 max(到期, now) 上——并覆盖
+	// current_period_end。不能走续订 delta：退款不改周期末，delta 会按"新期末 − 旧期末"算，
+	// 隔一段时间再订会多发、改订短周期会少发（spec 2026-10-08 §3.0/§3.4）。
+	revival := false
+	if !isFirst && sub.Status == "revoked" && !alreadyCredited && info.RevocationDate == 0 {
+		lastRefundAt, err := lastActiveAppleRefundAt(tx, info.OriginalTransactionId)
+		if err != nil {
+			return fmt.Errorf("load last refund for %s: %w", info.OriginalTransactionId, err)
+		}
+		revival = info.PurchaseDate > lastRefundAt
+	}
+
 	// Upsert plan-state on the subscription row (status derived, never hardcoded).
 	sub.UserID = userID
 	sub.Provider = provider
 	sub.ProviderSubscriptionID = info.OriginalTransactionId
 	sub.ProductID = info.ProductId
 	sub.ProviderLatestRef = info.TransactionId
-	if newPeriodEnd > sub.CurrentPeriodEnd {
+	if revival || newPeriodEnd > sub.CurrentPeriodEnd {
 		sub.CurrentPeriodEnd = newPeriodEnd
 	}
 	sub.AutoRenew = true
 	sub.Environment = info.Environment
-	sub.Status = deriveVerifiedStatus(sub.CurrentPeriodEnd, sub.Status, now)
+	if revival {
+		sub.Status = deriveActiveOrExpired(sub.CurrentPeriodEnd, now)
+	} else {
+		sub.Status = deriveVerifiedStatus(sub.CurrentPeriodEnd, sub.Status, now)
+	}
 	if err := tx.Save(&sub).Error; err != nil {
 		return err
 	}
@@ -186,7 +233,9 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	if isFirst {
 		if plan, perr := planByAppleProductID(ctx, tx, info.ProductId, Brand(user.Brand)); perr == nil && plan != nil {
 			if err := tx.SavePoint("iap_invite_reward").Error; err == nil {
-				if rerr := grantInvitePurchaseRewardInTx(ctx, tx, userID, plan); rerr != nil {
+				trigger := inviteTrigger{Kind: InviteTriggerAppleTxn, Ref: info.TransactionId,
+					Production: info.Environment != appstore.Environment_Sandbox}
+				if rerr := grantInvitePurchaseRewardInTx(ctx, tx, userID, plan, trigger); rerr != nil {
 					tx.RollbackTo("iap_invite_reward")
 					log.Errorf(ctx, "[creditAppleTransaction] invite reward failed (non-fatal, rolled back), user %d txn %s: %v",
 						userID, info.TransactionId, rerr)
@@ -198,10 +247,13 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		}
 	}
 
+	// PaidThrough 的入账基数：邀请奖励重载之后、本笔入账之前的 max(到期, now)（spec §3.2）。
+	paidBase := max(user.ExpiredAt, now)
+
 	// Compute the additive credit.
 	var creditSeconds int64
 	var kind string
-	if isFirst {
+	if isFirst || revival {
 		// First transaction: credit the period this transaction covers, from-now-if-expired.
 		// Front-line first purchases have purchaseDate≈now, so this ≈ one period. (Late
 		// reconciliation of an OLD missed first transaction could over-credit beyond Apple's
@@ -210,7 +262,7 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		if creditSeconds < 0 {
 			creditSeconds = 0
 		}
-		if now-info.PurchaseDate/1000 > 86400 {
+		if isFirst && now-info.PurchaseDate/1000 > 86400 {
 			log.Warnf(ctx, "[creditAppleTransaction] txn %s is %dd old at first-bind; credited %ds forward from now — may exceed Apple's remaining coverage, Phase 2 reconciliation will cap",
 				info.TransactionId, (now-info.PurchaseDate/1000)/86400, creditSeconds)
 		}
@@ -243,14 +295,30 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		user.IsActivated = BoolPtr(true)
 		user.ActivatedAt = now
 	}
+	// 沙盒交易不是一次真实购买：不消耗首单资格（否则 TestFlight 购买会让真实首购拿不到邀请奖励
+	// 与首单活动，spec §3.4）。权益照发，Tier 也照设——Tier 属于权益，沙盒测试要看到它生效。
+	isSandbox := info.Environment == appstore.Environment_Sandbox
 	if user.IsFirstOrderDone == nil || !*user.IsFirstOrderDone {
 		if plan, _ := planByAppleProductID(ctx, tx, info.ProductId, Brand(user.Brand)); plan != nil && plan.Tier != "" {
 			user.Tier = plan.Tier
 		}
-		user.IsFirstOrderDone = BoolPtr(true)
+		if !isSandbox {
+			user.IsFirstOrderDone = BoolPtr(true)
+		}
 	}
 	if err := tx.Save(&user).Error; err != nil {
 		return fmt.Errorf("save user %d: %w", userID, err)
+	}
+
+	// PaidThrough（spec §3.2）：已付费权益覆盖到的时刻，按实际发放量累加（含 cover-through 修正量），
+	// 与 Stripe 同口径。sub 行已在上面 Save 过，这里单独更新。已接受的偏差：宽限期后续订成功时
+	// granted 从 graceEnd 起算，PaidThrough 比真实付费段少一个宽限窗（≤16 天）；赠送在购买之前
+	// 叠加时按"先消耗付费段"计数，晚退款时用户保留 min(赠送, 已用) 天——都是向用户倾斜的偏差。
+	if granted := max(user.ExpiredAt-paidBase, 0); granted > 0 {
+		if err := tx.Model(&Subscription{}).Where("id = ?", sub.ID).
+			Update("paid_through", max(sub.PaidThrough, now)+granted).Error; err != nil {
+			return fmt.Errorf("update paid_through for sub %d: %w", sub.ID, err)
+		}
 	}
 
 	// Dedup ledger row (INV1). Its auto-increment ID is unique per transaction and
@@ -289,7 +357,7 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	// 生产事故（2026-08-10）：沙盒交易建出 ord-d9sjien7k7qc2u9r30ig（4900 分），客服在后台点退款，
 	// 差一步就把 $49 可提现余额打进一个从没付过钱的账号；当时全库唯一的 IAP 订单就是这一笔。
 	// environment 此前只被写进 subscriptions.environment 存档，全代码库没有任何一处读它做判断。
-	if info.Environment == appstore.Environment_Sandbox {
+	if isSandbox {
 		log.Warnf(ctx, "[creditAppleTransaction] sandbox txn %s credited to user %d, order+cashback intentionally skipped (sandbox is not a financial event)",
 			info.TransactionId, userID)
 		return nil
@@ -342,9 +410,18 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 //
 // 订单标记为 IsRefunded 还有第二重作用：isUserFirstPaidOrderInTx 排除已退款订单，
 // 退款后用户的下一单会重新算首单，与网页侧口径一致。
-func revokeIAPOrderCashbackInTx(ctx context.Context, tx *gorm.DB, txnID string) error {
+// iapOrderRefundResult revokeIAPOrderCashbackInTx 的结果，供 applyAppleRefund 决定是否扣权益。
+type iapOrderRefundResult struct {
+	Order           *Order // nil = 没有对应订单（本功能上线前的交易 / 沙盒 / 建单失败）
+	AlreadyRefunded bool   // 订单此前已被标记退款（重投、撤销后再退、或后台钱包退款）
+	WalletRefunded  bool   // 此前走过后台钱包退款——权益已由那条路径扣过，不能再扣
+	OtherPaidCount  int64  // 买家除这笔外的有效付费单数
+}
+
+func revokeIAPOrderCashbackInTx(ctx context.Context, tx *gorm.DB, txnID string) (*iapOrderRefundResult, error) {
+	res := &iapOrderRefundResult{}
 	if txnID == "" {
-		return nil // 调用方无交易号，跳过订单侧处理
+		return res, nil // 调用方无交易号，跳过订单侧处理
 	}
 	// 行锁：Apple 可能并发投递 REFUND 与 REVOKE（不同 UUID，webhook 的 LastEventID 门拦不住）。
 	// 无锁时两个 goroutine 会同时读到 IsRefunded=false 双双穿过短路门，靠唯一索引兜底虽不丢钱，
@@ -355,22 +432,44 @@ func revokeIAPOrderCashbackInTx(ctx context.Context, tx *gorm.DB, txnID string) 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// 正常场景：退款的是本功能上线前的交易（当时没建单），无订单可撤。
 		log.Infof(ctx, "[revokeIAPOrderCashback] no order for apple txn %s, nothing to revoke", txnID)
-		return nil
+		return res, nil
 	}
 	if err != nil {
-		return fmt.Errorf("lookup order by apple txn %s: %w", txnID, err)
+		return nil, fmt.Errorf("lookup order by apple txn %s: %w", txnID, err)
+	}
+	res.Order = &order
+
+	// 其它有效付费单数在短路之前算：撤销退款会把 is_first_order_done 置回 true，之后的再次退款
+	// 走到已退款短路时也必须能把它翻回 false（spec 2026-10-08 §3.3 第 5 步）。
+	if err := tx.Model(&Order{}).
+		Where("user_id = ? AND is_paid = ? AND (is_refunded IS NULL OR is_refunded = ?) AND id != ?",
+			order.UserID, true, false, order.ID).
+		Count(&res.OtherPaidCount).Error; err != nil {
+		return nil, fmt.Errorf("count other paid orders for user %d: %w", order.UserID, err)
+	}
+	// 与网页退款路径（ProcessOrderRefund 第 2 步）保持一致：若这是该用户唯一有效的付费订单，
+	// 把 IsFirstOrderDone 翻回 false。否则退款用户仍被当作老客，first_order 活动码会拒绝他、
+	// 弃单召回也会把他排除在外（见 api/CLAUDE.md「Campaign Matcher Semantics」：
+	// first_order 匹配的是 !IsFirstOrderDone 的新客）。
+	if res.OtherPaidCount == 0 {
+		if err := tx.Model(&User{}).Where("id = ?", order.UserID).
+			Update("is_first_order_done", false).Error; err != nil {
+			return nil, fmt.Errorf("reset is_first_order_done for user %d: %w", order.UserID, err)
+		}
+		log.Infof(ctx, "[revokeIAPOrderCashback] user %d has no other valid paid order, IsFirstOrderDone reset", order.UserID)
 	}
 
 	// 幂等门：Apple 会重投 REFUND 通知。已退款订单直接短路——否则 refundCashbackInTx 会撞上
 	// wallet_changes 的 idx_type_order 唯一索引（它靠该索引兜底防二次扣款，但把重复当错误抛）。
 	if order.IsRefunded != nil && *order.IsRefunded {
-		alertIfAlreadyWalletRefunded(ctx, tx, &order, txnID)
+		res.AlreadyRefunded = true
+		res.WalletRefunded = alertIfAlreadyWalletRefunded(ctx, tx, &order, txnID)
 		log.Infof(ctx, "[revokeIAPOrderCashback] order %s already refunded, skipping (apple txn %s)", order.UUID, txnID)
-		return nil
+		return res, nil
 	}
 
 	if err := refundCashbackInTx(ctx, tx, order.ID); err != nil {
-		return fmt.Errorf("refund cashback for order %d: %w", order.ID, err)
+		return nil, fmt.Errorf("refund cashback for order %d: %w", order.ID, err)
 	}
 
 	now := time.Now()
@@ -380,29 +479,11 @@ func revokeIAPOrderCashbackInTx(ctx context.Context, tx *gorm.DB, txnID string) 
 		"refund_amount": order.PayAmount,
 		"refund_reason": fmt.Sprintf("Apple 退款/撤销 - %s", txnID),
 	}).Error; err != nil {
-		return fmt.Errorf("mark order %d refunded: %w", order.ID, err)
-	}
-	// 与网页退款路径（ProcessOrderRefund 第 2 步）保持一致：若这是该用户唯一有效的付费订单，
-	// 把 IsFirstOrderDone 翻回 false。否则退款用户仍被当作老客，first_order 活动码会拒绝他、
-	// 弃单召回也会把他排除在外（见 api/CLAUDE.md「Campaign Matcher Semantics」：
-	// first_order 匹配的是 !IsFirstOrderDone 的新客）。
-	var otherPaidCount int64
-	if err := tx.Model(&Order{}).
-		Where("user_id = ? AND is_paid = ? AND (is_refunded IS NULL OR is_refunded = ?) AND id != ?",
-			order.UserID, true, false, order.ID).
-		Count(&otherPaidCount).Error; err != nil {
-		return fmt.Errorf("count other paid orders for user %d: %w", order.UserID, err)
-	}
-	if otherPaidCount == 0 {
-		if err := tx.Model(&User{}).Where("id = ?", order.UserID).
-			Update("is_first_order_done", false).Error; err != nil {
-			return fmt.Errorf("reset is_first_order_done for user %d: %w", order.UserID, err)
-		}
-		log.Infof(ctx, "[revokeIAPOrderCashback] user %d has no other valid paid order, IsFirstOrderDone reset", order.UserID)
+		return nil, fmt.Errorf("mark order %d refunded: %w", order.ID, err)
 	}
 
 	log.Infof(ctx, "[revokeIAPOrderCashback] order %s refunded + cashback revoked (apple txn %s)", order.UUID, txnID)
-	return nil
+	return res, nil
 }
 
 // alertIfAlreadyWalletRefunded 是双退哨兵：订单已被标记退款时判断这次短路是否踩到了资损。
@@ -413,17 +494,19 @@ func revokeIAPOrderCashbackInTx(ctx context.Context, tx *gorm.DB, txnID string) 
 //
 // 只告警不阻断：Apple 侧退款已是既成事实，这里返错只会让整个事务回滚 → 通知 500 → Apple 重试风暴，
 // 钱一分也追不回来。查询失败同样不阻断——哨兵瞎了要留痕，但不能因此把主流程拖垮。
-func alertIfAlreadyWalletRefunded(ctx context.Context, tx *gorm.DB, order *Order, txnID string) {
+// 返回该单是否走过后台钱包退款；查询失败时按"走过"处理（宁可这次不扣权益、靠告警人工核对，
+// 也不在不确定时双扣）。
+func alertIfAlreadyWalletRefunded(ctx context.Context, tx *gorm.DB, order *Order, txnID string) bool {
 	var walletRefunds int64
 	if err := tx.Model(&WalletChange{}).
 		Where(&WalletChange{Type: WalletChangeTypeOrderRefund, OrderID: &order.ID}).
 		Count(&walletRefunds).Error; err != nil {
 		log.Errorf(ctx, "[revokeIAPOrderCashback] double-refund sentinel query failed for order %s (apple txn %s): %v",
 			order.UUID, txnID, err)
-		return
+		return true
 	}
 	if walletRefunds == 0 {
-		return
+		return false
 	}
 	msg := fmt.Sprintf("订单 %s（用户 %d，%d 分）此前已通过后台退款打入用户钱包，现又收到 Apple 退款/撤销通知（txn %s）——同一笔订单退了两次钱，钱包余额可提现，请人工核对并冻结/追回",
 		order.UUID, order.UserID, order.PayAmount, txnID)
@@ -431,6 +514,7 @@ func alertIfAlreadyWalletRefunded(ctx context.Context, tx *gorm.DB, order *Order
 	if err := slack.Send("alert", "[DOUBLE-REFUND] "+msg); err != nil {
 		log.Errorf(ctx, "failed to send double-refund slack alert: %v", err)
 	}
+	return true
 }
 
 // createAppleIAPOrderInTx 为一笔已入账的 Apple 交易补建订单并触发分销商返现。
@@ -503,50 +587,6 @@ func verifyAndGrantTransaction(ctx context.Context, userID uint64, transactionID
 	})
 }
 
-// revokeSubscription 处理 REFUND/REVOKE：撤销续订授予的权益。保守回收：仅当用户当前到期
-// 落在本订阅周期窗口内（由本订阅"撑着"）时才扣到 now，避免误伤叠加的一次性时长。
-// 已知简化：双源重叠时不做精确分账（v1 接受，见 spec §9）。
-//
-// txnID 是被退款的那笔 Apple 交易；用它精确反查对应订单，撤销已发放的分销商返现并把订单
-// 标记为已退款。传空串则跳过订单侧处理（调用方拿不到交易号时的降级，不阻断权益回收）。
-func revokeSubscription(ctx context.Context, sub *Subscription, txnID string) error {
-	return getDB().Transaction(func(tx *gorm.DB) error {
-		var user User
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, sub.UserID).Error; err != nil {
-			return err
-		}
-		if err := revokeIAPOrderCashbackInTx(ctx, tx, txnID); err != nil {
-			return err
-		}
-		now := time.Now().Unix()
-		if user.ExpiredAt > now && user.ExpiredAt <= sub.CurrentPeriodEnd {
-			cutDays := int((user.ExpiredAt - now) / 86400)
-			user.ExpiredAt = now
-			if err := tx.Model(&user).Select("ExpiredAt").Updates(&user).Error; err != nil {
-				return err
-			}
-			if err := tx.Create(&UserProHistory{
-				UserID:      user.ID,
-				Type:        VipRefund,
-				ReferenceID: sub.ID,
-				Days:        -cutDays,
-				Reason:      fmt.Sprintf("%s 退款/撤销 - %s", sub.Provider, sub.ProviderSubscriptionID),
-			}).Error; err != nil {
-				return err
-			}
-			log.Infof(ctx, "[revokeSubscription] user %d clawed back -%dd for %s sub %s",
-				user.ID, cutDays, sub.Provider, sub.ProviderSubscriptionID)
-		} else {
-			// Entitlement not clawed back: either already expired (expiredAt≤now) or
-			// user has additional time beyond this subscription's period (e.g. from gifts
-			// or other sources). Sub is revoked but paid time is preserved.
-			log.Infof(ctx, "[revokeSubscription] user %d no clawback (expiredAt=%d periodEnd=%d now=%d); sub marked revoked",
-				user.ID, user.ExpiredAt, sub.CurrentPeriodEnd, now)
-		}
-		return tx.Model(&Subscription{}).Where("id = ?", sub.ID).Update("status", "revoked").Error
-	})
-}
-
 // computeRenewalState 纯函数：依据 Apple 已签名的 RenewalInfo（缺失时退回 subtype）
 // 推导订阅的自动续订开关与计费状态。provider 无关、无副作用。
 //   - autoRenew：RenewalInfo.AutoRenewStatus 为权威；RenewalInfo 缺失时退回 subtype；
@@ -604,7 +644,9 @@ func applyRenewalInfo(ctx context.Context, sub *Subscription, ri *appstore.Renew
 			sub.ProviderSubscriptionID, subtype, sub.Status)
 		return nil
 	}
-	if err := getDB().Model(&Subscription{}).Where("id = ?", sub.ID).Updates(updates).Error; err != nil {
+	// status<>'revoked' 进 SQL：sub 是事务外读到的快照，与并发的 REFUND 赛跑时不能把 revoked
+	// 覆盖成 grace/active（会丢失复活判据并重新延长权益，spec 2026-10-08 §3.4）。
+	if err := getDB().Model(&Subscription{}).Where("id = ? AND status <> ?", sub.ID, "revoked").Updates(updates).Error; err != nil {
 		return err
 	}
 	log.Infof(ctx, "[applyRenewalInfo] sub %s autoRenew=%v status=%v (subtype=%s)",
@@ -619,7 +661,9 @@ func applyRenewalInfo(ctx context.Context, sub *Subscription, ri *appstore.Renew
 	if status == "grace" && ri != nil && ri.GracePeriodExpiresDate > 0 {
 		graceEnd := ri.GracePeriodExpiresDate / 1000
 
-		userRes := getDB().Model(&User{}).Where("id = ? AND expired_at < ?", sub.UserID, graceEnd).
+		// 订阅已被退款置 revoked 时不做宽限延长（与上面的状态守卫同一理由）。
+		revokedSub := getDB().Model(&Subscription{}).Select("id").Where("id = ? AND status = ?", sub.ID, "revoked")
+		userRes := getDB().Model(&User{}).Where("id = ? AND expired_at < ? AND NOT EXISTS (?)", sub.UserID, graceEnd, revokedSub).
 			Update("expired_at", graceEnd)
 		if userRes.Error != nil {
 			return userRes.Error
@@ -629,7 +673,7 @@ func applyRenewalInfo(ctx context.Context, sub *Subscription, ri *appstore.Renew
 				sub.UserID, graceEnd, sub.ProviderSubscriptionID)
 		}
 
-		subRes := getDB().Model(&Subscription{}).Where("id = ? AND current_period_end < ?", sub.ID, graceEnd).
+		subRes := getDB().Model(&Subscription{}).Where("id = ? AND current_period_end < ? AND status <> ?", sub.ID, graceEnd, "revoked").
 			Update("current_period_end", graceEnd)
 		if subRes.Error != nil {
 			return subRes.Error

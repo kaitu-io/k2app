@@ -299,6 +299,11 @@ func refundCashbackInTx(ctx context.Context, tx *gorm.DB, orderID uint64) error 
 
 	log.Infof(ctx, "订单退款处理成功: order_id=%d, wallet_id=%d, refund_amount=%d",
 		orderID, wallet.ID, incomeChange.Amount)
+	if balanceBefore-incomeChange.Amount < 0 {
+		// 返现已被提走后才发生退款：余额为负，钱追不回来，需要人工处理（spec 2026-10-08 §3.5）。
+		alertBilling(ctx, fmt.Sprintf("[CASHBACK-NEGATIVE] 钱包 %d 因订单 %d 退款撤回返现 %d 后余额为 %d，请人工处理",
+			wallet.ID, orderID, incomeChange.Amount, balanceBefore-incomeChange.Amount))
+	}
 
 	return nil
 }
