@@ -58,15 +58,16 @@ export const orderTools: ToolRegistration[] = [
 
   defineApiTool({
     name: 'refund_order',
-    description: 'Refund a paid order. Credits the user wallet, revokes granted Pro days, and reverses retailer cashback. Requires dual-admin approval (superadmin auto-executes). Full refunds only. Not available for brands without a wallet (overleap): use quote_stripe_withdrawal / withdraw_stripe_subscription for Stripe, Apple refunds are handled by Apple.',
+    description: 'Refund a paid web order to the user wallet. Revokes granted Pro days, reverses retailer cashback, adjusts the retailer paid-user count, and takes back the invite rewards this purchase earned (both sides) unless keep_invite_rewards is set. Requires dual-admin approval (superadmin auto-executes). Full refunds only. Not for App Store orders (the user must ask Apple; compensate with add_user_membership days instead). Not available for brands without a wallet (overleap): use quote_stripe_withdrawal / withdraw_stripe_subscription for Stripe.',
     group: 'orders.write',
     method: 'POST',
     params: {
       uuid: z.string().describe('Order UUID'),
       reason: z.string().min(2).max(500).describe('Refund reason (2-500 chars, required)'),
+      keep_invite_rewards: z.boolean().optional().describe('Keep the invite rewards this purchase earned (goodwill refunds for our own service faults). Default false: rewards are taken back.'),
     },
     path: (p) => `/app/orders/${p.uuid}/refund`,
-    mapBody: (p) => ({ reason: p.reason }),
+    mapBody: (p) => ({ reason: p.reason, keepInviteRewards: p.keep_invite_rewards === true }),
   }),
 
   defineApiTool({

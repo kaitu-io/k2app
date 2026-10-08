@@ -161,7 +161,7 @@ paid_through = max(sub.PaidThrough, now) + granted
   - 比较单位：`info.PurchaseDate`（毫秒）与 `AppleRefund.RevocationDate`（毫秒）直接比，严格大于。
   - 被退交易本身、退款前旧交易重放：不满足 `revival`，维持 revoked。
   - 若重订阅生成了**新 otx**：走原 isFirst 绑定路径（appAccountToken 校验），无需特殊处理。
-- 沙盒交易：不置 `IsFirstOrderDone`、不改 Tier、不发邀请奖励；权益照发（见 §6）。
+- 沙盒交易：不置 `IsFirstOrderDone`、不发邀请奖励；权益与 Tier 照发（Tier 属于权益，沙盒测试要看到它生效；见 §6）。
 
 离开 revoked 的唯一入口：新 helper `deriveActiveOrExpired(periodEnd, now)`（`periodEnd>now` → active，否则 expired）。现有 `deriveVerifiedStatus` 对 revoked 恒返回 revoked（防重放复活，保留），**复活（本节）与撤销退款（§3.6）都必须调新 helper**，不得传 `sub.Status` 给旧函数——否则静默不生效（review 第 4 轮 M2）。
 

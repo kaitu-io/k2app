@@ -60,3 +60,13 @@ describe('stripe withdrawal tools', () => {
     expect(calls[0].path).toBe('/app/stripe-withdrawals/wdr_x/abandon')
   })
 })
+
+describe('refund_order', () => {
+  it('sends keepInviteRewards (default false) in the body', async () => {
+    const { handlers, calls } = capture()
+    await handlers.get('refund_order')!({ uuid: 'ord-1', reason: 'goodwill' })
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ reason: 'goodwill', keepInviteRewards: false })
+    await handlers.get('refund_order')!({ uuid: 'ord-1', reason: 'outage', keep_invite_rewards: true })
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual({ reason: 'outage', keepInviteRewards: true })
+  })
+})

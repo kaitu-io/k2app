@@ -1,12 +1,12 @@
 # 服务条款 / Terms of Service
 
-**最后更新 / Last Updated: 2026-07**
+**最后更新 / Last Updated: 2026-10**
 
 ---
 
 ## 中文版本
 
-**最后更新：2026-09**
+**最后更新：2026-10**
 
 ### 一、协议接受与生效
 
@@ -100,6 +100,10 @@
 - (c) 账户因违规被暂停或终止；
 - (d) 促销套餐或已明确标注不可退款的产品。
 
+7.5 **App Store 购买**：通过 Apple App Store 购买的订阅由 Apple 收费，退款由 Apple 按其政策处理，请向 Apple 申请；本条 7.1–7.3 的钱包退款不适用于 App Store 购买。Apple 退款后，该笔购买对应的剩余会员时长将被收回，赠送时长不受影响；Apple 撤销退款后，收回的会员时长将恢复。
+
+7.6 **邀请奖励**：被邀请人首次购买时发放给邀请双方的奖励，以被邀请人保留一笔符合条件的购买为前提。该购买被退款（无论通过我们或 Apple）且被邀请人没有其他符合条件的购买时，双方的奖励将被收回；奖励已用完的，从当前会员时长中扣除，最多扣到当前时刻。每位被邀请人只能触发一次首次购买奖励。
+
 ### 八、钱包与提现
 
 8.1 **钱包余额来源**：钱包余额可能来自退款、推广奖励或其他活动奖励。
@@ -181,7 +185,7 @@
 
 ## English Version
 
-**Last updated: 2026-09**
+**Last updated: 2026-10**
 
 ### 1. Agreement Acceptance and Effectiveness
 
@@ -274,6 +278,10 @@
 - (b) Data usage exceeding 1GB;
 - (c) Accounts suspended or terminated for violations;
 - (d) Promotional packages or products explicitly marked as non-refundable.
+
+7.5 **App Store Purchases**: Subscriptions bought through the Apple App Store are billed by Apple, and refunds are handled by Apple under its own policy — please request them from Apple. The wallet refunds in Sections 7.1–7.3 do not apply to App Store purchases. If Apple refunds a purchase, the remaining membership time that purchase paid for is removed; gifted time is not affected. If Apple reverses the refund, the removed time is restored.
+
+7.6 **Invite Rewards**: The rewards given to both the inviter and the invitee on the invitee's first purchase require the invitee to keep a qualifying purchase. If that purchase is refunded (by us or by Apple) and the invitee has no other qualifying purchase, both rewards are taken back; rewards already used are deducted from the current membership time, never below the present moment. Each invitee can trigger the first-purchase reward only once.
 
 ### 8. Wallet and Withdrawals
 
