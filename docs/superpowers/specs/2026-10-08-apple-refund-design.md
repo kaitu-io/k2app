@@ -137,7 +137,7 @@ paid_through = max(sub.PaidThrough, now) + granted
              :             max(0, min(paid−now, user.ExpiredAt−now, periodLen))
    ```
    - `newer` 分支（review 第 4 轮 V1）：账本里被退期之后还有新付的一期，`paid−now` 包含新一期，不能用；只收被退期在日历上剩下的 `tExp−now`（此分支 `periodLen` 冗余：`tExp−now ≤ periodLen` 恒成立，注释写明以免被"修"）。`paid_through = paid − cut` 在此分支同样正确（存量 `PT=0` 行写成 `CPE−cut`，之后即为有效值）。被退期本身是最新一期时，才用付费计数口径。
-   - **再次退款**（r 曾被撤销后又被采纳）：`cut` 额外封顶 `max(0, r.CutSeconds − (now − r.RestoredAt))`（用实际恢复时刻，不用证据时刻——探测发现的撤销其证据时刻是退款时刻，会多算已用天数，review 第 6 轮 B1）——最多收回撤销时还回去、尚未用掉的部分；不让期间复活的新一期被多扣（review 第 5 轮 m2）。
+   - **再次退款**（r 曾被撤销后又被采纳）：不走上面的 `eligible` 时间门与两个分支（撤销时还回的时长可能落在 `tExp` 之后，按 `tExp>now` 门会一天都收不回，review 第 6 轮 G2），改为 `cut = min(cap, user.ExpiredAt−now)`，其余条件（credited、非家庭共享、非钱包退款）照旧；`cap` 为 `max(0, r.CutSeconds − (now − r.RestoredAt))`（用实际恢复时刻，不用证据时刻——探测发现的撤销其证据时刻是退款时刻，会多算已用天数，review 第 6 轮 B1）；`paid_through = max(paid_through, now) − cut` 不低于 now。——最多收回撤销时还回去、尚未用掉的部分；不让期间复活的新一期被多扣（review 第 5 轮 m2）。
    - `tExp>now` 门：旧期已消耗 → 0。`periodLen` 上界：只收一期。`paid` 上界：不碰赠送。
    - `REFUND_PRORATED` 同 `REFUND_FULL`（Apple 按剩余时间折算）；若 `revocationPercentage` 与 `(tExp−now)/periodLen` 相差 >10 个百分点 → 告警 `[APPLE-REFUND-PCT]`（捕捉将来非时间口径的部分退款，防多收）。
    - 写库定向：`expired_at = expired_at − cut`（`gorm.Expr`）、`paid_through = paid − cut`；**禁止 `Save(&user)`**（会覆盖第 5 步翻回的 `IsFirstOrderDone`）。
@@ -218,6 +218,7 @@ Apple 退款（§3.3 第 6b 步）与后台网页退款（`ProcessOrderRefund`�
    - 覆盖 revoked：漏收"退款后同链重订阅"的通知时，经最新交易进入 §3.4 复活（review 第 4 轮 V2）。
 2. **`reconcileAppleSubscription` 内的顺序（review 第 4 轮 M4）**：拉到状态后**先判 Revoked**：
    - `st.status == Revoked` 且 `st.txn != nil` → 只调 `applyAppleRefund(…, "reconcile")`（`st.txn == nil` → error 日志、跳过）（证据时刻取 `st.txn.RevocationDate`，缺失取 now），**跳过** `applyRenewalInfo` 与 Expired 分支（避免对被退交易做宽限延长）；
+   - `st.status == Revoked` 但本地 `AppleRefund` 为非 Active、且本次证据被第 2 步判为迟到 → 告警 `[APPLE-REFUND-CONFLICT]`（我们认为已撤销、Apple 说仍退款；可能是探测读到了旧数据），**不自动处理**，人工核对（review 第 6 轮 G3）。
    - 否则按现有顺序：`creditAppleTransaction(st.txn)`（`errAppleTxnRevoked` 视为非致命）→ `applyRenewalInfo` → Expired 分支。
    - 入口"revoked 行直接跳过"的守卫改为：revoked 行仍查询，但**只**允许走 `creditAppleTransaction`（复活入账）与撤销退款探测；**跳过 `applyRenewalInfo` 与 Expired 分支**（否则 Apple 报 Expired 时会把 revoked 改成 expired，丢失复活判据，review 第 5 轮 M1）。
 3. **撤销退款探测**：对第 1 步覆盖到的、带 Active `AppleRefund` 且 `RefundSignedAt < (now−48h)×1000`（毫秒，以**最新**的 Apple 给出的退款证据计）的行，`GetTransaction(r.TransactionID)`；仅当 HTTP 成功、解出的 `TransactionId == r.TransactionID`、`Environment == Production`（qtoolkit 生产失败会回落沙盒，review 第 5 轮 F1）、且 `RevocationDate == 0` 时，才视为 Apple 撤销了退款 → `reverseAppleRefund`，**证据时刻 = `r.RefundSignedAt + 1ms`**（不用 now：用 now 会让之后任何早于扫描时刻的真实再退款被判为迟到而永久忽略，review 第 5 轮 F4）。任何错误一律跳过（不恢复）。48h 冷却防 Apple 读写不一致造成误恢复。
@@ -293,6 +294,8 @@ Apple 退款（§3.3 第 6b 步）与后台网页退款（`ProcessOrderRefund`�
 23. 分批 bucket 覆盖 active / 近 120 天 expired / 带 Active 退款的 revoked；与 48h 扫描去重；仅生产环境；Stripe 范围不变。
 24. Apple Revoked（有 / 无 revocationDate）→ 收回，且**不**执行 `applyRenewalInfo`（无宽限延长）。
 25. 撤销退款探测：冷却期内不探测（以最新退款证据计）；响应交易号不符 / 非生产 / HTTP 错误 / 仍有 revocationDate → 不恢复；满足条件 → 恢复且证据时刻 = `RefundSignedAt+1ms`；**F4 序列**（退款→漏收撤销→再退款（r 仍 Active，只更新 RefundSignedAt）→探测）→ 再退款不被永久忽略；无 revocationDate 的对账反复发现同一 Active 行 → `RefundSignedAt` 不被 now 推后、探测照常执行。
+25c. 退款→`tExp` 之后才撤销（全额还）→再退款 → 还回的时长被收回。
+25d. 本地已撤销、Apple 仍报 Revoked 且证据迟到 → `[APPLE-REFUND-CONFLICT]` 告警、数据不变。
 25b. 探测发现的撤销 → 再退款：封顶按 `RestoredAt` 计（给出数值：第 10 天收 355、第 100 天探测恢复、第 120 天再退 → 收约 335）。
 26. revoked 行经对账拿到退款后新付款 → 复活；Apple 报 Expired 时 revoked 行保持 revoked。
 
