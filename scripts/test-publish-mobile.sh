@@ -264,6 +264,18 @@ else
     test_result 1 "overleap (both platforms) publishes ios manifest only"
 fi
 
+# Without OVERLEAP_APPSTORE_URL the iOS manifest still publishes, with the
+# listing built from overleap's App Store Connect app id.
+rm -f "$MOCK_S3/overleap/ios/latest.json"
+OUT=$("$PUBLISH_SCRIPT" "0.5.0" --brand=overleap --platform=ios --s3-base="$MOCK_S3/overleap" --dry-run 2>&1)
+EC=$?
+if [ "$EC" -eq 0 ] && python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d['appstore_url']=='https://apps.apple.com/app/id6759199298' else 1)" "$MOCK_S3/overleap/ios/latest.json" 2>/dev/null; then
+    test_result 0 "overleap ios manifest defaults to the App Store app id 6759199298"
+else
+    echo "    exit=$EC output: $OUT" | head -5
+    test_result 1 "overleap ios manifest defaults to the App Store app id 6759199298"
+fi
+
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
