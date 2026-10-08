@@ -313,7 +313,26 @@ func TestStripeRevoke(t *testing.T) {
 		require.Equal(t, 200, post(t, chargeRefundedPayload("evt_"+stripeUniq(), "ch_8b", "pi_"+stripeUniq(), 999, 999, true)))
 		assert.Empty(t, f.cancels())
 		assert.Contains(t, f.alertText(), "no payment_intent")
-		assert.Contains(t, f.alertText(), "not a subscription charge")
+		assert.NotContains(t, f.alertText(), "not a subscription charge", "shared account: foreign one-off charges are not alerted")
+	})
+
+	// 共用 Stripe 账户：别的业务的订阅退款 / 拒付 → 不建墓碑、绝不取消
+	t.Run("ForeignSubscription_NeverCanceled", func(t *testing.T) {
+		f := installStripeFakes(t)
+		now := time.Now().Unix()
+		kaituUser := createStripeTestUser(t, BrandKaitu)
+		for i, uuid := range []string{"", "no-such-user-" + stripeUniq(), kaituUser.UUID} {
+			subID, pi := "sub_"+stripeUniq(), "pi_"+stripeUniq()
+			f.subByPI[pi] = subID
+			f.remote[subID] = liveRemoteSub(subID, uuid, "price_foreign", now+30*day)
+			require.Equal(t, 200, post(t, chargeRefundedPayload("evt_"+stripeUniq(), fmt.Sprintf("ch_f%d", i), pi, 4900, 4900, true)))
+			require.Equal(t, 200, post(t, disputePayload("evt_"+stripeUniq(), "charge.dispute.created", fmt.Sprintf("dp_f%d", i), pi, "needs_response")))
+			assert.Equal(t, stripe.SubscriptionStatusActive, f.remote[subID].Status)
+			var n int64
+			getDB().Model(&Subscription{}).Where("provider_subscription_id = ?", subID).Count(&n)
+			assert.Zero(t, n, "no tombstone for foreign sub")
+		}
+		assert.Empty(t, f.cancels())
 	})
 
 	// #9 本地无订阅行 → 墓碑行；cancel 照调
@@ -417,7 +436,7 @@ func TestStripeRevoke(t *testing.T) {
 			}
 			return inner(id)
 		}
-		_, err := revokeStripeSubscription(context.Background(), subID, "Stripe full refund - ch_10")
+		_, _, err := revokeStripeSubscription(context.Background(), subID, "Stripe full refund - ch_10")
 		require.NoError(t, err)
 		assert.Equal(t, "revoked", reloadStripeSub(t, subID).Status)
 		assert.InDelta(t, time.Now().Unix(), reloadUser(t, u.ID).ExpiredAt, 5)

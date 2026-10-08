@@ -334,8 +334,8 @@ type SubscriptionConsent struct {
 
 ## 9. 上线清单（顺序有依赖）
 
-1. **用户提供** Overleap LLC 邮寄地址（填 `{ADDRESS}`）。
-2. **Stripe Dashboard**（用户操作）：填 Terms of service URL；webhook 端点确认订阅了 `charge.refunded`、`charge.dispute.created`、`charge.dispute.closed`、`checkout.session.completed`、`customer.subscription.deleted`；Billing Portal 关闭"立即取消"（只留期末取消）；打开退款收据邮件。
+1. ~~用户提供邮寄地址~~ ✅ 2026-10-08：主体改为 Wordgate LLC（Overleap 运营公司 = Stripe 收单主体），地址 30 N Gould St Ste R, Sheridan, WY 82801。
+2. ✅ 2026-10-08 Stripe Dashboard（acct_1RjVqKDe0r2BKV9U, Wordgate LLC）：ToS URL = `https://overleap.io/terms`；webhook `we_1UCbaTDe0r2BKV9UUC24ftgm` 补订 `charge.dispute.closed`（共 7 个事件）；Portal 默认配置本就是期末取消。**未开退款收据邮件**——账户与 NextPay / WordGate 共用，账户级开关会波及别家客户。共用账户还引出代码修复：别家订阅的退款 / 拒付不得取消（`revokeStripeSubscription` 的 `ours`）。
 3. 合并 → `make deploy-api`（center-deploy）。
 4. `git push origin main:website`（overleap 条款 / 隐私 / 帮助页）。
 5. `webapp/x.y.z-overleap` tag（删号对话框）。

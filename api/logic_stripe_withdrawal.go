@@ -418,7 +418,7 @@ func executeStripeWithdrawal(ctx context.Context, req *withdrawalRequest) (*with
 		}
 		if pass == 0 {
 			reason := withdrawalRevokeReason(requestID)
-			if _, err := revokeStripeSubscription(ctx, subID, reason); err != nil {
+			if _, _, err := revokeStripeSubscription(ctx, subID, reason); err != nil {
 				return nil, fmt.Errorf("request %s revoke: %w", requestID, err)
 			}
 			if err := cancelStripeSubscriptionIfLive(ctx, subID, reason); err != nil {
@@ -637,7 +637,7 @@ func abandonStripeWithdrawal(ctx context.Context, requestID string, operatorID u
 	if refunded {
 		subID := rows[0].ProviderSubscriptionID
 		reasonText := withdrawalRevokeReason(requestID)
-		if _, err := revokeStripeSubscription(ctx, subID, reasonText); err != nil {
+		if _, _, err := revokeStripeSubscription(ctx, subID, reasonText); err != nil {
 			return nil, fmt.Errorf("revoke before abandon: %w", err)
 		}
 		rep.Revoked = true

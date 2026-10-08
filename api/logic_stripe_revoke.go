@@ -153,7 +153,10 @@ func revokeStripeSubscriptionInTx(ctx context.Context, tx *gorm.DB, providerSubI
 // revokeStripeSubscription 跑收回原语；本地没有订阅行（首张 invoice 入账曾失败）时
 // 按远端订阅建一条 revoked 墓碑行——之后 Stripe 重投那张 invoice 会命中
 // creditStripeInvoice 的 revoked 门，不会补发整期会员。
-func revokeStripeSubscription(ctx context.Context, subID, reason string) (revokedNow bool, err error) {
+//
+// ours=false：本地无行且墓碑没建（远端订阅不属于本服务的 overleap 用户）。Stripe 账户与
+// 其他业务共用，这类订阅调用方必须原样放过——绝不能去取消。
+func revokeStripeSubscription(ctx context.Context, subID, reason string) (ours, revokedNow bool, err error) {
 	run := func() (bool, bool, error) {
 		var found, now bool
 		err := withDeadlockRetry(ctx, 3, func(tx *gorm.DB) error {
@@ -165,16 +168,16 @@ func revokeStripeSubscription(ctx context.Context, subID, reason string) (revoke
 	}
 	found, revokedNow, err := run()
 	if err != nil || found {
-		return revokedNow, err
+		return found, revokedNow, err
 	}
 
 	remote, err := stripeFetchSubscription(subID)
 	if err != nil {
 		if isStripeResourceMissing(err) {
 			alertStripeRevoke(ctx, "[STRIPE-REVOKE]", "sub %s unknown locally and missing at Stripe — nothing to revoke (%s)", subID, reason)
-			return false, nil
+			return false, false, nil
 		}
-		return false, fmt.Errorf("fetch remote sub %s for tombstone: %w", subID, err)
+		return false, false, fmt.Errorf("fetch remote sub %s for tombstone: %w", subID, err)
 	}
 	created, err := createStripeTombstone(ctx, remote)
 	if err != nil {
@@ -184,14 +187,14 @@ func revokeStripeSubscription(ctx context.Context, subID, reason string) (revoke
 			if err == nil && !found {
 				err = fmt.Errorf("sub %s: tombstone collided but row not found", subID)
 			}
-			return revokedNow, err
+			return found, revokedNow, err
 		}
-		return false, err
+		return false, false, err
 	}
 	if created {
 		log.Infof(ctx, "[StripeRevoke] tombstone revoked row created for sub %s", subID)
 	}
-	return false, nil
+	return created, false, nil
 }
 
 // createStripeTombstone 按远端订阅建一条 revoked 行。user_uuid 缺失或用户品牌不走 Stripe
@@ -327,14 +330,20 @@ func revokeStripeForChargeLoss(ctx context.Context, pi, reason, tag, detail stri
 			return fmt.Errorf("lookup subscription for pi %s: %w", pi, err)
 		}
 		if subID == "" {
-			alertStripeRevoke(ctx, tag, "%s pi=%s — not a subscription charge; manual follow-up", detail, pi)
+			// Overleap 只卖订阅；共用 Stripe 账户上的一次性收款属于别的业务，只留痕。
+			log.Infof(ctx, "[StripeRevoke] %s %s pi=%s — not a subscription charge, ignored", tag, detail, pi)
 			return nil
 		}
 	}
 
-	revokedNow, err := revokeStripeSubscription(ctx, subID, reason)
+	ours, revokedNow, err := revokeStripeSubscription(ctx, subID, reason)
 	if err != nil {
 		return fmt.Errorf("revoke sub %s: %w", subID, err)
+	}
+	if !ours {
+		// 共用 Stripe 账户上别的业务的订阅：不收回、不取消，只留痕。
+		log.Infof(ctx, "[StripeRevoke] %s sub=%s not ours — ignored", detail, subID)
+		return nil
 	}
 	if err := cancelStripeSubscriptionIfLive(ctx, subID, reason); err != nil {
 		alertStripeRevoke(ctx, tag, "%s sub=%s — membership revoked=%v but CANCEL FAILED (will retry): %v", detail, subID, revokedNow, err)
