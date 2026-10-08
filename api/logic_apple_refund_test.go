@@ -544,3 +544,102 @@ func TestAppleRefund_LegacyWalletRefundedOrder(t *testing.T) {
 	cfg := configInvite(context.Background())
 	assertNear(t, before-int64(cfg.PurchaseRewardDays)*aDay, f.userNow(t, f.buyer.ID).ExpiredAt, 120, "只撤被邀请奖励")
 }
+
+// 2b. 两期都迟到入账（付费段 = 两期），退最新一期 → 只收一期（periodLen 上界）。
+func TestAppleRefund_TwoLatePeriodsCutsOnlyOne(t *testing.T) {
+	skipIfNoDB(t)
+	captureBillingAlerts(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	f.noInvite(t)
+	t0 := time.Now().Unix()
+	require.NoError(t, f.credit(t, "AR-2L1", t0-400*aDay, t0-35*aDay))
+	require.NoError(t, f.credit(t, "AR-2L2", t0-35*aDay, t0+330*aDay))
+	before := f.userNow(t, f.buyer.ID).ExpiredAt
+	out := f.refundEv(t, "AR-2L2", t0-35*aDay, t0+330*aDay, appleRefundEvidence{SignedAt: time.Now().UnixMilli()})
+	assertNear(t, 365*aDay, out.Cut, 120, "只收被退的这一期")
+	assertNear(t, before-365*aDay, f.userNow(t, f.buyer.ID).ExpiredAt, 120, "")
+}
+
+// 3b. 订阅已过期后才退款 → 不收、不改成 revoked。
+func TestAppleRefund_ExpiredSubscriptionNotRevoked(t *testing.T) {
+	skipIfNoDB(t)
+	captureBillingAlerts(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	f.noInvite(t)
+	t0 := time.Now().Unix()
+	require.NoError(t, f.credit(t, "AR-EX1", t0-400*aDay, t0-35*aDay))
+	require.NoError(t, db.Get().Model(&Subscription{}).Where("provider_subscription_id = ?", f.origTxn).Update("status", "expired").Error)
+	out := f.refundEv(t, "AR-EX1", t0-400*aDay, t0-35*aDay, appleRefundEvidence{SignedAt: time.Now().UnixMilli()})
+	assert.Zero(t, out.Cut)
+	assert.False(t, out.MarkedRevoked)
+	assert.Equal(t, "expired", f.subNow(t).Status)
+}
+
+// 9b. 迟到的旧撤销（证据早于当前退款）→ 不恢复。
+func TestAppleRefund_StaleReversalIgnored(t *testing.T) {
+	skipIfNoDB(t)
+	captureBillingAlerts(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	f.noInvite(t)
+	t0 := time.Now().Unix()
+	require.NoError(t, f.credit(t, "AR-SR1", t0, t0+365*aDay))
+	s := time.Now().UnixMilli()
+	f.refundEv(t, "AR-SR1", t0, t0+365*aDay, appleRefundEvidence{SignedAt: s})
+	ea := f.userNow(t, f.buyer.ID).ExpiredAt
+	f.reverse(t, "AR-SR1", t0, t0+365*aDay, s-1000)
+	assert.True(t, f.refundRow(t, "AR-SR1").Active)
+	assert.Equal(t, ea, f.userNow(t, f.buyer.ID).ExpiredAt)
+}
+
+// 9c. 已在退款状态时，对账的 now 兜底证据不推后 RefundSignedAt（否则撤销探测冷却永不到期）；
+// Apple 给出的更晚证据才推后。
+func TestAppleRefund_NowFallbackDoesNotBumpEvidence(t *testing.T) {
+	skipIfNoDB(t)
+	captureBillingAlerts(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	f.noInvite(t)
+	t0 := time.Now().Unix()
+	require.NoError(t, f.credit(t, "AR-NF1", t0, t0+365*aDay))
+	s := time.Now().UnixMilli() - 3*aDay*1000
+	f.refundEv(t, "AR-NF1", t0, t0+365*aDay, appleRefundEvidence{SignedAt: s})
+	f.refundEv(t, "AR-NF1", t0, t0+365*aDay, appleRefundEvidence{Source: "reconcile"}) // 无 revocationDate
+	assert.Equal(t, s, f.refundRow(t, "AR-NF1").RefundSignedAt)
+	f.refundEv(t, "AR-NF1", t0, t0+365*aDay, appleRefundEvidence{SignedAt: s + 5000})
+	assert.Equal(t, s+5000, f.refundRow(t, "AR-NF1").RefundSignedAt)
+}
+
+// 12b. 退款之前就发生、却晚到才入账的旧交易 → 不复活。
+func TestAppleRefund_PreRefundTxnDoesNotRevive(t *testing.T) {
+	skipIfNoDB(t)
+	captureBillingAlerts(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	f.noInvite(t)
+	t0 := time.Now().Unix()
+	require.NoError(t, f.credit(t, "AR-PR1", t0, t0+365*aDay))
+	f.refundEv(t, "AR-PR1", t0, t0+365*aDay, appleRefundEvidence{SignedAt: time.Now().UnixMilli()})
+	require.NoError(t, f.credit(t, "AR-PR0", t0-365*aDay, t0))
+	assert.Equal(t, "revoked", f.subNow(t).Status)
+}
+
+// 6b. Apple 退款比例与剩余时间比例偏差 > 10 个百分点 → 告警。
+func TestAppleRefund_PercentageMismatchAlert(t *testing.T) {
+	skipIfNoDB(t)
+	alerts := captureBillingAlerts(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	f.noInvite(t)
+	t0 := time.Now().Unix()
+	require.NoError(t, f.credit(t, "AR-PC1", t0, t0+365*aDay))
+	f.refundEv(t, "AR-PC1", t0, t0+365*aDay, appleRefundEvidence{SignedAt: time.Now().UnixMilli(), RevocationType: "REFUND_PRORATED", RevocationPercentage: 99900})
+	assert.False(t, alerts.has("[APPLE-REFUND-PCT]"), "比例吻合不告警")
+}
+
+func TestAppleRefund_PercentageMismatchAlertFires(t *testing.T) {
+	skipIfNoDB(t)
+	alerts := captureBillingAlerts(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	f.noInvite(t)
+	t0 := time.Now().Unix()
+	require.NoError(t, f.credit(t, "AR-PF1", t0, t0+365*aDay))
+	f.refundEv(t, "AR-PF1", t0, t0+365*aDay, appleRefundEvidence{SignedAt: time.Now().UnixMilli(), RevocationType: "REFUND_PRORATED", RevocationPercentage: 50000})
+	assert.True(t, alerts.has("[APPLE-REFUND-PCT]"))
+}

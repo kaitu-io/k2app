@@ -539,3 +539,41 @@ func TestAppleWebhook_RefundAndReversedEndToEnd(t *testing.T) {
 	assert.False(t, f.refundRow(t, "WH-RF1").Active)
 	assert.Equal(t, "active", f.subNow(t).Status)
 }
+
+// 19b. 退一笔与奖励无关的订单 → 奖励不动。
+func TestInviteRefund_UnrelatedOrderKeepsGrant(t *testing.T) {
+	skipIfNoDB(t)
+	captureBillingAlerts(t)
+	f := webInviteFixture(t)
+	other := f.addPaidOrder(t, 1, 500, nil)
+	require.NoError(t, ProcessOrderRefund(context.Background(), other.ID, "test refund", 1))
+	g := f.grant(t)
+	assert.False(t, g.Reversed)
+	assert.Equal(t, strconv.FormatUint(f.order.ID, 10), g.TriggerRef)
+}
+
+// 11b. verify 端点：被退交易返回明确的"已退款"错误。
+func TestAppleIAPVerify_RefundedTransaction(t *testing.T) {
+	skipIfNoDB(t)
+	setTestAppleBundleID(t)
+	user := CreateTestUser(t)
+	plan := createApplePlan(t, 12)
+	fakeAppleTxn(t, func(id string) (*appstore.TransactionInfo, error) {
+		return &appstore.TransactionInfo{BundleId: "io.kaitu.test", TransactionId: id, OriginalTransactionId: "OTX-VR-" + id,
+			ProductId: plan.AppleProductID, InAppOwnershipType: appstore.OwnershipType_PURCHASED, Environment: "Production",
+			PurchaseDate: time.Now().UnixMilli(), ExpiresDate: time.Now().Add(365 * 24 * time.Hour).UnixMilli(),
+			RevocationDate: time.Now().UnixMilli(), AppAccountToken: deriveAppleAccountToken(user.UUID)}, nil
+	})
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("authContext", &authContext{UserID: user.ID, User: user})
+		c.Next()
+	})
+	r.POST("/api/iap/apple/verify", api_apple_iap_verify)
+	body, _ := json.Marshal(map[string]string{"transactionId": fmt.Sprintf("VR-%d", time.Now().UnixNano())})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/iap/apple/verify", bytes.NewReader(body)))
+	assert.Equal(t, int(ErrorInvalidOperation), respCode(t, w))
+	assert.Contains(t, w.Body.String(), "refunded")
+}
