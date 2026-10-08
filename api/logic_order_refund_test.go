@@ -97,7 +97,7 @@ func TestProcessOrderRefund_HappyPath(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	// 6. 退款后续：查这笔购买触发的邀请奖励（无）；订单未计入分销人数 → 无分销调整
-	m.Mock.ExpectQuery(`SELECT \* FROM .invite_reward_grants. WHERE invitee_user_id = \? AND reversed = \? .* FOR UPDATE`).
+	m.Mock.ExpectQuery(`SELECT .id. FROM .invite_reward_grants. WHERE invitee_user_id = \? AND reversed = \?`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
 	m.Mock.ExpectCommit()
@@ -241,7 +241,7 @@ func TestProcessOrderRefund_NoProHistory(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	// 6. 退款后续：查这笔购买触发的邀请奖励（无）；订单未计入分销人数 → 无分销调整
-	m.Mock.ExpectQuery(`SELECT \* FROM .invite_reward_grants. WHERE invitee_user_id = \? AND reversed = \? .* FOR UPDATE`).
+	m.Mock.ExpectQuery(`SELECT .id. FROM .invite_reward_grants. WHERE invitee_user_id = \? AND reversed = \?`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
 	m.Mock.ExpectCommit()
@@ -392,7 +392,7 @@ func TestProcessOrderRefund_FirstOrderDoneRevoke(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	// 6. 退款后续：查这笔购买触发的邀请奖励（无）；订单未计入分销人数 → 无分销调整
-	m.Mock.ExpectQuery(`SELECT \* FROM .invite_reward_grants. WHERE invitee_user_id = \? AND reversed = \? .* FOR UPDATE`).
+	m.Mock.ExpectQuery(`SELECT .id. FROM .invite_reward_grants. WHERE invitee_user_id = \? AND reversed = \?`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
 	m.Mock.ExpectCommit()

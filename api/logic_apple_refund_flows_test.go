@@ -641,3 +641,21 @@ func TestInviteRefund_UnrelatedOrderNoFallbackAnchor(t *testing.T) {
 	assert.False(t, f.grant(t).Reversed)
 	assert.Equal(t, inviterEA, eaOf(t, f.inviter.ID))
 }
+
+
+// 复活入账：账本过期时刻介于购买与现在之间（迟到入账）→ 只发 Apple 剩余覆盖期。
+func TestAppleRefund_LateRevivalLedgerBetweenPurchaseAndNow(t *testing.T) {
+	skipIfNoDB(t)
+	captureBillingAlerts(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	f.noInvite(t)
+	t0 := time.Now().Unix()
+	require.NoError(t, f.credit(t, "AR-LB1", t0, t0+365*aDay))
+	refunded := f.txn("AR-LB1", t0, t0+365*aDay)
+	refunded.RevocationDate = (t0 - 300*aDay) * 1000
+	_, err := applyAppleRefund(context.Background(), f.origTxn, refunded, appleRefundEvidence{SignedAt: refunded.RevocationDate, Source: "webhook"})
+	require.NoError(t, err)
+	require.NoError(t, db.Get().Model(&User{}).Where("id = ?", f.buyer.ID).Update("expired_at", t0-100*aDay).Error)
+	require.NoError(t, f.credit(t, "AR-LB2", t0-200*aDay, t0+165*aDay))
+	assertNear(t, t0+165*aDay, f.userNow(t, f.buyer.ID).ExpiredAt, 120, "不因账本过期时刻晚于购买而多发")
+}

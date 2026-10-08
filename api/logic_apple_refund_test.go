@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -211,7 +212,9 @@ func TestAppleRefund_ConsumedOldPeriod(t *testing.T) {
 	assert.True(t, *orders[0].IsRefunded, "旧期订单照撤")
 }
 
-// 4. 新一期已入账后退上一期（Apple 最多提前 24h 扣续费）→ 只收上一期日历剩余，新一期完整、不置 revoked。
+// 4. 新一期已入账后退上一期（Apple 最多提前 24h 扣续费 / 退款迟到处理）→ 只收上一期日历剩余，
+// 新一期完整、不置 revoked。本例账本是"首期迟到入账"形态（首期从 now 起整期）；账本与 Apple 对齐的
+// 形态见 TestAppleRefund_NewerPeriodAlignedLedger。
 func TestAppleRefund_NewerPeriodAlreadyCredited(t *testing.T) {
 	skipIfNoDB(t)
 	captureBillingAlerts(t)
@@ -525,7 +528,7 @@ func TestAppleRefund_TerminalGuards(t *testing.T) {
 // 27. 存量已退到钱包的 IAP 单再遇 Apple 退款 → 不再扣时长、不置 revoked；邀请照撤。
 func TestAppleRefund_LegacyWalletRefundedOrder(t *testing.T) {
 	skipIfNoDB(t)
-	captureBillingAlerts(t)
+	alerts := captureBillingAlerts(t)
 	f := setupIAPOrderFixture(t, 30, 10)
 	t0 := time.Now().Unix()
 	require.NoError(t, f.credit(t, "AR-WR1", t0, t0+365*aDay))
@@ -541,6 +544,7 @@ func TestAppleRefund_LegacyWalletRefundedOrder(t *testing.T) {
 	assert.Zero(t, out.Cut, "后台退款已扣过权益")
 	assert.False(t, out.MarkedRevoked)
 	assert.True(t, out.Followup.InviteReversed)
+	assert.True(t, alerts.has("[DOUBLE-REFUND]"), "双退告警在提交后经 alertBilling 发出")
 	cfg := configInvite(context.Background())
 	assertNear(t, before-int64(cfg.PurchaseRewardDays)*aDay, f.userNow(t, f.buyer.ID).ExpiredAt, 120, "只撤被邀请奖励")
 }
@@ -642,4 +646,53 @@ func TestAppleRefund_PercentageMismatchAlertFires(t *testing.T) {
 	require.NoError(t, f.credit(t, "AR-PF1", t0, t0+365*aDay))
 	f.refundEv(t, "AR-PF1", t0, t0+365*aDay, appleRefundEvidence{SignedAt: time.Now().UnixMilli(), RevocationType: "REFUND_PRORATED", RevocationPercentage: 50000})
 	assert.True(t, alerts.has("[APPLE-REFUND-PCT]"))
+}
+
+
+// 4b. 同上，账本与 Apple 对齐（首期按时入账，续订提前一天扣款）。
+func TestAppleRefund_NewerPeriodAlignedLedger(t *testing.T) {
+	skipIfNoDB(t)
+	captureBillingAlerts(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	f.noInvite(t)
+	t0 := time.Now().Unix()
+	require.NoError(t, f.credit(t, "AR-NA1", t0, t0+365*aDay))
+	// 一年后的视角不好造，改为把账本平移成"首期还剩 1 天"：到期与 PaidThrough 都挪到 t0+1 天
+	require.NoError(t, db.Get().Model(&User{}).Where("id = ?", f.buyer.ID).Update("expired_at", t0+aDay).Error)
+	require.NoError(t, db.Get().Model(&Subscription{}).Where("provider_subscription_id = ?", f.origTxn).
+		Updates(map[string]any{"paid_through": t0 + aDay, "current_period_end": t0 + aDay}).Error)
+	require.NoError(t, f.credit(t, "AR-NA2", t0+aDay, t0+366*aDay))
+	assertNear(t, t0+366*aDay, f.userNow(t, f.buyer.ID).ExpiredAt, 120, "前置：续订一整年")
+
+	out := f.refundEv(t, "AR-NA1", t0-364*aDay, t0+aDay, appleRefundEvidence{SignedAt: time.Now().UnixMilli()})
+	assertNear(t, aDay, out.Cut, 120, "")
+	assertNear(t, t0+365*aDay, f.userNow(t, f.buyer.ID).ExpiredAt, 120, "新一期整年保留")
+	assert.Equal(t, "active", f.subNow(t).Status)
+}
+
+// 2c. 两个不同订阅同时首次退款（不同交易号落在同一索引间隙）→ 都成功、各收各的。
+func TestAppleRefund_ConcurrentDifferentSubscriptions(t *testing.T) {
+	skipIfNoDB(t)
+	captureBillingAlerts(t)
+	t0 := time.Now().Unix()
+	fs := []*iapOrderFixture{setupIAPOrderFixture(t, 30, 10), setupIAPOrderFixture(t, 30, 10), setupIAPOrderFixture(t, 30, 10)}
+	for i, f := range fs {
+		f.noInvite(t)
+		require.NoError(t, f.credit(t, fmt.Sprintf("AR-CD%d-%d", i, t0), t0, t0+365*aDay))
+	}
+	var wg sync.WaitGroup
+	for i, f := range fs {
+		wg.Add(1)
+		go func(i int, f *iapOrderFixture) {
+			defer wg.Done()
+			_, err := applyAppleRefund(context.Background(), f.origTxn, f.txn(fmt.Sprintf("AR-CD%d-%d", i, t0), t0, t0+365*aDay),
+				appleRefundEvidence{SignedAt: time.Now().UnixMilli(), Source: "webhook"})
+			assert.NoError(t, err)
+		}(i, f)
+	}
+	wg.Wait()
+	for _, f := range fs {
+		assert.LessOrEqual(t, f.userNow(t, f.buyer.ID).ExpiredAt, time.Now().Unix()+120)
+		assert.Equal(t, "revoked", f.subNow(t).Status)
+	}
 }

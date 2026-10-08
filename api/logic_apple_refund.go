@@ -73,9 +73,8 @@ func applyAppleRefund(ctx context.Context, otx string, txn *appstore.Transaction
 
 		// 2. 采纳判定。
 		var r AppleRefund
-		rErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("transaction_id = ?", txn.TransactionId).First(&r).Error
-		exists := rErr == nil
-		if rErr != nil && !errors.Is(rErr, gorm.ErrRecordNotFound) {
+		exists, rErr := lockExistingRow(tx, &r, "transaction_id = ?", txn.TransactionId)
+		if rErr != nil {
 			return rErr
 		}
 		reRefund := false
@@ -123,6 +122,7 @@ func applyAppleRefund(ctx context.Context, otx string, txn *appstore.Transaction
 		if err != nil {
 			return err
 		}
+		alerts = append(alerts, ord.Alerts...)
 
 		// 6. 付费时长。
 		tExp := txn.ExpiresDate / 1000
@@ -217,7 +217,7 @@ func applyAppleRefund(ctx context.Context, otx string, txn *appstore.Transaction
 			Credited: credited, CutSeconds: cut, MarkedRevoked: markRevoked, Source: ev.Source,
 		}
 		if exists {
-			row.ID, row.CreatedAt = r.ID, r.CreatedAt
+			row.ID, row.CreatedAt, row.ConflictAlertedAt, row.Note = r.ID, r.CreatedAt, r.ConflictAlertedAt, r.Note
 		}
 		if err := tx.Save(&row).Error; err != nil {
 			return fmt.Errorf("save apple refund %s: %w", txn.TransactionId, err)
@@ -293,8 +293,8 @@ func reverseAppleRefund(ctx context.Context, otx string, txn *appstore.Transacti
 			return err
 		}
 		var r AppleRefund
-		rErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("transaction_id = ?", txn.TransactionId).First(&r).Error
-		if errors.Is(rErr, gorm.ErrRecordNotFound) {
+		found, rErr := lockExistingRow(tx, &r, "transaction_id = ?", txn.TransactionId)
+		if rErr == nil && !found {
 			// 撤销先于退款到达：建占位行，之后证据更早的退款会被判为迟到。
 			return tx.Create(&AppleRefund{
 				UserID: sub.UserID, SubscriptionID: sub.ID, OriginalTransactionID: otx, TransactionID: txn.TransactionId,
@@ -371,13 +371,12 @@ func reverseAppleRefund(ctx context.Context, otx string, txn *appstore.Transacti
 // Reversed——之后 Apple 若再次退款，onPaidOrderRefundedInTx 能再撤一次。
 func restoreInviteGrantForPurchaseInTx(tx *gorm.DB, inviteeID uint64, keys purchaseKeys, now int64) error {
 	var g InviteRewardGrant
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("invitee_user_id = ? AND reversed = ?", inviteeID, true).First(&g).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil
-	}
+	found, err := lockExistingRow(tx, &g, "invitee_user_id = ? AND reversed = ?", inviteeID, true)
 	if err != nil {
 		return err
+	}
+	if !found || !g.Reversed {
+		return nil
 	}
 	if !keys.matches(g.TriggerKind, g.TriggerRef) {
 		return nil

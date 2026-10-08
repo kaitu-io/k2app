@@ -60,6 +60,24 @@ func sendBillingAlerts(ctx context.Context, msgs []string) {
 	}
 }
 
+// lockExistingRow 找到满足条件的行并按主键加行锁，找不到返回 (false, nil)。
+// 不直接对"可能不存在"的唯一键做 FOR UPDATE：那会在 InnoDB 里加间隙锁，两个首次插入的事务
+// 互等成死锁。调用方必须已持有串行化这条记录的上层锁（订阅行 / 用户行），普通读的快照在上层锁
+// 之后建立；按主键加锁的重读是当前读，拿到最新值。
+func lockExistingRow[T any](tx *gorm.DB, dest *T, query string, args ...any) (bool, error) {
+	var ids []uint64
+	if err := tx.Model(dest).Where(query, args...).Order("id ASC").Limit(1).Pluck("id", &ids).Error; err != nil {
+		return false, err
+	}
+	if len(ids) == 0 {
+		return false, nil
+	}
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(dest, ids[0]).Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // onPaidOrderRefundedInTx 见文件头。调用前提：买家用户行已在本事务内加锁、付费时长已扣完写库
 // （邀请扣减基于重新读取的 expired_at）。order 可为 nil（Apple 建单失败 / 沙盒）。
 // 幂等：grant 的 Reversed 与订单的 RetailerCountedID 都是一次性标记，重复调用不重复扣。
@@ -82,13 +100,12 @@ func onPaidOrderRefundedInTx(ctx context.Context, tx *gorm.DB, buyerID uint64, k
 // 合格购买，改锚到那笔、不撤回（条款：奖励以保留一笔合格购买为前提）。
 func reverseInviteGrantForPurchaseInTx(ctx context.Context, tx *gorm.DB, buyerID uint64, keys purchaseKeys, out *refundFollowup) error {
 	var grant InviteRewardGrant
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("invitee_user_id = ? AND reversed = ?", buyerID, false).First(&grant).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil
-	}
+	found, err := lockExistingRow(tx, &grant, "invitee_user_id = ? AND reversed = ?", buyerID, false)
 	if err != nil {
 		return fmt.Errorf("load invite grant for user %d: %w", buyerID, err)
+	}
+	if !found || grant.Reversed {
+		return nil
 	}
 	if !keys.matches(grant.TriggerKind, grant.TriggerRef) {
 		return nil // 奖励锚在别的购买上（或已改锚），这笔退款不影响它
@@ -142,8 +159,10 @@ func clawBackGiftInTx(tx *gorm.DB, userID uint64, seconds, now int64, reason str
 	if seconds <= 0 {
 		return 0, nil
 	}
+	// 当前读（加锁）：可重复读下普通读用的是事务早先的快照，邀请人行可能在那之后被别的事务改过，
+	// 按旧值算出的实扣会偏小，撤销退款时也只还回偏小的量。
 	var u User
-	if err := tx.Select("id", "expired_at").First(&u, userID).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "expired_at").First(&u, userID).Error; err != nil {
 		return 0, fmt.Errorf("load user %d: %w", userID, err)
 	}
 	cut := min(seconds, max(u.ExpiredAt-now, 0))
