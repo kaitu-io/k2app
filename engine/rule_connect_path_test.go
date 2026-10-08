@@ -141,3 +141,52 @@ func TestPrefetchRulesForStart_NoBundlesIsFatal(t *testing.T) {
 		t.Fatalf("got %v, want EngineError code %d", ee, ErrCodeRuleBundlesUnavailable)
 	}
 }
+
+// TestPrefetchRulesForStart_NotBlockedByForcedEmbedUpgrade: once the cache holds
+// bundles, a background download holding .ensure.lock (here the updater's
+// forced upgrade of the embedded floor, stuck on a source that never answers)
+// must not delay Start. SeedFromEmbedIfEmpty answers a warm cache before it
+// touches the lock, so the connect path returns at once.
+func TestPrefetchRulesForStart_NotBlockedByForcedEmbedUpgrade(t *testing.T) {
+	dir := t.TempDir()
+	if err := rule.SeedFromEmbedIfEmpty(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	hit := make(chan struct{}, 1)
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case hit <- struct{}{}:
+		default:
+		}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(func() { close(release); srv.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	dlDone := make(chan struct{})
+	go func() {
+		defer close(dlDone)
+		_ = rule.DownloadAndReloadNamed(ctx, nil, dir, []string{srv.URL + "/"}, nil)
+	}()
+	t.Cleanup(func() { cancel(); <-dlDone })
+
+	select {
+	case <-hit: // forced download is in flight and holds .ensure.lock
+	case <-time.After(5 * time.Second):
+		t.Fatal("forced upgrade of the embedded floor never reached the rule source")
+	}
+
+	start := time.Now()
+	client := &config.ClientConfig{CacheDir: dir, RuleSources: []string{srv.URL + "/"}}
+	if ee := New().prefetchRulesForStart(client); ee != nil {
+		t.Fatalf("prefetchRulesForStart = %v during an in-flight download, want nil", ee)
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Fatalf("prefetchRulesForStart took %v during an in-flight download, want < 1s", took)
+	}
+}

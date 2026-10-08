@@ -2,10 +2,13 @@ package daemon
 
 import (
 	"context"
-	"github.com/kaitu-io/k2/rule"
+	"net/http"
+	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/kaitu-io/k2/rule"
 )
 
 // TestRuleRefreshLoop_TicksOnInterval verifies the loop fires the refresh
@@ -96,5 +99,63 @@ func TestDoRefreshRules_SeedsColdCacheBeforeDownload(t *testing.T) {
 
 	if n := len(rule.ListRegions(dir)); n == 0 {
 		t.Fatal("cold cache still empty after doRefreshRules: embedded seed did not run before the download")
+	}
+}
+
+// TestDoRefreshRules_ColdStartRefreshDoesNotBlockConnect replays the desktop
+// cold-cache 504 deterministically: the rule source accepts the request and
+// never answers, so a download that starts on an empty cache holds
+// .ensure.lock for its whole 30s budget. The connect path
+// (engine.prefetchRulesForStart = SeedFromEmbedIfEmpty + ListRegions) runs as
+// soon as the refresh has either seeded the cache or reached the network, and
+// must come back within a second with bundles on disk. Before the fix the
+// refresh went straight to the download, the connect path's seed waited 10s
+// for the lock and gave up, and Start failed with 504.
+func TestDoRefreshRules_ColdStartRefreshDoesNotBlockConnect(t *testing.T) {
+	dir := t.TempDir()
+
+	hit := make(chan struct{}, 1)
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case hit <- struct{}{}:
+		default:
+		}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(func() { close(release); srv.Close() })
+
+	orig := rule.DefaultSources
+	rule.DefaultSources = []string{srv.URL + "/"}
+	t.Cleanup(func() { rule.DefaultSources = orig })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	refreshDone := make(chan struct{})
+	go func() {
+		defer close(refreshDone)
+		(&Daemon{}).doRefreshRules(ctx, dir)
+	}()
+	t.Cleanup(func() { cancel(); <-refreshDone }) // runs before the server cleanup above
+
+	deadline := time.After(5 * time.Second)
+waitRefresh:
+	for len(rule.ListRegions(dir)) == 0 {
+		select {
+		case <-hit:
+			break waitRefresh // download in flight, holding .ensure.lock
+		case <-deadline:
+			t.Fatal("refresh neither seeded the cache nor reached the rule source within 5s")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+
+	start := time.Now()
+	seedErr := rule.SeedFromEmbedIfEmpty(dir)
+	n := len(rule.ListRegions(dir))
+	if took := time.Since(start); n == 0 || took > time.Second {
+		t.Fatalf("connect path during cold-start refresh: %d regions after %v (seed err: %v); want bundles within 1s", n, took, seedErr)
 	}
 }

@@ -20,3 +20,19 @@ Same fix upstream applied on the v1 line (xtaci/smux#82): on FIN, return nil
 
 Upgrading smux: re-check whether upstream v2 carries this fix; if it does, drop
 this directory and the `replace`.
+
+## Contract k2 relies on (not patched): the opener speaks first
+
+`OpenStream` writes the SYN and only then registers the stream in
+`s.streams`. A PSH or FIN that the peer sends for that id in between finds no
+stream in `recvLoop` and is dropped silently. Upstream v1 (v1.5.57) has the
+same ordering, so this is smux's design assumption, not a v2 regression. k2
+never trips it: only the client opens streams (`wire/tcpws.go`,
+`wire/metadata_client.go`), it writes the stream header right after
+`OpenStream` returns, and `TCPWSServer.handleStream` reads that header before
+writing anything — so no server byte can precede registration. A new stream
+type where the accepting side writes first, or the server starting to open
+streams, would break this; keep the opener-speaks-first order.
+`TestWriteThenCloseDeliversEverything` follows the same order (the acceptor
+reads one byte before replying); without that read it loses data on upstream
+code too.
