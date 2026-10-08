@@ -1,6 +1,6 @@
 # Apple 退款收回（开途 + Overleap）设计 — A 期补充（A2）
 
-> 状态：设计 v1，待 review。随 A 期（`feat/overleap-trial-payment`）一起合并、一起部署。
+> 状态：设计 v2（合入 review 第 1 轮：后端 M1–M6/m1–m9、对抗 B1–B10/L1–L3/C1–C5）。随 A 期（`feat/overleap-trial-payment`）一起合并、一起部署。
 > 关联：`2026-10-07-overleap-payment-phase-a-design.md`（PaidThrough 模型、Stripe 收回）。
 
 ## 1. 现状与已证实的问题
@@ -8,151 +8,198 @@
 入口：`api_apple_webhook.go` 的 `REFUND` / `REVOKE` → `revokeSubscription`（`logic_apple_iap.go`）。
 现逻辑：锁用户 → 撤订单返现 → **仅当 `now < ExpiredAt <= sub.CurrentPeriodEnd`** 时把 `ExpiredAt` 扣到 now → 订阅标 `revoked`。
 
-| # | 问题 | 证据 | 影响 |
-|---|------|------|------|
-| P1 | 用户有任何叠加时长（赠送、卡密、网页购买、邀请奖励）时，`ExpiredAt > CurrentPeriodEnd`，**一天都不收回** | 代码条件；开途 `invite.purchase_reward_days=30`，奖励在 `creditAppleTransaction` 里**先于**购买时长入账 → 每个"被邀请首购"都必然命中 | 开途：被邀请用户买年付 → Apple 退款 → 保留 395 天 |
-| P2 | 退的是**已消耗的旧期**交易（续订后才退上一期），整条订阅被标 revoked，且若命中条件会把**当前已付的这一期**也扣掉 | 代码不看被退交易是哪一期 | 多收；Overleap 条款 7.5 只允许"结束该笔付款买到的服务" |
-| P3 | 被退款的交易若当初漏入账，事后客户端恢复购买 / 对账再入账时**照样发时长** | `creditAppleTransaction` 不看 `RevocationDate` | 退款后白拿 |
-| P4 | 漏收 `REFUND` webhook 时，对账 worker 看到 Apple 状态 Revoked 只打 error 日志 | `reconcileAppleSubscription` 末段 | 永不收回 |
-| P5 | Apple 退款会把 `IsFirstOrderDone` 翻回 false → 再买一单又算"首单" → **邀请双方各再领 30 天**；可"买—退—买—退"反复刷 | `revokeIAPOrderCashbackInTx` + `grantInvitePurchaseRewardInTx` 只看 `IsFirstOrderDone` | 开途邀请奖励可刷 |
-| P6 | `REVOKE`（家庭共享撤销）与 `REFUND` 同路处理，不区分被撤交易的归属 | webhook switch | 理论上可误收购买者本人的时长 |
-| P7 | 退款后同一订阅链（同 originalTransactionId）重新订阅，状态永远停在 revoked（`deriveVerifiedStatus` 不复活）→ app 显示"未订阅" | 代码 | 付费用户看不到自己的订阅 |
-| P8 | `REFUND_REVERSED`（Apple 撤销了退款）未处理 | webhook default 分支 | 用户被收回后不会恢复 |
+| # | 问题 | 影响 |
+|---|------|------|
+| P1 | 有任何叠加时长（赠送、卡密、网页购买、邀请奖励）→ `ExpiredAt > CurrentPeriodEnd` → **一天都不收回**。开途邀请奖励（线上 30 天）在 `creditAppleTransaction` 里**先于**购买时长入账，每个"被邀请首购"必然命中 | 被邀请用户买年付→退款→保留 395 天 |
+| P2 | 退已消耗的旧期，整条订阅也被标 revoked，命中条件时连当前已付期一起扣 | 多收；违反 Overleap 条款 7.5 |
+| P3 | 被退交易若当初漏入账，事后恢复购买 / 对账再入账照样发时长 | 白拿 |
+| P4 | 漏收 `REFUND` webhook：对账 worker 只扫"周期 48h 内到期"的行，年付要等 11 个月才发现；且发现 Revoked 只打日志 | 实际永不收回 |
+| P5 | 退款把 `IsFirstOrderDone` 翻回 false → 再买又是"首单" → 邀请双方再各领 30 天；可反复刷。另：奖励天数配置为 0 时防刷判据缺失 | 开途邀请奖励可刷 |
+| P6 | 家庭共享 `REVOKE` 与 `REFUND` 同路，不看交易归属 | 理论误收 |
+| P7 | 退款后同链重订阅，状态永停 revoked；且 `CurrentPeriodEnd` 仍是被退期末 → 新一期按续订 delta 只记 20 天、叠加在旧期末上**吞掉赠送时长** | 付费用户显示未订阅；赠送被吞；之后后台退款少扣 |
+| P8 | `REFUND_REVERSED` 未处理 | 用户被收回后不恢复（英国消费者法下：已付费未供应） |
+| P9 | 沙盒交易（`GetTransaction` 先正式后沙盒回退）照发邀请奖励、照置 `IsFirstOrderDone` | TestFlight 购买刷邀请奖励 |
+| P10 | 开途 IAP 订单可被后台"退到钱包"（可提现 USDT），用户之后再找 Apple 退一次 | 双重退款，钱已提走才告警 |
+| P11 | 分销返现冻结 30 天，Apple 退款窗口约 90 天 → 分销商先提现、后被退款，钱包扣成负数无人知 | 现金损失 |
+| P12 | 退款不减分销商 `paid_user_count`；重买又 +1 | 10 个"退了再买"即自动升 L2（永久高比例） |
 
-线上（2026-10-08 只读查询）：开途 14 笔 Apple 年付订单、13 个有效订阅，真实 Apple 退款 0 笔（唯一"已退款"是沙盒作废）；13 个里 1 个当前有叠加时长。Overleap 0 个生产 Apple 订阅。**洞是真的，但目前没有被利用，无需追溯处理。**
+线上（2026-10-08 只读）：开途 14 笔 Apple 年付单、13 个有效订阅，真实 Apple 退款 0 笔；Overleap 0 个生产 Apple 订阅。**洞是真的，未被利用，无需追溯。**
 
-Apple 现行事实（官方文档，已核对）：
-- `REFUND` 交易带 `revocationDate`；2025-12 起另带 `revocationType`（`REFUND_FULL` / `REFUND_PRORATED` / `FAMILY_REVOKE`）与 `revocationPercentage`（自动续订按剩余时间折算）。qtoolkit `TransactionInfo` 尚无后两个字段——**本设计不依赖它们**（见 §3 规则）。
-- `REFUND_REVERSED`、`REFUND_DECLINED`、`CONSUMPTION_REQUEST`（2024-04 起覆盖自动续订）均为 V2 通知。
-- Send Consumption Information 要求**用户事先明确同意**（opt-in），12 小时内回复。
+Apple 现行事实（官方文档已核对）：退款交易带 `revocationDate`；2025-12 起带 `revocationType`（`REFUND_FULL`/`REFUND_PRORATED`/`FAMILY_REVOKE`）、`revocationPercentage`（自动续订按**剩余时间**折算）；`REFUND_REVERSED`/`REFUND_DECLINED`/`CONSUMPTION_REQUEST` 为 V2 通知；Get Notification History 支持 `onlyFailures=true`；Send Consumption Information 需用户事先 opt-in。qtoolkit v1.5.32 无 `REFUND_REVERSED` 常量（`NotificationType` 是 string，用字面量）、`TransactionInfo` 无 revocationType/Percentage（自行解 JWS payload 补读）。**未核实**：退款后同 Apple ID 重订阅是否沿用同一 `originalTransactionId`——设计两种都覆盖（新 otx 走首购绑定）。
 
 ## 2. 两个品牌的用户差异 → 策略
 
 | | 开途 | Overleap |
 |---|---|---|
-| 用户 | 中国大陆用户，用海外 Apple ID 购买；网上流传"苹果退款教程"，退款滥用是现实风险 | 欧美用户；Apple 是商户，欧盟/英国 14 天撤回由 Apple 执行 |
-| 在售商品 | 只有年付（14/14 单是"1年套餐"） | Apple 渠道尚未上线（C 期 iOS 试用后才有） |
-| 叠加时长来源 | 多：邀请奖励（双方各 30 天）、卡密、活动、网页购买 | 少：邀请功能关闭（`features.invite=false`） |
-| 主要风险 | **少收**（白嫖、刷邀请奖励） | **多收**（扣掉已付期 → 投诉/违反条款 7.5） |
+| 用户 | 大陆用户、海外 Apple ID；"苹果退款教程"流传，滥用是现实风险 | 欧美用户；Apple 为商户，代执行 14 天撤回 |
+| 在售 | 只有年付 | Apple 渠道 C 期才上线（可能有月付） |
+| 叠加时长 | 多：邀请（双方各 30 天）、卡密、活动、网页购买 | 少：邀请关闭 |
+| 钱的出口 | 钱包可提现、分销返现 | 无钱包、无分销 |
+| 主要风险 | **少收**：白嫖、刷邀请、分销套现 | **多收**：扣到已付期、退款撤销后不恢复 |
 
-**结论：一条规则同时满足两边，代码里不按品牌分支。**
+**时长算术一条规则，代码不写 `if brand`**：
 
-> **收回被退款交易自身尚未消耗的付费时长；不碰赠送时长，不追讨已消耗的旧期。**
+> **收回被退交易自身尚未消耗的付费时长；不碰赠送；不追讨已消耗的旧期；退款被撤销就还回去。**
 
-- 开途要的"别让人白嫖"：P1 修好后，退当期年付必收回整期剩余（不论叠了多少赠送）；邀请奖励只在开途存在，单独按 §3.4 处理（品牌差异由功能开关天然体现，不写 `if brand`）。
-- Overleap 要的"别多收"：只扣这笔交易买到、且还没用掉的部分——正是条款 7.5 "the access it paid for ends"。旧期已消耗不追讨（单方抵扣在英国消费者法下站不住）。
-- 开途只卖年付，Apple 退款窗口远短于一年，"续订后退上一期"实际不会发生；所以"不追讨旧期"对开途几乎无损，对 Overleap（C 期可能有月付）是必要保护。
+开途特有的风险全部挂在**开途独有的功能**上（邀请、钱包、分销）——Overleap 这三项本就关闭（`features.invite/wallet=false`，无分销商），修复天然只作用于开途，不需要品牌分支。
 
 ## 3. 设计
 
-### 3.1 新表 `AppleRefund`（不复用 `SubscriptionCredit`）
+### 3.1 新表
 
-`SubscriptionCredit` 有 4 处读取方按 `credited_seconds` 求和/统计（`orderEntitlementSecondsInTx`、funnel facts ×2、retention），写入负数行会污染它们。独立表：
+`SubscriptionCredit` 有 4 处读取方按 `credited_seconds` 求和（`orderEntitlementSecondsInTx`、funnel facts ×2、retention），不能写负数行。
 
 ```go
+// AppleRefund：一笔 Apple 交易的退款处理记录（幂等键 TransactionID）。
 type AppleRefund struct {
-    ID                    uint64 `gorm:"primarykey"`
-    CreatedAt             time.Time
-    UserID                uint64 `gorm:"not null;index"`
-    SubscriptionID        uint64 `gorm:"not null;index"`
-    OriginalTransactionID string `gorm:"type:varchar(64);not null;index"`
-    TransactionID         string `gorm:"type:varchar(64);not null;uniqueIndex"` // 幂等键
-    RevocationDate        int64  // Apple revocationDate（秒）；缺失记 now
+    ID, CreatedAt, UserID, SubscriptionID
+    OriginalTransactionID string // index
+    TransactionID         string // uniqueIndex
+    RevocationDate        int64  // 秒（Apple 毫秒 /1000）；缺失记处理时刻
     RevocationReason      int32
-    Ownership             string `gorm:"type:varchar(24)"`
-    Credited              bool   // 这笔交易是否曾由我们入账
+    RevocationType        string // 自行解 JWS 读出，审计用
+    RevocationPercentage  int32  // 毫单位，审计用
+    Credited              bool   // 我们是否为这笔交易入过账
     CutSeconds            int64  // 收回的付费时长
-    InviteCutSeconds      int64  // 收回的被邀请购买奖励
-    InviteHistoryID       uint64 // 被收回的那条 invited_reward 历史行
-    MarkedRevoked         bool   // 本次是否把订阅置为 revoked
-    Source                string `gorm:"type:varchar(16)"` // webhook | reconcile
-    Note                  string `gorm:"type:varchar(255)"` // 跳过原因等
+    PrevPeriodEnd         int64  // 置 revoked 前的 CurrentPeriodEnd（撤销退款时还原）
+    MarkedRevoked         bool
+    ReversedAt            int64  // REFUND_REVERSED 处理时刻；0=未撤销
+    Source                string // webhook | sweep | reconcile
+    Note                  string
+}
+
+// InviteRewardGrant：一次"被邀请首购奖励"的发放记录。被邀请人唯一 → 每人一生一次；
+// 记下触发它的那笔购买，退款时精确撤回双方。
+type InviteRewardGrant struct {
+    ID, CreatedAt
+    InviteeUserID    uint64 // uniqueIndex
+    InviterUserID    uint64
+    InviteCodeID     uint64
+    TriggerKind      string // apple_txn | order
+    TriggerRef       string // Apple transactionId 或 order.ID；index(kind,ref)
+    InviteeSeconds   int64  // 实发
+    InviterSeconds   int64
+    ReversedAt       int64
+    InviteeCutSeconds, InviterCutSeconds int64 // 撤回时实扣（受 now 下限约束）
 }
 ```
 
 ### 3.2 `PaidThrough` 扩展到 Apple
 
-A 期的 `Subscription.PaidThrough`（"已付费、已入账的权益覆盖到的时刻"）目前只有 Stripe 维护。`creditAppleTransaction` 在真正入账（非 `alreadyCredited`）后同样维护：
+`creditAppleTransaction` 在真正入账后，**单独一条 `Update`** 写入（`Save(&sub)` 在 credit 计算之前，不能靠它）：
 
 ```
-base     = max(入账前 user.ExpiredAt（邀请奖励重载之后）, now)
-granted  = max(入账后 user.ExpiredAt（含 cover-through）− base, 0)
+base         = max(入账前 user.ExpiredAt（邀请奖励重载之后）, now)
+granted      = max(入账后 user.ExpiredAt（含 cover-through）− base, 0)
 paid_through = max(sub.PaidThrough, now) + granted
 ```
 
-与 Stripe 同口径（含 cover-through 修正量）。grace 宽限期 cover-through（`applyRenewalInfo`）**不是**付费时长，不动 `PaidThrough`。存量行 `PaidThrough=0`：收回路径回落 `CurrentPeriodEnd`（复用 A 期 helper），且被 §3.3 的 `tExp` 上界兜住，**无需回填**。
+与 Stripe 同口径。grace cover-through 不是付费时长、不动 `PaidThrough`；**已知偏差**：宽限期后续订成功时 `granted = 新期末 − graceEnd`，`PaidThrough` 比真实付费段少一个宽限窗（≤16 天），该期被退时少收这么多——接受，写进注释。存量行 `PaidThrough=0`：收回路径回落 `CurrentPeriodEnd`（复用 A 期 helper），并被 `periodLen` 上界兜住，无需回填。`model.go` 中"仅 Stripe 维护"注释改掉。
 
-### 3.3 `applyAppleRefund(ctx, otx, txn *appstore.TransactionInfo, source)`（取代 `revokeSubscription`）
+### 3.3 `applyAppleRefund(ctx, otx, txn, meta, source)`（取代 `revokeSubscription`）
 
-单事务、`withDeadlockRetry`，锁序 **订阅 → 用户 → 订单**（与入账路径一致）：
+`withDeadlockRetry` 单事务，锁序 **订阅 → 用户 → 订单 → 邀请人**（入账路径为 订阅→用户→邀请人→新建订单，插入新行不与已存在订单行的锁冲突）。已知可能的跨用户环：A 退款（锁 A→邀请人 B）与 B 自己入账（锁 B→其邀请人 A）同时发生 → InnoDB 检测死锁、回滚一方；webhook/verify 路径均在 `withDeadlockRetry` 内，对账与补漏改为同样包一层。接受。
 
-1. `FOR UPDATE` 锁订阅行（apple, otx）。不存在 → 返回（webhook 层已过滤）。
-2. 幂等：`AppleRefund{TransactionID}` 已存在 → 返回 no-op（覆盖 Apple 重投、REFUND 与 REVOKE 并发——二者在订阅行锁上串行）。
-3. 锁用户行。
+1. `FOR UPDATE` 锁订阅（apple, otx）；不存在 → 返回。
+2. 幂等：`AppleRefund{TransactionID}` 已存在 → no-op（REFUND/REVOKE 并发在订阅锁上串行）。
+3. 锁用户。
 4. `credited := SubscriptionCredit{apple, txn.TransactionId}` 存在。
-5. `ord := revokeIAPOrderCashbackInTx(...)`——改为返回结果 `{Found, AlreadyRefunded, WalletRefunded, OtherPaidCount}`，其余语义不变（撤返现、标退款、必要时翻 `IsFirstOrderDone`、双退哨兵）。
-6. 付费时长收回：
+5. `ord := revokeIAPOrderCashbackInTx(...)`，改为返回 `{Found, AlreadyRefunded, WalletRefunded, OtherPaidCount}`；`OtherPaidCount` 在短路之前就算（M2）。
+6. 付费时长：
    ```
-   eligible = credited && txn.InAppOwnershipType != FAMILY_SHARED && !ord.WalletRefunded
+   now      = 处理时刻
    tExp     = txn.ExpiresDate/1000
+   periodLen= tExp − txn.PurchaseDate/1000
    paid     = PaidThrough>0 ? PaidThrough : CurrentPeriodEnd
-   cut      = eligible ? max(0, min(tExp, paid, user.ExpiredAt) − now) : 0
-   user.ExpiredAt −= cut;  若 cut>0：sub.PaidThrough = paid − cut
+   eligible = credited && revocationType≠FAMILY_REVOKE && ownership≠FAMILY_SHARED && !ord.WalletRefunded && tExp>now
+   cut      = eligible ? max(0, min(paid−now, user.ExpiredAt−now, periodLen)) : 0
    ```
-   - `tExp` 上界 = 只收这笔交易自己覆盖的时间：已过期的旧期 → 0（P2）。
-   - `paid` 上界 = 不碰赠送（P1）：赠送在付费之前叠加时，`PaidThrough` 只记付费段；在之后叠加时，`ExpiredAt − cut` 恰好留下赠送段。
-   - `WalletRefunded`（此单此前已被后台退到钱包，`ProcessOrderRefund` 已扣过权益）→ 不再扣，避免双扣；双退哨兵照旧告警。
-   - 未入账（`credited=false`）→ 没发过，不扣（P6 家庭共享交易我们从不入账，天然落此分支）。
-7. 邀请购买奖励收回（只有开途会命中）：条件 `ord.Found && ord.OtherPaidCount == 0`（退完后该用户已无有效付费单——"购买奖励以保留一笔购买为前提"）且存在该用户的 `invited_reward` 历史行 R、且没有任何 `AppleRefund.InviteHistoryID = R.ID`：
-   `inviteCut = min(R.Days*86400, user.ExpiredAt − now)`，扣减并记录 `InviteHistoryID`。
-   **邀请人那 30 天不自动收回**：邀请人历史行只记 `reference_id=邀请码`，无法精确归到这个被邀请人；邀请人是第三方。改为告警 `[INVITE-REFUND]`（被邀请人、邀请人、天数），由运营判断是否手工处理。
-8. 历史：`cut>0` / `inviteCut>0` 各写一条 `UserProHistory{Type: refund, Days: -floor(s/86400)}`，`Reason` 按品牌给用户可读文案（开途中文、Overleap 英文；ProHistory 页原样显示 reason）。
-9. 订阅状态：`credited && ownership≠FAMILY_SHARED && tExp > now` → `revoked`，`MarkedRevoked=true`；旧期退款不改状态（Apple 侧订阅仍有效）。
-10. 写 `AppleRefund` 行。提交后发 `[APPLE-REFUND]` 告警（品牌、用户、交易、cut 天数、是否命中邀请、source）——量很小，开途用来盯滥用模式。
+   - `tExp>now` 门：旧期已消耗 → 0（P2）。用门而非 `min(tExp,…)` 上界：入账晚到时账本付费段整体后移，`tExp` 上界会少收一个"迟到窗"（M4）。
+   - `periodLen` 上界：只收这一期，迟到两期也不会多扣。
+   - `paid` 上界不碰赠送（P1）。
+   - `ExpiresDate==0`（不应发生）：error 告警，`periodLen` 取 `paid−now`。
+   - `REFUND_PRORATED` 与 `REFUND_FULL` 同处理：Apple 对自动续订按剩余时间折算，退的正是剩余部分。
+   - 写库一律定向：`Update("expired_at", gorm.Expr("expired_at - ?", cut))`、`paid_through = paid − cut`；**不得 `Save(&user)`**（会用旧快照覆盖第 5 步翻回的 `IsFirstOrderDone`，M1）。
+7. 邀请奖励撤回：`InviteRewardGrant{TriggerKind: apple_txn, TriggerRef: txn.TransactionId, ReversedAt: 0}` 存在 → 调 `reverseInviteGrantInTx`：按 id 锁邀请人，双方各扣 `min(实发, ExpiredAt−now)`（不扣到 now 以下），写历史、记 `ReversedAt`。精确归因，不依赖订单是否存在、不依赖"还有没有别的付费单"（B7、B8、m2）。
+8. 分销计数（P12）：新增列 `Order.RetailerCountedID uint64`（计入的分销商配置 id；0=未计入），由 `processRetailerCashbackInTx` 在 `incrementPaidUserCountInTx` 成功后写入。退款时（Apple 与后台网页退款共用 `refundCashbackInTx` 旁的同一 helper）若 `RetailerCountedID>0` → 该配置 `paid_user_count − 1`（`GREATEST(…,0)` 原子更新）并清零该列；等级不自动降，告警。精确到单、不靠"首单"推断：重买后 `isUserFirstPaidOrderInTx` 判为首单会再 +1 并记在新单上，净值一致。
+9. 历史：`cut>0` 写 `UserProHistory{Type: refund, Days: -ceil(cut/86400)}`（避免显示 "-0 天"），Reason 沿用现有中文内部口径（见 §5 C4）。
+10. 订阅：若 `eligible`（当前期被退）→ `status=revoked`、`PrevPeriodEnd=CurrentPeriodEnd`、**`current_period_end=now`**、`MarkedRevoked=true`（P7：此后同链重订阅按 delta = 新期末 − now 入整期、叠在赠送之上，不吞赠送、`credited_seconds`≈整期）。
+11. 写 `AppleRefund`。提交后告警 `[APPLE-REFUND]`：品牌、用户、该用户历史 Apple 退款次数、cut 天数、邀请撤回、来源。
 
-### 3.4 防刷：被邀请购买奖励每人一次（P5）
+### 3.4 邀请奖励：每人一次、沙盒不发（P5、P9）
 
-`grantInvitePurchaseRewardInTx`：被邀请人已有任何 `invited_reward` 历史行 → 跳过（双方都不发）。`invited_reward` 只在这一处写入（已 grep 证实），判据干净。网页订单路径一并受益（后台退款后重买也不再重复发）。
+`grantInvitePurchaseRewardInTx(ctx, tx, userID, plan, trigger)`：
+- 新增入参 `trigger{Kind, Ref, Production bool}`；**非生产（沙盒）→ 不发**。
+- 被邀请人已有 `InviteRewardGrant`，或已有 legacy `invited_reward` / 作为被邀请人的历史 → 不发（判据不依赖天数配置，m3）。
+- 发放后写 `InviteRewardGrant`（两条历史行与之同事务）。
+- `creditAppleTransaction`：沙盒交易不置 `IsFirstOrderDone`、不改 Tier（权益照发——沙盒测试需要，见 §6 另报）。
+- 网页订单路径（`MarkOrderAsPaid`）传 `trigger{order, order.ID, true}`。
 
-### 3.5 入账门：已退款交易永不入账（P3）
+### 3.5 入账门：已退款交易永不入账（P3、B10）
 
-`creditAppleTransaction`：把去重查询提前到 upsert 之前；`info.RevocationDate > 0 && !alreadyCredited` → 记 warn 并 `return nil`，**不建订阅行、不改任何状态**。已入账的被退交易走原 `alreadyCredited` 分支（只刷新 plan-state，不复活——见 3.6）。
+`creditAppleTransaction`：去重查询提到 upsert 之前；`info.RevocationDate>0 && !alreadyCredited` → 返回 `errAppleTxnRevoked`，**不建行、不改状态**。verify 端点把它映射为用户可读错误（"该购买已退款"）；webhook / 对账 / 补漏把它当已处理（200，不重试）。已入账的被退交易走原 `alreadyCredited` 分支，只刷新 plan-state。
 
-### 3.6 退款后重新订阅复活状态（P7）
+### 3.6 退款后重订阅复活（P7）
 
-`creditAppleTransaction` 状态推导：`sub.Status == revoked && !alreadyCredited && info.RevocationDate == 0 && info.PurchaseDate/1000 > max(AppleRefund.RevocationDate WHERE otx AND MarkedRevoked)` → 按非 revoked 推导（active/expired）。即"退款之后发生的新付款"才复活；被退交易本身、退款前的旧交易重放都不复活。Stripe 的 revoked 终态四道门不受影响（Apple 专属分支）。
+状态推导：`sub.Status==revoked && !alreadyCredited && info.RevocationDate==0 && info.PurchaseDate/1000 > max(AppleRefund.RevocationDate WHERE otx AND MarkedRevoked AND ReversedAt=0)` → 按非 revoked 推导，并按 renewal info 写真实 `auto_renew`。被退交易本身、退款前旧交易重放都不复活。Stripe 的 revoked 终态门不受影响。
 
-### 3.7 其它通知与对账
+`applyRenewalInfo` 的 status 与 grace cover-through 两条 UPDATE 加 `AND status<>'revoked'`（m1：与 REFUND 赛跑时不把 revoked 覆盖成 grace、不再延长权益）。
 
-- `REFUND`、`REVOKE` → `applyAppleRefund(..., "webhook")`。
-- `REFUND_REVERSED`（P8）→ 查 `AppleRefund{TransactionID}`，告警 `[APPLE-REFUND-REVERSED]` 附收回秒数，运营用 MCP `add_user_membership` 手工恢复。理由：极少发生，且自动恢复要连带反撤返现、反标订单，复杂度不值得。
-- `REFUND_DECLINED`、`CONSUMPTION_REQUEST` → 仅 info 日志（Consumption 见 §5）。
-- 对账（P4）：Apple 状态 Revoked 且本地非 revoked，且 `st.txn.RevocationDate > 0` → `applyAppleRefund(..., "reconcile")`；否则保留原 error 日志。对账在此之前调用的 `creditAppleTransaction(st.txn)` 因 §3.5 不会给被退交易入账。
+### 3.7 退款被撤销：自动恢复（P8、L1）
+
+`REFUND_REVERSED`（字面量）→ `reverseAppleRefund`：锁订阅→用户；`AppleRefund{TransactionID, ReversedAt=0}`：
+- 还时长 `min(CutSeconds, tExp−now)`（>0 才还），`paid_through += 还的量`；
+- 若 `MarkedRevoked` 且 `tExp>now` → `status` 按非 revoked 推导、`current_period_end = PrevPeriodEnd`；
+- 邀请撤回 → 按 grant 记录还给双方（`min(实扣, …)`），清 `ReversedAt`；
+- 记 `ReversedAt`；订单退款标记与返现**不自动反转**，告警 `[APPLE-REFUND-REVERSED]` 由运营核对。
+
+`REFUND_DECLINED`、`CONSUMPTION_REQUEST` → info 日志。
+
+### 3.8 漏通知补漏（P4、B9）
+
+- 抽出 `processAppleNotification(ctx, signedPayload, source)`：webhook 与补漏共用（含 LastEventID 去重）。
+- 新 asynq 定时任务（每日）：对每个配置了 bundleId 的品牌，调 **Get Notification History**（`onlyFailures=true`，窗口最近 3 天，分页），逐条回放。Apple 侧"投递失败"的才回来，量极小。
+- 对账：Apple 状态 Revoked 且本地非 revoked → 用 `st.txn` 调 `applyAppleRefund(..., "reconcile")`；无 `revocationDate` 时以 now 计（Apple 状态 5 是权威）。
+
+### 3.9 钱与分销（开途独有功能上的修复）
+
+- **IAP 订单不再走后台钱包退款**（P10）：`ProcessOrderRefund` 与后台预校验拒绝 `channel=apple_iap`，提示"App Store 订单请让用户向 Apple 申请退款"。消除双重退款与可提现补偿。
+- **IAP 返现冻结 90 天**（P11）：`processRetailerCashback` 对 `apple_iap` 订单 `freezeDays=90`（覆盖 Apple 退款窗口）；网页订单仍 30 天。
+- `refundCashbackInTx` 使钱包余额 < 0 时告警 `[CASHBACK-NEGATIVE]`。
 
 ## 4. 文案与客服
 
-- 开途条款（`web/public/legal/terms-of-service.md`）新增 7.5「App Store 购买」：由 Apple 收费、退款按 Apple 政策由 Apple 处理、我们无法退到钱包；Apple 退款后，该笔购买对应的剩余会员时长收回，因该购买获得的邀请奖励一并收回。Overleap 条款 7.5 已覆盖，不改。
-- 客服知识库（开途 + Overleap）：Apple 退款后会员变化的解释与 `REFUND_REVERSED` 手工恢复流程。
+- 开途条款新增 7.5「App Store 购买」——中英两段都加（英文段不得出现裸 "Kaitu"，用 "we"/"the Service"）：由 Apple 收费与退款；7.1–7.3 的钱包退款不适用于 App Store 购买；Apple 退款后，该笔购买对应的剩余会员时长收回，因该笔购买发放的邀请奖励（邀请双方）一并收回；Apple 撤销退款后恢复。另增邀请奖励条款一句（以被邀请人保留购买为前提）。
+- 分销规则（`retailer-rules.md`）：退款撤回返现；App Store 订单返现冻结 90 天；付费人数随退款扣减。顺手修英文段既有的裸 "Kaitu"。
+- Overleap 条款 7.5 已覆盖，不改。
+- 客服知识库（两品牌）：Apple 退款后会员变化、退款撤销自动恢复；开途补"App Store 订单不能退到钱包"。
 
-## 5. 明确不做
+## 5. 明确不做（及理由）
 
-- **Send Consumption Information**：需要 app 内 opt-in 同意界面 + 隐私政策 + 隐私标签更新；现在 0 笔真实退款，收益为零。等开途出现退款滥用信号（`[APPLE-REFUND]` 告警频次）再做；届时策略：Overleap 回 `GRANT_PRORATED`（与 14 天按天折算一致），开途按用量（条款 7.1 的 1GB 口径）回 `DECLINE` 或 `GRANT_PRORATED`。
-- `revocationType` / `revocationPercentage` 解析：规则不需要；等 qtoolkit 升级时顺手入表做审计。
-- 自动收回邀请人奖励：无法精确归因，告警代替。
-- 网页订单后台退款路径（`ProcessOrderRefund`）收回邀请奖励、维护 Apple `PaidThrough`：后台退款由客服人工决定，可手工处理；已知残留：IAP 单被后台退到钱包后，该订阅 `PaidThrough` 偏大，之后若再有 Apple 退款，`min(…, ExpiredAt)` 可能扣到赠送——双退本身会触发 `[DOUBLE-REFUND]` 告警，人工兜底。
+- **Send Consumption Information + 用户同意**：要 app 内 opt-in 界面、隐私政策与隐私标签变更；开途 iOS 上线以来 0 笔退款。建议作为独立项目，与 C 期（iOS 试用）同批做两个品牌的同意界面，再开 12h 应答器（Overleap 回 `GRANT_PRORATED`，开途按 1GB 用量口径 `DECLINE`/`GRANT_PRORATED`）。
+- **屡退用户禁用 IAP、引导网页支付**：iOS app 内引导外部支付受审核指南 3.1.1 约束（非美区），且不能拒绝已扣款的购买入账；靠 `[APPLE-REFUND]` 告警里的历史退款次数 + 未来的 Consumption 应答处理。
+- **C4 历史 reason 本地化**：现有入账 reason 全是中文内部口径，Overleap Apple 渠道 C 期才上线；改成 reason code + 客户端 i18n 列入 C 期。
+- 网页订单后台退款路径维护 Apple `PaidThrough`：§3.9 之后 IAP 单不再走该路径，问题消失。
 
-## 6. 测试要点（每条做变异验证）
+## 6. 范围外但须告知用户
 
-1. 赠送在购买**前**叠加（邀请首购）→ 退当期：收回整期剩余，赠送保留；若无其它付费单，被邀请奖励也收回。
-2. 赠送在购买**后**叠加 → 同上，赠送保留。
-3. 退已过期旧期（有更新一期在跑）→ cut=0、状态不变、订单/返现照撤。
-4. 重投 / REFUND+REVOKE 并发 → 只处理一次。
-5. 家庭共享交易 / 未入账交易 → cut=0、不改状态。
-6. 订单已被后台退到钱包 → 不再扣权益、双退告警。
-7. 被退交易事后入账（verify / 对账）→ 不发时长、不建行。
-8. 退款后同链新付款 → 状态复活为 active 并入账；被退交易重放不复活。
-9. 被邀请人退款后重买 → 双方都不再发奖励。
-10. 对账发现 Revoked → 走同一收回路径；Apple 未给 revocationDate → 仅告警。
-11. `PaidThrough` 维护：首购、续订、cover-through、宽限期（不动）。
-12. 存量 `PaidThrough=0` 行退款 → 由 `tExp` 兜住，不扣赠送。
-13. `REFUND_REVERSED` → 告警含收回秒数，不改数据。
+沙盒交易照发**权益**（为 TestFlight / 沙盒测试设计，见 `creditAppleTransaction` 注释）。若开途 TestFlight 对外公开，任何人可经沙盒购买白拿会员。线上现仅 2 个沙盒订阅。需要用户确认 TestFlight 是否对外，再决定是否改为"沙盒权益只发白名单账号"。
+
+## 7. 测试要点（每条做变异验证，DB 测试 0 SKIP）
+
+1. 赠送在购买前 / 后叠加 → 退当期：收回整期剩余，赠送保留。
+2. 入账迟到（账本付费段后移）→ 退当期：按 `PT−now` 收、不超过一期。
+3. 退已过期旧期 → cut=0、状态不变、订单/返现照撤。
+4. 重投；REFUND+REVOKE 并发（真 DB）→ 只处理一次。
+5. 家庭共享 / `FAMILY_REVOKE` / 未入账交易 → cut=0、不改状态。
+6. 第 5 步翻回 `IsFirstOrderDone` 后不被覆盖（M1）；`OtherPaidCount` 在已退款短路下也正确（M2）。
+7. 被退交易事后入账（verify→错误；webhook/对账→200 不入账、不建行）。
+8. 退款→同链重订阅（带 100 天赠送）：赠送保留、`credited_seconds`≈整期、状态 active、`auto_renew` 真实；被退交易重放不复活；新 otx 走首购绑定。
+9. 邀请：首购发奖并写 grant；退款精确撤回双方；重买不再发；仅配置邀请人天数时仍防刷；沙盒不发、不置首单；legacy 历史行阻止重发。
+10. `REFUND_REVERSED` 字面量 payload 经 webhook → 时长、状态、期末、邀请奖励还原；重复投递幂等；订单/返现不动且告警。
+11. 补漏：Notification History 回放走同一处理、LastEventID 去重；对账发现 Revoked（有/无 revocationDate）。
+12. DID_FAIL_TO_RENEW 与 REFUND 赛跑：不复活、不延长。
+13. `PaidThrough`：首购、续订、cover-through、宽限期（不动）、存量 0。
+14. `ExpiresDate==0` → 告警 + 按 `paid−now`。
+15. 分销：退款后计数 −1（只在计入过时）；IAP 返现冻结 90 天；退款致负余额告警。
+16. `ProcessOrderRefund` 与后台预校验拒绝 IAP 订单。
