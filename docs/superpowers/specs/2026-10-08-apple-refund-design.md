@@ -1,6 +1,6 @@
 # Apple 退款收回（开途 + Overleap）设计 — A 期补充（A2）
 
-> 状态：设计 v6（合入 review 第 1–5 轮；结构性改动见 §3.0）。随 A 期（`feat/overleap-trial-payment`）一起合并、一起部署。
+> 状态：设计 v7（合入 review 第 1–6 轮；结构性改动见 §3.0）。随 A 期（`feat/overleap-trial-payment`）一起合并、一起部署。
 > 关联：`2026-10-07-overleap-payment-phase-a-design.md`（PaidThrough 模型、Stripe 收回）。
 
 ## 1. 现状与已证实的问题
@@ -62,7 +62,8 @@ type AppleRefund struct {
     OriginalTransactionID string // index
     TransactionID         string // uniqueIndex
     RefundSignedAt        int64  // 最近一次被采纳的退款证据时刻（毫秒）：通知 signedDate；对账发现时取 revocationDate
-    ReversedSignedAt      int64  // 最近一次被采纳的撤销退款证据时刻（毫秒）
+    ReversedSignedAt      int64  // 最近一次被采纳的撤销退款证据时刻（毫秒）——只用于判先后
+    RestoredAt            int64  // 撤销退款实际恢复的处理时刻（秒）——只用于再退款封顶
     Active                bool   // 当前是否处于"已退款"状态（= RefundSignedAt > ReversedSignedAt）
     RevocationDate        int64  // 毫秒（Apple 原值）；缺失时记处理时刻
     RevocationReason      int32
@@ -117,7 +118,7 @@ paid_through = max(sub.PaidThrough, now) + granted
 1. `FOR UPDATE` 锁订阅（apple, otx）；不存在 → 返回。
 2. 采纳判定（顺序无关）：读 `AppleRefund{TransactionID}` 为 r。
    - r 不存在 → 采纳；
-   - r 存在且 `r.Active` → 不重复收回，但 `RefundSignedAt = max(RefundSignedAt, n.signedAt)`（记下最新的退款证据，供 §3.8 探测冷却与撤销时间戳使用，review 第 5 轮 F4）；
+   - r 存在且 `r.Active` → 不重复收回，但若 `n.signedAt` 是 **Apple 给出的时刻**（通知 `signedDate` 或真实 `revocationDate`，非 now 兜底）则 `RefundSignedAt = max(RefundSignedAt, n.signedAt)`（记下最新的退款证据，供 §3.8 探测冷却与撤销时间戳使用，review 第 5 轮 F4）。now 兜底只用于新建行——否则每周对账会把冷却期不断推后，探测永不执行（review 第 6 轮 B2）；
    - r 存在且 `!r.Active`（曾被撤销）→ 仅当 `n.signedAt > r.ReversedSignedAt`（毫秒，严格大于）采纳（Apple 撤销后再次退款）；否则 no-op（迟到的旧 REFUND）。
 3. 锁用户。
 4. `credited := SubscriptionCredit{apple, txn.TransactionId}` 存在。
@@ -136,7 +137,7 @@ paid_through = max(sub.PaidThrough, now) + granted
              :             max(0, min(paid−now, user.ExpiredAt−now, periodLen))
    ```
    - `newer` 分支（review 第 4 轮 V1）：账本里被退期之后还有新付的一期，`paid−now` 包含新一期，不能用；只收被退期在日历上剩下的 `tExp−now`（此分支 `periodLen` 冗余：`tExp−now ≤ periodLen` 恒成立，注释写明以免被"修"）。`paid_through = paid − cut` 在此分支同样正确（存量 `PT=0` 行写成 `CPE−cut`，之后即为有效值）。被退期本身是最新一期时，才用付费计数口径。
-   - **再次退款**（r 曾被撤销后又被采纳）：`cut` 额外封顶 `max(0, r.CutSeconds − (now − r.ReversedSignedAt/1000))`——最多收回撤销时还回去、尚未用掉的部分；不让期间复活的新一期被多扣（review 第 5 轮 m2）。
+   - **再次退款**（r 曾被撤销后又被采纳）：`cut` 额外封顶 `max(0, r.CutSeconds − (now − r.RestoredAt))`（用实际恢复时刻，不用证据时刻——探测发现的撤销其证据时刻是退款时刻，会多算已用天数，review 第 6 轮 B1）——最多收回撤销时还回去、尚未用掉的部分；不让期间复活的新一期被多扣（review 第 5 轮 m2）。
    - `tExp>now` 门：旧期已消耗 → 0。`periodLen` 上界：只收一期。`paid` 上界：不碰赠送。
    - `REFUND_PRORATED` 同 `REFUND_FULL`（Apple 按剩余时间折算）；若 `revocationPercentage` 与 `(tExp−now)/periodLen` 相差 >10 个百分点 → 告警 `[APPLE-REFUND-PCT]`（捕捉将来非时间口径的部分退款，防多收）。
    - 写库定向：`expired_at = expired_at − cut`（`gorm.Expr`）、`paid_through = paid − cut`；**禁止 `Save(&user)`**（会覆盖第 5 步翻回的 `IsFirstOrderDone`）。
@@ -195,7 +196,7 @@ Apple 退款（§3.3 第 6b 步）与后台网页退款（`ProcessOrderRefund`�
   - 状态：仅当订阅**仍是** `revoked` 且 `r.MarkedRevoked` → `deriveActiveOrExpired(current_period_end, now)`（期间若已复活，不动状态，两笔付款的时长都保留）。
   - **邀请奖励自动恢复**：本笔购买锚点下 `Reversed=true` 的 grant → 双方各加回实扣（`max(expired_at, now)+x`）、正向历史、`Reversed=false`、清实扣。这样之后若 Apple 再次退款，§3.5 能再次撤回（review 第 3 轮 N4：若交给运营手工补，`Reversed` 仍为 true，再退款时永远收不回）。
   - 用户 `is_first_order_done = true`。
-  - `r.Active=false, ReversedSignedAt=n.signedAt`。
+  - `r.Active=false, ReversedSignedAt=n.signedAt, RestoredAt=now`。
   - **不自动反转**：订单退款标记、返现、分销计数。告警 `[APPLE-REFUND-REVERSED]` 列出手工步骤。已接受的后果：订单仍为已退款，买家下一笔会被 `isUserFirstPaidOrderInTx` 当首单（首单返现比例）；若运营手工恢复了返现而 Apple 再次退款，第二次退款不会再撤返现（订单已标退款）——告警文案提示运营同步处理。理由：极少发生，自动反转牵涉钱包余额与分销等级，出错代价高于人工。
 
 `REFUND_DECLINED`、`CONSUMPTION_REQUEST` → info 日志。
@@ -216,10 +217,10 @@ Apple 退款（§3.3 第 6b 步）与后台网页退款（`ProcessOrderRefund`�
    - 覆盖 expired：订阅本地已过期后才被退款（cut=0，但订单/返现/邀请/分销照撤）。
    - 覆盖 revoked：漏收"退款后同链重订阅"的通知时，经最新交易进入 §3.4 复活（review 第 4 轮 V2）。
 2. **`reconcileAppleSubscription` 内的顺序（review 第 4 轮 M4）**：拉到状态后**先判 Revoked**：
-   - `st.status == Revoked` → 只调 `applyAppleRefund(…, "reconcile")`（证据时刻取 `st.txn.RevocationDate`，缺失取 now），**跳过** `applyRenewalInfo` 与 Expired 分支（避免对被退交易做宽限延长）；
+   - `st.status == Revoked` 且 `st.txn != nil` → 只调 `applyAppleRefund(…, "reconcile")`（`st.txn == nil` → error 日志、跳过）（证据时刻取 `st.txn.RevocationDate`，缺失取 now），**跳过** `applyRenewalInfo` 与 Expired 分支（避免对被退交易做宽限延长）；
    - 否则按现有顺序：`creditAppleTransaction(st.txn)`（`errAppleTxnRevoked` 视为非致命）→ `applyRenewalInfo` → Expired 分支。
    - 入口"revoked 行直接跳过"的守卫改为：revoked 行仍查询，但**只**允许走 `creditAppleTransaction`（复活入账）与撤销退款探测；**跳过 `applyRenewalInfo` 与 Expired 分支**（否则 Apple 报 Expired 时会把 revoked 改成 expired，丢失复活判据，review 第 5 轮 M1）。
-3. **撤销退款探测**：对第 1 步覆盖到的、带 Active `AppleRefund` 且 `RefundSignedAt < now−48h`（以**最新**退款证据计）的行，`GetTransaction(r.TransactionID)`；仅当 HTTP 成功、解出的 `TransactionId == r.TransactionID`、`Environment == Production`（qtoolkit 生产失败会回落沙盒，review 第 5 轮 F1）、且 `RevocationDate == 0` 时，才视为 Apple 撤销了退款 → `reverseAppleRefund`，**证据时刻 = `r.RefundSignedAt + 1ms`**（不用 now：用 now 会让之后任何早于扫描时刻的真实再退款被判为迟到而永久忽略，review 第 5 轮 F4）。任何错误一律跳过（不恢复）。48h 冷却防 Apple 读写不一致造成误恢复。
+3. **撤销退款探测**：对第 1 步覆盖到的、带 Active `AppleRefund` 且 `RefundSignedAt < (now−48h)×1000`（毫秒，以**最新**的 Apple 给出的退款证据计）的行，`GetTransaction(r.TransactionID)`；仅当 HTTP 成功、解出的 `TransactionId == r.TransactionID`、`Environment == Production`（qtoolkit 生产失败会回落沙盒，review 第 5 轮 F1）、且 `RevocationDate == 0` 时，才视为 Apple 撤销了退款 → `reverseAppleRefund`，**证据时刻 = `r.RefundSignedAt + 1ms`**（不用 now：用 now 会让之后任何早于扫描时刻的真实再退款被判为迟到而永久忽略，review 第 5 轮 F4）。任何错误一律跳过（不恢复）。48h 冷却防 Apple 读写不一致造成误恢复。
 4. 对账内的入账与收回都包 `withDeadlockRetry`。
 
 对账基于 Apple 当前真相，重复执行幂等（`SubscriptionCredit` 去重、`AppleRefund` 采纳规则），没有顺序问题。量：开途现 13 条，每日 ≤ 3 次 Apple 调用；万级规模时每日约 1/7 订阅数，远低于 Apple 限流。
@@ -291,7 +292,8 @@ Apple 退款（§3.3 第 6b 步）与后台网页退款（`ProcessOrderRefund`�
 **对账**
 23. 分批 bucket 覆盖 active / 近 120 天 expired / 带 Active 退款的 revoked；与 48h 扫描去重；仅生产环境；Stripe 范围不变。
 24. Apple Revoked（有 / 无 revocationDate）→ 收回，且**不**执行 `applyRenewalInfo`（无宽限延长）。
-25. 撤销退款探测：冷却期内不探测（以最新退款证据计）；响应交易号不符 / 非生产 / HTTP 错误 / 仍有 revocationDate → 不恢复；满足条件 → 恢复且证据时刻 = `RefundSignedAt+1ms`；**F4 序列**（退款→漏收撤销→再退款（r 仍 Active，只更新 RefundSignedAt）→探测）→ 再退款不被永久忽略。
+25. 撤销退款探测：冷却期内不探测（以最新退款证据计）；响应交易号不符 / 非生产 / HTTP 错误 / 仍有 revocationDate → 不恢复；满足条件 → 恢复且证据时刻 = `RefundSignedAt+1ms`；**F4 序列**（退款→漏收撤销→再退款（r 仍 Active，只更新 RefundSignedAt）→探测）→ 再退款不被永久忽略；无 revocationDate 的对账反复发现同一 Active 行 → `RefundSignedAt` 不被 now 推后、探测照常执行。
+25b. 探测发现的撤销 → 再退款：封顶按 `RestoredAt` 计（给出数值：第 10 天收 355、第 100 天探测恢复、第 120 天再退 → 收约 335）。
 26. revoked 行经对账拿到退款后新付款 → 复活；Apple 报 Expired 时 revoked 行保持 revoked。
 
 **钱包与端到端**
