@@ -469,6 +469,12 @@ jobs:
         run: go test ./gateway/... ./webui/... ./daemon/... -count=1
         working-directory: k2
 
+      # k2/third_party/smux is a vendored, patched copy (see its K2_PATCHES.md) and its own Go
+      # module, so k2's `go test ./...` never reaches it — a flaky test there went unseen.
+      - name: Vendored smux tests (nested module, race)
+        run: go test -race -count=2 ./...
+        working-directory: k2/third_party/smux
+
       - name: Gateway soft-router UAT (data plane required)
         run: K2R_UAT_REQUIRE_DATAPLANE=1 make gateway-uat
         working-directory: k2
