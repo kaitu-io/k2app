@@ -143,7 +143,7 @@ paid_through = max(sub.PaidThrough, now) + granted
    - 写库定向：`expired_at = expired_at − cut`（`gorm.Expr`）、`paid_through = paid − cut`；**禁止 `Save(&user)`**（会覆盖第 5 步翻回的 `IsFirstOrderDone`）。
 6b. 退款后续动作：`onPaidOrderRefundedInTx(userID, keys{order: ord.ID（若有）, apple_txn: txn.TransactionId}, order)`（§3.5）。**在付费时长扣完之后执行**，邀请扣减基于重新读取的 `expired_at`（review 第 3 轮 M1）；无论订单是否已被标退款都执行（各子动作自带幂等：grant 的 `Reversed`、订单的 `RetailerCountedID`）。
 7. 历史：`cut>0` 写 `UserProHistory{refund, Days: −ceil(cut/86400)}`。
-8. 状态：`eligible && !newer` → `status='revoked'`、`MarkedRevoked=true`。`CurrentPeriodEnd > tExp` 说明退款处理迟到、期间已有更新的一期入账（续订或重订阅），订阅仍有效，不置 revoked（review 第 3 轮 M2）。**不改 `current_period_end`。**
+8. 状态：`eligible && !newer`（再次退款时：其余条件成立且 `!newer`）→ `status='revoked'`、`MarkedRevoked=true`。`CurrentPeriodEnd > tExp` 说明退款处理迟到、期间已有更新的一期入账（续订或重订阅），订阅仍有效，不置 revoked（review 第 3 轮 M2）。**不改 `current_period_end`。**
 9. upsert r：`Active=true, RefundSignedAt=n.signedAt, CutSeconds=cut, MarkedRevoked, Credited, Revocation*`…
 10. 提交后告警 `[APPLE-REFUND]`：品牌、用户、该用户 Apple 退款累计次数（`AppleRefund` 计数）、cut、邀请撤回、分销计数变化、来源。开途 30 天内 ≥3 次 → 告警标注"考虑提前上线 Consumption 应答"。
 
