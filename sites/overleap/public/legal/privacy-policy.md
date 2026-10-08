@@ -1,4 +1,4 @@
-**Last updated: 2026-09**
+**Last updated: 2026-10**
 
 ### 1. Information We Collect
 
@@ -6,7 +6,7 @@
 
 1.2 **Device Information**: To provide services and prevent abuse, we collect device identifiers, operating system version, app version, and other basic device information.
 
-1.3 **Payment Information**: Payments are processed through third-party payment processors. We do not directly store your credit card or bank account information. We only retain transaction records for order management and refund processing.
+1.3 **Payment Information**: Payments are processed through third-party payment processors. We do not directly store your credit card or bank account information. We only retain transaction records for order management and refund processing, and the billing country your payment provider gives us.
 
 1.4 **Traffic Volume Statistics**: To safeguard service quality and fair use, we record the daily traffic volume of each device under your account. **This record is a byte-count total only** (aggregated per device, account, connection session and server, per day) and **contains none of your actual online activity** — we do not know, and cannot reconstruct, which websites you visited, which apps you used, or what data you transmitted. These statistics are retained for 2 months only.
 
@@ -28,7 +28,7 @@
 
 2.4 **Service Improvement**: Analyzing aggregated usage data (not containing personally identifiable information) to improve service performance and user experience.
 
-2.5 **Legal Compliance and Data Protection**: Overleap LLC is registered and operates under U.S. law and is subject to U.S. privacy protection laws. We commit not to share your personal data with any third-party government agencies or organizations other than U.S. government agencies. We will only cooperate with lawful requests from U.S. law enforcement when explicitly required by U.S. law.
+2.5 **Legal Compliance and Data Protection**: Wordgate LLC, which operates Overleap, is registered and operates under U.S. law and is subject to U.S. privacy protection laws. We commit not to share your personal data with any third-party government agencies or organizations other than U.S. government agencies. We will only cooperate with lawful requests from U.S. law enforcement when explicitly required by U.S. law.
 
 ### 3. Data Security Measures
 
@@ -48,7 +48,7 @@
 
 4.2 **Traffic Volume Statistics**: Retained for the most recent 2 months only, then automatically deleted (see Section 1.4 — these statistics contain none of your actual online activity).
 
-4.3 **Payment Records**: Transaction records are retained for 7 years as required by financial regulations.
+4.3 **Payment Records**: Transaction records are retained for 7 years as required by financial regulations. This includes records of the subscription terms you agreed to at checkout (time, country and wording), kept as proof of your consent.
 
 4.4 **Support Records**: Communication records related to customer support are retained for 2 years after issue resolution.
 

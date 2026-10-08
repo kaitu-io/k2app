@@ -120,6 +120,14 @@ func InitWorker() {
 	asynq.Handle(TaskTypeApprovalExecute, ExecuteApproval)
 
 	// 审批 callback 注册
+	registerApprovalCallbacks()
+
+	log.Infof(context.Background(), "[WORKER] Task handlers registered (renewal 10:30, abandoned hourly + 11:00 Beijing time)")
+}
+
+// registerApprovalCallbacks 注册全部审批回调（InitWorker 调用；抽出来便于测试断言注册存在）。
+// SubmitApproval 对未注册的 action 直接报错，漏注册 = 该后台操作整个不可用。
+func registerApprovalCallbacks() {
 	RegisterApprovalCallback("edm_send", executeApprovalEDMSend)
 	RegisterApprovalCallback("campaign_create", executeApprovalCampaignCreate)
 	RegisterApprovalCallback("campaign_update", executeApprovalCampaignUpdate)
@@ -132,8 +140,7 @@ func InitWorker() {
 	RegisterApprovalCallback("withdraw_approve", executeApprovalWithdrawApprove)
 	RegisterApprovalCallback("withdraw_complete", executeApprovalWithdrawComplete)
 	RegisterApprovalCallback("order_refund", executeApprovalOrderRefund)
-
-	log.Infof(context.Background(), "[WORKER] Task handlers registered (renewal 10:30, abandoned hourly + 11:00 Beijing time)")
+	RegisterApprovalCallback("stripe_withdrawal", executeApprovalStripeWithdrawal)
 }
 
 // RunWorker 启动 Worker 服务（阻塞）

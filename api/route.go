@@ -222,17 +222,17 @@ func SetupRouter() *gin.Engine {
 		log.Debugf(ctx, "registering /api/wallet group")
 		{
 			// 获取钱包信息（余额实时计算）
-			wallet.GET("", AuthRequired(), api_get_wallet)
+			wallet.GET("", AuthRequired(), WalletRequired(), api_get_wallet)
 			// 获取钱包变动记录
-			wallet.GET("/changes", AuthRequired(), api_get_wallet_changes)
+			wallet.GET("/changes", AuthRequired(), WalletRequired(), api_get_wallet_changes)
 			// 提现账户管理
-			wallet.GET("/withdraw-accounts", AuthRequired(), api_get_withdraw_accounts)
-			wallet.POST("/withdraw-accounts", AuthRequired(), api_create_withdraw_account)
-			wallet.PUT("/withdraw-accounts/:id/set-default", AuthRequired(), api_set_default_withdraw_account)
-			wallet.DELETE("/withdraw-accounts/:id", AuthRequired(), api_delete_withdraw_account)
+			wallet.GET("/withdraw-accounts", AuthRequired(), WalletRequired(), api_get_withdraw_accounts)
+			wallet.POST("/withdraw-accounts", AuthRequired(), WalletRequired(), api_create_withdraw_account)
+			wallet.PUT("/withdraw-accounts/:id/set-default", AuthRequired(), WalletRequired(), api_set_default_withdraw_account)
+			wallet.DELETE("/withdraw-accounts/:id", AuthRequired(), WalletRequired(), api_delete_withdraw_account)
 			// 提现申请
-			wallet.GET("/withdraws", AuthRequired(), api_get_withdraw_requests)
-			wallet.POST("/withdraws", AuthRequired(), api_create_withdraw_request)
+			wallet.GET("/withdraws", AuthRequired(), WalletRequired(), api_get_withdraw_requests)
+			wallet.POST("/withdraws", AuthRequired(), WalletRequired(), api_create_withdraw_request)
 		}
 
 		// 推送通知管理（必须登录：从 JWT 获取用户和设备信息）
@@ -384,6 +384,9 @@ func SetupRouter() *gin.Engine {
 		admin.POST("/wallet/withdraws/:id/approve", api_admin_approve_withdraw)
 		admin.POST("/wallet/withdraws/:id/complete", api_admin_complete_withdraw)
 		admin.POST("/orders/:uuid/refund", api_admin_refund_order)
+		// Stripe 14 天撤回（overleap；spec 2026-10-07 A 期 §3.6）
+		admin.POST("/users/:uuid/stripe-withdrawal", api_admin_stripe_withdrawal)
+		admin.POST("/stripe-withdrawals/:request_id/abandon", api_admin_stripe_withdrawal_abandon)
 
 		// 订单管理
 		// 订单管理 — GET 已移至 opsAdmin 组（Support + Marketing 可读）
@@ -507,6 +510,8 @@ func SetupRouter() *gin.Engine {
 		// 订单查看（只读）— Support + Marketing 可访问
 		opsAdmin.GET("/orders", RoleRequired(readRoles), api_admin_list_orders)
 		opsAdmin.GET("/orders/:uuid", RoleRequired(readRoles), api_admin_get_order_detail)
+		// Stripe 撤回预览（只读）：客服报价用；执行 / 作废仍在超管 /app 组（spec A 期 §3.6）
+		opsAdmin.GET("/users/:uuid/stripe-withdrawal", RoleRequired(readRoles), api_admin_stripe_withdrawal_quote)
 
 		// 设备日志 + 工单
 		opsAdmin.GET("/device-logs", RoleRequired(allOpsRoles), api_admin_list_device_logs)

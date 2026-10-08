@@ -2,7 +2,6 @@ package center
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -17,7 +16,8 @@ import (
 // stripeSubStatus 把 Stripe subscription.status 映射到本仓库 Subscription.Status 词表
 // （active|grace|billing_retry|expired|revoked）。纯函数。
 // 返回 "" 表示"不改"（未知/不适用状态）。绝不返回 "revoked"——revoked 专属退款语义，
-// 由人工/后续 admin 流程落地，webhook 状态同步永不触碰（对标 deriveVerifiedStatus 的 terminal 规则）。
+// 只由收回原语 revokeStripeSubscriptionInTx（全额退款 / 拒付 / 撤回执行器）落地，
+// webhook 状态同步永不触碰（对标 deriveVerifiedStatus 的 terminal 规则）。
 func stripeSubStatus(s stripe.SubscriptionStatus) string {
 	switch s {
 	case stripe.SubscriptionStatusActive, stripe.SubscriptionStatusTrialing:
@@ -58,6 +58,7 @@ type stripeInvoiceFacts struct {
 	CustomerID     string
 	UserUUID       string // subscription_data.metadata.user_uuid（checkout 创建时烘焙）
 	PlanPID        string // subscription_data.metadata.plan_pid（订阅创建那一刻的**快照**，非实付）
+	Brand          string // subscription_data.metadata.brand（本服务创建的订阅必带）
 	PriceID        string // 计费周期那条 line 实际收的 price id —— 实付真相，用于与 PlanPID 快照对账
 	PeriodStart    int64  // unix 秒（invoice line period；basil 后订阅级 period 已删）
 	PeriodEnd      int64  // unix 秒
@@ -89,6 +90,7 @@ func extractStripeInvoiceFacts(inv *stripe.Invoice) (*stripeInvoiceFacts, error)
 		}
 		f.UserUUID = sd.Metadata["user_uuid"]
 		f.PlanPID = sd.Metadata["plan_pid"]
+		f.Brand = sd.Metadata["brand"]
 	}
 	if f.SubscriptionID == "" {
 		// 唯一可忽略的情形：本就不是订阅 invoice。用 sentinel 包裹保留 invoice id。
@@ -130,10 +132,23 @@ func creditStripeInvoice(ctx context.Context, tx *gorm.DB, f *stripeInvoiceFacts
 	if err != nil && !isFirst {
 		return err
 	}
+	// revoked 终态门：全额退款 / 拒付 / 撤回之后到达的 invoice（迟到重投、收回前失败的续费、
+	// 墓碑行对应的首张 invoice）一律不加时长、不改订阅行。否则 status 虽不复活，时长照加。
+	if !isFirst && sub.Status == "revoked" {
+		alertStripeCredit(ctx, "invoice %s on revoked sub %s (user %d) — not credited; check whether the charge needs a refund",
+			f.InvoiceID, f.SubscriptionID, sub.UserID)
+		return nil
+	}
 
 	// 归属解析：首张 invoice 靠 metadata.user_uuid（checkout 创建时烘焙，Stripe 原样回传）。
 	var userID uint64
 	if isFirst {
+		// 共用 Stripe 账户：别的业务（NextPay / WordGate）的订阅 invoice 也会投到这里。
+		// 本服务建的订阅 metadata 必带走 Stripe 渠道的 brand；没有 = 不是我们的，放过、不重试。
+		if !Brand(f.Brand).Valid() || !Brand(f.Brand).Config().AllowsPayment(PayChannelStripe) {
+			log.Infof(ctx, "[StripeCredit] invoice %s sub %s brand=%q — not ours, ignored", f.InvoiceID, f.SubscriptionID, f.Brand)
+			return nil
+		}
 		if f.UserUUID == "" {
 			return fmt.Errorf("invoice %s missing user_uuid metadata: refusing to bind", f.InvoiceID)
 		}
@@ -245,10 +260,19 @@ func creditStripeInvoice(ctx context.Context, tx *gorm.DB, f *stripeInvoiceFacts
 	}
 
 	// Cover-through 收敛不变式——与 creditAppleTransaction 逐字对称,见彼处注释。
+	granted := creditSeconds
 	if covered := coverThrough(user.ExpiredAt, f.PeriodEnd); covered > user.ExpiredAt {
 		log.Warnf(ctx, "[creditStripeInvoice] cover-through corrected user %d expiry %d→%d (invoice=%s)",
 			userID, user.ExpiredAt, covered, f.InvoiceID)
+		granted += covered - user.ExpiredAt
 		user.ExpiredAt = covered
+	}
+	// PaidThrough 按"实际发放的付费时长"累加，不取 invoice 周期末：入账晚到（webhook 重试
+	// 最多 3 天）时 applyGiftCredit 从 now 起算整期，周期末会比实际发放的短，退款就少扣。
+	// 消耗按日历推进：剩余付费时长 = PaidThrough − now。
+	if err := tx.Model(&Subscription{}).Where("id = ?", sub.ID).
+		Update("paid_through", max(sub.PaidThrough, now)+granted).Error; err != nil {
+		return err
 	}
 
 	if user.IsActivated == nil || !*user.IsActivated {
@@ -305,14 +329,13 @@ func applyStripeSubscriptionUpdate(ctx context.Context, s *stripe.Subscription) 
 		}
 		return err
 	}
-	if sub.Status == "revoked" {
-		return nil // terminal：绝不复活
-	}
 	updates := map[string]any{"auto_renew": !s.CancelAtPeriodEnd}
 	if st := stripeSubStatus(s.Status); st != "" {
 		updates["status"] = st
 	}
-	if err := getDB().Model(&Subscription{}).Where("id = ?", sub.ID).Updates(updates).Error; err != nil {
+	// revoked 门进 SQL：上面的读与这里的写之间，并发的收回（全额退款 / 拒付）可能已提交，
+	// 不带条件的写会把 revoked 覆盖回 active，三道终态门随之失效。
+	if err := getDB().Model(&Subscription{}).Where("id = ? AND status <> ?", sub.ID, "revoked").Updates(updates).Error; err != nil {
 		return err
 	}
 	log.Infof(ctx, "[StripeWebhook] sub %s autoRenew=%v status=%v", s.ID, updates["auto_renew"], updates["status"])
@@ -320,66 +343,72 @@ func applyStripeSubscriptionUpdate(ctx context.Context, s *stripe.Subscription) 
 }
 
 // markStripeSubscriptionDeleted 落地 customer.subscription.deleted：标记 expired + 关
-// auto_renew。权益不回收——expired_at 已等于最后周期末，自然过期（同 Apple EXPIRED 语义）。
+// auto_renew。期末自然结束时权益不回收——expired_at 已等于最后周期末，自然过期（同 Apple
+// EXPIRED 语义）。提前结束（后台立即取消、期中 cancel_at：ended_at 比事件自身的周期末早
+// 超过 earlyEndToleranceSec）→ 从用户到期里扣掉已付费却没给到的那段
+// (min(PaidThrough, 事件周期末) − ended_at)，最低扣到 ended_at，并把 PaidThrough 收回到
+// ended_at。按差值扣，叠加的赠送时长不误伤；未付的那期（扣款重试失败后被取消）PaidThrough
+// 早于 ended_at，扣 0。锁顺序：订阅行 → 用户行（同 creditStripeInvoice）。
 func markStripeSubscriptionDeleted(ctx context.Context, s *stripe.Subscription) error {
-	var sub Subscription
-	if err := getDB().Where(&Subscription{Provider: "stripe", ProviderSubscriptionID: s.ID}).First(&sub).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Infof(ctx, "[StripeWebhook] deleted sub %s unknown, skipping", s.ID)
+	var eventPeriodEnd int64
+	if s.Items != nil && len(s.Items.Data) > 0 && s.Items.Data[0] != nil {
+		eventPeriodEnd = s.Items.Data[0].CurrentPeriodEnd
+	}
+	return withDeadlockRetry(ctx, 3, func(tx *gorm.DB) error {
+		var sub Subscription
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where(&Subscription{Provider: "stripe", ProviderSubscriptionID: s.ID}).First(&sub).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				log.Infof(ctx, "[StripeWebhook] deleted sub %s unknown, skipping", s.ID)
+				return nil
+			}
+			return err
+		}
+		if sub.Status == "revoked" {
 			return nil
 		}
-		return err
-	}
-	if sub.Status == "revoked" {
-		return nil
-	}
-	return getDB().Model(&Subscription{}).Where("id = ?", sub.ID).
-		Updates(map[string]any{"status": "expired", "auto_renew": false}).Error
-}
-
-// recordStripeRefundAlert 被动记账退款：Slack 告警 + 尽力归属本地用户。
-// 不自动 clawback、不自动置 revoked——主动退款/权益回收走 admin 后续迭代
-// （仓库既定「支付网关不退款」原则在 Stripe 侧的过渡形态）。
-func recordStripeRefundAlert(ctx context.Context, raw []byte) error {
-	var ch stripe.Charge
-	if err := json.Unmarshal(raw, &ch); err != nil {
-		return fmt.Errorf("parse charge: %w", err)
-	}
-	attribution := ""
-	if ch.Customer != nil && ch.Customer.ID != "" {
-		var sub Subscription
-		if err := getDB().Where(&Subscription{Provider: "stripe", ProviderCustomerID: ch.Customer.ID}).
-			Order("id DESC").First(&sub).Error; err == nil {
-			attribution = fmt.Sprintf(" user_id=%d sub=%s", sub.UserID, sub.ProviderSubscriptionID)
+		if err := tx.Model(&Subscription{}).Where("id = ?", sub.ID).
+			Updates(map[string]any{"status": "expired", "auto_renew": false}).Error; err != nil {
+			return err
 		}
-	}
-	msg := fmt.Sprintf("[STRIPE-REFUND] charge=%s refunded=%d/%d %s customer=%s%s — passive record only, manual follow-up in Stripe Dashboard",
-		ch.ID, ch.AmountRefunded, ch.Amount, string(ch.Currency), stripeCustomerID(ch.Customer), attribution)
-	log.Errorf(ctx, "%s", msg)
-	if err := slack.Send("alert", msg); err != nil {
-		log.Errorf(ctx, "failed to send stripe refund alert: %v", err)
-	}
-	return nil
-}
-
-// recordStripeDisputeAlert 被动记账争议（chargeback）：Slack 告警。争议在 Stripe
-// Dashboard 应诉（devices 使用日志可作"已交付服务"抗辩素材）。
-func recordStripeDisputeAlert(ctx context.Context, raw []byte) error {
-	var d stripe.Dispute
-	if err := json.Unmarshal(raw, &d); err != nil {
-		return fmt.Errorf("parse dispute: %w", err)
-	}
-	chargeID := ""
-	if d.Charge != nil {
-		chargeID = d.Charge.ID
-	}
-	msg := fmt.Sprintf("[STRIPE-DISPUTE] dispute=%s charge=%s amount=%d %s reason=%s — respond in Stripe Dashboard",
-		d.ID, chargeID, d.Amount, string(d.Currency), string(d.Reason))
-	log.Errorf(ctx, "%s", msg)
-	if err := slack.Send("alert", msg); err != nil {
-		log.Errorf(ctx, "failed to send stripe dispute alert: %v", err)
-	}
-	return nil
+		if s.EndedAt <= 0 || eventPeriodEnd <= 0 || s.EndedAt >= eventPeriodEnd-earlyEndToleranceSec {
+			return nil
+		}
+		var user User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, sub.UserID).Error; err != nil {
+			return fmt.Errorf("lock user %d: %w", sub.UserID, err)
+		}
+		// 这里不用 subscriptionPaidThrough 的 CurrentPeriodEnd 兜底：截断走的是普通续费失败 / 期中取消，
+		// 不是退款；PaidThrough 为 0 的老行若按（可能已被对账推到未付期的）周期末扣，会误扣叠加的
+		// 赠送时长。老行只告警不截。
+		paidThrough := sub.PaidThrough
+		if paidThrough == 0 {
+			alertStripeRevoke(ctx, "[STRIPE-REVOKE]", "sub %s ended early at %d but has no paid_through (pre-migration row) — not clipped, check user %d manually",
+				s.ID, s.EndedAt, sub.UserID)
+			return nil
+		}
+		cut := min(max(min(paidThrough, eventPeriodEnd)-s.EndedAt, 0), max(user.ExpiredAt-s.EndedAt, 0))
+		if paidThrough > s.EndedAt {
+			if err := tx.Model(&Subscription{}).Where("id = ?", sub.ID).Update("paid_through", s.EndedAt).Error; err != nil {
+				return err
+			}
+		}
+		if cut <= 0 {
+			return nil
+		}
+		if err := tx.Model(&User{}).Where("id = ?", user.ID).Update("expired_at", user.ExpiredAt-cut).Error; err != nil {
+			return err
+		}
+		log.Infof(ctx, "[StripeWebhook] sub %s ended early at %d (period end %d): user %d clipped -%ds",
+			s.ID, s.EndedAt, eventPeriodEnd, user.ID, cut)
+		return tx.Create(&UserProHistory{
+			UserID:      user.ID,
+			Type:        VipRefund,
+			ReferenceID: sub.ID,
+			Days:        -int(cut / 86400),
+			Reason:      "Stripe subscription ended early - " + s.ID,
+		}).Error
+	})
 }
 
 func stripeCustomerID(c *stripe.Customer) string {

@@ -99,6 +99,7 @@ interface ContractBrand {
   supportEmail: string;
   edmFromName: string;
   paymentChannels: string[];
+  wallet: boolean;
 }
 
 interface ApiContract {
@@ -218,6 +219,15 @@ describe('cross-layer contract: brand registry (webapp ⇄ api/brand.go)', () =>
         `${id}: webapp wordgatePurchase=${webapp.features.wordgatePurchase} but backend ` +
           `paymentChannels=[${backend.paymentChannels.join(', ')}]`
       ).toBe(backendAllows);
+    });
+
+    it('wallet surface matches the backend wallet capability', () => {
+      // gate on / backend off → wallet UI calls endpoints that answer 405 (WalletRequired).
+      // gate off / backend on → users can't reach money the backend says they have.
+      expect(
+        webapp.features.wallet,
+        `${id}: webapp wallet=${webapp.features.wallet} but backend wallet=${backend.wallet}`
+      ).toBe(backend.wallet);
     });
 
     it('stripeCheckout gate matches the backend payment-channel allow-list', () => {

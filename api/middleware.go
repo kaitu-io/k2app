@@ -393,6 +393,25 @@ func ReqUserID(c *gin.Context) uint64 {
 }
 
 // ReqUser 从上下文中获取用户
+// WalletRequired 钱包路由的品牌门，必须挂在 AuthRequired() 之后：读的是用户品牌，不是请求
+// 品牌（AuthRequired 对 admin 免品牌检查，请求品牌对 admin 不可信）。
+func WalletRequired() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		u := ReqUser(c)
+		if u == nil {
+			Error(c, ErrorNotLogin, "not logged in")
+			c.Abort()
+			return
+		}
+		if !Brand(u.Brand).Config().Wallet {
+			Error(c, ErrorNotSupported, "wallet is not available for this brand")
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
 func ReqUser(c *gin.Context) *User {
 	ctx := getAuthContext(c)
 	if ctx == nil {

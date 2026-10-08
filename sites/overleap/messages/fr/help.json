@@ -26,7 +26,7 @@
     "items": {
       "manage": {
         "question": "Comment gérer ou résilier mon abonnement ?",
-        "answer": "Ouvrez la page de votre compte et choisissez Gérer l'abonnement. Vous pouvez y résilier, changer de carte ou télécharger vos factures. Une résiliation maintient votre formule active jusqu'à la fin de la période réglée."
+        "answer": "Ouvrez la page de votre compte et choisissez Gérer l'abonnement. Vous pouvez y résilier, changer de carte ou télécharger vos factures. Une résiliation maintient votre formule active jusqu'à la fin de la période réglée. La résiliation arrête le renouvellement, mais ne donne pas lieu à un remboursement — voir « Puis-je être remboursé ? »"
       },
       "charge": {
         "question": "Quand suis-je débité ?",
@@ -34,7 +34,7 @@
       },
       "refund": {
         "question": "Puis-je être remboursé ?",
-        "answer": "Si {brand} ne vous convient pas, écrivez-nous et nous trouverons une solution."
+        "answer": "Vous pouvez exercer votre droit de rétractation et être remboursé des jours non utilisés dans les 14 jours suivant votre premier paiement d'un abonnement facturé par nous (et non via l'App Store), ou suivant un renouvellement annuel. Écrivez à support@overleap.io. Les achats effectués sur l'App Store sont remboursés par Apple."
       },
       "devices": {
         "question": "J'ai atteint la limite de cinq appareils",

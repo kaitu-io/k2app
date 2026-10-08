@@ -1,6 +1,6 @@
 # 分销商计划 / Retailer Program
 
-**最后更新 / Last Updated: 2025-11-28**
+**最后更新 / Last Updated: 2026-10-08**
 
 ---
 
@@ -64,7 +64,7 @@
 
 3.1 **等级变更生效**：当您的等级提升后，您名下所有用户的后续订单都将按新的分成比例计算。
 
-3.2 **累计计算**：付费用户数量为累计值，不会因时间重置。每一次成功的推荐都会计入您的成长记录。
+3.2 **累计计算**：付费用户数量为累计值，不会因时间重置。每一次成功的推荐都会计入您的成长记录。被推荐用户的订单退款且该用户已无其他有效付费订单时，对应的付费用户数会相应扣减；因此回落到升级门槛以下的自动升级等级，可能被复核。
 
 3.3 **内容证明**：L3 及以上等级需要提交内容创作证明，包括但不限于：
 - 自媒体账号（YouTube、Twitter、微博、公众号等）
@@ -82,7 +82,7 @@
 
 ### 四、结算条款
 
-4.1 **实时到账**：分成奖励实时计入钱包余额，无需等待结算周期。
+4.1 **实时到账**：分成奖励实时计入钱包余额，经过冻结期后可提现：网页订单 30 天，App Store 订单 90 天（与 Apple 的退款期限一致）。
 
 4.2 **提现条件**：
 - 钱包余额达到最低提现金额 **30 美元**
@@ -94,6 +94,8 @@
 - 其他主流币种（以实际支持为准）
 
 4.4 **处理时间**：提现申请将在 1-3 个工作日内处理。
+
+4.5 **退款撤回**：被推荐用户的订单退款（无论通过我们或 Apple）时，该订单对应的分成从您的钱包中撤回；若分成已被提现，钱包余额可能为负，后续分成将先用于抵扣。
 
 ### 五、用户奖励
 
@@ -139,7 +141,7 @@
 
 ### 1. Program Philosophy
 
-1.1 Kaitu does not have dedicated sales positions, but we understand the importance of quality promotion for product growth. Therefore, we launched the Retailer Program, allowing every user who believes in Kaitu to become our partner.
+1.1 We do not have dedicated sales positions, but we understand the importance of quality promotion for product growth. Therefore, we launched the Retailer Program, allowing every user who believes in our service to become our partner.
 
 1.2 We believe that people who truly love the product can create the best promotions. The core of our Retailer Program is "growing together" — your efforts will be rewarded accordingly, and your growth will bring higher returns.
 
@@ -149,7 +151,7 @@
 
 ### 2. Tier System
 
-The Kaitu Retailer Program uses a four-tier growth system. You can earn higher commission rates and more benefits through continuous effort.
+The Retailer Program uses a four-tier growth system. You can earn higher commission rates and more benefits through continuous effort.
 
 #### L1 Referrer
 
@@ -195,7 +197,7 @@ The Kaitu Retailer Program uses a four-tier growth system. You can earn higher c
 
 3.1 **Tier Change Effectiveness**: When your tier is upgraded, all subsequent orders from users under your account will be calculated at the new commission rate.
 
-3.2 **Cumulative Calculation**: The number of paying users is cumulative and does not reset over time. Every successful referral counts toward your growth record.
+3.2 **Cumulative Calculation**: The number of paying users is cumulative and does not reset over time. Every successful referral counts toward your growth record. When a referred user's order is refunded and that user has no other valid paid order, your paying-user count is reduced accordingly; an automatically upgraded tier that falls back below its threshold may be reviewed.
 
 3.3 **Content Proof**: L3 and above tiers require submission of content creation proof, including but not limited to:
 - Social media accounts (YouTube, Twitter, Weibo, WeChat Official Account, etc.)
@@ -209,11 +211,11 @@ The Kaitu Retailer Program uses a four-tier growth system. You can earn higher c
 - **Long-term Inactivity**: L3/L4 retailers with no new paying users for 6 consecutive months will be demoted one tier
 - **Content Proof Expiration**: L3/L4 retailers whose social media accounts have been inactive for over 3 months will be demoted
 - **Violations**: Violating promotional guidelines or engaging in fraudulent behavior will result in manual demotion by administrators
-- **Promoting Competitors**: Promoting competitor products more actively than Kaitu will result in immediate termination of retailer status
+- **Promoting Competitors**: Promoting competitor products more actively than our service will result in immediate termination of retailer status
 
 ### 4. Settlement Terms
 
-4.1 **Real-time Credit**: Commission rewards are credited to your wallet balance in real-time, no waiting period required.
+4.1 **Real-time Credit**: Commission rewards are credited to your wallet balance in real time and become withdrawable after a holding period: 30 days for web orders, 90 days for App Store orders (matching Apple's refund window).
 
 4.2 **Withdrawal Conditions**:
 - Wallet balance reaches minimum withdrawal amount of **$30 USD**
@@ -226,6 +228,8 @@ The Kaitu Retailer Program uses a four-tier growth system. You can earn higher c
 
 4.4 **Processing Time**: Withdrawal requests are processed within 1-3 business days.
 
+4.5 **Refund Reversal**: If a referred user's order is refunded (by us or by Apple), the commission for that order is taken back from your wallet. If it was already withdrawn, your balance may go negative and later commissions are applied to it first.
+
 ### 5. User Rewards
 
 5.1 **Two-Way Rewards**: In addition to retailer commissions, referred new users also receive extra membership time rewards on their first purchase.
@@ -237,7 +241,7 @@ The Kaitu Retailer Program uses a four-tier growth system. You can earn higher c
 6.1 **Compliant Promotion**: Retailers must follow these promotional guidelines:
 - No false advertising or exaggerating service features
 - No spam, malware, or other malicious promotion methods
-- No impersonating Kaitu official or misleading users
+- No impersonating our official staff or misleading users
 - No promoting in regions where VPN services are prohibited
 
 6.2 **Content Accuracy**: All promotional content must be truthful and accurate, without misleading information.
@@ -252,7 +256,7 @@ The Kaitu Retailer Program uses a four-tier growth system. You can earn higher c
 
 ### 7. Rule Changes
 
-7.1 **Right to Modify**: Kaitu reserves the right to modify these retailer rules at any time.
+7.1 **Right to Modify**: We reserve the right to modify these retailer rules at any time.
 
 7.2 **Change Notification**: Rule changes will be communicated to retailers via email or website announcement.
 
