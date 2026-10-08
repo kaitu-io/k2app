@@ -14,6 +14,17 @@
 - 品牌隔离：Overleap 文档不得出现中文或另一品牌名；开途文档用户可见文字只写「开途」（`TestChatBrandAI_KnowledgeBaseNoCrossBrand`）。
 - 价格、菜单路径、系统要求等事实以代码和线上数据为准，改版时一起改这里。
 
+## Apple 退款处理（内部，两品牌）
+
+Apple 退款全自动，客服不用操作，看 Slack 告警即可：
+- `[APPLE-REFUND]`：已按规则收回（被退那笔还没用掉的付费时长；赠送不动）。开途同时撤回该笔购买触发的邀请奖励、撤回分销返现、扣回分销付费人数。告警里有该用户累计 Apple 退款次数——屡次退款的开途用户留意。
+- `[APPLE-REFUND-REVERSED]`：Apple 撤销了退款，会员时长与邀请奖励已自动恢复。**需手工**：订单仍标记已退款、分销返现未恢复、分销付费人数未恢复——按告警列出的步骤判断是否补。
+- `[APPLE-REFUND-CONFLICT]`：本地已按撤销恢复，Apple 仍说已退款。核对后用 `add_user_membership` 负数调整或保持现状，记录结论。
+- `[APPLE-REFUND-RATE]`：开途 30 天内 Apple 退款 ≥3 次，通知负责人评估上线 Consumption 应答。
+- `[CASHBACK-NEGATIVE]` / `[RETAILER-COUNT-DROP]`：分销商钱包为负 / 自动升级的 L2 跌破门槛，由运营决定是否处理（不会自动降级）。
+
+开途 App Store 订单**不能**用 `refund_order` 退到钱包（会被拒绝）：请用户找 Apple；要补偿就用 `add_user_membership` 加天数。网页订单 `refund_order` 默认会撤回邀请双方奖励；因我们自己的服务故障做的善意退款，传 `keep_invite_rewards: true`。
+
 ## Stripe withdrawal procedure (support)
 
 内部流程，不上传给机器人。只适用于 Overleap 由我们通过 Stripe 收费的订阅；App Store 购买由 Apple 退款，我们无法处理。依据：条款 §7（14 天折算撤回：新订阅首付、年付续费；月付续费不在内）、设计 `docs/superpowers/specs/2026-10-07-overleap-payment-phase-a-design.md` §3。
