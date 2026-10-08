@@ -28,7 +28,7 @@
 
 2.4 **Service Improvement**: Analyzing aggregated usage data (not containing personally identifiable information) to improve service performance and user experience.
 
-2.5 **Legal Compliance and Data Protection**: Overleap LLC is registered and operates under U.S. law and is subject to U.S. privacy protection laws. We commit not to share your personal data with any third-party government agencies or organizations other than U.S. government agencies. We will only cooperate with lawful requests from U.S. law enforcement when explicitly required by U.S. law.
+2.5 **Legal Compliance and Data Protection**: Wordgate LLC, which operates Overleap, is registered and operates under U.S. law and is subject to U.S. privacy protection laws. We commit not to share your personal data with any third-party government agencies or organizations other than U.S. government agencies. We will only cooperate with lawful requests from U.S. law enforcement when explicitly required by U.S. law.
 
 ### 3. Data Security Measures
 

@@ -120,6 +120,6 @@ Loaded on demand when you work in the directory — read the layer doc before ch
 
 ## Marketing / Brand
 
-**品牌架构**：**Overleap（海外）与 开途·Kaitu（中国）是完全隔离的两个独立品牌**——不是母子层级，任何面向用户的语境都不互相提及（唯一例外：法务文书署名 Overleap LLC）。协议层 k2 / k2cc / k2s / k2r 全球共享，不属于任一品牌。中文用户面禁用 "Kaitu" 裸词（用「开途」）；海外面禁用 "Kaitu" 裸词（Google 会纠错成 kaitai）。
+**品牌架构**：**Overleap（海外）与 开途·Kaitu（中国）是完全隔离的两个独立品牌**——不是母子层级，任何面向用户的语境都不互相提及（唯一例外：法务文书署名——开途侧沿用现有署名，Overleap 侧署名其运营公司 Wordgate LLC，即 Stripe 收单主体）。协议层 k2 / k2cc / k2s / k2r 全球共享，不属于任一品牌。中文用户面禁用 "Kaitu" 裸词（用「开途」）；海外面禁用 "Kaitu" 裸词（Google 会纠错成 kaitai）。
 
 策略 / 审查 / 内容日历见 [`docs/marketing/README.md`](docs/marketing/README.md)（目录索引 + 更新规则）。单一事实源是 [`.agents/product-marketing-context.md`](.agents/product-marketing-context.md)（路径硬编码，所有 `marketing-skills:*` 启动时自动读，**不可挪动**）。

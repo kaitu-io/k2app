@@ -1,6 +1,6 @@
 **Last updated: 2026-10**
 
-This page explains how to delete your Overleap account, and what happens to your data afterwards. Overleap is operated by Overleap LLC.
+This page explains how to delete your Overleap account, and what happens to your data afterwards. Overleap is operated by Wordgate LLC.
 
 ### 1. Delete from inside the app (recommended)
 

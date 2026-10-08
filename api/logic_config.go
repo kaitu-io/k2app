@@ -115,7 +115,7 @@ func createWordgateClient(ctx context.Context) *wordgate.Client {
 	return wordgate.NewClient(cfg.AppCode, cfg.AppSecret, cfg.BaseURL)
 }
 
-// StripeConfig Stripe 配置结构（Overleap LLC 收单主体；overleap 专属渠道，kaitu 永不读取）。
+// StripeConfig Stripe 配置结构（Wordgate LLC 收单主体，Overleap 的运营公司；overleap 专属渠道，kaitu 永不读取）。
 // 开发用测试模式 key（sk_test_/whsec_...），真 key 切换见部署清单。
 type StripeConfig struct {
 	SecretKey       string

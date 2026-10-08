@@ -63,7 +63,7 @@ export const SITE = {
   brandId: 'overleap',
   name: 'Overleap',
   baseUrl: 'https://overleap.io',
-  legalName: 'Overleap LLC',
+  legalName: 'Wordgate LLC',
   contactEmail: 'support@overleap.io',
   privacyEmail: 'privacy@overleap.io',
   legalEmail: 'legal@overleap.io',

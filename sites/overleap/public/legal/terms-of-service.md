@@ -2,7 +2,7 @@
 
 ### 1. Agreement Acceptance and Effectiveness
 
-1.1 These Terms of Service (hereinafter referred to as "this Agreement") constitute a legal agreement between you and Overleap LLC regarding the use of Overleap network proxy services (hereinafter referred to as "the Service").
+1.1 These Terms of Service (hereinafter referred to as "this Agreement") constitute a legal agreement between you and Wordgate LLC, which operates Overleap ("we" or "us"), regarding the use of Overleap network proxy services (hereinafter referred to as "the Service").
 
 1.2 By registering an account, downloading and installing the client, accessing, or using the Service, you acknowledge that you have read, understood, and agree to be bound by all terms of this Agreement. If you do not agree to any terms of this Agreement, please do not use the Service.
 
@@ -143,7 +143,7 @@ If we terminate under Section 8.2(b) or 8.2(d), we will refund the unused part o
 
 **Email**: legal@overleap.io
 
-**Post**: Overleap LLC, {ADDRESS}
+**Post**: Wordgate LLC (Overleap), 30 N Gould St Ste R, Sheridan, WY 82801, USA
 
 11.2 **Dispute Resolution**: Any disputes arising from or related to this Agreement should first be resolved through friendly negotiation between the parties.
 
@@ -157,7 +157,7 @@ If we terminate under Section 8.2(b) or 8.2(d), we will refund the unused part o
 
 (Complete and return this form only if you wish to withdraw from the contract.)
 
-To: Overleap LLC, {ADDRESS}, support@overleap.io
+To: Wordgate LLC (Overleap), 30 N Gould St Ste R, Sheridan, WY 82801, USA, support@overleap.io
 
 I hereby give notice that I cancel my contract for the supply of the following service: Overleap subscription.
 
