@@ -399,6 +399,11 @@ func TestReconcile_ReversalProbe(t *testing.T) {
 
 	old := (time.Now().Unix() - 3*aDay) * 1000
 	require.NoError(t, db.Get().Model(&AppleRefund{}).Where("transaction_id = ?", "RC-PB1").Update("refund_signed_at", old).Error)
+	defer func() {
+		var stray int64
+		db.Get().Model(&AppleRefund{}).Where("transaction_id = ?", "OTHER").Count(&stray)
+		assert.Zero(t, stray, "交易号不符的应答不得被当作撤销处理")
+	}()
 	for _, bad := range []func(){
 		func() { respErr = fmt.Errorf("apple down") },
 		func() { respErr = nil; x := *clean; x.TransactionId = "OTHER"; resp = &x },
@@ -467,6 +472,9 @@ func TestReconcile_RevokedRowRevivalAndExpiredGuard(t *testing.T) {
 	fakeAppleStatus(t, func(string) (*appleSubStatus, error) {
 		return &appleSubStatus{status: appstore.SubscriptionStatus_Expired}, nil
 	})
+	// 周期末已过：Expired 分支的原子 UPDATE 条件全部满足，只有"revoked 行跳过"这道门挡得住
+	require.NoError(t, db.Get().Model(&Subscription{}).Where("provider_subscription_id = ?", f.origTxn).
+		Update("current_period_end", t0-aDay).Error)
 	sub := f.subNow(t)
 	_, err := reconcileSubscription(context.Background(), &sub, time.Now().Unix())
 	require.NoError(t, err)
@@ -501,9 +509,9 @@ func TestAppleWebhook_RefundAndReversedEndToEnd(t *testing.T) {
 	t0 := time.Now().Unix()
 	require.NoError(t, f.credit(t, "WH-RF1", t0, t0+365*aDay))
 
-	post := func(nType, bundle string, signedAt int64, revoked bool) int {
+	postB := func(nType, bundle, txnBundle string, signedAt int64, revoked bool) int {
 		claims := map[string]any{
-			"bundleId": bundle, "originalTransactionId": f.origTxn, "transactionId": "WH-RF1", "productId": f.productID,
+			"bundleId": txnBundle, "originalTransactionId": f.origTxn, "transactionId": "WH-RF1", "productId": f.productID,
 			"inAppOwnershipType": "PURCHASED", "environment": "Production",
 			"purchaseDate": t0 * 1000, "expiresDate": (t0 + 365*aDay) * 1000, "signedDate": signedAt,
 		}
@@ -527,9 +535,13 @@ func TestAppleWebhook_RefundAndReversedEndToEnd(t *testing.T) {
 		r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/webhook/apple", bytes.NewReader(body)))
 		return w.Code
 	}
+	post := func(nType, bundle string, signedAt int64, revoked bool) int {
+		return postB(nType, bundle, bundle, signedAt, revoked)
+	}
 
 	s := time.Now().UnixMilli()
-	assert.Equal(t, 400, post("REFUND", "com.other.app", s, true), "别的 app 的通知拒收")
+	assert.Equal(t, 400, postB("REFUND", "com.other.app", "io.kaitu.test", s, true), "通知 bundle 不符拒收")
+	assert.Equal(t, 400, postB("REFUND", "io.kaitu.test", "com.other.app", s, true), "交易 bundle 不符拒收")
 	var n int64
 	db.Get().Model(&AppleRefund{}).Where("transaction_id = ?", "WH-RF1").Count(&n)
 	require.Zero(t, n)
@@ -574,4 +586,58 @@ func TestAppleRefund_LateRevivalAlignedToApple(t *testing.T) {
 	require.NoError(t, f.credit(t, "AR-LR2", t0-200*aDay, t0+165*aDay))
 	assert.Equal(t, "active", f.subNow(t).Status)
 	assertNear(t, t0+165*aDay, f.userNow(t, f.buyer.ID).ExpiredAt, 120, "与 Apple 覆盖对齐，不从 now 起叠一整期")
+}
+
+// 19b. 退一笔与奖励无关的订单 → 奖励不动。
+func TestInviteRefund_UnrelatedOrderKeepsGrant(t *testing.T) {
+	skipIfNoDB(t)
+	captureBillingAlerts(t)
+	f := webInviteFixture(t)
+	other := f.addPaidOrder(t, 1, 500, nil)
+	require.NoError(t, ProcessOrderRefund(context.Background(), other.ID, "test refund", 1))
+	g := f.grant(t)
+	assert.False(t, g.Reversed)
+	assert.Equal(t, strconv.FormatUint(f.order.ID, 10), g.TriggerRef)
+}
+
+// 11b. verify 端点：被退交易返回明确的"已退款"错误。
+func TestAppleIAPVerify_RefundedTransaction(t *testing.T) {
+	skipIfNoDB(t)
+	setTestAppleBundleID(t)
+	user := CreateTestUser(t)
+	plan := createApplePlan(t, 12)
+	fakeAppleTxn(t, func(id string) (*appstore.TransactionInfo, error) {
+		return &appstore.TransactionInfo{BundleId: "io.kaitu.test", TransactionId: id, OriginalTransactionId: "OTX-VR-" + id,
+			ProductId: plan.AppleProductID, InAppOwnershipType: appstore.OwnershipType_PURCHASED, Environment: "Production",
+			PurchaseDate: time.Now().UnixMilli(), ExpiresDate: time.Now().Add(365 * 24 * time.Hour).UnixMilli(),
+			RevocationDate: time.Now().UnixMilli(), AppAccountToken: deriveAppleAccountToken(user.UUID)}, nil
+	})
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("authContext", &authContext{UserID: user.ID, User: user})
+		c.Next()
+	})
+	r.POST("/api/iap/apple/verify", api_apple_iap_verify)
+	body, _ := json.Marshal(map[string]string{"transactionId": fmt.Sprintf("VR-%d", time.Now().UnixNano())})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/iap/apple/verify", bytes.NewReader(body)))
+	assert.Equal(t, int(ErrorInvalidOperation), respCode(t, w))
+	assert.Contains(t, w.Body.String(), "refunded")
+}
+
+// 19c. 奖励锚在别的购买上、且被邀请人已无其它合格购买时，退一笔无关订单也不得撤回奖励
+// （锚点匹配是唯一挡板，改锚兜不住）。
+func TestInviteRefund_UnrelatedOrderNoFallbackAnchor(t *testing.T) {
+	skipIfNoDB(t)
+	captureBillingAlerts(t)
+	f := webInviteFixture(t)
+	require.NoError(t, db.Get().Model(&InviteRewardGrant{}).Where("invitee_user_id = ?", f.invitee.ID).
+		Updates(map[string]any{"trigger_kind": InviteTriggerAppleTxn, "trigger_ref": "TXN-ELSEWHERE"}).Error)
+	require.NoError(t, db.Get().Model(&Order{}).Where("id = ?", f.order.ID).Update("is_refunded", true).Error)
+	other := f.addPaidOrder(t, 1, 500, nil)
+	inviterEA := eaOf(t, f.inviter.ID)
+	require.NoError(t, ProcessOrderRefund(context.Background(), other.ID, "test refund", 1))
+	assert.False(t, f.grant(t).Reversed)
+	assert.Equal(t, inviterEA, eaOf(t, f.inviter.ID))
 }
