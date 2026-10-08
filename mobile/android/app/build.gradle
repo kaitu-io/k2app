@@ -62,7 +62,13 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled false
+            // R8 on for both brands: Play Console flags DEX optimization below 25%
+            // (0.4.12 shipped with obfuscation 1%, no shrink). Keep rules come from
+            // consumer files — gomobile AAR (`go.**`, `appext.**` — JNI by name) and
+            // capacitor-android (Plugin subclasses, @PluginMethod — reflection).
+            // shrinkResources stays off: K2PluginUtils resolves brand resources via
+            // getIdentifier(name) with a runtime name the shrinker can't see.
+            minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
