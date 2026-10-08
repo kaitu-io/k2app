@@ -477,8 +477,12 @@ func revokeIAPOrderCashbackInTx(ctx context.Context, tx *gorm.DB, txnID string) 
 		return res, nil
 	}
 
-	if err := refundCashbackInTx(ctx, tx, order.ID); err != nil {
+	cbAlert, err := refundCashbackInTx(ctx, tx, order.ID)
+	if err != nil {
 		return nil, fmt.Errorf("refund cashback for order %d: %w", order.ID, err)
+	}
+	if cbAlert != "" {
+		res.Alerts = append(res.Alerts, cbAlert)
 	}
 
 	now := time.Now()

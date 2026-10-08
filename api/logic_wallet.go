@@ -242,31 +242,39 @@ func addCashbackIncomeInTx(ctx context.Context, tx *gorm.DB, userID uint64, orde
 
 // RefundCashback 退款处理：将对应订单的返现标记为退款
 func RefundCashback(ctx context.Context, orderID uint64) error {
-	return db.Get().Transaction(func(tx *gorm.DB) error {
-		return refundCashbackInTx(ctx, tx, orderID)
+	var alert string
+	err := db.Get().Transaction(func(tx *gorm.DB) error {
+		var e error
+		alert, e = refundCashbackInTx(ctx, tx, orderID)
+		return e
 	})
+	if err == nil && alert != "" {
+		alertBilling(ctx, alert)
+	}
+	return err
 }
 
-// refundCashbackInTx 在给定事务中处理退款
-func refundCashbackInTx(ctx context.Context, tx *gorm.DB, orderID uint64) error {
+// refundCashbackInTx 在给定事务中处理退款。返回的 alert 非空时由调用方在**提交后**发送
+//（事务内发告警会在回滚 / 死锁重试时误报或重复）。
+func refundCashbackInTx(ctx context.Context, tx *gorm.DB, orderID uint64) (alert string, err error) {
 	// 查找该订单的 income 记录
 	var incomeChange WalletChange
-	err := tx.Where(&WalletChange{
+	err = tx.Where(&WalletChange{
 		Type:    WalletChangeTypeIncome,
 		OrderID: &orderID,
 	}).First(&incomeChange).Error
 
 	if err == gorm.ErrRecordNotFound {
 		log.Warnf(ctx, "订单 %d 没有对应的返现记录，无需退款", orderID)
-		return nil
+		return "", nil
 	} else if err != nil {
-		return fmt.Errorf("查询返现记录失败: %v", err)
+		return "", fmt.Errorf("查询返现记录失败: %v", err)
 	}
 
 	// 查询钱包
 	var wallet Wallet
 	if err := tx.First(&wallet, incomeChange.WalletID).Error; err != nil {
-		return fmt.Errorf("查询钱包失败: %v", err)
+		return "", fmt.Errorf("查询钱包失败: %v", err)
 	}
 
 	// 记录变动前余额
@@ -277,7 +285,7 @@ func refundCashbackInTx(ctx context.Context, tx *gorm.DB, orderID uint64) error 
 		Update("balance", gorm.Expr("balance - ?", incomeChange.Amount)).
 		Update("total_income", gorm.Expr("total_income - ?", incomeChange.Amount)).
 		Error; err != nil {
-		return fmt.Errorf("更新钱包余额失败: %v", err)
+		return "", fmt.Errorf("更新钱包余额失败: %v", err)
 	}
 
 	// 记录退款变动
@@ -294,18 +302,18 @@ func refundCashbackInTx(ctx context.Context, tx *gorm.DB, orderID uint64) error 
 	}
 
 	if err := tx.Create(&refundChange).Error; err != nil {
-		return fmt.Errorf("记录退款变动失败: %v", err)
+		return "", fmt.Errorf("记录退款变动失败: %v", err)
 	}
 
 	log.Infof(ctx, "订单退款处理成功: order_id=%d, wallet_id=%d, refund_amount=%d",
 		orderID, wallet.ID, incomeChange.Amount)
 	if balanceBefore-incomeChange.Amount < 0 {
 		// 返现已被提走后才发生退款：余额为负，钱追不回来，需要人工处理（spec 2026-10-08 §3.5）。
-		alertBilling(ctx, fmt.Sprintf("[CASHBACK-NEGATIVE] 钱包 %d 因订单 %d 退款撤回返现 %d 后余额为 %d，请人工处理",
-			wallet.ID, orderID, incomeChange.Amount, balanceBefore-incomeChange.Amount))
+		alert = fmt.Sprintf("[CASHBACK-NEGATIVE] 钱包 %d 因订单 %d 退款撤回返现 %d 后余额为 %d，请人工处理",
+			wallet.ID, orderID, incomeChange.Amount, balanceBefore-incomeChange.Amount)
 	}
 
-	return nil
+	return alert, nil
 }
 
 // ==================== 提现处理逻辑 ====================

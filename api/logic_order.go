@@ -221,7 +221,8 @@ func ProcessOrderRefund(ctx context.Context, orderID uint64, refundReason string
 		// ---------- 3. 撤销分销商返现 ----------
 		// refundCashbackInTx 内部已吸收 ErrRecordNotFound（无返现记录时返 nil）。
 		// 若这里拿到非 nil 错误说明是真实故障（DB 异常），应回滚整个事务。
-		if err := refundCashbackInTx(ctx, tx, orderID); err != nil {
+		cbAlert, err := refundCashbackInTx(ctx, tx, orderID)
+		if err != nil {
 			return fmt.Errorf("撤销分销商返现失败: %v", err)
 		}
 
@@ -275,6 +276,9 @@ func ProcessOrderRefund(ctx context.Context, orderID uint64, refundReason string
 			return fmt.Errorf("退款后续处理失败: %v", err)
 		}
 		alerts = fu.Alerts
+		if cbAlert != "" {
+			alerts = append(alerts, cbAlert)
+		}
 
 		log.Infof(ctx, "order refunded: uuid=%s user=%d amount=%d reason=%s operator=%d channel=%s keepInvite=%v",
 			order.UUID, order.UserID, order.PayAmount, refundReason, operatorID, order.Channel, opt.KeepInviteRewards)

@@ -348,8 +348,11 @@ func reverseAppleRefund(ctx context.Context, otx string, txn *appstore.Transacti
 		if err := restoreInviteGrantForPurchaseInTx(tx, sub.UserID, keys, now); err != nil {
 			return err
 		}
-		if err := tx.Model(&User{}).Where("id = ?", sub.UserID).Update("is_first_order_done", true).Error; err != nil {
-			return err
+		// 只有生产购买（有订单）才占用首单资格；沙盒交易不建订单，撤销沙盒退款也不该烧掉它。
+		if keys.OrderID != 0 {
+			if err := tx.Model(&User{}).Where("id = ?", sub.UserID).Update("is_first_order_done", true).Error; err != nil {
+				return err
+			}
 		}
 		if err := tx.Model(&AppleRefund{}).Where("id = ?", r.ID).Updates(map[string]any{
 			"active": false, "reversed_signed_at": signedAt, "restored_at": now,

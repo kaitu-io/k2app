@@ -175,6 +175,13 @@ func TestAppleIAP_SandboxNoInviteRewardNoFirstOrder(t *testing.T) {
 	require.NoError(t, db.Get().First(&u, f.buyer.ID).Error)
 	assert.False(t, u.IsFirstOrderDone != nil && *u.IsFirstOrderDone, "沙盒不消耗首单资格")
 	assertNear(t, t0+365*aDay, u.ExpiredAt, 120, "权益照发")
+
+	// 沙盒退款再被撤销：同样不得占用首单资格
+	f.refund(t, "SBX-INV1", t0, t0+365*aDay)
+	f.reverse(t, "SBX-INV1", t0, t0+365*aDay, time.Now().UnixMilli()+1000)
+	require.False(t, f.refundRow(t, "SBX-INV1").Active, "撤销已生效")
+	require.NoError(t, db.Get().First(&u, f.buyer.ID).Error)
+	assert.False(t, u.IsFirstOrderDone != nil && *u.IsFirstOrderDone, "撤销沙盒退款也不消耗首单资格")
 }
 
 // 21. 扣减顺序：邀请扣减在付费扣减之后、基于重读值，合计不使到期早于 now。

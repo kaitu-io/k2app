@@ -58,6 +58,7 @@ type stripeInvoiceFacts struct {
 	CustomerID     string
 	UserUUID       string // subscription_data.metadata.user_uuid（checkout 创建时烘焙）
 	PlanPID        string // subscription_data.metadata.plan_pid（订阅创建那一刻的**快照**，非实付）
+	Brand          string // subscription_data.metadata.brand（本服务创建的订阅必带）
 	PriceID        string // 计费周期那条 line 实际收的 price id —— 实付真相，用于与 PlanPID 快照对账
 	PeriodStart    int64  // unix 秒（invoice line period；basil 后订阅级 period 已删）
 	PeriodEnd      int64  // unix 秒
@@ -89,6 +90,7 @@ func extractStripeInvoiceFacts(inv *stripe.Invoice) (*stripeInvoiceFacts, error)
 		}
 		f.UserUUID = sd.Metadata["user_uuid"]
 		f.PlanPID = sd.Metadata["plan_pid"]
+		f.Brand = sd.Metadata["brand"]
 	}
 	if f.SubscriptionID == "" {
 		// 唯一可忽略的情形：本就不是订阅 invoice。用 sentinel 包裹保留 invoice id。
@@ -141,6 +143,12 @@ func creditStripeInvoice(ctx context.Context, tx *gorm.DB, f *stripeInvoiceFacts
 	// 归属解析：首张 invoice 靠 metadata.user_uuid（checkout 创建时烘焙，Stripe 原样回传）。
 	var userID uint64
 	if isFirst {
+		// 共用 Stripe 账户：别的业务（NextPay / WordGate）的订阅 invoice 也会投到这里。
+		// 本服务建的订阅 metadata 必带走 Stripe 渠道的 brand；没有 = 不是我们的，放过、不重试。
+		if !Brand(f.Brand).Valid() || !Brand(f.Brand).Config().AllowsPayment(PayChannelStripe) {
+			log.Infof(ctx, "[StripeCredit] invoice %s sub %s brand=%q — not ours, ignored", f.InvoiceID, f.SubscriptionID, f.Brand)
+			return nil
+		}
 		if f.UserUUID == "" {
 			return fmt.Errorf("invoice %s missing user_uuid metadata: refusing to bind", f.InvoiceID)
 		}
