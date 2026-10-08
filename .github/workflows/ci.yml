@@ -469,6 +469,12 @@ jobs:
         run: go test ./gateway/... ./webui/... ./daemon/... -count=1
         working-directory: k2
 
+      # k2/third_party/smux is a vendored, patched copy (see its K2_PATCHES.md) and its own Go
+      # module, so k2's `go test ./...` never reaches it — a flaky test there went unseen.
+      - name: Vendored smux tests (nested module, race)
+        run: go test -race -count=2 ./...
+        working-directory: k2/third_party/smux
+
       - name: Gateway soft-router UAT (data plane required)
         run: K2R_UAT_REQUIRE_DATAPLANE=1 make gateway-uat
         working-directory: k2
@@ -1055,6 +1061,12 @@ jobs:
           foreach ($f in @("$dir\k2.exe", "$dir\install-diag.log")) {
             if (-not (Test-Path $f)) { throw "missing after install: $f" }
           }
+          # The uninstall gate below asserts this shortcut is GONE; without
+          # proof it existed first, that assertion could pass vacuously.
+          $startMenu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
+          if (-not (Get-ChildItem $startMenu -Recurse -Filter "Kaitu.lnk" -ErrorAction SilentlyContinue)) {
+            throw "no all-users Start-menu Kaitu.lnk after install"
+          }
 
           # Discover the shell binary rather than hardcoding a name. The
           # Cargo package is k2app and productName is Kaitu, and which of the
@@ -1102,6 +1114,9 @@ jobs:
           }
           Write-Host "service status: $($svc.Status)"
           if ($svc.Status -ne 'Running') { throw "service is $($svc.Status), expected Running" }
+          # The service extracts wintun.dll on start (k2 cmd/k2/svc_windows.go);
+          # the uninstall gate needs it present first or its check is vacuous.
+          if (-not (Test-Path "$dir\wintun.dll")) { throw "service running but $dir\wintun.dll not extracted" }
 
       - name: Launch the app
         shell: pwsh
@@ -1202,3 +1217,28 @@ jobs:
           } else {
             Write-Host "no uninstaller at $u"
           }
+
+      # Before this gate every uninstall left C:\Program Files\Kaitu behind
+      # (k2's runtime wintun.dll + install-diag.log are not in Tauri's file
+      # list, so its plain RMDir failed) and the all-users Start-menu shortcut
+      # (PREUNINSTALL left the shell context on "current"). Only runs when
+      # everything before it passed, so a broken install is not reported here.
+      - name: Uninstall left nothing behind
+        shell: pwsh
+        run: |
+          # The NSIS uninstaller re-launches itself from %TEMP% and the first
+          # process exits at once, so -Wait above proves nothing. Poll.
+          $dir = "C:\Program Files\Kaitu"
+          $deadline = (Get-Date).AddSeconds(120)
+          while ((Test-Path $dir) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 3 }
+          if (Test-Path $dir) {
+            Get-ChildItem $dir -Recurse | Format-Table FullName, Length -AutoSize
+            throw "install dir still present after uninstall: $dir"
+          }
+          $left = Get-ChildItem "$env:ProgramData\Microsoft\Windows\Start Menu\Programs",
+                                "$env:APPDATA\Microsoft\Windows\Start Menu\Programs",
+                                "$env:PUBLIC\Desktop", "$env:USERPROFILE\Desktop" `
+                    -Recurse -Filter "Kaitu*.lnk" -ErrorAction SilentlyContinue
+          if ($left) { throw "shortcuts left after uninstall: $($left.FullName -join ', ')" }
+          if (Get-Service -Name kaitu -ErrorAction SilentlyContinue) { throw "service 'kaitu' still registered" }
+          Write-Host "uninstall clean: no install dir, no shortcuts, no service"

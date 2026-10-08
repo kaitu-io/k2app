@@ -48,6 +48,80 @@ ${Using:StrFunc} UnStrRep
   ${EndIf}
 !macroend
 
+; Re-point every user's taskbar pin of this app. Pins are per user (…\User Pinned\TaskBar),
+; Windows names the .lnk itself, and this elevated perMachine installer's $APPDATA is ProgramData
+; (or the elevating admin's profile, not the user's) — so walk all profiles from ProfileList and
+; match pins by target path. Win11, 2026-10-08: re-pointing the pin + SHChangeNotify switches the
+; taskbar button to the new logo immediately.
+!macro K2_REPOINT_TASKBAR_PINS target icon
+  Push $R0
+  Push $R5
+  Push $R6
+  Push $R7
+  Push $R8
+  Push $R9
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+  SetRegView 64
+  StrCpy $R5 0
+  ${Do}
+    EnumRegKey $R6 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList" $R5
+    ${If} $R6 == ""
+      ${Break}
+    ${EndIf}
+    IntOp $R5 $R5 + 1
+    ReadRegStr $R7 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$R6" "ProfileImagePath"
+    ExpandEnvStrings $R7 $R7
+    StrCpy $R7 "$R7\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"
+    ClearErrors
+    FindFirst $R8 $R9 "$R7\*.lnk"
+    ${DoUntil} ${Errors}
+      StrCpy $R0 ""
+      !insertmacro ComHlpr_CreateInProcInstance ${CLSID_ShellLink} ${IID_IShellLink} r0 ""
+      ${If} $0 P<> 0
+        ${IUnknown::QueryInterface} $0 '("${IID_IPersistFile}",.r1)'
+        ${If} $1 P<> 0
+          ${IPersistFile::Load} $1 '("$R7\$R9", ${STGM_READ})'
+          ${IShellLink::GetPath} $0 '(.R0, ${NSIS_MAX_STRLEN}, 0, 0)'
+          ${IUnknown::Release} $1 ""
+        ${EndIf}
+        ${IUnknown::Release} $0 ""
+      ${EndIf}
+      ; This 32-bit installer reads the pin through WOW64, which expands the stored %ProgramFiles%
+      ; to the x86 folder ("C:\Program Files (x86)\Kaitu\k2app.exe", seen on Win11): also try it
+      ; mapped back ($3); the raw read ($R0) still matches an install that really is under x86.
+      StrCpy $3 $R0
+      StrLen $2 "$PROGRAMFILES32\"
+      StrCpy $1 $R0 $2
+      ${If} $1 == "$PROGRAMFILES32\"
+        StrCpy $1 $R0 "" $2
+        StrCpy $3 "$PROGRAMFILES64\$1"
+      ${EndIf}
+      ${If} $R0 == "${target}"
+      ${OrIf} $3 == "${target}"
+        DetailPrint "Re-pointing taskbar pin icon: $R7\$R9"
+        !insertmacro K2_SET_SHORTCUT_ICON "$R7\$R9" "${icon}"
+      ${EndIf}
+      ClearErrors
+      FindNext $R8 $R9
+    ${Loop}
+    FindClose $R8
+  ${Loop}
+  SetRegView lastused
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
+  Pop $R9
+  Pop $R8
+  Pop $R7
+  Pop $R6
+  Pop $R5
+  Pop $R0
+!macroend
+
 ; ============================================================================
 ; NSIS_HOOK_PREINIT - System Requirements Check
 ; ============================================================================
@@ -375,16 +449,12 @@ ${Using:StrFunc} UnStrRep
   Delete "$INSTDIR\app-*.ico"
   File "/oname=${K2_SHORTCUT_ICON}" "${INSTALLERICON}"
 
-  ; Step 3: Create taskbar shortcut
-  DetailPrint "Creating taskbar shortcut..."
-  ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" "User Pinned"
-  ${If} $0 != ""
-    CreateShortCut "$0\TaskBar\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe" "" "${K2_SHORTCUT_ICON}" 0
-  ${Else}
-    StrCpy $0 "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"
-    CreateDirectory "$0"
-    CreateShortCut "$0\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe" "" "${K2_SHORTCUT_ICON}" 0
-  ${EndIf}
+  ; Step 3: Taskbar pins. Never create one — Win10/11 ignore a .lnk dropped into User Pinned
+  ; (pinning is the shell's taskband state) — only re-point the pins users made themselves.
+  ; Earlier versions wrote "$APPDATA\…\TaskBar\<product>.lnk", which under the all-users
+  ; context is ProgramData: never a real pin, so remove that leftover.
+  Delete "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\${PRODUCTNAME}.lnk"
+  !insertmacro K2_REPOINT_TASKBAR_PINS "$INSTDIR\${MAINBINARYNAME}.exe" "${K2_SHORTCUT_ICON}"
 
   ; Step 3b: Desktop + Start menu shortcuts were created by the template
   ; (and skipped entirely in update mode) with the exe's icon — re-point them.
@@ -490,6 +560,15 @@ ${Using:StrFunc} UnStrRep
   DetailPrint "Waiting for file handles (5 seconds)..."
   Sleep 5000
 
+  ; Step 5b: Files the template does not know about. Tauri's uninstaller only
+  ; deletes what it bundled, then a plain RMDir "$INSTDIR" — so anything else
+  ; left here keeps the whole install directory alive. wintun.dll is extracted
+  ; by k2 at runtime (k2/daemon/wintun EnsureExtracted); install-diag.log is
+  ; written by POSTINSTALL above (rewritten on every install, nothing to keep).
+  ; Named files only — never RMDir /r $INSTDIR, the user picks that path.
+  Delete "$INSTDIR\wintun.dll"
+  Delete "$INSTDIR\install-diag.log"
+
   ; Step 6: Remove shortcuts
   DetailPrint "Removing shortcuts..."
   Delete "$DESKTOP\${PRODUCTNAME}.lnk"
@@ -503,6 +582,15 @@ ${Using:StrFunc} UnStrRep
   ${Else}
     Delete "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\${PRODUCTNAME}.lnk"
   ${EndIf}
+
+  ; Hand the template back the context its un.onInit set (SetContext: perMachine
+  ; = all). The template removes the Start-menu shortcut via $SMPROGRAMS right
+  ; after this hook; left on "current" it looked in the user's own Start menu
+  ; and the all-users shortcut survived every uninstall.
+  !if "${INSTALLMODE}" != "perMachine"
+    !error "PREUNINSTALL restores SetShellVarContext all: revisit it if installMode changes"
+  !endif
+  SetShellVarContext all
 
   ; Step 7: Remove installation directory from system PATH
   DetailPrint "Removing from system PATH..."
