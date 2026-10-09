@@ -125,19 +125,25 @@ build-webapp: build-k2-plugin
 	cd webapp && yarn build
 
 # --- k2 sidecar (delegates to k2/Makefile) ---
+# -trimpath strips the build machine's absolute source paths (/Users/runner/work/…)
+# from shipped desktop binaries; panics then show module paths. Passed as GOFLAGS
+# env so the k2 submodule (read-only from here) needs no change. Appends to any
+# GOFLAGS the caller already set.
+K2_DESKTOP_GOFLAGS = GOFLAGS="$(strip $(GOFLAGS) -trimpath)"
+
 build-k2-macos:
-	cd k2 && make build-darwin-universal $(K2_VARS)
+	cd k2 && $(K2_DESKTOP_GOFLAGS) make build-darwin-universal $(K2_VARS)
 	mkdir -p $(K2_BIN)
 	cp k2/build/k2-darwin-universal $(K2_BIN)/k2-universal-apple-darwin
 
 build-k2-windows:
 	cd k2/daemon/wintun && go run gen.go
-	cd k2 && make build-windows-amd64 $(K2_VARS)
+	cd k2 && $(K2_DESKTOP_GOFLAGS) make build-windows-amd64 $(K2_VARS)
 	mkdir -p $(K2_BIN)
 	cp k2/build/k2-windows-amd64.exe $(K2_BIN)/k2-x86_64-pc-windows-msvc.exe
 
 build-k2-linux:
-	cd k2 && make build-linux-amd64 $(K2_VARS)
+	cd k2 && $(K2_DESKTOP_GOFLAGS) make build-linux-amd64 $(K2_VARS)
 	mkdir -p $(K2_BIN)
 	cp k2/build/k2-linux-amd64 $(K2_BIN)/k2-x86_64-unknown-linux-gnu
 
@@ -241,6 +247,7 @@ build-linux: pre-build stage-k2-webui-dist
 		echo "--- [host] Go cross-compile k2 for linux/$$arch (embedded webapp) ---"; \
 		(cd k2 && CGO_ENABLED=0 GOOS=linux GOARCH=$$arch \
 			go build \
+			-trimpath \
 			-tags release \
 			-ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(K2_COMMIT) -X github.com/kaitu-io/k2/config.buildLogLevel=$(K2_BUILD_LOG_LEVEL)" \
 			-o build/k2-linux-$$arch ./cmd/k2) || exit 1; \

@@ -88,6 +88,23 @@ aws s3 cp "${S3_VER}/" "${TMPDIR}/" --recursive \
   --exclude "*" --include "*.sig"
 
 MACOS_SIG=$(cat "${TMPDIR}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz.sig" 2>/dev/null || echo "")
+# Per-arch updater archives (scripts/build-macos.sh build_thin_update): first
+# downloads use the universal .pkg, updates get the ~half-size thin app for
+# their own arch. Both or neither — builds before they existed (or a partial
+# upload) fall back to the universal archive for every macOS key.
+MAC_UNIVERSAL="${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz"
+MAC_ARM_FILE="${BRAND_PRODUCT}_${VERSION}_aarch64.app.tar.gz"
+MAC_X64_FILE="${BRAND_PRODUCT}_${VERSION}_x64.app.tar.gz"
+MAC_ARM_SIG=$(cat "${TMPDIR}/${MAC_ARM_FILE}.sig" 2>/dev/null || echo "")
+MAC_X64_SIG=$(cat "${TMPDIR}/${MAC_X64_FILE}.sig" 2>/dev/null || echo "")
+if [ -n "${MAC_ARM_SIG}" ] && [ -n "${MAC_X64_SIG}" ]; then
+  echo "macOS updates: per-arch archives (${MAC_ARM_FILE}, ${MAC_X64_FILE})"
+else
+  [ -n "${MAC_ARM_SIG}${MAC_X64_SIG}" ] && echo "WARNING: only one per-arch macOS archive found — using universal for both"
+  echo "macOS updates: universal archive for every arch"
+  MAC_ARM_FILE="${MAC_UNIVERSAL}"; MAC_ARM_SIG="${MACOS_SIG}"
+  MAC_X64_FILE="${MAC_UNIVERSAL}"; MAC_X64_SIG="${MACOS_SIG}"
+fi
 WINDOWS_SIG=$(cat "${TMPDIR}/${BRAND_PRODUCT}_${VERSION}_x64.exe.sig" 2>/dev/null || echo "")
 # Linux signatures refer to the embedded-webapp Go binary bundle
 # (packaging/linux/install.sh + kaitu.service). The Tauri updater's
@@ -152,7 +169,11 @@ verify_signature() {
 }
 
 echo "Verifying signatures against S3 artifacts..."
-verify_signature "${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz" "${MACOS_SIG}" "macOS"
+verify_signature "${MAC_UNIVERSAL}" "${MACOS_SIG}" "macOS"
+if [ "${MAC_ARM_FILE}" != "${MAC_UNIVERSAL}" ]; then
+  verify_signature "${MAC_ARM_FILE}" "${MAC_ARM_SIG}" "macOS aarch64"
+  verify_signature "${MAC_X64_FILE}" "${MAC_X64_SIG}" "macOS x86_64"
+fi
 verify_signature "${BRAND_PRODUCT}_${VERSION}_x64.exe" "${WINDOWS_SIG}" "Windows"
 if [ "$BRAND" = "kaitu" ]; then
   verify_signature "Kaitu_${VERSION}_linux_amd64.tar.gz" "${LINUX_AMD64_SIG}" "Linux amd64"
@@ -162,9 +183,10 @@ echo "All signatures verified."
 echo ""
 
 # Generate cloudfront.latest.json
-# All 3 macOS keys (aarch64, x86_64, universal) point to the same universal binary.
-# Tauri updater queries {os}-{arch} (e.g. darwin-aarch64) with NO fallback to darwin-universal,
-# so we must list all arch keys to support upgrades from older arch-specific builds.
+# Tauri updater queries {os}-{arch} (e.g. darwin-aarch64) with NO fallback to
+# darwin-universal, so every arch key must be listed. darwin-aarch64/x86_64 carry
+# the per-arch thin archive when present (see MAC_ARM_FILE above);
+# darwin-universal always points at the universal one.
 cat > "${TMPDIR}/cloudfront.latest.json" << EOF
 {
   "version": "${VERSION}",
@@ -172,12 +194,12 @@ cat > "${TMPDIR}/cloudfront.latest.json" << EOF
   "pub_date": "${PUB_DATE}",
   "platforms": {
     "darwin-aarch64": {
-      "url": "https://d13jc1jqzlg4yt.cloudfront.net/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz",
-      "signature": "${MACOS_SIG}"
+      "url": "https://d13jc1jqzlg4yt.cloudfront.net/${BRAND}/desktop/${VERSION}/${MAC_ARM_FILE}",
+      "signature": "${MAC_ARM_SIG}"
     },
     "darwin-x86_64": {
-      "url": "https://d13jc1jqzlg4yt.cloudfront.net/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz",
-      "signature": "${MACOS_SIG}"
+      "url": "https://d13jc1jqzlg4yt.cloudfront.net/${BRAND}/desktop/${VERSION}/${MAC_X64_FILE}",
+      "signature": "${MAC_X64_SIG}"
     },
     "darwin-universal": {
       "url": "https://d13jc1jqzlg4yt.cloudfront.net/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz",
@@ -199,12 +221,12 @@ cat > "${TMPDIR}/d0.latest.json" << EOF
   "pub_date": "${PUB_DATE}",
   "platforms": {
     "darwin-aarch64": {
-      "url": "https://d0.all7.cc/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz",
-      "signature": "${MACOS_SIG}"
+      "url": "https://d0.all7.cc/${BRAND}/desktop/${VERSION}/${MAC_ARM_FILE}",
+      "signature": "${MAC_ARM_SIG}"
     },
     "darwin-x86_64": {
-      "url": "https://d0.all7.cc/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz",
-      "signature": "${MACOS_SIG}"
+      "url": "https://d0.all7.cc/${BRAND}/desktop/${VERSION}/${MAC_X64_FILE}",
+      "signature": "${MAC_X64_SIG}"
     },
     "darwin-universal": {
       "url": "https://d0.all7.cc/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz",
@@ -300,7 +322,7 @@ if [ "$CHANNEL" = "stable" ]; then
 
 | Platform | Installer | Auto-Update |
 |----------|-----------|-------------|
-| **macOS** (Universal) | \`.pkg\` | \`.app.tar.gz\` |
+| **macOS** (Universal) | \`.pkg\` | per-arch \`.app.tar.gz\` |
 | **Windows** (x64) | \`.exe\` | \`.exe\` (auto-update) |
 "
   else
@@ -308,7 +330,7 @@ if [ "$CHANNEL" = "stable" ]; then
 
 | Platform | Installer | Auto-Update |
 |----------|-----------|-------------|
-| **macOS** (Universal) | \`.pkg\` | \`.app.tar.gz\` |
+| **macOS** (Universal) | \`.pkg\` | per-arch \`.app.tar.gz\` |
 | **Windows** (x64) | \`.exe\` | \`.exe\` (auto-update) |
 | **Linux** (x86_64) | \`Kaitu_${VERSION}_linux_amd64.tar.gz\` | \`tar.gz\` (auto-update) |
 | **Linux** (aarch64) | \`Kaitu_${VERSION}_linux_arm64.tar.gz\` | \`tar.gz\` (auto-update) |

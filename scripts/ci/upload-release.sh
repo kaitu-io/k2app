@@ -102,6 +102,11 @@ case "$PLATFORM" in
     upload_file "${RELEASE_DIR}/${BRAND_PRODUCT}_${VERSION}_universal.pkg"
     upload_file "${RELEASE_DIR}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz"
     upload_file "${RELEASE_DIR}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz.sig" --optional
+    # Per-arch updater archives (first download = universal .pkg, updates = thin)
+    for a in aarch64 x64; do
+      upload_file "${RELEASE_DIR}/${BRAND_PRODUCT}_${VERSION}_${a}.app.tar.gz"
+      upload_file "${RELEASE_DIR}/${BRAND_PRODUCT}_${VERSION}_${a}.app.tar.gz.sig" --optional
+    done
     echo "Uploaded: macOS artifacts"
     ;;
   linux)

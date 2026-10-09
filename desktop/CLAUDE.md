@@ -107,7 +107,7 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
 ## Tauri Config (`src-tauri/tauri.conf.json`)
 
 - Window: 430×956 (mobile-like), non-maximizable, hidden title bar
-- Bundle: `targets: ["app", "nsis"]` — no DMG. The macOS installer is a `.pkg` built by `scripts/build-macos.sh` (`pkgbuild` + `productsign` + notarize) from the `.app`, with `scripts/pkg-scripts/{preinstall,postinstall}`; `createUpdaterArtifacts` yields the `.app.tar.gz` + `.sig`. NSIS is `perMachine` with `installerHooks: installer-hooks.nsh`. `csp: null`, `withGlobalTauri: true`.
+- Bundle: `targets: ["app", "nsis"]` — no DMG. The macOS installer is a `.pkg` built by `scripts/build-macos.sh` (`pkgbuild` + `productsign` + notarize) from the `.app`, with `scripts/pkg-scripts/{preinstall,postinstall}`; `createUpdaterArtifacts` yields the `.app.tar.gz` + `.sig`. **First download ≠ update**: the `.pkg` (and `_universal.app.tar.gz`, kept as `darwin-universal` + fallback) stay universal because a browser can't tell Apple Silicon from Intel; `build_thin_update` additionally ships `_aarch64.app.tar.gz` / `_x64.app.tar.gz` (`lipo -thin` → same `sign_app` → own notarize + staple, ~half size) and `publish-desktop.sh` points `darwin-aarch64` / `darwin-x86_64` at them only when **both** sigs exist on S3, otherwise at the universal one. The desktop k2 sidecar is built with `-trimpath` (`K2_DESKTOP_GOFLAGS` in the root Makefile) — no CI paths in shipped binaries. NSIS is `perMachine` with `installerHooks: installer-hooks.nsh`. `csp: null`, `withGlobalTauri: true`.
 - Updater: CloudFront endpoints with minisign public key
 - Version: `"../../package.json"` (references root, single source of truth)
 - Identifier: `io.kaitu.desktop`
