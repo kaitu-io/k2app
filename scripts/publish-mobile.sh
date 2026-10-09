@@ -24,6 +24,9 @@ set -euo pipefail
 # overleap android is Play-only: --platform=android exits 0 without touching
 # S3, and --platform=both narrows to ios.
 #
+# kaitu android's manifest url is ABSOLUTE and points at the mainland mirror
+# (see "Mainland mirror" below); --no-mirror falls back to the relative CDN url.
+#
 # Usage:
 #   make publish-mobile VERSION=0.5.0            # Real S3 publish (stable)
 #   make publish-mobile VERSION=0.5.0-beta.1     # Real S3 publish (auto-detects beta)
@@ -38,6 +41,7 @@ DRY_RUN=false
 CHANNEL=""
 PLATFORM=""  # empty = both, "android" or "ios"
 BRAND="${K2_BRAND:-kaitu}"
+NO_MIRROR=false
 
 # Parse arguments
 shift || true
@@ -48,12 +52,13 @@ for arg in "$@"; do
         --channel=*) CHANNEL="${arg#*=}" ;;
         --platform=*) PLATFORM="${arg#*=}" ;;
         --brand=*) BRAND="${arg#*=}" ;;
+        --no-mirror) NO_MIRROR=true ;;
         *) echo "Unknown argument: $arg" >&2; exit 1 ;;
     esac
 done
 
 if [ -z "$VERSION" ]; then
-    echo "Usage: $0 VERSION [--s3-base=PATH] [--dry-run] [--channel=stable|beta] [--platform=android|ios] [--brand=kaitu|overleap]" >&2
+    echo "Usage: $0 VERSION [--s3-base=PATH] [--dry-run] [--channel=stable|beta] [--platform=android|ios] [--brand=kaitu|overleap] [--no-mirror]" >&2
     exit 1
 fi
 
@@ -158,6 +163,84 @@ copy_s3() {
     fi
 }
 
+# --- Mainland mirror (kaitu android) ---
+# Every installed client opens the manifest's APK url in the system browser —
+# including old builds (0.4.7) whose update code can never change again. With
+# the VPN on, CloudFront is proxy-routed under the cn rule, so a user whose
+# tunnel is degraded cannot download the update at all (ticket #3902).
+# cdn.jsdmirror.com is listed in v2fly geolocation-cn (direct under the cn rule)
+# and serves jsDelivr /gh/ paths from mainland nodes.
+#
+# Each APK goes into kaitu-io/app-dist as a content-addressed tag pointing at an
+# orphan commit that holds only that file, and the manifest points at the tag:
+# the same url can never serve different bytes, however long a mirror caches.
+# Env overrides exist for scripts/test-publish-mobile.sh only.
+if [ -n "${APP_DIST_REMOTE+x}" ]; then APP_DIST_REMOTE_SET=true; else APP_DIST_REMOTE_SET=false; fi
+APP_DIST_REMOTE="${APP_DIST_REMOTE:-git@github.com:kaitu-io/app-dist.git}"
+APP_DIST_CDN_BASE="${APP_DIST_CDN_BASE:-https://cdn.jsdmirror.com/gh/kaitu-io/app-dist}"
+APP_DIST_RETRY_DELAY="${APP_DIST_RETRY_DELAY:-20}"
+# jsDelivr does not serve single /gh/ files over 20 MB.
+APP_DIST_MAX_BYTES=20000000
+
+# Local mock-S3 runs (tests) only mirror when given a remote explicitly.
+MIRROR=false
+if [ "$BRAND" = kaitu ] && [ "$NO_MIRROR" = false ]; then
+    if ! use_local || [ "$APP_DIST_REMOTE_SET" = true ]; then
+        MIRROR=true
+    fi
+fi
+
+# mirror_apk FILE FILENAME SHA256_HEX SIZE — prints the mirror url on stdout.
+mirror_apk() {
+    local local_file="$1" filename="$2" sha="$3" size="$4"
+    if [ "$size" -gt "$APP_DIST_MAX_BYTES" ]; then
+        echo "ERROR: $filename is $size bytes; the mirror serves at most $APP_DIST_MAX_BYTES (jsDelivr /gh/ file limit)." >&2
+        echo "       Shrink the APK, or rerun with --no-mirror (users on a degraded tunnel then cannot download the update)." >&2
+        return 1
+    fi
+    local tag="android-${VERSION}-${sha:0:12}"
+    local path="android/${VERSION}/${filename}"
+    local url="${APP_DIST_CDN_BASE}@${tag}/${path}"
+
+    if [ "$DRY_RUN" = true ] && ! use_local; then
+        echo "[dry-run] Would push $path to $APP_DIST_REMOTE as tag $tag" >&2
+        echo "$url"
+        return 0
+    fi
+
+    if git ls-remote --exit-code --tags "$APP_DIST_REMOTE" "refs/tags/$tag" >/dev/null 2>&1; then
+        echo "  Mirror tag $tag already exists (content-addressed) — reusing" >&2
+    else
+        local repo="$WORK_TMPDIR/app-dist"
+        rm -rf "$repo"
+        mkdir -p "$repo/$(dirname "$path")"
+        cp "$local_file" "$repo/$path"
+        git -c init.defaultBranch=dist init -q "$repo"
+        git -C "$repo" add "$path"
+        git -C "$repo" -c user.name="k2app publish" -c user.email="noreply@kaitu.io" \
+            -c commit.gpgsign=false commit -q -m "$path"
+        git -C "$repo" -c tag.gpgsign=false tag "$tag"
+        git -C "$repo" push -q "$APP_DIST_REMOTE" "refs/tags/$tag" >&2
+        echo "  Pushed mirror tag $tag" >&2
+    fi
+
+    # Read it back through the mirror: the manifest must never point at bytes
+    # nobody has seen served.
+    local got="$WORK_TMPDIR/mirror-check" i
+    for i in 1 2 3 4 5 6; do
+        if curl -fsSL --max-time 300 -o "$got" "$url" 2>/dev/null \
+            && [ "$(shasum -a 256 "$got" | cut -d' ' -f1)" = "$sha" ]; then
+            echo "  ✓ Mirror serves identical bytes: $url" >&2
+            echo "$url"
+            return 0
+        fi
+        echo "  Mirror not serving the exact bytes yet (attempt $i/6)" >&2
+        [ "$i" -lt 6 ] && sleep "$APP_DIST_RETRY_DELAY"
+    done
+    echo "ERROR: $url never served sha256 $sha — manifest not published." >&2
+    return 1
+}
+
 WORK_TMPDIR=$(mktemp -d)
 trap 'rm -rf "$WORK_TMPDIR"' EXIT
 
@@ -198,8 +281,14 @@ generate_manifest() {
     local size
     size=$(stat -f%z "$local_file" 2>/dev/null || stat -c%s "$local_file" 2>/dev/null)
 
-    # Relative URL: VERSION/filename (resolved against manifest baseURL by client)
+    # Relative URL: VERSION/filename (resolved against manifest baseURL by client);
+    # kaitu android uses the absolute mainland-mirror url instead.
     local rel_url="${VERSION}/${filename}"
+    if [ "$channel" = android ] && [ "$MIRROR" = true ]; then
+        rel_url=$(mirror_apk "$local_file" "$filename" "${hash#sha256:}" "$size") || exit 1
+    elif [ "$channel" = android ] && [ "$BRAND" = kaitu ] && [ "$NO_MIRROR" = true ]; then
+        echo "  WARN: --no-mirror — users on a degraded tunnel cannot download this update (ticket #3902)." >&2
+    fi
 
     # Generate latest.json
     local manifest="$WORK_TMPDIR/${channel}-latest.json"
