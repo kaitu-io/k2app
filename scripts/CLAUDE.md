@@ -18,6 +18,7 @@ canonical invocation before running one by hand.
 
 ## CI-driven (`ci/` unless noted)
 
+- `pve-test.sh [suite…|all|--list]` + `ci/k2ci-run.sh` — **pre-merge tests on the PVE box k2ci** (CT 134, testlab repo `k2ci/`). Ships the worktree by rsync from `git ls-files -c -o --exclude-standard` (submodules expanded — **not** an rsync `.gitignore` filter, which drops tracked-but-ignored files like the committed `k2-plugin/dist`), so the box holds no GitHub credentials. Suites `webapp web overleap api mcp k2 rust ci-scripts` each copy their `ci.yml` job's commands — **change a job's commands in `ci.yml`, change its suite in `k2ci-run.sh` too**. Auto-pick maps changed paths → suites (`pick_suites`); docs-only diffs run nothing. Per worktree: own copy, `node_modules` (reinstalled only when lockfile hash changes), DB `kaitu_<worktree>` recreated each api run. Not covered: macOS/Windows/iOS/Android jobs and `check-versions`.
 - `ci/api-db-test.sh [config.yml]` (`ci.yml` `test-api-db`) — runs the api suite against a real MariaDB and **fails on any `config.yml not available` skip**. Plain `go test ./...` in `api/` silently skips every DB test when `center/config.yml` is absent (256 of 1085 at 0.4.8) and still reports green.
 - `check-k2-plugin-fresh.sh` (webapp `pretest` + `test-webapp-reusable.yml`) — `mobile/plugins/k2-plugin/dist` vs `tsc(src)`, and freshness of the yarn `file:` copy.
 - `test-ios-build-number.sh` (`ci.yml`) — drives `build-mobile-ios.sh --print-build-number` instead of re-implementing the formula (incl. the per-brand marketing version).

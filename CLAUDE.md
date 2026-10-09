@@ -20,6 +20,7 @@ cd desktop/src-tauri && cargo test          # Rust tests
 cd api && go test ./...                     # Center API tests — DB-backed tests silently SKIP without ../center/config.yml (gitignored); see api/CLAUDE.md
 cd mcp && go test ./...                     # Go MCP server tests
 scripts/test_build.sh                       # Full build verification (count is dynamic, not fixed)
+scripts/pve-test.sh [suite…|all]            # Run this worktree's tests on the PVE box k2ci (Linux, real MariaDB) — suites auto-picked from the diff vs main; the pre-merge gate (GitHub CI only runs after main is pushed)
 ```
 
 ## Constitutional Rule: Work Isolation
