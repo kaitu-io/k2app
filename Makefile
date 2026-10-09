@@ -377,7 +377,9 @@ appext-android: appext-deps plugin-purity-check check-jdk-21
 	# than inherit whatever NDK the machine happens to have. A 16 KB-aligned library
 	# still loads fine on 4 KB kernels. Verify with:
 	#   llvm-readelf -l jni/arm64-v8a/libgojni.so   ->  every LOAD Align must be 0x4000
-	cd k2 && mkdir -p build && gomobile bind -tags "with_gvisor deadlock_disable release" -ldflags "-checklinkname=0 -extldflags=-Wl,-z,max-page-size=16384" -target=android/arm64 -o build/k2mobile.aar -androidapi 24 ./appext/
+	# -s -w: drop the ELF symtab and DWARF (29.2 MB -> 19.0 MB on 0.4.12). Go panic
+	# traces come from .gopclntab, which stays, so crash stacks are unaffected.
+	cd k2 && mkdir -p build && gomobile bind -tags "with_gvisor deadlock_disable release" -ldflags "-s -w -checklinkname=0 -extldflags=-Wl,-z,max-page-size=16384" -target=android/arm64 -o build/k2mobile.aar -androidapi 24 ./appext/
 
 build-ios: pre-build build-webapp appext-ios
 	cp -r k2/build/K2Mobile.xcframework mobile/ios/App/
