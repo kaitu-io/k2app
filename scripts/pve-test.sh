@@ -5,6 +5,10 @@
 #   scripts/pve-test.sh api webapp    # explicit suites
 #   scripts/pve-test.sh all           # everything ci.yml's Linux jobs run
 #   scripts/pve-test.sh --list        # show the picked suites and exit
+#   scripts/pve-test.sh --direct ...  # bypass labtest (no quotas) — only when labtest is down
+#
+# From a Claude session prefer the `labtest` MCP (test_plan / test_run / test_wait / test_logs);
+# this script is its CLI form.
 #
 # Suites: webapp web overleap api mcp k2 rust ci-scripts — each mirrors its ci.yml job
 # (see scripts/ci/k2ci-run.sh). Not covered here, still Mac/CI only: test-macos (Tauri on
@@ -18,6 +22,19 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
+
+# Through labtest (the k2ci scheduler: memory/CPU quotas shared with every other session) whenever
+# it is installed. Suites and their path rules then come from .labtest.yml, not pick_suites below.
+# --direct keeps the old path (raw ssh, no quotas) for when labtest itself is broken.
+LABTEST="${LABTEST:-$HOME/projects/testlab/tools/labtest}"
+if [ "${1:-}" = "--direct" ]; then
+  shift
+elif [ -x "$LABTEST" ]; then
+  case "${1:-}" in
+    --list) exec "$LABTEST" plan "$ROOT" ;;
+    *)      exec "$LABTEST" run "$ROOT" "$@" --wait ;;
+  esac
+fi
 SLUG="$(basename "$ROOT" | tr -c 'a-zA-Z0-9_.-\n' '_')"
 REMOTE_DIR="/srv/ci/work/$SLUG"
 ALL_SUITES="webapp web overleap api mcp k2 rust ci-scripts"

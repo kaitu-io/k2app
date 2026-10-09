@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# Box side of scripts/pve-test.sh — runs ON the k2ci test box (PVE CT 134), inside the
-# rsynced copy of a worktree. Not meant to be run by hand on the Mac.
+# Runs ON the k2ci test box (PVE CT 134), inside the rsynced copy of a worktree — one call per
+# suite under labtest (.labtest.yml), or several from the pre-labtest `pve-test.sh --direct` path.
+# Not meant to be run by hand on the Mac.
 #
 # Usage: bash scripts/ci/k2ci-run.sh <slug> <suite>...
 #   suites: webapp web overleap api mcp k2 rust ci-scripts
 #
 # Each suite mirrors its ci.yml job's commands, so "green here" means what "green in CI"
 # means. Differences that remain on purpose:
-#   - api uses the box's resident MariaDB with a per-worktree database (kaitu_<slug>),
-#     recreated empty every run, instead of a fresh service container.
+#   - api uses the box's resident MariaDB: labtest's per-job database ($LABTEST_MYSQL_DB, dropped
+#     when the job ends), or kaitu_<slug> on the direct path — recreated empty every run either way.
 #   - dependency installs are skipped when the lockfile hash is unchanged since last run.
 set -uo pipefail
 
@@ -16,7 +17,7 @@ SLUG="$1"; shift
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 STAMPS="$ROOT/.k2ci"; mkdir -p "$STAMPS"
-DB="kaitu_$(printf '%s' "$SLUG" | tr -c 'a-zA-Z0-9_' '_')"
+DB="${LABTEST_MYSQL_DB:-kaitu_$(printf '%s' "$SLUG" | tr -c 'a-zA-Z0-9_' '_')}"
 
 # one run per worktree copy at a time (a second session on the same slug waits)
 exec 9>"$STAMPS/lock"
@@ -96,7 +97,7 @@ suite_rust() {
   root_deps || return 1
   local triple; triple=$(rustc -vV | awk '/host/{print $2}')
   mkdir -p desktop/src-tauri/binaries && touch "desktop/src-tauri/binaries/k2-$triple"
-  export CARGO_TARGET_DIR="$CARGO_TARGET_DIR_BASE/$SLUG"
+  export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$CARGO_TARGET_DIR_BASE/$SLUG}"   # labtest injects it
   ( cd desktop/src-tauri && cargo test -- --nocapture 2>&1 | tee "$STAMPS/rust.out" ; exit "${PIPESTATUS[0]}" ) &&
   ( cd desktop/src-tauri && K2_BRAND=overleap cargo test ) &&
   ( cd mcp && go test ./... -v -count=1 > "$STAMPS/mcp.out" 2>&1 ) &&

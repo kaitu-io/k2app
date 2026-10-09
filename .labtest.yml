@@ -1,0 +1,49 @@
+# Test suites for the shared runner on k2ci (testlab labtest/; MCP `labtest`, CLI scripts/pve-test.sh).
+# Each suite runs scripts/ci/k2ci-run.sh, which mirrors its ci.yml job — change a job's commands in
+# ci.yml and its suite there together. `paths` decides which suites a diff vs main selects (no match
+# = nothing runs). Editing this file or k2ci-run.sh itself selects nothing: run `all` after doing so.
+#
+# mem = measured peak × 1.3 (2026-10-10, two runs: webapp 4.5G · overleap 5.0G · rust 4.7G (cold
+# cargo) · web 2.9G · api 1.6G · k2 721M · mcp 95M · ci-scripts 66M). Go suites get extra headroom:
+# their peak was with a warm GOCACHE, a cold compile needs more. webapp/overleap/rust ≈ the whole 6G
+# budget, so they always run alone — no CPU contention for vitest's 10s timeouts. Re-tune when a
+# summary hints (peak > 90% or < 30% of mem).
+# cpus is admission only (cpu_total 8).
+base: main
+suites:
+  webapp:
+    run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG webapp
+    paths: [webapp/**, mobile/plugins/k2-plugin/**, package.json, yarn.lock]
+    mem: 6G
+    cpus: 6
+  web:
+    run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG web
+    paths: [web/**]
+    mem: 4G
+  overleap:
+    run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG overleap
+    paths: [sites/overleap/**]
+    mem: 6G
+  api:
+    run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG api
+    paths: [api/**, contracts/**, .github/ci/center-config.yml, scripts/ci/api-db-test.sh]
+    needs: [mariadb]
+    mem: 2.2G
+  mcp:
+    run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG mcp
+    paths: [mcp/**]
+    mem: 512M
+  k2:
+    run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG k2
+    paths: [k2, k2/**]          # `k2` alone = the submodule pointer moved
+    mem: 1.5G
+    cpus: 4
+  rust:
+    run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG rust
+    paths: [desktop/**]
+    mem: 6G
+    cpus: 4
+  ci-scripts:
+    run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG ci-scripts
+    paths: [scripts/ci/*.mjs]
+    mem: 256M
