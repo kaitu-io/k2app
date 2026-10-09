@@ -249,6 +249,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # build-macos.sh runs scripts/check-macos-minos.sh on every release .app;
+      # this keeps the gate itself honest (needs clang/lipo/vtool → macOS only).
+      - name: Test macOS minos gate
+        run: bash scripts/test-check-macos-minos.sh
+
       - name: Setup SSH for private submodule
         uses: webfactory/ssh-agent@v0.9.0
         with:

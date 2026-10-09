@@ -138,6 +138,11 @@ if [ ! -d "$APP_PATH" ]; then
 fi
 echo "Found app bundle: $APP_PATH"
 
+# --- minos gate: no binary may require a newer macOS than the app declares ---
+echo ""
+echo "--- macOS minos gate ---"
+bash "$ROOT_DIR/scripts/check-macos-minos.sh" "$APP_PATH"
+
 # --- Sign app bundle with hardened runtime ---
 echo ""
 echo "--- Codesigning app bundle ---"

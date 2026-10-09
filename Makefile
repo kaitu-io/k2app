@@ -131,8 +131,18 @@ build-webapp: build-k2-plugin
 # GOFLAGS the caller already set.
 K2_DESKTOP_GOFLAGS = GOFLAGS="$(strip $(GOFLAGS) -trimpath)"
 
+# The darwin sidecar is cgo, linked by clang, which otherwise stamps the BUILD HOST's
+# macOS as LC_BUILD_VERSION minos (0.4.7–0.4.13 shipped k2 with minos 26.0 inside an
+# app that declares 12.0). Floor = the app's own tauri.conf.json minimumSystemVersion.
+# Passed via CGO_CFLAGS/CGO_LDFLAGS, NOT MACOSX_DEPLOYMENT_TARGET: that env var is not
+# part of Go's build-cache key, so cached cgo objects compiled for the host's macOS
+# get linked in unchanged. scripts/check-macos-minos.sh gates the result.
+MACOS_MIN_VERSION = $(shell node -p "require('./desktop/src-tauri/tauri.conf.json').bundle.macOS.minimumSystemVersion")
+K2_DARWIN_CGOFLAGS = CGO_CFLAGS="$(strip $(or $(CGO_CFLAGS),-O2 -g) -mmacosx-version-min=$(MACOS_MIN_VERSION))" \
+	CGO_LDFLAGS="$(strip $(CGO_LDFLAGS) -mmacosx-version-min=$(MACOS_MIN_VERSION))"
+
 build-k2-macos:
-	cd k2 && $(K2_DESKTOP_GOFLAGS) make build-darwin-universal $(K2_VARS)
+	cd k2 && $(K2_DESKTOP_GOFLAGS) $(K2_DARWIN_CGOFLAGS) make build-darwin-universal $(K2_VARS)
 	mkdir -p $(K2_BIN)
 	cp k2/build/k2-darwin-universal $(K2_BIN)/k2-universal-apple-darwin
 
