@@ -104,6 +104,18 @@ android {
 // flavors. This block is debug-only — it must never be relied on for release
 // signing, and the flavor-level assignments above must stay unconditional.
 androidComponents {
+    // kaitu ships as a sideloaded APK from the CDN, so download size is what the
+    // user pays — and APKs over ~30 MB can't ride the jsdelivr-mirror lane that
+    // reaches mainland users. Compressing libgojni.so (stored uncompressed by
+    // default so it can be mmapped in place) cuts it from 19.0 MB to 6.7 MB in the
+    // APK; the cost is that the installer extracts it to disk. overleap is
+    // Play-only, where Play already compresses for delivery — leave it as is.
+    onVariants(selector().all()) { variant ->
+        if (variant.flavorName == "kaitu") {
+            variant.packaging.jniLibs.useLegacyPackaging.set(true)
+        }
+    }
+
     onVariants(selector().withBuildType("debug")) { variant ->
         def isOverleap = variant.flavorName == "overleap"
         def envVar = isOverleap ? "OVERLEAP_ANDROID_STORE_PASSWORD" : "KAITU_ANDROID_STORE_PASSWORD"
