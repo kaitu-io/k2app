@@ -29,7 +29,9 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
 
 - 产物命名 `Overleap_{VERSION}_{ARCH}.{EXT}`；S3/CDN 路径段 `/overleap/desktop/`；
   latest.json 双份、独立 GitHub Release tag `overleap-v{VERSION}`
-  （`scripts/publish-desktop.sh --brand=overleap`）。
+  （`scripts/publish-desktop.sh --brand=overleap`）。kaitu 自 0.4.13 起同理用
+  `kaitu-v{VERSION}`：Release tag **绝不能以 `v` 开头**——`gh release create` 会推这个
+  tag，`v*` 触发两品牌全平台重建并覆盖刚签进 latest.json 的 CDN 产物（0.4.12 踩过，及时取消）。
 - **k2 daemon 品牌中立**：1777 端口、launchd label `kaitu`（`k2/cmd/k2/service_darwin.go`）、
   NSIS `SERVICE_NAME "kaitu"` 不随品牌变。两品牌同机共存 = last-install-wins 接管
   daemon，双方 app 都能控制 VPN。

@@ -50,9 +50,13 @@ if [ "$CHANNEL" != "stable" ] && [ "$CHANNEL" != "beta" ]; then
 fi
 case "$BRAND" in kaitu|overleap) ;; *) echo "ERROR: --brand must be kaitu|overleap" >&2; exit 1 ;; esac
 BRAND_PRODUCT=$([ "$BRAND" = "overleap" ] && echo "Overleap" || echo "Kaitu")
-# kaitu keeps the shared "v${VERSION}" GitHub Release tag; overleap gets its
-# own "overleap-v${VERSION}" tag so releases never collide across brands.
-REL_TAG=$([ "$BRAND" = "overleap" ] && echo "overleap-v${VERSION}" || echo "v${VERSION}")
+# GitHub Release tag is "{brand}-v${VERSION}". It must NOT start with "v":
+# `gh release create` pushes the tag, and every workflow listening on `v*`
+# (release-desktop, build-mobile) would rebuild both brands from main HEAD and
+# overwrite the CDN artifacts this script just signed into latest.json
+# (happened with v0.4.12; kaitu releases <= 0.4.12 still carry bare v* tags).
+REL_TAG="${BRAND}-v${VERSION}"
+case "$REL_TAG" in v*) echo "ERROR: release tag '${REL_TAG}' would trigger v* build workflows" >&2; exit 1 ;; esac
 
 PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 S3_VER="s3://d0.all7.cc/${BRAND}/desktop/${VERSION}"
@@ -286,9 +290,10 @@ if [ "$CHANNEL" = "stable" ]; then
 fi
 
 # Create GitHub Release (stable only — beta skips GitHub Release)
-# kaitu keeps the shared "v${VERSION}" tag (REL_TAG, set above); overleap
-# gets its own "overleap-v${VERSION}" tag so the two brands never collide
-# in one release list, and its notes table drops the kaitu-only Linux rows.
+# REL_TAG is per brand (set above, never v*); overleap's notes table drops
+# the kaitu-only Linux rows. The tag is pinned to the commit the artifacts
+# were built from (the v* build tag that covers this brand's desktop), not
+# to the default branch HEAD that `gh release create` would otherwise use.
 if [ "$CHANNEL" = "stable" ]; then
   if [ "$BRAND" = "overleap" ]; then
     GH_NOTES="## Overleap Desktop v${VERSION}
@@ -313,7 +318,24 @@ if [ "$CHANNEL" = "stable" ]; then
   if gh release view "${REL_TAG}" &>/dev/null; then
     echo "GitHub Release ${REL_TAG} already exists, skipping."
   else
+    BUILD_SHA=""
+    if [ "$BRAND" = "overleap" ]; then
+      BUILD_TAGS="v${VERSION}-overleap-desktop v${VERSION}-overleap v${VERSION}"
+    else
+      BUILD_TAGS="v${VERSION}-kaitu v${VERSION}-desktop v${VERSION}"
+    fi
+    for t in $BUILD_TAGS; do
+      # ^{} dereferences an annotated tag to its commit
+      BUILD_SHA=$(git ls-remote origin "refs/tags/${t}" "refs/tags/${t}^{}" \
+        | awk '/\^\{\}$/{c=$1} NR==1{f=$1} END{print c ? c : f}')
+      [ -n "$BUILD_SHA" ] && { echo "Release ${REL_TAG} → ${t} (${BUILD_SHA})"; break; }
+    done
+    if [ -z "$BUILD_SHA" ]; then
+      echo "ERROR: no build tag found among: ${BUILD_TAGS} — create the release by hand with --target" >&2
+      exit 1
+    fi
     gh release create "${REL_TAG}" \
+      --target "${BUILD_SHA}" \
       --title "${BRAND_PRODUCT} v${VERSION}" \
       --notes "${GH_NOTES}"
     echo ""
