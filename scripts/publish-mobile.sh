@@ -168,76 +168,58 @@ copy_s3() {
 # including old builds (0.4.7) whose update code can never change again. With
 # the VPN on, CloudFront is proxy-routed under the cn rule, so a user whose
 # tunnel is degraded cannot download the update at all (ticket #3902).
-# cdn.jsdmirror.com is listed in v2fly geolocation-cn (direct under the cn rule)
-# and serves jsDelivr /gh/ paths from mainland nodes.
 #
-# Each APK goes into kaitu-io/app-dist as a content-addressed tag pointing at an
-# orphan commit that holds only that file, and the manifest points at the tag:
-# the same url can never serve different bytes, however long a mirror caches.
+# https://anc.oetnn.cn is an ICP-filed .cn domain on Aliyun DCDN (mainland
+# edges; .cn is direct under the cn rule). DCDN back-sources to CloudFront
+# E17ZE1NIATCIWA (app.allnationconnect.com), whose /kaitu/android/* behavior
+# reads THIS bucket's kaitu/android/* — so the APK CI already uploaded is
+# served as-is: no copy, same bytes, strong ETag + Last-Modified (browsers can
+# resume). The DCDN is mainland-only (unreachable from abroad), so the read-back
+# goes through app.allnationconnect.com: same distribution, same behavior.
+# Rejected before this: jsDelivr mirrors drop slow mainland transfers and send
+# a weak ETag; npmmirror refuses to serve files of non-whitelisted packages.
 # Env overrides exist for scripts/test-publish-mobile.sh only.
-if [ -n "${APP_DIST_REMOTE+x}" ]; then APP_DIST_REMOTE_SET=true; else APP_DIST_REMOTE_SET=false; fi
-APP_DIST_REMOTE="${APP_DIST_REMOTE:-git@github.com:kaitu-io/app-dist.git}"
-APP_DIST_CDN_BASE="${APP_DIST_CDN_BASE:-https://cdn.jsdmirror.com/gh/kaitu-io/app-dist}"
+if [ -n "${APP_DIST_VERIFY_BASE+x}" ]; then APP_DIST_SET=true; else APP_DIST_SET=false; fi
+APP_DIST_URL_BASE="${APP_DIST_URL_BASE:-https://anc.oetnn.cn/${BRAND}}"
+APP_DIST_VERIFY_BASE="${APP_DIST_VERIFY_BASE:-https://app.allnationconnect.com/${BRAND}}"
 APP_DIST_RETRY_DELAY="${APP_DIST_RETRY_DELAY:-20}"
-# jsDelivr does not serve single /gh/ files over 20 MB.
-APP_DIST_MAX_BYTES=20000000
+APP_DIST_ATTEMPTS="${APP_DIST_ATTEMPTS:-6}"
 
-# Local mock-S3 runs (tests) only mirror when given a remote explicitly.
+# Local mock-S3 runs (tests) only mirror when given a verify base explicitly.
 MIRROR=false
 if [ "$BRAND" = kaitu ] && [ "$NO_MIRROR" = false ]; then
-    if ! use_local || [ "$APP_DIST_REMOTE_SET" = true ]; then
+    if ! use_local || [ "$APP_DIST_SET" = true ]; then
         MIRROR=true
     fi
 fi
 
-# mirror_apk FILE FILENAME SHA256_HEX SIZE — prints the mirror url on stdout.
+# mirror_apk ARTIFACT_PATH SHA256_HEX — prints the mainland url on stdout.
+# ARTIFACT_PATH is the S3 key under the brand prefix (android/VER/NAME.apk).
 mirror_apk() {
-    local local_file="$1" filename="$2" sha="$3" size="$4"
-    if [ "$size" -gt "$APP_DIST_MAX_BYTES" ]; then
-        echo "ERROR: $filename is $size bytes; the mirror serves at most $APP_DIST_MAX_BYTES (jsDelivr /gh/ file limit)." >&2
-        echo "       Shrink the APK, or rerun with --no-mirror (users on a degraded tunnel then cannot download the update)." >&2
-        return 1
-    fi
-    local tag="android-${VERSION}-${sha:0:12}"
-    local path="android/${VERSION}/${filename}"
-    local url="${APP_DIST_CDN_BASE}@${tag}/${path}"
+    local artifact="$1" sha="$2"
+    local url="${APP_DIST_URL_BASE}/${artifact}"
+    local check="${APP_DIST_VERIFY_BASE}/${artifact}"
 
     if [ "$DRY_RUN" = true ] && ! use_local; then
-        echo "[dry-run] Would push $path to $APP_DIST_REMOTE as tag $tag" >&2
+        echo "[dry-run] Would verify $check and publish $url" >&2
         echo "$url"
         return 0
     fi
 
-    if git ls-remote --exit-code --tags "$APP_DIST_REMOTE" "refs/tags/$tag" >/dev/null 2>&1; then
-        echo "  Mirror tag $tag already exists (content-addressed) — reusing" >&2
-    else
-        local repo="$WORK_TMPDIR/app-dist"
-        rm -rf "$repo"
-        mkdir -p "$repo/$(dirname "$path")"
-        cp "$local_file" "$repo/$path"
-        git -c init.defaultBranch=dist init -q "$repo"
-        git -C "$repo" add "$path"
-        git -C "$repo" -c user.name="k2app publish" -c user.email="noreply@kaitu.io" \
-            -c commit.gpgsign=false commit -q -m "$path"
-        git -C "$repo" -c tag.gpgsign=false tag "$tag"
-        git -C "$repo" push -q "$APP_DIST_REMOTE" "refs/tags/$tag" >&2
-        echo "  Pushed mirror tag $tag" >&2
-    fi
-
-    # Read it back through the mirror: the manifest must never point at bytes
-    # nobody has seen served.
+    # Read it back through the serving path: the manifest must never point at
+    # bytes nobody has seen served.
     local got="$WORK_TMPDIR/mirror-check" i
-    for i in 1 2 3 4 5 6; do
-        if curl -fsSL --max-time 300 -o "$got" "$url" 2>/dev/null \
+    for i in $(seq 1 "$APP_DIST_ATTEMPTS"); do
+        if curl -fsSL --max-time 300 -o "$got" "$check" 2>/dev/null \
             && [ "$(shasum -a 256 "$got" | cut -d' ' -f1)" = "$sha" ]; then
-            echo "  ✓ Mirror serves identical bytes: $url" >&2
+            echo "  ✓ Mainland path serves identical bytes: $check" >&2
             echo "$url"
             return 0
         fi
-        echo "  Mirror not serving the exact bytes yet (attempt $i/6)" >&2
-        [ "$i" -lt 6 ] && sleep "$APP_DIST_RETRY_DELAY"
+        echo "  Mainland path not serving the exact bytes yet (attempt $i/$APP_DIST_ATTEMPTS)" >&2
+        [ "$i" -lt "$APP_DIST_ATTEMPTS" ] && sleep "$APP_DIST_RETRY_DELAY"
     done
-    echo "ERROR: $url never served sha256 $sha — manifest not published." >&2
+    echo "ERROR: $check never served sha256 $sha — manifest not published." >&2
     return 1
 }
 
@@ -285,7 +267,7 @@ generate_manifest() {
     # kaitu android uses the absolute mainland-mirror url instead.
     local rel_url="${VERSION}/${filename}"
     if [ "$channel" = android ] && [ "$MIRROR" = true ]; then
-        rel_url=$(mirror_apk "$local_file" "$filename" "${hash#sha256:}" "$size") || exit 1
+        rel_url=$(mirror_apk "$artifact" "${hash#sha256:}") || exit 1
     elif [ "$channel" = android ] && [ "$BRAND" = kaitu ] && [ "$NO_MIRROR" = true ]; then
         echo "  WARN: --no-mirror — users on a degraded tunnel cannot download this update (ticket #3902)." >&2
     fi
