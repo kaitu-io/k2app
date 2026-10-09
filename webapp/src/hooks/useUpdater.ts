@@ -68,18 +68,23 @@ export function useUpdater() {
     }
   }, [updater]);
 
-  // Apply update now (restarts app)
+  // Apply update now. Desktop installs and restarts the app; mobile only opens
+  // the download URL / App Store in another app and returns, so there is no
+  // "installing" phase to show — entering it would lock the banner for good.
   const applyUpdateNow = useCallback(async () => {
     if (!updater) {
       console.warn('[useUpdater] No updater available');
       return;
     }
 
+    const installsInApp = window._platform?.platformType === 'desktop';
     try {
       console.info('[useUpdater] Applying update now...');
-      setState(prev => ({ ...prev, installing: true }));
+      if (installsInApp) {
+        setState(prev => ({ ...prev, installing: true }));
+      }
       await updater.applyUpdateNow();
-      // App will restart, this line won't be reached
+      // Desktop: the app restarts, this line won't be reached.
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error('[useUpdater] Failed to apply update:', error);
