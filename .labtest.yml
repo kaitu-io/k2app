@@ -1,4 +1,5 @@
-# Test suites for the shared runner on k2ci (testlab labtest/; MCP `labtest`, CLI scripts/pve-test.sh).
+# Test suites for the shared runner on k2ci (testlab labtest/): run them with the `labtest` MCP
+# (test_plan / test_run / test_wait / test_logs), or ~/projects/testlab/tools/labtest from a terminal.
 # Each suite runs scripts/ci/k2ci-run.sh, which mirrors its ci.yml job — change a job's commands in
 # ci.yml and its suite there together. `paths` decides which suites a diff vs main selects (no match
 # = nothing runs). Editing this file or k2ci-run.sh itself selects nothing: run `all` after doing so.
