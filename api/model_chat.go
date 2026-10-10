@@ -2,8 +2,8 @@ package center
 
 import "time"
 
-// 访客身份与会话数据模型（客服聊天，替换 Chatwoot）。
-// 设计见 docs/superpowers/specs/2026-10-01-support-console-chatwoot-replacement-design.md
+// 访客身份与会话数据模型（客服聊天）。
+// 设计见 docs/superpowers/specs/2026-10-01-support-chat-design.md
 
 // Guest：一个访客（未必登录）。合并后被并入的 guest 以 MergedIntoID 指向保留方，行本身不删。
 type Guest struct {

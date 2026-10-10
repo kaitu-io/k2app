@@ -1,6 +1,6 @@
 # 自建客服会话 第 1 期：上线清单与已知限制
 
-配套设计：`2026-10-01-support-console-chatwoot-replacement-design.md`。本文记录第 1 期（分支 `feat/support-chat-p1`）合并后、打开开关前必须做的事，以及验证没有覆盖到的部分。
+配套设计：`2026-10-01-support-chat-design.md`。本文记录第 1 期（分支 `feat/support-chat-p1`）合并后、打开开关前必须做的事，以及验证没有覆盖到的部分。
 
 ## 验证状态
 

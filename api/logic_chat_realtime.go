@@ -16,7 +16,7 @@ import (
 
 // 访客实时通道：消息先落库，再经 Redis pub/sub 广播推给访客的 WebSocket（两台 Center 互通）；
 // WebSocket 不可用时访客走 HTTP 游标轮询（api_chat.go），所以推送丢了不影响正确性。
-// 设计见 docs/superpowers/specs/2026-10-01-support-console-chatwoot-replacement-design.md §6
+// 设计见 docs/superpowers/specs/2026-10-01-support-chat-design.md §6
 
 const (
 	chatBroadcastNamespace = "kaitu-center-chat"

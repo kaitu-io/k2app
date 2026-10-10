@@ -6,8 +6,6 @@ import { CHAT_RESUME_GLOBAL, CHAT_RESUME_HASH_PREFIX } from './resume-script';
 
 /** 本浏览器已经成功建过会话（服务端的访客 cookie 是 HttpOnly，前端看不到，所以另记一个标记）。 */
 export const CHAT_KNOWN_FLAG = 'chat:known';
-/** 本浏览器已经留过邮箱，不再弹留邮箱表单。 */
-export const CHAT_EMAIL_FLAG = 'chat:email';
 /** 本标签页见过 `?chat=preview`（sessionStorage）：预览身份跟着站内跳转走。 */
 export const CHAT_PREVIEW_FLAG = 'chat:preview';
 

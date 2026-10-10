@@ -18,7 +18,7 @@ import (
 
 // 会话核心（客服聊天）：开会话、幂等追加、游标读取、状态流转、空闲关闭，
 // 以及后续任务（实时推送 / AI / Slack 镜像 / 离线邮件）挂接的钩子点。
-// 设计见 docs/superpowers/specs/2026-10-01-support-console-chatwoot-replacement-design.md
+// 设计见 docs/superpowers/specs/2026-10-01-support-chat-design.md
 
 // chatSubject 是会话主体。ID 对 guest 是簇根 id。
 type chatSubject struct {

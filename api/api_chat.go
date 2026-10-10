@@ -21,7 +21,7 @@ import (
 
 // 访客聊天 HTTP 接口（官网挂件调用）。
 // 会话在第一条访客消息时才创建；session 只下发静态欢迎语 + 已有会话，不落库。
-// 设计见 docs/superpowers/specs/2026-10-01-support-console-chatwoot-replacement-design.md §5/§6
+// 设计见 docs/superpowers/specs/2026-10-01-support-chat-design.md §5/§6
 
 const (
 	chatContentMaxRunes = 2000
@@ -95,6 +95,8 @@ type ChatSessionResp struct {
 	Welcome      *ChatWelcome `json:"welcome"`
 	WS           *ChatWSInfo  `json:"ws"`
 	Images       bool         `json:"images"` // 能不能发图片（服务端配了存储桶）
+	// EmailRequired 访客必须先留邮箱才能发消息（见 chatVisitorHasEmail）。挂件据此先画邮箱表单。
+	EmailRequired bool `json:"emailRequired"`
 }
 
 // chatMessageDTO 消息的完整 DTO（Meta 是合法 JSON 才原样输出，否则 null），含发送者真名——后台接口用。
@@ -377,11 +379,12 @@ func api_chat_session(c *gin.Context) {
 		msgs = chatVisitorMessageDTOs(rows)
 	}
 	resp := &ChatSessionResp{
-		Enabled:      true,
-		Conversation: chatConversationDTO(conv),
-		Messages:     msgs,
-		Welcome:      chatWelcomeDTO(subj.Brand),
-		Images:       chatImagesEnabled(),
+		Enabled:       true,
+		Conversation:  chatConversationDTO(conv),
+		Messages:      msgs,
+		Welcome:       chatWelcomeDTO(subj.Brand),
+		Images:        chatImagesEnabled(),
+		EmailRequired: !chatVisitorHasEmail(c, subj),
 	}
 	if u := chatWSURL(subj.Brand); u != "" {
 		if tok := signChatWSToken(subj, chatWSTokenTTL); tok != "" {
@@ -520,6 +523,10 @@ func api_chat_messages_send(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !chatVisitorHasEmail(c, subj) {
+		Error(c, ErrorInvalidArgument, chatMsgEmailRequired)
+		return
+	}
 	// 全局额度放在最后扣：校验失败、没有主体、被按主体限速的请求都不该消耗所有访客共用的额度
 	if !chatSubjectSendAllow(ctx, subj) || !chatSendGlobalLimiter.Allow("*") {
 		Error(c, ErrorTooManyRequests, "too many requests")
@@ -595,6 +602,10 @@ func api_chat_images_upload(c *gin.Context) {
 	}
 	subj, ok := chatVisitorSubject(c)
 	if !ok {
+		return
+	}
+	if !chatVisitorHasEmail(c, subj) {
+		Error(c, ErrorInvalidArgument, chatMsgEmailRequired)
 		return
 	}
 	if !chatSubjectSendAllow(ctx, subj) || !chatSendGlobalLimiter.Allow("*") {
@@ -714,6 +725,40 @@ func chatCheckEmailCap(ctx context.Context, s chatSubject, email string) error {
 		return errChatEmailCap
 	}
 	return nil
+}
+
+// chatMsgEmailRequired 没留邮箱的游客发消息时的错误文案。挂件按这句话识别并重新画邮箱表单
+// （web/ 与 sites/overleap/ 的 chat-client.ts 里 MSG_EMAIL_REQUIRED 与它绑定，改了要一起改）。
+const chatMsgEmailRequired = "email required"
+
+// chatVisitorHasEmail 访客能不能被邮件联系到——不能就不让发消息，客服回复了也送不到人。
+//   - user 主体（已登录）：账号邮箱就是联系方式，直接放行；
+//   - guest 簇里留过邮箱：放行；
+//   - guest 没留邮箱但请求已登录（游客聊到一半登录，主体仍是 guest，见 chatLoggedInGuestSubject）：
+//     把账号邮箱记到簇上（与访客自报同等强度，不触发合并）后放行；
+//   - 其余：false。读库失败也按没有处理（fail closed：最坏是让访客再填一次邮箱）。
+func chatVisitorHasEmail(c *gin.Context, subj chatSubject) bool {
+	if subj.Kind != SubjectGuest {
+		return true
+	}
+	ctx := c.Request.Context()
+	if guestEmail(ctx, subj.ID) != "" {
+		return true
+	}
+	uid := funnelSilentUserID(c)
+	if uid == 0 {
+		return false
+	}
+	email, err := getUserEmail(ctx, uid)
+	if err != nil {
+		log.Warnf(ctx, "chat: account email of user %d: %v", uid, err)
+		return false
+	}
+	if err := addGuestEmail(ctx, subj.ID, subj.Brand, email); err != nil {
+		log.Warnf(ctx, "chat: attach account email to guest %d: %v", subj.ID, err)
+		return false
+	}
+	return true
 }
 
 type chatEmailReq struct {

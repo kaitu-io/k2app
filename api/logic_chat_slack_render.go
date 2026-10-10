@@ -8,6 +8,7 @@ import (
 	"time"
 
 	db "github.com/wordgate/qtoolkit/db"
+	"github.com/wordgate/qtoolkit/log"
 	"gorm.io/gorm"
 )
 
@@ -27,14 +28,19 @@ func chatSlackChannelURL(channelID string) string {
 	return "https://slack.com/app_redirect?channel=" + channelID
 }
 
-// chatSlackChannelName 返回 "chat-MMDD-<uuid 前 6 位>"（Slack 只允许小写字母、数字、连字符、下划线，≤80 字符）。
-// MMDD 取会话创建时间在客服时区（Asia/Shanghai）的日期。
+// chatSlackChannelName 返回 "chat-<品牌>-MMDD-<uuid 前 6 位>"，如 chat-kaitu-1002-abcdef：
+// 频道列表里一眼看出是哪个产品（Slack 只允许小写字母、数字、连字符、下划线，≤80 字符；品牌 id 本身就合规）。
+// 品牌无效时按 kaitu（与 Brand.Config() 的回退一致）。MMDD 取会话创建时间在客服时区（Asia/Shanghai）的日期。
 func chatSlackChannelName(conv *Conversation) string {
 	id := strings.ToLower(strings.ReplaceAll(conv.UUID, "-", ""))
 	if len(id) > 6 {
 		id = id[:6]
 	}
-	return "chat-" + conv.CreatedAt.In(chatSlackLoc).Format("0102") + "-" + id
+	b := Brand(conv.Brand)
+	if !b.Valid() {
+		b = BrandKaitu
+	}
+	return "chat-" + string(b) + "-" + conv.CreatedAt.In(chatSlackLoc).Format("0102") + "-" + id
 }
 
 // chatSlackStatus 返回会话状态的 emoji 与文案。
@@ -55,7 +61,7 @@ func chatSlackStatus(conv *Conversation) (emoji, label string) {
 type chatSlackView struct{ card, lobby, topic string }
 
 // chatSlackRender 生成状态卡、总览频道那一行、频道主题。
-// 登录用户的邮箱是加密存储的登录标识，取它要解密，这里不取：user 主体一律显示"未留邮箱"。
+// user 主体显示账号邮箱（加密存储的登录标识，这里解密；取不到就显示"未留邮箱"）。
 func chatSlackRender(ctx context.Context, conv *Conversation) chatSlackView {
 	brand := Brand(conv.Brand).Config().DisplayName
 	entry := chatSlackEscaper.Replace(conv.EntryPath)
@@ -71,6 +77,10 @@ func chatSlackRender(ctx context.Context, conv *Conversation) chatSlackView {
 			}
 		}
 		who, email = fmt.Sprintf("游客 #%d", root), chatSlackEscaper.Replace(guestEmail(ctx, root))
+	} else if e, err := getUserEmail(ctx, conv.SubjectID); err == nil {
+		email = chatSlackEscaper.Replace(e)
+	} else {
+		log.Warnf(ctx, "chat slack render: account email of user %d: %v", conv.SubjectID, err)
 	}
 	emailOrNone, emailOrWho := email, email
 	if email == "" {

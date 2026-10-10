@@ -15,7 +15,7 @@ import (
 // 离线邮件（客服聊天）：客服回复时访客已不在线，就给他留的邮箱发一封带回链的邮件。
 // 只在客服的文字回复时发；同一会话 10 分钟内最多一封，防止被用来向他人邮箱刷信。
 // 主体是登录用户（user）的会话本期不发（第 3 期随工单打通处理）。
-// 设计见 docs/superpowers/specs/2026-10-01-support-console-chatwoot-replacement-design.md
+// 设计见 docs/superpowers/specs/2026-10-01-support-chat-design.md
 
 const (
 	// chatOfflineMailWindow 同一会话两封离线邮件的最小间隔。

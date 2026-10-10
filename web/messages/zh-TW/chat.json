@@ -12,7 +12,7 @@
   "rateLimited": "傳送太頻繁，請稍後再試。",
   "sendFailed": "傳送失敗，請檢查網路後重試。",
   "tooLong": "訊息太長了，請精簡後再傳送。",
-  "emailPrompt": "客服暫時無法接入。留下電子郵件，我們回覆後會寄信通知您。",
+  "emailPrompt": "開始諮詢前請留下電子郵件。若您離開了頁面，客服回覆後會寄信通知您。",
   "emailPlaceholder": "您的電子郵件",
   "emailSubmit": "送出",
   "emailInvalid": "請輸入有效的電子郵件地址。",

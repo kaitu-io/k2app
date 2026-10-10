@@ -5,7 +5,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 vi.mock('next-intl', () => ({ useTranslations: () => (key: string) => key }));
 
 import ChatWidget from '../chat/ChatWidget';
-import { CHAT_EMAIL_FLAG, CHAT_KNOWN_FLAG, hasResumeToken, requestOpenChat, shouldStartSession, takeResumeToken } from '../chat/gate';
+import { CHAT_KNOWN_FLAG, hasResumeToken, requestOpenChat, shouldStartSession, takeResumeToken } from '../chat/gate';
 import { CHAT_RESUME_GLOBAL, CHAT_RESUME_HASH_PREFIX, CHAT_RESUME_SCRIPT, stripChatResume } from '../chat/resume-script';
 import {
   ChatError,
@@ -637,135 +637,88 @@ describe('ChatWidget', () => {
     });
   });
 
-  describe('email form', () => {
-    const ai: ChatConversation = { uuid: 'u1', status: 'open', handler: 'ai' };
-    const human: ChatConversation = { uuid: 'u1', status: 'open', handler: 'human' };
-    const history = [
-      msg(1, { senderType: 'visitor', content: 'help' }),
-      msg(2, { senderType: 'system', kind: 'event', content: 'transferred', meta: { event: 'transfer_human' } }),
-    ];
+  describe('email form (required before chatting)', () => {
     const emailInput = () => screen.queryByPlaceholderText('emailPlaceholder') as HTMLInputElement | null;
-
-    it('appears 30s after the server says the handler is human with no staff reply — not before, never for ai', async () => {
-      const fc = fakeClient();
-      await mountOpen(fc);
-      await fc.push(history);
-      await fc.pushConv(ai);
-      await flush(60000);
-      expect(emailInput()).toBeNull();
-      await fc.pushConv(human);
-      await flush(29999);
-      expect(emailInput()).toBeNull();
-      await flush(1);
-      expect(emailInput()).not.toBeNull();
-    });
-
-    it('a transfer event message alone (no server state) does not start the timer', async () => {
-      const fc = fakeClient();
-      await mountOpen(fc);
-      await fc.push(history);
-      await flush(60000);
-      expect(emailInput()).toBeNull();
-    });
-
-    it('is anchored to the transfer, not to opening the panel: opening later shows it at once', async () => {
-      const fc = fakeClient();
-      render(<ChatWidget createClient={fc.create} />);
-      await flush();
-      await fc.pushConv(human);
-      await flush(30000);
-      fireEvent.click(launcher()!);
-      await flush();
-      expect(emailInput()).not.toBeNull();
-      // 关了再开也不重新计时
-      fireEvent.keyDown(dialog()!, { key: 'Escape' });
-      fireEvent.click(launcher()!);
-      await flush();
-      expect(emailInput()).not.toBeNull();
-    });
-
-    it('page load into a waiting conversation: counts from the transfer event time in the history', async () => {
-      vi.setSystemTime(new Date('2026-10-02T00:00:10Z')); // 转人工事件在 00:00:00
-      const fc = fakeClient({ conversation: human, messages: history });
-      await mountOpen(fc);
-      await flush(19000);
-      expect(emailInput()).toBeNull();
-      await flush(1000);
-      expect(emailInput()).not.toBeNull();
-    });
-
-    it('page load: a transfer time in the future (clock skew) falls back to now', async () => {
-      vi.setSystemTime(new Date('2026-10-01T23:00:00Z'));
-      const fc = fakeClient({ conversation: human, messages: history });
-      await mountOpen(fc);
-      await flush(29000);
-      expect(emailInput()).toBeNull();
-      await flush(1000);
-      expect(emailInput()).not.toBeNull();
-    });
-
-    it('staff replying after the transfer cancels it (before or after it appeared); an earlier staff message does not', async () => {
-      const fc = fakeClient();
-      await mountOpen(fc);
-      const earlier = [...history, msg(3, { senderType: 'staff', content: 'from a previous handover' })];
-      await fc.push(earlier);
-      await fc.pushConv(human); // 此刻最大 id = 3
-      await flush(30000);
-      expect(emailInput()).not.toBeNull();
-      await fc.push([...earlier, msg(4, { senderType: 'staff', content: 'here' })]);
-      expect(emailInput()).toBeNull();
-      await flush(60000);
-      expect(emailInput()).toBeNull();
-    });
-
-    it('goes away when the conversation is handed back or closed, and restarts for a new waiting conversation', async () => {
-      const fc = fakeClient();
-      await mountOpen(fc);
-      await fc.pushConv(human);
-      await flush(30000);
-      expect(emailInput()).not.toBeNull();
-      await fc.pushConv({ ...human, status: 'closed' });
-      expect(emailInput()).toBeNull();
-      await fc.pushConv({ uuid: 'u2', status: 'open', handler: 'human' });
-      await flush(29999);
-      expect(emailInput()).toBeNull();
-      await flush(1);
-      expect(emailInput()).not.toBeNull();
-    });
-
-    it('does not appear when this browser already left an email', async () => {
-      localStorage.setItem(CHAT_EMAIL_FLAG, '1');
-      const fc = fakeClient();
-      await mountOpen(fc);
-      await fc.pushConv(human);
-      await flush(60000);
-      expect(emailInput()).toBeNull();
-    });
-
-    it('validates the format client-side, submits, then shows the confirmation and remembers it', async () => {
-      const fc = fakeClient();
-      await mountOpen(fc);
-      await fc.pushConv(human);
-      await flush(30000);
-      fireEvent.change(emailInput()!, { target: { value: 'not-an-email' } });
+    const sendButton = () => screen.getByRole('button', { name: 'send' }) as HTMLButtonElement;
+    const leave = async (value: string) => {
+      fireEvent.change(emailInput()!, { target: { value } });
       fireEvent.click(screen.getByRole('button', { name: 'emailSubmit' }));
       await flush();
+    };
+
+    it('no form when the server does not require one (logged in, or email already left)', async () => {
+      const fc = fakeClient({ emailRequired: false });
+      await mountOpen(fc);
+      expect(emailInput()).toBeNull();
+      expect(input().disabled).toBe(false);
+      fireEvent.change(input(), { target: { value: 'hi' } });
+      fireEvent.click(sendButton());
+      await flush();
+      expect(fc.client.send).toHaveBeenCalledWith('text', 'hi');
+    });
+
+    it('locks the input, send button, image button and welcome options until an email is left', async () => {
+      const fc = fakeClient({ emailRequired: true, images: true });
+      await mountOpen(fc);
+      expect(emailInput()).not.toBeNull();
+      expect(input().disabled).toBe(true);
+      expect(sendButton().disabled).toBe(true);
+      expect((screen.getByRole('button', { name: 'attachImage' }) as HTMLButtonElement).disabled).toBe(true);
+      expect(screen.getByText('hello')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Install' })).toBeNull();
+      fireEvent.keyDown(input(), { key: 'Enter' });
+      await flush();
+      expect(fc.client.send).not.toHaveBeenCalled();
+    });
+
+    it('validates the format client-side, retries a failed submit, then unlocks the chat', async () => {
+      const fc = fakeClient({ emailRequired: true });
+      await mountOpen(fc);
+      await leave('not-an-email');
       expect(fc.client.leaveEmail).not.toHaveBeenCalled();
       expect(screen.getByText('emailInvalid')).toBeInTheDocument();
 
       fc.client.leaveEmail.mockRejectedValueOnce(new ChatError('invalid', 422));
-      fireEvent.change(emailInput()!, { target: { value: ' me@example.com ' } });
-      fireEvent.click(screen.getByRole('button', { name: 'emailSubmit' }));
-      await flush();
+      await leave(' me@example.com ');
       expect(fc.client.leaveEmail).toHaveBeenCalledWith('me@example.com');
       expect(screen.getByText('emailFailed')).toBeInTheDocument();
-      expect(localStorage.getItem(CHAT_EMAIL_FLAG)).toBeNull();
+      expect(input().disabled).toBe(true);
 
       fireEvent.click(screen.getByRole('button', { name: 'emailSubmit' }));
       await flush();
       expect(emailInput()).toBeNull();
       expect(screen.getByText('emailSaved')).toBeInTheDocument();
-      expect(localStorage.getItem(CHAT_EMAIL_FLAG)).toBe('1');
+      expect(input().disabled).toBe(false);
+      expect(document.activeElement).toBe(input());
+      expect(screen.getByRole('button', { name: 'Install' })).toBeInTheDocument();
+      fireEvent.change(input(), { target: { value: 'hi' } });
+      fireEvent.click(sendButton());
+      await flush();
+      expect(fc.client.send).toHaveBeenCalledWith('text', 'hi');
+    });
+
+    it('a send the server rejects with email_required brings the form back and keeps the draft, without an error line', async () => {
+      const fc = fakeClient({ emailRequired: false });
+      fc.client.send.mockRejectedValueOnce(new ChatError('email_required', 422));
+      await mountOpen(fc);
+      fireEvent.change(input(), { target: { value: 'hi' } });
+      fireEvent.click(sendButton());
+      await flush();
+      expect(emailInput()).not.toBeNull();
+      expect(input().value).toBe('hi');
+      expect(input().disabled).toBe(true);
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('an image upload rejected with email_required brings the form back', async () => {
+      const fc = fakeClient({ emailRequired: false, images: true });
+      fc.client.sendImage.mockRejectedValueOnce(new ChatError('email_required', 422));
+      await mountOpen(fc);
+      const fileInput = document.querySelector('input[type=file]') as HTMLInputElement;
+      fireEvent.change(fileInput, { target: { files: [new File([new Uint8Array(10)], 'a.png', { type: 'image/png' })] } });
+      await flush();
+      expect(emailInput()).not.toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
     });
   });
 });
