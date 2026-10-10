@@ -20,7 +20,8 @@ cd desktop/src-tauri && cargo test          # Rust tests
 cd api && go test ./...                     # Center API tests — DB-backed tests silently SKIP without ../center/config.yml (gitignored); see api/CLAUDE.md
 cd mcp && go test ./...                     # Go MCP server tests
 scripts/test_build.sh                       # Full build verification (count is dynamic, not fixed)
-scripts/pve-test.sh [suite…|all]            # Pre-merge gate (GitHub CI only runs after main is pushed): this worktree's tests on the PVE box k2ci via the labtest scheduler — suites in .labtest.yml, auto-picked from the diff vs main. In a Claude session prefer the `labtest` MCP (test_plan / test_run / test_wait / test_logs)
+# Pre-merge tests (GitHub CI only runs after main is pushed): the `labtest` MCP — test_plan(path) → test_run(path[, "all"]) → test_wait(job) / test_logs(job, suite)
+#   runs this worktree's suites (.labtest.yml, auto-picked from the diff vs main) on the PVE box k2ci. Terminal: ~/projects/testlab/tools/labtest run . [all] --wait
 ```
 
 ## Constitutional Rule: Work Isolation
