@@ -844,6 +844,15 @@ jobs:
           echo "K2_SIGN_LOG=$RUNNER_TEMP/k2-sign-${{ github.run_id }}-${{ github.run_attempt }}.log" >> "$GITHUB_ENV"
 
       - name: Setup SSH for private submodule
+        # GitHub-hosted only. On the self-hosted runner (this Mac, running as the
+        # machine owner) webfactory writes into the OWNER's ~/.gitconfig (a
+        # url.<key-alias>.insteadOf for every deploy key whose comment names a repo)
+        # and appends a Host block to ~/.ssh/config — and never removes them. Once
+        # the job's agent is gone, every later `git` on the machine routes kuic
+        # through a key that no longer exists: new worktrees fail
+        # `make init-submodules` with "Permission denied". The runner user's own
+        # SSH key already reads k2 and kuic, so self-hosted needs no deploy key.
+        if: runner.environment == 'github-hosted'
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: |
