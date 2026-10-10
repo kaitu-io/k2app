@@ -13,7 +13,7 @@
  * - 服务端凭 WebSocket 在线标记决定要不要发离线邮件：标签页在后台超过 1 分钟就主动断开，
  *   回到前台再连。轮询只是连不上时的顶班，会在联网、回前台与每 5 分钟各试一次回到 WebSocket。
  *
- * 设计：docs/superpowers/specs/2026-10-01-support-console-chatwoot-replacement-design.md §5 / §6
+ * 设计：docs/superpowers/specs/2026-10-01-support-chat-design.md §5 / §6
  */
 import { SITE } from '@/lib/site';
 

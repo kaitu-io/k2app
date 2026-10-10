@@ -21,7 +21,7 @@ import (
 
 // 访客聊天 HTTP 接口（官网挂件调用）。
 // 会话在第一条访客消息时才创建；session 只下发静态欢迎语 + 已有会话，不落库。
-// 设计见 docs/superpowers/specs/2026-10-01-support-console-chatwoot-replacement-design.md §5/§6
+// 设计见 docs/superpowers/specs/2026-10-01-support-chat-design.md §5/§6
 
 const (
 	chatContentMaxRunes = 2000

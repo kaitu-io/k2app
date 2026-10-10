@@ -17,7 +17,7 @@ import (
 
 // AI 应答层（客服聊天）：访客发消息且会话由 AI 处理时，异步调用 filesearch 回复；
 // 出错 / 空回复 / 标记 / 达到上限 → 转人工。人工始终可在 Slack 里接管。
-// 设计见 docs/superpowers/specs/2026-10-01-support-console-chatwoot-replacement-design.md
+// 设计见 docs/superpowers/specs/2026-10-01-support-chat-design.md
 
 const (
 	// chatAIMaxReplies 单个会话内 AI 最多回复条数，达到后直接转人工。
