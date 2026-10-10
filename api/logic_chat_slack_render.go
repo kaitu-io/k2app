@@ -27,14 +27,19 @@ func chatSlackChannelURL(channelID string) string {
 	return "https://slack.com/app_redirect?channel=" + channelID
 }
 
-// chatSlackChannelName 返回 "chat-MMDD-<uuid 前 6 位>"（Slack 只允许小写字母、数字、连字符、下划线，≤80 字符）。
-// MMDD 取会话创建时间在客服时区（Asia/Shanghai）的日期。
+// chatSlackChannelName 返回 "chat-<品牌>-MMDD-<uuid 前 6 位>"，如 chat-kaitu-1002-abcdef：
+// 频道列表里一眼看出是哪个产品（Slack 只允许小写字母、数字、连字符、下划线，≤80 字符；品牌 id 本身就合规）。
+// 品牌无效时按 kaitu（与 Brand.Config() 的回退一致）。MMDD 取会话创建时间在客服时区（Asia/Shanghai）的日期。
 func chatSlackChannelName(conv *Conversation) string {
 	id := strings.ToLower(strings.ReplaceAll(conv.UUID, "-", ""))
 	if len(id) > 6 {
 		id = id[:6]
 	}
-	return "chat-" + conv.CreatedAt.In(chatSlackLoc).Format("0102") + "-" + id
+	b := Brand(conv.Brand)
+	if !b.Valid() {
+		b = BrandKaitu
+	}
+	return "chat-" + string(b) + "-" + conv.CreatedAt.In(chatSlackLoc).Format("0102") + "-" + id
 }
 
 // chatSlackStatus 返回会话状态的 emoji 与文案。
