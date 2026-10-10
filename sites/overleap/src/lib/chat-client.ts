@@ -55,6 +55,8 @@ export interface SessionState {
   ws: { url: string; token: string } | null;
   /** 服务端配了图片存储：挂件才画"发图片"按钮。 */
   images: boolean;
+  /** 访客还没留邮箱（且没登录）：必须先留邮箱才能发消息，挂件先画邮箱表单。 */
+  emailRequired: boolean;
 }
 
 /** 与 api chatImageMaxBytes 一致。 */
@@ -83,7 +85,7 @@ export interface ChatClient {
 }
 
 /** 挂件按 kind 选文案；`code` 是信封错误码或 HTTP 状态，仅供排查，不给访客看。 */
-export type ChatErrorKind = 'rate_limited' | 'invalid' | 'network';
+export type ChatErrorKind = 'rate_limited' | 'invalid' | 'network' | 'email_required';
 
 export class ChatError extends Error {
   constructor(
@@ -149,6 +151,8 @@ const CODE_INVALID_ARGUMENT = 422;
  * 后果是不再自动重建会话（退化为报"发送失败"），不会误重建。
  */
 const MSG_NO_SUBJECT = 'no chat session';
+/** 同上，绑定 api/api_chat.go chatMsgEmailRequired：没留邮箱的游客发消息被拒（挂件据此重新画邮箱表单）。 */
+const MSG_EMAIL_REQUIRED = 'email required';
 /**
  * 重建会话失败后的后台重试：1s 起翻倍、上限 30s，一轮最多这么多次。一轮用尽后本轮结束、通道照旧；
  * 之后只要再收到一次"没有访客主体"（下一次轮询 / 补齐 / 发消息），就会开启新的一轮。
@@ -273,6 +277,9 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
       if (code === 0) return envelope.data as T;
       if (code === CODE_RATE_LIMITED) throw new ChatError('rate_limited', code);
       if (code >= CODE_SERVER_ERROR && code < 600) throw new ChatError('network', code);
+      if (code === CODE_INVALID_ARGUMENT && envelope.message === MSG_EMAIL_REQUIRED) {
+        throw new ChatError('email_required', code);
+      }
       throw new ChatError('invalid', code, code === CODE_INVALID_ARGUMENT && envelope.message === MSG_NO_SUBJECT);
     } finally {
       clearTimeout(timeout);
@@ -339,6 +346,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
       welcome: data?.welcome ?? null,
       ws: data?.ws ?? null,
       images: data?.images === true,
+      emailRequired: data?.emailRequired === true,
     };
     if (stopped || !state.enabled) return state;
     if (keepTransport) teardownTransport();

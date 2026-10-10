@@ -12,7 +12,7 @@
   "rateLimited": "Du sendest Nachrichten zu schnell. Bitte warte einen Moment.",
   "sendFailed": "Nachricht nicht gesendet. Prüfe deine Verbindung und versuche es erneut.",
   "tooLong": "Diese Nachricht ist zu lang. Bitte kürze sie und versuche es erneut.",
-  "emailPrompt": "Unser Team hat sich noch nicht darum gekümmert. Hinterlasse deine E-Mail-Adresse, dann melden wir uns, sobald wir antworten.",
+  "emailPrompt": "Bitte hinterlasse vor dem Start deine E-Mail-Adresse. Falls du nicht mehr da bist, schreiben wir dir, sobald wir antworten.",
   "emailPlaceholder": "Deine E-Mail-Adresse",
   "emailSubmit": "Absenden",
   "emailInvalid": "Bitte gib eine gültige E-Mail-Adresse ein.",

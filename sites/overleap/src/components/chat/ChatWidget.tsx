@@ -19,45 +19,9 @@ import {
 } from '@/lib/chat-client';
 import EmailForm from './EmailForm';
 import MessageList from './MessageList';
-import {
-  CHAT_EMAIL_FLAG,
-  CHAT_KNOWN_FLAG,
-  isPreview,
-  onOpenChatRequest,
-  readFlag,
-  shouldStartSession,
-  takeResumeToken,
-  writeFlag,
-} from './gate';
-
-/** 转人工后这么久没有客服消息，就请访客留邮箱。 */
-const EMAIL_PROMPT_AFTER_MS = 30_000;
+import { CHAT_KNOWN_FLAG, isPreview, onOpenChatRequest, shouldStartSession, takeResumeToken, writeFlag } from './gate';
 
 type SendError = 'rateLimited' | 'sendFailed' | 'tooLong' | 'imageTooLarge' | 'imageInvalid' | 'imageFailed';
-
-/**
- * 正在等人工的那段：`at` 是转人工的时刻（留邮箱表单的计时起点，与面板开合无关），
- * `afterId` 之后出现客服消息即视为已接入。按会话 uuid 记，换会话重新算。
- */
-type HumanWait = { uuid: string; at: number; afterId: number };
-
-const isWaitingHuman = (c: ChatConversation | null): c is ChatConversation =>
-  c !== null && c.status === 'open' && c.handler === 'human';
-
-const maxId = (list: readonly ChatMessage[]) => list.reduce((max, m) => (m.id > max ? m.id : max), 0);
-
-/** 页面加载时会话已经在等人工：起点取最近一条转人工事件的时间（取不到或在未来就用现在）。 */
-function humanWaitFromHistory(conv: ChatConversation, history: readonly ChatMessage[]): HumanWait {
-  const now = Date.now();
-  for (let i = history.length - 1; i >= 0; i--) {
-    const m = history[i];
-    if (m.kind === 'event' && m.meta?.event === 'transfer_human') {
-      const at = Date.parse(m.createdAt);
-      return { uuid: conv.uuid, at: Number.isFinite(at) && at <= now ? at : now, afterId: m.id };
-    }
-  }
-  return { uuid: conv.uuid, at: now, afterId: 0 };
-}
 
 /**
  * 官网访客会话挂件（入口按钮 + 对话面板）。由 ChatWidgetLazy 按需加载。
@@ -72,6 +36,10 @@ function humanWaitFromHistory(conv: ChatConversation, history: readonly ChatMess
  *
  * `?chat=preview` 以预览身份建会话（本标签页内跟着站内跳转走）。邮件回链是 `#chat=<令牌>`：
  * 令牌由根布局的内联脚本在统计脚本之前移出地址栏，这里取走、传给服务端并自动展开面板。
+ *
+ * 留邮箱是硬门槛：服务端说 `emailRequired`（游客且没留过邮箱；已登录的直接用账号邮箱）时，
+ * 先画邮箱表单、锁住输入与欢迎选项，留完才能发。发送时服务端以 `email_required` 拒绝（例如 cookie
+ * 丢了、重建出的新游客没有邮箱）也会把表单重新画出来。
  *
  * 实时通道（WebSocket / 轮询）在访客第一次展开面板、或会话已存在时才建立。
  * 会话状态（处理方、是否关闭）以服务端下发为准。
@@ -95,20 +63,17 @@ export default function ChatWidget({
   const [unavailable, setUnavailable] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversation, setConversation] = useState<ChatConversation | null>(null);
-  const [humanWait, setHumanWait] = useState<HumanWait | null>(null);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<SendError | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [emailState, setEmailState] = useState<'idle' | 'saved' | 'done'>(() =>
-    readFlag(CHAT_EMAIL_FLAG) ? 'done' : 'idle',
-  );
-  const [emailDue, setEmailDue] = useState(false);
+  // 必须先留邮箱：以服务端为准（session 下发、发送被拒时置上），留成功后放开
+  const [emailRequired, setEmailRequired] = useState(false);
+  const [emailSaved, setEmailSaved] = useState(false);
 
   const clientRef = useRef<ChatClient | null>(null);
   // 入口参数只读一次并存在 ref 里：令牌只能取走一次，严格模式的第二次挂载要靠它拿回来
   const entryRef = useRef<{ preview: boolean; resume: string | null } | null>(null);
-  const messagesRef = useRef<ChatMessage[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
@@ -127,20 +92,11 @@ export default function ChatWidget({
     let cancelled = false;
     const off = client.onMessages((list) => {
       if (cancelled) return;
-      messagesRef.current = list;
       setMessages(list);
     });
     const offConv = client.onConversation((conv) => {
       if (cancelled) return;
       setConversation(conv);
-      // 运行中看到转人工：起点就是此刻，此后的客服消息才算"已接入"
-      setHumanWait((prev) =>
-        !isWaitingHuman(conv)
-          ? null
-          : prev?.uuid === conv.uuid
-            ? prev
-            : { uuid: conv.uuid, at: Date.now(), afterId: maxId(messagesRef.current) },
-      );
     });
     const opts: { preview?: boolean; resume?: string } = {};
     if (entry.preview) opts.preview = true;
@@ -155,7 +111,7 @@ export default function ChatWidget({
         }
         writeFlag(CHAT_KNOWN_FLAG);
         setConversation(state.conversation);
-        setHumanWait(isWaitingHuman(state.conversation) ? humanWaitFromHistory(state.conversation, state.messages) : null);
+        setEmailRequired(state.emailRequired);
         setSession(state);
         if (entry.resume) setOpen(true);
       })
@@ -200,36 +156,30 @@ export default function ChatWidget({
   }, [open, visible]);
 
   useEffect(() => {
-    if (open) inputRef.current?.focus();
-    else if (wasOpenRef.current) launcherRef.current?.focus();
+    // 展开时焦点给输入框（要先留邮箱时输入框锁着，留完邮箱解锁的那一刻再给）
+    if (open) {
+      if (!emailRequired) inputRef.current?.focus();
+    } else if (wasOpenRef.current) launcherRef.current?.focus();
     wasOpenRef.current = open;
-  }, [open]);
+  }, [open, emailRequired]);
 
   useEffect(() => {
     if (open) endRef.current?.scrollIntoView?.({ block: 'end' });
-  }, [open, messages, emailDue]);
-
-  // "客服已接入"仍看消息：转人工之后出现过客服消息
-  const staffReplied =
-    humanWait !== null && messages.some((m) => m.id > humanWait.afterId && m.senderType === 'staff');
-  const wantsEmail = humanWait !== null && !staffReplied && emailState === 'idle';
-
-  // 计时锚在转人工的时刻，与面板开合无关：过了 30 秒再打开面板，表单直接在
-  useEffect(() => {
-    if (!wantsEmail || !humanWait) return;
-    const remaining = Math.max(0, humanWait.at + EMAIL_PROMPT_AFTER_MS - Date.now());
-    const timer = setTimeout(() => setEmailDue(true), remaining);
-    return () => {
-      clearTimeout(timer);
-      setEmailDue(false);
-    };
-  }, [wantsEmail, humanWait]);
+  }, [open, messages, emailRequired]);
 
   if (!available) return null;
 
+  /** 服务端要求先留邮箱：重新画表单（不另报错，表单本身就是说明）。 */
+  const needEmail = (err: unknown) => {
+    if (!(err instanceof ChatError && err.kind === 'email_required')) return false;
+    setEmailSaved(false);
+    setEmailRequired(true);
+    return true;
+  };
+
   /** 发一张图片：先在本地拦住明显不行的（类型、大小），服务端会按内容再判一次。 */
   const uploadImage = async (file: File) => {
-    if (!session?.images || uploading) return;
+    if (!session?.images || uploading || emailRequired) return;
     if (!(CHAT_IMAGE_TYPES as readonly string[]).includes(file.type)) {
       setError('imageInvalid');
       return;
@@ -243,6 +193,7 @@ export default function ChatWidget({
     try {
       await clientRef.current?.sendImage(file);
     } catch (err) {
+      if (needEmail(err)) return;
       setError(err instanceof ChatError && err.kind === 'rate_limited' ? 'rateLimited' : 'imageFailed');
     } finally {
       setUploading(false);
@@ -258,12 +209,14 @@ export default function ChatWidget({
     void uploadImage(file);
   };
 
-  const fail = (err: unknown) =>
+  const fail = (err: unknown) => {
+    if (needEmail(err)) return;
     setError(err instanceof ChatError && err.kind === 'rate_limited' ? 'rateLimited' : 'sendFailed');
+  };
 
   const submit = async () => {
     const text = draft.trim();
-    if (!text || !session) return; // 会话还没建好：输入框里的字留着
+    if (!text || !session || emailRequired) return; // 会话还没建好 / 还没留邮箱：输入框里的字留着
     if ([...text].length > CHAT_CONTENT_MAX) {
       setError('tooLong');
       return;
@@ -280,6 +233,7 @@ export default function ChatWidget({
   };
 
   const pickOption = (value: string) => {
+    if (emailRequired) return;
     setError(null);
     clientRef.current?.send('option_reply', value).catch(fail);
   };
@@ -293,9 +247,12 @@ export default function ChatWidget({
   };
 
   const submitEmail = async (email: string) => {
-    await clientRef.current?.leaveEmail(email);
-    writeFlag(CHAT_EMAIL_FLAG);
-    setEmailState('saved');
+    const client = clientRef.current;
+    if (!client) throw new Error('chat not ready');
+    await client.leaveEmail(email);
+    setEmailRequired(false);
+    setEmailSaved(true);
+    setError(null);
   };
 
   if (!open) {
@@ -340,6 +297,7 @@ export default function ChatWidget({
             <p className="max-w-[85%] rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-sm whitespace-pre-wrap text-foreground">
               {welcome.text}
             </p>
+            {!emailRequired && (
             <div className="flex flex-wrap gap-2">
               {welcome.options.map((o) => (
                 <Button key={o.value} type="button" variant="outline" size="sm" onClick={() => pickOption(o.value)}>
@@ -347,6 +305,7 @@ export default function ChatWidget({
                 </Button>
               ))}
             </div>
+            )}
           </div>
         )}
         <MessageList
@@ -367,7 +326,7 @@ export default function ChatWidget({
         {conversation?.status === 'closed' && (
           <p className="text-center text-xs text-muted-foreground">{t('closed')}</p>
         )}
-        {emailDue && wantsEmail && (
+        {emailRequired && (
           <EmailForm
             labels={{
               prompt: t('emailPrompt'),
@@ -379,7 +338,7 @@ export default function ChatWidget({
             onSubmit={submitEmail}
           />
         )}
-        {emailState === 'saved' && <p className="text-center text-xs text-muted-foreground">{t('emailSaved')}</p>}
+        {emailSaved && <p className="text-center text-xs text-muted-foreground">{t('emailSaved')}</p>}
         <div ref={endRef} />
       </div>
 
@@ -409,7 +368,7 @@ export default function ChatWidget({
                 variant="ghost"
                 size="icon"
                 aria-label={t('attachImage')}
-                disabled={uploading}
+                disabled={uploading || emailRequired}
                 onClick={() => fileRef.current?.click()}
               >
                 <ImagePlus aria-hidden />
@@ -425,9 +384,10 @@ export default function ChatWidget({
             onPaste={onInputPaste}
             placeholder={t('placeholder')}
             aria-label={t('placeholder')}
+            disabled={emailRequired}
             className="max-h-32 min-h-9 resize-none"
           />
-          <Button type="button" size="icon" aria-label={t('send')} disabled={!session} onClick={() => void submit()}>
+          <Button type="button" size="icon" aria-label={t('send')} disabled={!session || emailRequired} onClick={() => void submit()}>
             <Send aria-hidden />
           </Button>
         </div>

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	db "github.com/wordgate/qtoolkit/db"
+	"github.com/wordgate/qtoolkit/log"
 	"gorm.io/gorm"
 )
 
@@ -60,7 +61,7 @@ func chatSlackStatus(conv *Conversation) (emoji, label string) {
 type chatSlackView struct{ card, lobby, topic string }
 
 // chatSlackRender 生成状态卡、总览频道那一行、频道主题。
-// 登录用户的邮箱是加密存储的登录标识，取它要解密，这里不取：user 主体一律显示"未留邮箱"。
+// user 主体显示账号邮箱（加密存储的登录标识，这里解密；取不到就显示"未留邮箱"）。
 func chatSlackRender(ctx context.Context, conv *Conversation) chatSlackView {
 	brand := Brand(conv.Brand).Config().DisplayName
 	entry := chatSlackEscaper.Replace(conv.EntryPath)
@@ -76,6 +77,10 @@ func chatSlackRender(ctx context.Context, conv *Conversation) chatSlackView {
 			}
 		}
 		who, email = fmt.Sprintf("游客 #%d", root), chatSlackEscaper.Replace(guestEmail(ctx, root))
+	} else if e, err := getUserEmail(ctx, conv.SubjectID); err == nil {
+		email = chatSlackEscaper.Replace(e)
+	} else {
+		log.Warnf(ctx, "chat slack render: account email of user %d: %v", conv.SubjectID, err)
 	}
 	emailOrNone, emailOrWho := email, email
 	if email == "" {
