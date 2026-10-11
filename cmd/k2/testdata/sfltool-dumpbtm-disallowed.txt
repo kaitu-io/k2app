@@ -1,0 +1,38 @@
+ #2:
+                 UUID: C39570B7-63E4-4D3A-AA94-2D92C80DE3C8
+                 Name: Kaitu
+       Developer Name: ALL NATION CONNECT TECHNOLOGY PTE. LTD.
+      Team Identifier: NJT954Q3RH
+                 Type: legacy daemon (0x10010)
+                Flags: [ legacy ] (0x1)
+          Disposition: [enabled, disallowed, notified] (0x9)
+           Identifier: 16.kaitu-watchdog
+                  URL: file:///Library/LaunchDaemons/kaitu-watchdog.plist
+      Executable Path: /Applications/Kaitu.app/Contents/MacOS/k2
+           Generation: 2
+    Parent Identifier: ALL NATION CONNECT TECHNOLOGY PTE. LTD.
+
+ #3:
+                 UUID: 4C606FCE-29FB-460B-B23C-44302265993D
+                 Name: Kaitu
+       Developer Name: ALL NATION CONNECT TECHNOLOGY PTE. LTD.
+      Team Identifier: NJT954Q3RH
+                 Type: legacy daemon (0x10010)
+                Flags: [ legacy ] (0x1)
+          Disposition: [enabled, disallowed, notified] (0x9)
+           Identifier: 16.kaitu
+                  URL: file:///Library/LaunchDaemons/kaitu.plist
+      Executable Path: /Applications/Kaitu.app/Contents/MacOS/k2
+           Generation: 2
+    Parent Identifier: ALL NATION CONNECT TECHNOLOGY PTE. LTD.
+
+
+========================
+ Records for UID 0 : FFFFEEEE-DDDD-CCCC-BBBB-AAAA00000000
+========================
+
+ ServiceManagement migrated: false
+ LaunchServices registered: false
+
+ Items:
+

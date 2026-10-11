@@ -115,9 +115,19 @@ func installService() error {
 		return fmt.Errorf("resolve executable path: %w", err)
 	}
 	il.logf("exe=%s", exe)
-	logBTMState(il)
+	btmOff := logBTMState(il)
+	if btmOff {
+		// Verified on macOS 26.7 (testlab VM 150): turning the developer off
+		// under Login Items SIGTERMs the daemon and keeps launchd from loading
+		// it at boot; it leaves no print-disabled override. A root bootstrap
+		// may still start it now, but only until the next reboot (#3911).
+		il.logf("WARN btm: daemon disallowed under Login Items → Allow in the Background; it will not start at boot until re-enabled")
+	}
 
 	if err := installJob(il, serviceLabel, plistPath(), plistContent(serviceLabel, exe)); err != nil {
+		if btmOff {
+			return fmt.Errorf("%w (%s)", err, loginItemsHint)
+		}
 		return err
 	}
 
@@ -137,6 +147,9 @@ func installService() error {
 	// that keeps dying shows "spawn scheduled" + a non-zero "last exit code".
 	if state := waitJobRunning(il, serviceLabel, 3*time.Second); state != "running" {
 		il.logf("FAIL daemon not running after bootstrap: state=%q", state)
+		if btmOff {
+			return fmt.Errorf("daemon not running after install (launchd state %q; %s)", state, loginItemsHint)
+		}
 		return fmt.Errorf("daemon not running after install (launchd state %q, see k2-service-install.log)", state)
 	}
 	il.logf("daemon running: OK")
@@ -206,7 +219,7 @@ func installJob(il *installLog, label, path, content string) error {
 	}
 	disabledOut, _ = launchctl("print-disabled", "system")
 	if parseDisabledState(disabledOut, label) == "disabled" {
-		return fmt.Errorf("launchctl bootstrap %s: exit %d: %s (job is disabled — allow it under System Settings → General → Login Items → Allow in the Background)", label, code, out)
+		return fmt.Errorf("launchctl bootstrap %s: exit %d: %s (job is disabled — %s)", label, code, out, loginItemsHint)
 	}
 	return fmt.Errorf("launchctl bootstrap %s: exit %d: %s", label, code, out)
 }
@@ -253,17 +266,22 @@ func waitJobRunning(il *installLog, label string, timeout time.Duration) string 
 	return info["state"]
 }
 
+// loginItemsHint names the switch as macOS shows it: the item is listed by
+// developer name, not by app name.
+const loginItemsHint = `allow "ALL NATION CONNECT TECHNOLOGY PTE. LTD." under System Settings → General → Login Items → Allow in the Background`
+
 // logBTMState records Background Task Management's verdict on our daemons
-// (macOS 13+; needs root, which install has). Disposition "disallowed" means
-// the user turned the app off under Login Items → Allow in the Background.
-func logBTMState(il *installLog) {
+// (macOS 13+; needs root, which install has) and reports whether the daemon
+// plist is disallowed — the user (or a cleaner app) turned it off under
+// Login Items → Allow in the Background.
+func logBTMState(il *installLog) bool {
 	// Bounded: this runs inside the admin install, which the user is waiting on.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "sfltool", "dumpbtm").CombinedOutput()
 	if err != nil {
 		il.logf("btm: sfltool dumpbtm unavailable: %v", err)
-		return
+		return false
 	}
 	entries := parseBTMEntries(string(out), plistDir+"/"+serviceLabel)
 	if len(entries) == 0 {
@@ -272,6 +290,19 @@ func logBTMState(il *installLog) {
 	for _, e := range entries {
 		il.logf("btm: %s", e)
 	}
+	return btmDisallowed(entries, plistPath())
+}
+
+// btmDisallowed reports whether the entry for plist (exact URL — the watchdog
+// plist shares the prefix) carries a "disallowed" disposition.
+func btmDisallowed(entries []string, plist string) bool {
+	url := "url=file://" + plist + " "
+	for _, e := range entries {
+		if strings.HasPrefix(e, url) && strings.Contains(e, "disallowed") {
+			return true
+		}
+	}
+	return false
 }
 
 // parseDisabledState extracts the override for label from `launchctl
