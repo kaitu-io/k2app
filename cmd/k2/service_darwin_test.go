@@ -86,6 +86,30 @@ func TestParseBTMEntries(t *testing.T) {
 	}
 }
 
+// Disposition line from testlab VM 150 after turning the developer off under
+// Login Items (sfltool dumpbtm, macOS 26.7.1).
+func TestBTMDisallowed(t *testing.T) {
+	off := parseBTMEntries(readFixture(t, "sfltool-dumpbtm-disallowed.txt"), "/Library/LaunchDaemons/kaitu")
+	if len(off) != 2 {
+		t.Fatalf("want daemon + watchdog, got %q", off)
+	}
+	if !btmDisallowed(off, "/Library/LaunchDaemons/kaitu.plist") {
+		t.Errorf("disallowed daemon not detected: %q", off)
+	}
+	on := parseBTMEntries(readFixture(t, "sfltool-dumpbtm.txt"), "/Library/LaunchDaemons/kaitu")
+	if btmDisallowed(on, "/Library/LaunchDaemons/kaitu.plist") {
+		t.Errorf("allowed daemon reported disallowed: %q", on)
+	}
+	// Only the watchdog off → the daemon itself is still allowed.
+	watchdogOnly := []string{
+		"url=file:///Library/LaunchDaemons/kaitu-watchdog.plist disposition=[enabled, disallowed, notified] (0x9) exe=x developer=y",
+		"url=file:///Library/LaunchDaemons/kaitu.plist disposition=[enabled, allowed, notified] (0xb) exe=x developer=y",
+	}
+	if btmDisallowed(watchdogOnly, "/Library/LaunchDaemons/kaitu.plist") {
+		t.Error("watchdog entry leaked into the daemon verdict")
+	}
+}
+
 // fakeLaunchctl scripts launchctl replies by subcommand and records calls.
 type fakeLaunchctl struct {
 	disabled   string // print-disabled output
