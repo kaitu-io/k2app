@@ -51,7 +51,84 @@ pub fn launchd_summary() -> String {
     let print = stdout(&["print", &format!("system/{}", DAEMON_LABEL)]);
     let disabled = stdout(&["print-disabled", "system"]);
     let plist = Path::new(&format!("/Library/LaunchDaemons/{}.plist", DAEMON_LABEL)).exists();
-    summarize(&print, &disabled, plist)
+    let mut s = summarize(&print, &disabled, plist);
+    s.push_str(&format!(" btm={}", btm_state()));
+    s
+}
+
+/// Background Task Management verdict on the daemon plist, e.g.
+/// `0x9(enabled,disallowed,notified)`. "disallowed" = the user (or a cleaner
+/// app) turned "ALL NATION CONNECT TECHNOLOGY PTE. LTD." off under Login Items
+/// → Allow in the Background: launchd SIGTERMs the daemon at once and never
+/// loads it at boot. That switch leaves no `print-disabled` override, so this
+/// is the only place it shows (verified on macOS 26.7, testlab VM 150).
+/// The store is world-readable; `sfltool dumpbtm` would need root.
+#[cfg(target_os = "macos")]
+fn btm_state() -> String {
+    let dir = Path::new("/private/var/db/com.apple.backgroundtaskmanagement");
+    let Some(store) = newest_btm_store(dir) else {
+        return "no-store".to_string();
+    };
+    match plist::Value::from_file(&store) {
+        Ok(v) => match btm_disposition(&v, &format!("file:///Library/LaunchDaemons/{}.plist", DAEMON_LABEL)) {
+            Some(d) => describe_disposition(d),
+            None => "no-entry".to_string(),
+        },
+        Err(e) => format!("unreadable({})", e),
+    }
+}
+
+/// `BackgroundItems-v<N>.btm` with the highest N (old versions linger after
+/// OS upgrades: a Mac upgraded from Sonoma keeps v9 next to v16).
+#[cfg(target_os = "macos")]
+fn newest_btm_store(dir: &Path) -> Option<std::path::PathBuf> {
+    std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            let n: u32 = name.strip_prefix("BackgroundItems-v")?.strip_suffix(".btm")?.parse().ok()?;
+            Some((n, e.path()))
+        })
+        .max_by_key(|(n, _)| *n)
+        .map(|(_, p)| p)
+}
+
+/// Walk the NSKeyedArchiver object table: an ItemRecord is a dictionary with
+/// an integer `disposition` and a `url` UID pointing at an NSURL whose
+/// `NS.relative` UID resolves to the URL string.
+#[cfg(target_os = "macos")]
+fn btm_disposition(root: &plist::Value, url: &str) -> Option<u64> {
+    let objects = root.as_dictionary()?.get("$objects")?.as_array()?;
+    let deref = |v: &plist::Value| match v {
+        plist::Value::Uid(u) => objects.get(u.get() as usize),
+        _ => None,
+    };
+    let url_string = |v: &plist::Value| -> Option<String> {
+        let obj = deref(v)?;
+        if let Some(s) = obj.as_string() {
+            return Some(s.to_string());
+        }
+        deref(obj.as_dictionary()?.get("NS.relative")?)?.as_string().map(str::to_string)
+    };
+    objects.iter().find_map(|o| {
+        let d = o.as_dictionary()?;
+        let disposition = d.get("disposition")?.as_unsigned_integer()?;
+        (url_string(d.get("url")?)? == url).then_some(disposition)
+    })
+}
+
+/// Same bit names as `sfltool dumpbtm` (0xb = enabled,allowed,notified;
+/// 0x9 = enabled,disallowed,notified; 0x2 = disabled,allowed,not notified).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn describe_disposition(d: u64) -> String {
+    format!(
+        "0x{:x}({},{},{})",
+        d,
+        if d & 0x1 != 0 { "enabled" } else { "disabled" },
+        if d & 0x2 != 0 { "allowed" } else { "disallowed" },
+        if d & 0x8 != 0 { "notified" } else { "not-notified" }
+    )
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -213,6 +290,43 @@ mod tests {
         );
     }
 
+    #[test]
+    fn describe_disposition_matches_sfltool_names() {
+        assert_eq!(describe_disposition(0xb), "0xb(enabled,allowed,notified)");
+        assert_eq!(describe_disposition(0x9), "0x9(enabled,disallowed,notified)");
+        assert_eq!(describe_disposition(0x2), "0x2(disabled,allowed,not-notified)");
+    }
+
+    // Real store from testlab VM 150 (macOS 26.7.1) right after turning
+    // "ALL NATION CONNECT TECHNOLOGY PTE. LTD." off under Login Items; sfltool
+    // reported both of our items as [enabled, disallowed, notified] (0x9).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn btm_disposition_from_real_disallowed_store() {
+        let v = plist::Value::from_file(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/testdata/btm-v16-kaitu-disallowed.btm"
+        ))
+        .unwrap();
+        assert_eq!(btm_disposition(&v, "file:///Library/LaunchDaemons/kaitu.plist"), Some(0x9));
+        assert_eq!(
+            btm_disposition(&v, "file:///Library/LaunchDaemons/kaitu-watchdog.plist"),
+            Some(0x9)
+        );
+        assert_eq!(btm_disposition(&v, "file:///Library/LaunchDaemons/kaitu"), None);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn newest_btm_store_picks_highest_version() {
+        let dir = tempfile::tempdir().unwrap();
+        for f in ["BackgroundItems-v9.btm", "BackgroundItems-v16.btm", "BackgroundItems-v4.btm", "other.btm"] {
+            std::fs::write(dir.path().join(f), "x").unwrap();
+        }
+        let got = newest_btm_store(dir.path()).unwrap();
+        assert_eq!(got.file_name().unwrap(), "BackgroundItems-v16.btm");
+    }
+
     // Read back the real artifacts on the build Mac (daemon may or may not be
     // installed — either way the summary is well-formed, never empty).
     #[cfg(target_os = "macos")]
@@ -222,6 +336,7 @@ mod tests {
         println!("launchd: {}", s);
         assert!(s.starts_with("state="), "{}", s);
         assert!(s.contains(" override=") && s.contains(" plist="), "{}", s);
+        assert!(s.contains(" btm="), "{}", s);
         let h = installer_history(20);
         println!("installer:\n{}", h);
         assert!(h.lines().count() <= 20);
