@@ -249,6 +249,20 @@ fn collect_logs_to_staging() -> Result<PathBuf, String> {
         }
     }
 
+    // 3c. macOS service lifecycle history (survives desktop.log rotation) and
+    //     the pkg installer trail from /var/log/install.log.
+    #[cfg(target_os = "macos")]
+    {
+        let history = crate::get_desktop_log_dir().join(crate::service_diag::HISTORY_FILE);
+        if copy_file_to_staging(&history, &staging_dir.join(crate::service_diag::HISTORY_FILE)) {
+            staged_count += 1;
+        }
+        let installer = crate::service_diag::installer_history(400);
+        if std::fs::write(staging_dir.join("install-history.log"), installer).is_ok() {
+            staged_count += 1;
+        }
+    }
+
     // 4. Windows installer diagnostics (NSIS hooks). Best-effort: these
     //    files only exist after an install/upgrade, and are the definitive
     //    evidence when the k2 service fails to come back after an update.

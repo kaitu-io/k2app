@@ -224,6 +224,7 @@ async fn check_download_and_install(app: &AppHandle, force_downgrade: bool) {
             match update.install(&bytes) {
                 Ok(()) => {
                     log::info!("[updater] Update {} installed", new_version);
+                    crate::service_diag::record(&format!("update: bundle replaced with {}", new_version));
 
                     // Windows: NSIS installer launched as child process, must exit immediately
                     #[cfg(target_os = "windows")]
@@ -310,10 +311,12 @@ pub async fn apply_update_now(app: AppHandle) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         log::info!("[updater] Pre-installing service before restart...");
+        crate::service_diag::record("update: before service pre-install");
         match service::admin_reinstall_service().await {
             Ok(msg) => log::info!("[updater] Service pre-installed: {}", msg),
             Err(e) => log::warn!("[updater] Service pre-install failed (will retry after restart): {}", e),
         }
+        crate::service_diag::record("update: after service pre-install");
     }
 
     log::info!("[updater] User requested update, restarting...");
