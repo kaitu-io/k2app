@@ -9,6 +9,7 @@ mod installed_apps;
 mod log_upload;
 mod router_bridge;
 mod service;
+mod service_diag;
 mod storage;
 mod storage_crypto;
 mod storage_migration;

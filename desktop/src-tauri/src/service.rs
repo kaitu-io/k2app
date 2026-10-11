@@ -420,7 +420,20 @@ fn read_install_log_tail() -> Option<String> {
     Some(content[tail_start..].to_string())
 }
 
-#[cfg(not(target_os = "windows"))]
+/// macOS: `k2 service install` (run as root via osascript or the pkg
+/// postinstall) writes its step-by-step trail next to the daemon log.
+#[cfg(target_os = "macos")]
+fn read_install_log_tail() -> Option<String> {
+    let content = std::fs::read_to_string("/var/log/kaitu/k2-service-install.log").ok()?;
+    const TAIL: usize = 2048;
+    let start = content.len().saturating_sub(TAIL);
+    let tail_start = (start..content.len())
+        .find(|&i| content.is_char_boundary(i))
+        .unwrap_or(content.len());
+    Some(content[tail_start..].to_string())
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 fn read_install_log_tail() -> Option<String> {
     None
 }
@@ -468,6 +481,13 @@ fn admin_reinstall_service_macos() -> Result<String, String> {
         .args(["-e", &script])
         .output()
         .map_err(|e| format!("osascript failed: {}", e))?;
+
+    // `k2 service install` mirrors every install-log step to stdout — keep it
+    // in desktop.log too: k2-service-install.log is overwritten on each run.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !stdout.trim().is_empty() {
+        log::info!("[service] k2 service install output:\n{}", stdout.trim_end());
+    }
 
     if output.status.success() {
         log::info!("[service] Service installed successfully via osascript");
@@ -599,11 +619,13 @@ pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
 
     if matches!(check, VersionCheckResult::VersionMatch) {
         log::info!("[service] Service ready");
+        crate::service_diag::record("startup: daemon ready");
         return Ok(());
     }
 
     // Phase 2: install via admin elevation
     log::info!("[service] Install needed: {:?}", check);
+    crate::service_diag::record(&format!("startup: daemon not ready ({:?})", check));
 
     // Diagnostic: check if k2 binary exists
     let exe_path = std::env::current_exe().ok();
@@ -647,6 +669,7 @@ pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
             );
         }
         log::info!("[service] Service ready after install");
+        crate::service_diag::record("after install: daemon ready");
         Ok(())
     } else {
         // Surface the k2-side install log so the failure cause lands in
@@ -654,6 +677,10 @@ pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
         if let Some(tail) = read_install_log_tail() {
             log::error!("[service] k2-service-install.log tail:\n{}", tail);
         }
+        crate::service_diag::record(&format!(
+            "after install: daemon NOT ready (install reported: {})",
+            install_error.as_deref().unwrap_or("success")
+        ));
         match install_error {
             Some(e) => Err(format!("Service did not start after install: {}", e)),
             None => Err(
