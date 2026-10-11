@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -169,6 +170,13 @@ func installJob(il *installLog, label, path, content string) error {
 	target := "system/" + label
 	out, code := launchctl("bootout", target)
 	il.logf("bootout %s: exit=%d %s", target, code, out) // 3 = not loaded (fine)
+	// Unlike legacy unload, bootout returns while the old daemon is still
+	// shutting down ("state = SIGTERMed"); a bootstrap in that window fails
+	// with 5. A long-running k2 has been measured to ignore SIGTERM until
+	// launchd's 5 s exit timeout SIGKILLs it, so wait for the job to be gone.
+	if code == 0 {
+		il.logf("wait for %s to unload: %s", target, waitJobGone(label, jobGoneTimeout))
+	}
 
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		il.logf("FAIL write plist %s: %v", path, err)
@@ -203,6 +211,24 @@ func installJob(il *installLog, label, path, content string) error {
 	return fmt.Errorf("launchctl bootstrap %s: exit %d: %s", label, code, out)
 }
 
+// jobGoneTimeout covers launchd's exit timeout (5 s, then SIGKILL) plus margin.
+var jobGoneTimeout = 10 * time.Second
+
+// waitJobGone polls until launchd no longer knows the job and reports how long
+// that took ("gone after 5.01s") or that it timed out.
+func waitJobGone(label string, timeout time.Duration) string {
+	start := time.Now()
+	for {
+		if _, code := launchctl("print", "system/"+label); code != 0 {
+			return fmt.Sprintf("gone after %.2fs", time.Since(start).Seconds())
+		}
+		if time.Since(start) > timeout {
+			return fmt.Sprintf("still loaded after %.1fs (timeout)", timeout.Seconds())
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 // waitJobRunning polls `launchctl print` until the job is running or the
 // timeout passes, then logs launchd's view of it. Returns the last state
 // ("" when launchd does not know the job).
@@ -231,7 +257,10 @@ func waitJobRunning(il *installLog, label string, timeout time.Duration) string 
 // (macOS 13+; needs root, which install has). Disposition "disallowed" means
 // the user turned the app off under Login Items → Allow in the Background.
 func logBTMState(il *installLog) {
-	out, err := exec.Command("sfltool", "dumpbtm").CombinedOutput()
+	// Bounded: this runs inside the admin install, which the user is waiting on.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "sfltool", "dumpbtm").CombinedOutput()
 	if err != nil {
 		il.logf("btm: sfltool dumpbtm unavailable: %v", err)
 		return

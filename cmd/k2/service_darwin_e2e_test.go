@@ -11,7 +11,9 @@ import (
 
 // TestInstallJobE2E drives the real launchctl as root against a throwaway
 // label, starting from the #3911 state: job registered but disabled, where
-// the legacy `launchctl load` exited 0 and launchd never ran it.
+// the legacy `launchctl load` exited 0 and launchd never ran it. The stand-in
+// ignores SIGTERM like a long-running k2 (killed only at launchd's 5 s exit
+// timeout), so the reinstall step exercises bootout's async teardown.
 //
 //	go test -c -o /tmp/k2.test ./cmd/k2 && sudo K2_LAUNCHD_E2E=1 /tmp/k2.test -test.run E2E -test.v
 func TestInstallJobE2E(t *testing.T) {
@@ -21,7 +23,7 @@ func TestInstallJobE2E(t *testing.T) {
 	const label = "io.k2diag.e2e"
 	path := plistDir + "/" + label + ".plist"
 	script := "/usr/local/bin/k2diag-e2e.sh"
-	if err := os.WriteFile(script, []byte("#!/bin/sh\nexec sleep 3600\n"), 0755); err != nil {
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ntrap '' TERM\nwhile :; do sleep 1; done\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
 	plist := strings.Replace(plistContent(label, script), "<string>run</string>", "", 1)

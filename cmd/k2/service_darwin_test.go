@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // When launchd refuses the daemon, k2.log stays empty and the install log is
@@ -90,6 +91,11 @@ type fakeLaunchctl struct {
 	disabled   string // print-disabled output
 	bootstraps []int  // exit codes for successive bootstrap calls
 	calls      []string
+	// bootoutOK: the job was loaded, bootout succeeds; print then keeps
+	// reporting it (SIGTERMed) for shutdownPolls calls, like a slow k2 exit.
+	bootoutOK     bool
+	shutdownPolls int
+	loaded        bool
 }
 
 func (f *fakeLaunchctl) run(args ...string) (string, int) {
@@ -110,7 +116,18 @@ func (f *fakeLaunchctl) run(args ...string) (string, int) {
 		}
 		return "", 0
 	case "bootout":
+		if f.bootoutOK {
+			f.loaded = true
+			return "", 0
+		}
 		return "Boot-out failed: 3: No such process", 3
+	case "print":
+		if f.loaded && f.shutdownPolls > 0 {
+			f.shutdownPolls--
+			return "system/kaitu = {\n\tstate = SIGTERMed\n}", 0
+		}
+		f.loaded = false
+		return `Could not find service "kaitu" in domain for system`, 113
 	}
 	return "", 0
 }
@@ -155,6 +172,43 @@ func TestInstallJobLeavesEnabledJobAlone(t *testing.T) {
 	}
 	if indexOf(f.calls, "enable") >= 0 {
 		t.Errorf("enable called on an enabled job: %q", f.calls)
+	}
+}
+
+// Measured on a real k2: bootout returns at once while the old daemon is
+// "SIGTERMed" for up to launchd's 5 s exit timeout. Bootstrap must not run
+// until the job is gone (legacy unload blocked; bootout does not).
+func TestInstallJobWaitsForOldDaemonToExit(t *testing.T) {
+	f := &fakeLaunchctl{bootstraps: []int{0}, bootoutOK: true, shutdownPolls: 5}
+	f2 := f.run
+	launchctlOrig := launchctl
+	launchctl = func(args ...string) (string, int) {
+		if args[0] == "bootstrap" && f.loaded {
+			f.calls = append(f.calls, "bootstrap-while-loaded")
+			return "Bootstrap failed: 5: Input/output error", 5
+		}
+		return f2(args...)
+	}
+	t.Cleanup(func() { launchctl = launchctlOrig })
+
+	il := &installLog{}
+	if err := installJob(il, "kaitu", filepath.Join(t.TempDir(), "kaitu.plist"), "<plist/>"); err != nil {
+		t.Fatalf("%v\n%s", err, il.b.String())
+	}
+	if indexOf(f.calls, "bootstrap-while-loaded") >= 0 {
+		t.Fatalf("bootstrapped before old job was gone: %q", f.calls)
+	}
+	if !strings.Contains(il.b.String(), "unload: gone after") {
+		t.Errorf("wait not logged:\n%s", il.b.String())
+	}
+}
+
+func TestWaitJobGoneTimesOut(t *testing.T) {
+	orig := launchctl
+	launchctl = func(args ...string) (string, int) { return "\tstate = SIGTERMed", 0 }
+	t.Cleanup(func() { launchctl = orig })
+	if got := waitJobGone("kaitu", 150*time.Millisecond); !strings.Contains(got, "timeout") {
+		t.Fatalf("got %q", got)
 	}
 }
 
