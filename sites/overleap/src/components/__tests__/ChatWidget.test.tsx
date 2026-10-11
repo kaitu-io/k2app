@@ -695,6 +695,9 @@ describe('ChatWidget', () => {
       fireEvent.click(sendButton());
       await flush();
       expect(fc.client.send).toHaveBeenCalledWith('text', 'hi');
+      // 访客开始说话后确认语收起：不能压在访客消息下面，像是对那条消息的自动回复
+      await fc.push([msg(1, { senderType: 'visitor', content: 'hi' })]);
+      expect(screen.queryByText('emailSaved')).toBeNull();
     });
 
     it('a send the server rejects with email_required brings the form back and keeps the draft, without an error line', async () => {
