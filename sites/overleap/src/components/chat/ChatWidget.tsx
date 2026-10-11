@@ -69,7 +69,9 @@ export default function ChatWidget({
   const [uploading, setUploading] = useState(false);
   // 必须先留邮箱：以服务端为准（session 下发、发送被拒时置上），留成功后放开
   const [emailRequired, setEmailRequired] = useState(false);
-  const [emailSaved, setEmailSaved] = useState(false);
+  // 留完邮箱的确认语：记下当时的消息条数，访客一发消息（列表变长）就收起——否则它压在访客
+  // 第一条消息下面，像是对那条消息的自动回复
+  const [emailSavedAt, setEmailSavedAt] = useState<number | null>(null);
 
   const clientRef = useRef<ChatClient | null>(null);
   // 入口参数只读一次并存在 ref 里：令牌只能取走一次，严格模式的第二次挂载要靠它拿回来
@@ -172,7 +174,7 @@ export default function ChatWidget({
   /** 服务端要求先留邮箱：重新画表单（不另报错，表单本身就是说明）。 */
   const needEmail = (err: unknown) => {
     if (!(err instanceof ChatError && err.kind === 'email_required')) return false;
-    setEmailSaved(false);
+    setEmailSavedAt(null);
     setEmailRequired(true);
     return true;
   };
@@ -251,7 +253,7 @@ export default function ChatWidget({
     if (!client) throw new Error('chat not ready');
     await client.leaveEmail(email);
     setEmailRequired(false);
-    setEmailSaved(true);
+    setEmailSavedAt(messages.length);
     setError(null);
   };
 
@@ -338,7 +340,7 @@ export default function ChatWidget({
             onSubmit={submitEmail}
           />
         )}
-        {emailSaved && <p className="text-center text-xs text-muted-foreground">{t('emailSaved')}</p>}
+        {emailSavedAt === messages.length && <p className="text-center text-xs text-muted-foreground">{t('emailSaved')}</p>}
         <div ref={endRef} />
       </div>
 
