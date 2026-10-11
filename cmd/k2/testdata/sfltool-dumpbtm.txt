@@ -1,0 +1,41 @@
+ #5:
+                 UUID: 393947F5-3D97-44FC-A79C-7F5739EACED1
+                 Name: postgres
+       Developer Name: (null)
+                 Type: legacy daemon (0x10010)
+                Flags: [ legacy ] (0x1)
+          Disposition: [enabled, disallowed, notified] (0x9)
+           Identifier: 16.homebrew.mxcl.postgresql
+                  URL: file:///Library/LaunchDaemons/homebrew.mxcl.postgresql.plist
+      Executable Path: /usr/local/opt/postgresql/bin/postgres
+           Generation: 2
+    Parent Identifier: Unknown Developer
+
+ #10:
+                 UUID: 7750331F-FA4B-41E2-B405-3EDF3AC7D41A
+                 Name: Kaitu
+       Developer Name: ALL NATION CONNECT TECHNOLOGY PTE. LTD.
+      Team Identifier: NJT954Q3RH
+                 Type: legacy daemon (0x10010)
+                Flags: [ legacy ] (0x1)
+          Disposition: [enabled, allowed, notified] (0xb)
+           Identifier: 16.kaitu-watchdog
+                  URL: file:///Library/LaunchDaemons/kaitu-watchdog.plist
+      Executable Path: /Applications/Kaitu.app/Contents/MacOS/k2
+           Generation: 33
+    Parent Identifier: ALL NATION CONNECT TECHNOLOGY PTE. LTD.
+
+ #11:
+                 UUID: BA5209C2-C603-47F5-8A2C-A7CED4C2A359
+                 Name: Kaitu
+       Developer Name: ALL NATION CONNECT TECHNOLOGY PTE. LTD.
+      Team Identifier: NJT954Q3RH
+                 Type: legacy daemon (0x10010)
+                Flags: [ legacy ] (0x1)
+          Disposition: [enabled, allowed, notified] (0xb)
+           Identifier: 16.kaitu
+                  URL: file:///Library/LaunchDaemons/kaitu.plist
+      Executable Path: /Applications/Kaitu.app/Contents/MacOS/k2
+           Generation: 33
+    Parent Identifier: ALL NATION CONNECT TECHNOLOGY PTE. LTD.
+
