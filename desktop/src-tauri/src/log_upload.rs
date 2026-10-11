@@ -127,6 +127,11 @@ fn get_all_service_log_dirs() -> Vec<PathBuf> {
     dirs
 }
 
+/// Service-dir files staged besides `k2*.log[.gz]`: `panic-*.log` crash logs,
+/// and `healthcheck.log` — stderr of the macOS `kaitu-watchdog` launchd job
+/// (StandardErrorPath in k2 cmd/k2/service_darwin.go).
+const SERVICE_DIR_EXTRA_PATTERNS: [&str; 2] = ["panic-*.log", "healthcheck.log"];
+
 /// Label for a service log directory (used as filename prefix to avoid collisions).
 fn dir_label(dir: &Path) -> &str {
     let s = dir.to_string_lossy();
@@ -186,20 +191,21 @@ fn collect_logs_to_staging() -> Result<PathBuf, String> {
             }
         }
 
-        // panic-*.log — crash logs
-        if let Ok(entries) = glob::glob(&dir.join("panic-*.log").to_string_lossy()) {
-            for entry in entries.flatten() {
-                let dest_name = format!(
-                    "{}--{}",
-                    label,
-                    entry.file_name().unwrap_or_default().to_string_lossy()
-                );
-                if copy_file_to_staging(&entry, &staging_dir.join(&dest_name)) {
-                    staged_count += 1;
+        // panic-*.log + macOS watchdog stderr (see SERVICE_DIR_EXTRA_PATTERNS)
+        for pattern in SERVICE_DIR_EXTRA_PATTERNS {
+            if let Ok(entries) = glob::glob(&dir.join(pattern).to_string_lossy()) {
+                for entry in entries.flatten() {
+                    let dest_name = format!(
+                        "{}--{}",
+                        label,
+                        entry.file_name().unwrap_or_default().to_string_lossy()
+                    );
+                    if copy_file_to_staging(&entry, &staging_dir.join(&dest_name)) {
+                        staged_count += 1;
+                    }
                 }
             }
         }
-
     }
 
     // 2. Desktop logs (Tauri app logs)
@@ -228,6 +234,18 @@ fn collect_logs_to_staging() -> Result<PathBuf, String> {
             if std::fs::write(&dest, &system_log).is_ok() {
                 staged_count += 1;
             }
+        }
+    }
+
+    // 3b. macOS launchd view of the k2 daemon. When launchd refuses the job
+    //     (disabled override / Login Items → Allow in the Background off) the
+    //     daemon never runs, k2.log stays silent and the Tauri log only says
+    //     ServiceNotRunning — this snapshot is what tells those apart (#3911).
+    #[cfg(target_os = "macos")]
+    {
+        let state = collect_macos_service_state();
+        if std::fs::write(staging_dir.join("service-state.log"), state).is_ok() {
+            staged_count += 1;
         }
     }
 
@@ -325,6 +343,60 @@ fn collect_macos_system_logs() -> String {
         Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).to_string(),
         _ => String::new(),
     }
+}
+
+/// launchd labels `k2 service install` registers (k2 cmd/k2/service_darwin.go;
+/// the same for both brands).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const MACOS_SERVICE_LABELS: [&str; 2] = ["kaitu", "kaitu-watchdog"];
+
+/// Snapshot launchd's view of the k2 daemon + watchdog. Readable without
+/// root: `launchctl print system/<label>` (state, pid, runs, last exit code;
+/// "Could not find service" = not loaded) and the `print-disabled` override.
+#[cfg(target_os = "macos")]
+fn collect_macos_service_state() -> String {
+    use std::process::Command;
+    let run = |args: &[&str]| -> String {
+        match Command::new("launchctl").args(args).output() {
+            Ok(o) => format!(
+                "{}{}(exit={})",
+                String::from_utf8_lossy(&o.stdout),
+                String::from_utf8_lossy(&o.stderr),
+                o.status.code().unwrap_or(-1)
+            ),
+            Err(e) => format!("launchctl failed: {}", e),
+        }
+    };
+    let mut out = String::new();
+    for label in MACOS_SERVICE_LABELS {
+        let plist = format!("/Library/LaunchDaemons/{}.plist", label);
+        out.push_str(&format!(
+            "== {} exists={}\n",
+            plist,
+            std::path::Path::new(&plist).exists()
+        ));
+        out.push_str(&format!("== launchctl print system/{}\n", label));
+        out.push_str(&run(&["print", &format!("system/{}", label)]));
+        out.push_str("\n");
+    }
+    out.push_str("== launchctl print-disabled system (k2 labels)\n");
+    out.push_str(&filter_disabled_overrides(&run(&["print-disabled", "system"])));
+    out
+}
+
+/// Keep only the `"<label>" => …` override lines for our labels; an absent
+/// line means "no override" and is spelled out so the reader need not guess.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn filter_disabled_overrides(print_disabled: &str) -> String {
+    let mut out = String::new();
+    for label in MACOS_SERVICE_LABELS {
+        let key = format!("\"{}\" => ", label);
+        match print_disabled.lines().map(str::trim).find(|l| l.starts_with(&key)) {
+            Some(line) => out.push_str(&format!("{}\n", line)),
+            None => out.push_str(&format!("\"{}\" => (no override)\n", label)),
+        }
+    }
+    out
 }
 
 // ============================================================================
@@ -940,6 +1012,56 @@ mod tests {
         assert_eq!(staged, 1);
         assert!(staging.path().join("install-diag.log").exists());
         assert!(!staging.path().join("kaitu-preinstall.log").exists());
+    }
+
+    // #3911: the watchdog's stderr file must ride along with the k2 logs.
+    #[test]
+    fn test_service_dir_extra_patterns_match_watchdog_log() {
+        let dir = tempfile::tempdir().unwrap();
+        for f in ["healthcheck.log", "panic-123.log", "unrelated.log"] {
+            std::fs::write(dir.path().join(f), "x").unwrap();
+        }
+        let matched: Vec<String> = SERVICE_DIR_EXTRA_PATTERNS
+            .iter()
+            .flat_map(|p| glob::glob(&dir.path().join(p).to_string_lossy()).unwrap().flatten())
+            .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+            .collect();
+        assert!(matched.contains(&"healthcheck.log".to_string()));
+        assert!(matched.contains(&"panic-123.log".to_string()));
+        assert!(!matched.contains(&"unrelated.log".to_string()));
+    }
+
+    // Real `launchctl print-disabled system` shape (macOS 26): the k2 labels
+    // are picked out, a missing one is spelled "(no override)", and a label
+    // that merely shares a prefix is not mistaken for ours.
+    #[test]
+    fn test_filter_disabled_overrides() {
+        let out = "\tdisabled services = {\n\t\t\"kaitu-helper\" => disabled\n\t\t\"kaitu\" => disabled\n\t\t\"com.apple.ftpd\" => disabled\n\t}\n(exit=0)";
+        let got = filter_disabled_overrides(out);
+        assert_eq!(
+            got,
+            "\"kaitu\" => disabled\n\"kaitu-watchdog\" => (no override)\n"
+        );
+    }
+
+    // Read back the real artifact on the build Mac: every section is present
+    // whether or not the daemon is installed (absent job → launchctl's own
+    // "Could not find service" text + exit=113, which is itself the signal).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_collect_macos_service_state_real_launchctl() {
+        let state = collect_macos_service_state();
+        println!("{}", state);
+        for want in [
+            "== /Library/LaunchDaemons/kaitu.plist exists=",
+            "== launchctl print system/kaitu\n",
+            "== launchctl print system/kaitu-watchdog\n",
+            "== launchctl print-disabled system (k2 labels)\n",
+            "\"kaitu-watchdog\" => ",
+        ] {
+            assert!(state.contains(want), "missing {:?} in:\n{}", want, state);
+        }
+        assert!(state.contains("(exit="), "exit codes not recorded:\n{}", state);
     }
 
     // The k2-side install log (k2-service-install.log, written by
