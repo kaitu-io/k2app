@@ -27,6 +27,15 @@ import BackgroundBlockedDialog from './BackgroundBlockedDialog';
 // The guide pops up by itself at most once per app run; afterwards the banner
 // button reopens it.
 let guideAutoOpened = false;
+
+/**
+ * Switch turned on but the service still unreachable after this long → offer
+ * the reinstall again. On macOS 26 launchd starts the daemon within ~1 s of the
+ * switch going on (testlab VM 150); whether every macOS version does so for a
+ * job that was never loaded at boot is unverified (no Sonoma box), and without
+ * this the guide would sit on "recovering" forever with no way out.
+ */
+export const RECOVERY_GRACE_MS = 10_000;
 /** Test hook: forget that the guide auto-opened. */
 export function __resetServiceAlertGuideForTests() {
   guideAutoOpened = false;
@@ -119,13 +128,30 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
     }
   }, [isServiceDown]);
 
+  // Switch is on (blocker gone) but the service has not come back yet.
+  const switchOn = seenBlocker !== null && blocker === null;
+  const [recoveryStalled, setRecoveryStalled] = useState(false);
+  useEffect(() => {
+    if (!switchOn) {
+      setRecoveryStalled(false);
+      return;
+    }
+    const id = setTimeout(() => setRecoveryStalled(true), RECOVERY_GRACE_MS);
+    return () => clearTimeout(id);
+  }, [switchOn]);
+
   // Handle resolve button click - try to reinstall service with admin privileges
   const handleResolve = async () => {
-    if (seenBlocker) {
+    if (seenBlocker && !recoveryStalled) {
       // Reinstalling cannot clear the system switch — guide instead.
       setGuideOpen(true);
       return;
     }
+    await reinstall();
+  };
+
+  // The pre-v4 "Resolve" path: admin reinstall of the service.
+  const reinstall = async () => {
     const platform = window._platform;
     if (!platform?.reinstallService) {
       // Fallback to more page if not available (web mode)
@@ -185,7 +211,9 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
     serviceFailure: 'dashboard:dashboard.serviceFailure.title',
     networkError: 'dashboard:dashboard.networkError.title',
   };
-  const blockedMode = alertType === 'serviceFailure' && seenBlocker !== null;
+  // Stalled recovery: the switch is on, so the banner goes back to the plain
+  // failure title + reinstall button.
+  const blockedMode = alertType === 'serviceFailure' && seenBlocker !== null && !recoveryStalled;
   const title = blockedMode
     ? t('dashboard:dashboard.serviceFailure.backgroundBlocked.bannerTitle')
     : t(titleKeys[alertType]);
@@ -201,9 +229,12 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
       <BackgroundBlockedDialog
         open={guideOpen}
         itemName={seenBlocker.itemName}
-        switchOn={blocker === null}
+        switchOn={switchOn}
+        stalled={recoveryStalled}
+        reinstalling={isResolving}
         canOpenSettings={canOpenServiceSettings()}
         onOpenSettings={() => void openServiceSettings()}
+        onReinstall={() => void reinstall()}
         onClose={() => setGuideOpen(false)}
       />
     )}

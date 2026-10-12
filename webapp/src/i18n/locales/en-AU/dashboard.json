@@ -105,8 +105,10 @@
         "step3": "Enter your Mac password when asked",
         "statusWaiting": "Waiting for the switch to be turned on…",
         "statusRecovering": "Switch is on — restoring the service…",
+        "statusStalled": "The switch is on, but the service still hasn't started. Click \"Reinstall service\" and enter your Mac password.",
         "noReinstall": "It reconnects by itself once the switch is on. No reinstall or restart needed.",
         "openSettings": "Open System Settings",
+        "reinstall": "Reinstall service",
         "later": "Later"
       }
     },

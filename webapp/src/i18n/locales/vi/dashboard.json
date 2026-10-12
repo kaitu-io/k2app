@@ -105,8 +105,10 @@
         "step3": "Nhập mật khẩu máy Mac khi được hỏi",
         "statusWaiting": "Đang chờ bật công tắc…",
         "statusRecovering": "Đã bật — đang khôi phục dịch vụ…",
+        "statusStalled": "Công tắc đã bật nhưng dịch vụ vẫn chưa khởi động. Bấm \"Cài lại dịch vụ\" và nhập mật khẩu máy Mac.",
         "noReinstall": "Sau khi bật sẽ tự kết nối lại. Không cần cài lại hay khởi động lại.",
         "openSettings": "Mở Cài đặt hệ thống",
+        "reinstall": "Cài lại dịch vụ",
         "later": "Để sau"
       }
     },

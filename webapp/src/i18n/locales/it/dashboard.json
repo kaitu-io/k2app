@@ -105,8 +105,10 @@
         "step3": "Inserisci la password del Mac quando richiesto",
         "statusWaiting": "In attesa dell'attivazione…",
         "statusRecovering": "Attivato: ripristino del servizio…",
+        "statusStalled": "L'interruttore è attivo, ma il servizio non è ancora partito. Fai clic su «Reinstalla servizio» e inserisci la password del Mac.",
         "noReinstall": "Si riconnette da solo una volta attivato. Non serve reinstallare né riavviare.",
         "openSettings": "Apri Impostazioni di Sistema",
+        "reinstall": "Reinstalla servizio",
         "later": "Più tardi"
       }
     },

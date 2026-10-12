@@ -105,8 +105,10 @@
         "step3": "Masukkan kata sandi Mac jika diminta",
         "statusWaiting": "Menunggu sakelar dinyalakan…",
         "statusRecovering": "Sudah menyala — memulihkan layanan…",
+        "statusStalled": "Sakelar sudah menyala, tetapi layanan belum berjalan. Klik \"Pasang ulang layanan\" lalu masukkan kata sandi Mac.",
         "noReinstall": "Akan tersambung kembali sendiri setelah dinyalakan. Tidak perlu memasang ulang atau memulai ulang.",
         "openSettings": "Buka Pengaturan Sistem",
+        "reinstall": "Pasang ulang layanan",
         "later": "Nanti"
       }
     },

@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import ServiceAlert, { __resetServiceAlertGuideForTests } from '../ServiceAlert';
+import ServiceAlert, { __resetServiceAlertGuideForTests, RECOVERY_GRACE_MS } from '../ServiceAlert';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -147,6 +147,67 @@ describe('ServiceAlert blocker guidance', () => {
       await vi.advanceTimersByTimeAsync(10_000);
     });
     expect(platform.getServiceBlocker.mock.calls.length).toBe(calls);
+  });
+});
+
+describe('ServiceAlert stalled recovery (switch on, service still down)', () => {
+  const flipSwitchOn = async () => {
+    platform.getServiceBlocker.mockResolvedValue(null);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    expect(screen.getByText(`${K}.statusRecovering`)).toBeInTheDocument();
+  };
+
+  it('keeps "recovering" inside the grace period', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderAlert();
+    await screen.findByText(`${K}.statusWaiting`);
+    await flipSwitchOn();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RECOVERY_GRACE_MS - 3000);
+    });
+    expect(screen.queryByText(`${K}.statusStalled`)).not.toBeInTheDocument();
+    expect(screen.queryByText(`${K}.reinstall`)).not.toBeInTheDocument();
+  });
+
+  it('after the grace period offers the reinstall, and it reinstalls', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderAlert();
+    await screen.findByText(`${K}.statusWaiting`);
+    await flipSwitchOn();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RECOVERY_GRACE_MS + 500);
+    });
+    expect(screen.getByText(`${K}.statusStalled`)).toBeInTheDocument();
+    // The switch is on: the banner is back to the plain failure + reinstall.
+    expect(screen.getByText('dashboard:dashboard.serviceFailure.title')).toBeInTheDocument();
+    expect(screen.queryByText(`${K}.bannerTitle`)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText(`${K}.reinstall`));
+    await waitFor(() => expect(platform.reinstallService).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByText('Resolve'));
+    await waitFor(() => expect(platform.reinstallService).toHaveBeenCalledTimes(2));
+  });
+
+  it('switch turned off again → back to guidance, stall cleared', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderAlert();
+    await screen.findByText(`${K}.statusWaiting`);
+    await flipSwitchOn();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RECOVERY_GRACE_MS + 500);
+    });
+    expect(screen.getByText(`${K}.statusStalled`)).toBeInTheDocument();
+
+    platform.getServiceBlocker.mockResolvedValue(BLOCKED);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    expect(screen.getByText(`${K}.statusWaiting`)).toBeInTheDocument();
+    expect(screen.queryByText(`${K}.statusStalled`)).not.toBeInTheDocument();
+    expect(screen.getByText(`${K}.bannerTitle`)).toBeInTheDocument();
   });
 });
 

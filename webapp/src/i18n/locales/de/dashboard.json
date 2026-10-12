@@ -105,8 +105,10 @@
         "step3": "Gib dein Mac-Passwort ein, wenn du dazu aufgefordert wirst",
         "statusWaiting": "Warte auf das Einschalten…",
         "statusRecovering": "Eingeschaltet – Dienst wird wiederhergestellt…",
+        "statusStalled": "Der Schalter ist an, aber der Dienst ist noch nicht gestartet. Klicke auf „Dienst neu installieren“ und gib dein Mac-Passwort ein.",
         "noReinstall": "Danach verbindet sich die App von selbst. Keine Neuinstallation und kein Neustart nötig.",
         "openSettings": "Systemeinstellungen öffnen",
+        "reinstall": "Dienst neu installieren",
         "later": "Später"
       }
     },

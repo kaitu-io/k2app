@@ -105,8 +105,10 @@
         "step3": "Saisissez le mot de passe de votre Mac si demandé",
         "statusWaiting": "En attente de l'activation…",
         "statusRecovering": "Activé — rétablissement du service…",
+        "statusStalled": "L'interrupteur est activé, mais le service n'a toujours pas démarré. Cliquez sur « Réinstaller le service » et saisissez le mot de passe de votre Mac.",
         "noReinstall": "La connexion reprend d'elle-même une fois activé. Ni réinstallation ni redémarrage nécessaires.",
         "openSettings": "Ouvrir Réglages Système",
+        "reinstall": "Réinstaller le service",
         "later": "Plus tard"
       }
     },
