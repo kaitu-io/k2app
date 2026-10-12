@@ -174,6 +174,8 @@ fn main() {
             show_window,
             hide_window,
             service::admin_reinstall_service,
+            service::get_service_blocker,
+            service::open_service_settings,
             service::ensure_service_running,
             service::daemon_exec,
             service::daemon_helper_exec,

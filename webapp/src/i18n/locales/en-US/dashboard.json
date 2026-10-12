@@ -93,7 +93,22 @@
       "resolving": "Resolving...",
       "more": "More",
       "collecting": "Collecting diagnostics...",
-      "reported": "Reported to support team"
+      "reported": "Reported to support team",
+      "backgroundBlocked": {
+        "bannerTitle": "Background service turned off by macOS",
+        "howToEnable": "How to turn on",
+        "dialogTitle": "Allow {{brand}} to run in the background",
+        "intro": "A switch under \"Allow in the Background\" in macOS is off, so macOS won't start the {{brand}} background service and you can't connect. Reinstalling won't fix this. Turn it back on:",
+        "step1": "Click \"Open System Settings\" below (or go to System Settings → General → Login Items & Extensions)",
+        "step2": "Under \"Allow in the Background\", find this item and turn on its switch:",
+        "itemNameNote": "This is {{brand}}'s developer name — it is not listed as \"{{brand}}\"",
+        "step3": "Enter your Mac password when asked",
+        "statusWaiting": "Waiting for the switch to be turned on…",
+        "statusRecovering": "Switch is on — restoring the service…",
+        "noReinstall": "It reconnects by itself once the switch is on. No reinstall or restart needed.",
+        "openSettings": "Open System Settings",
+        "later": "Later"
+      }
     },
     "serviceError": {
       "title": "Service Error",

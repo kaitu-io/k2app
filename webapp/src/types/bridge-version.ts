@@ -68,5 +68,14 @@
  * capacitor-k2.ts swallows the rejection on shells that lack the method.
  * Zero behavioral effect on the field for the same reason as v2 — the manifest
  * publishes min_bridge = floor (1).
+ *
+ * v4 (2026-10-12): Tauri gained `get_service_blocker` / `open_service_settings`
+ * (`_platform.getServiceBlocker` / `openServiceSettings`) — macOS "Allow in the
+ * Background" turned off keeps launchd from ever starting the daemon, and
+ * reinstalling cannot fix it (#3911). Capability-gated as required: the only
+ * consumer is services/service-blocker.ts, which reads a missing method or a
+ * rejected invoke (older desktop shell) as "no blocker", i.e. the pre-v4 UI.
+ * Mobile shells implement neither; they bump only to stay "up to date with the
+ * surface". Zero effect on OTA eligibility — min_bridge = floor (1).
  */
-export const BRIDGE_API_VERSION = 3;
+export const BRIDGE_API_VERSION = 4;

@@ -93,7 +93,22 @@
       "resolving": "正在解决...",
       "more": "更多",
       "collecting": "正在收集诊断信息...",
-      "reported": "已报告给支持团队"
+      "reported": "已报告给支持团队",
+      "backgroundBlocked": {
+        "bannerTitle": "后台服务被系统关闭",
+        "howToEnable": "如何开启",
+        "dialogTitle": "请开启{{brand}}的后台运行权限",
+        "intro": "macOS「允许在后台」中的开关被关闭，系统不会启动{{brand}}的后台服务，所以无法连接。重新安装不能解决，请按以下步骤开启：",
+        "step1": "点击下方「打开系统设置」（或手动打开：系统设置 → 通用 → 登录项与扩展）",
+        "step2": "在「允许在后台」列表中找到下面这一项，打开右侧的开关：",
+        "itemNameNote": "这是{{brand}}的开发者名称，不会显示为「{{brand}}」",
+        "step3": "按提示输入电脑开机密码确认",
+        "statusWaiting": "正在等待开启…",
+        "statusRecovering": "已检测到开启，正在恢复服务…",
+        "noReinstall": "开启后会自动恢复连接，无需重新安装或重启电脑。",
+        "openSettings": "打开系统设置",
+        "later": "稍后"
+      }
     },
     "serviceError": {
       "title": "服务异常",

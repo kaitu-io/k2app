@@ -93,7 +93,22 @@
       "resolving": "Çözülüyor...",
       "more": "Daha Fazla",
       "collecting": "Tanılar toplanıyor...",
-      "reported": "Destek ekibine raporlandı"
+      "reported": "Destek ekibine raporlandı",
+      "backgroundBlocked": {
+        "bannerTitle": "Arka plan hizmeti macOS tarafından kapatıldı",
+        "howToEnable": "Nasıl açılır",
+        "dialogTitle": "{{brand}} uygulamasının arka planda çalışmasına izin verin",
+        "intro": "macOS'ta \"Arka Planda İzin Ver\" altındaki bir anahtar kapalı; bu yüzden macOS {{brand}} arka plan hizmetini başlatmıyor ve bağlanamıyorsunuz. Yeniden yüklemek sorunu çözmez. Anahtarı tekrar açın:",
+        "step1": "Aşağıdaki \"Sistem Ayarları'nı Aç\" düğmesine tıklayın (veya Sistem Ayarları → Genel → Giriş Öğeleri ve Uzantılar)",
+        "step2": "\"Arka Planda İzin Ver\" listesinde bu öğeyi bulun ve anahtarını açın:",
+        "itemNameNote": "Bu, {{brand}} geliştiricisinin adıdır; \"{{brand}}\" olarak görünmez",
+        "step3": "İstendiğinde Mac parolanızı girin",
+        "statusWaiting": "Anahtarın açılması bekleniyor…",
+        "statusRecovering": "Açıldı — hizmet geri yükleniyor…",
+        "noReinstall": "Açıldıktan sonra kendiliğinden yeniden bağlanır. Yeniden yükleme veya yeniden başlatma gerekmez.",
+        "openSettings": "Sistem Ayarları'nı Aç",
+        "later": "Daha sonra"
+      }
     },
     "serviceError": {
       "title": "Hizmet Hatası",

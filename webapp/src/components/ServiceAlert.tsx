@@ -5,14 +5,32 @@
  * 1. 服务组件初始化中
  * 2. Service 连接失败超过 10 秒
  * 3. VPN 连接出现网络错误 (408/503)
+ *
+ * Service 连不上且 macOS「允许在后台」被关（#3911）时：标题改为「被系统关闭」，
+ * 按钮改为「如何开启」并在本次运行中自动弹一次指引——重装解决不了这种情况。
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useVPNMachine } from '../stores/vpn-machine.store';
 import { useVPNMachineStore } from '../stores/vpn-machine.store';
 import { isNetworkError } from '../services/vpn-types';
+import { useServiceBlocker } from '../hooks/useServiceBlocker';
+import {
+  canOpenServiceSettings,
+  openServiceSettings,
+  type ServiceBlocker,
+} from '../services/service-blocker';
+import BackgroundBlockedDialog from './BackgroundBlockedDialog';
+
+// The guide pops up by itself at most once per app run; afterwards the banner
+// button reopens it.
+let guideAutoOpened = false;
+/** Test hook: forget that the guide auto-opened. */
+export function __resetServiceAlertGuideForTests() {
+  guideAutoOpened = false;
+}
 
 interface ServiceAlertProps {
   sidebarWidth?: number;
@@ -77,8 +95,37 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
   const initialization = useVPNMachineStore((s) => s.initialization);
   const [isResolving, setIsResolving] = useState(false);
 
+  // Background-blocked guidance. `blocker` is live (polled while the service is
+  // down); `seenBlocker` keeps the guidance up after the user flips the switch
+  // until the service actually reconnects ("recovering").
+  const serviceFailureActive = !(initialization && !initialization.ready) && isServiceDown;
+  const blocker = useServiceBlocker(serviceFailureActive);
+  const [seenBlocker, setSeenBlocker] = useState<ServiceBlocker | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
+
+  useEffect(() => {
+    if (!blocker) return;
+    setSeenBlocker(blocker);
+    if (!guideAutoOpened) {
+      guideAutoOpened = true;
+      setGuideOpen(true);
+    }
+  }, [blocker]);
+
+  useEffect(() => {
+    if (!isServiceDown) {
+      setSeenBlocker(null);
+      setGuideOpen(false);
+    }
+  }, [isServiceDown]);
+
   // Handle resolve button click - try to reinstall service with admin privileges
   const handleResolve = async () => {
+    if (seenBlocker) {
+      // Reinstalling cannot clear the system switch — guide instead.
+      setGuideOpen(true);
+      return;
+    }
     const platform = window._platform;
     if (!platform?.reinstallService) {
       // Fallback to more page if not available (web mode)
@@ -138,7 +185,10 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
     serviceFailure: 'dashboard:dashboard.serviceFailure.title',
     networkError: 'dashboard:dashboard.networkError.title',
   };
-  const title = t(titleKeys[alertType]);
+  const blockedMode = alertType === 'serviceFailure' && seenBlocker !== null;
+  const title = blockedMode
+    ? t('dashboard:dashboard.serviceFailure.backgroundBlocked.bannerTitle')
+    : t(titleKeys[alertType]);
 
   // Get theme colors
   const theme = ALERT_THEMES[alertType];
@@ -146,6 +196,17 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
   const Icon = alertType === 'initialization' ? InfoIcon : WarningIcon;
 
   return (
+    <>
+    {seenBlocker && (
+      <BackgroundBlockedDialog
+        open={guideOpen}
+        itemName={seenBlocker.itemName}
+        switchOn={blocker === null}
+        canOpenSettings={canOpenServiceSettings()}
+        onOpenSettings={() => void openServiceSettings()}
+        onClose={() => setGuideOpen(false)}
+      />
+    )}
     <div
       style={{
         position: 'fixed',
@@ -214,9 +275,11 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
               opacity: isResolving ? 0.7 : 1,
             }}
           >
-            {isResolving
-              ? t('dashboard:dashboard.serviceFailure.resolving', 'Resolving...')
-              : t('dashboard:dashboard.serviceFailure.resolve', 'Resolve')}
+            {blockedMode
+              ? t('dashboard:dashboard.serviceFailure.backgroundBlocked.howToEnable')
+              : isResolving
+                ? t('dashboard:dashboard.serviceFailure.resolving', 'Resolving...')
+                : t('dashboard:dashboard.serviceFailure.resolve', 'Resolve')}
           </button>
           <button
             onClick={() => navigate('/service-error', { state: { from: location.pathname } })}
@@ -243,5 +306,6 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
         </div>
       )}
     </div>
+    </>
   );
 }
