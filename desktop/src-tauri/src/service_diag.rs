@@ -94,11 +94,26 @@ fn newest_btm_store(dir: &Path) -> Option<std::path::PathBuf> {
         .map(|(_, p)| p)
 }
 
-/// Walk the NSKeyedArchiver object table: an ItemRecord is a dictionary with
-/// an integer `disposition` and a `url` UID pointing at an NSURL whose
-/// `NS.relative` UID resolves to the URL string.
+/// What a BTM ItemRecord says about one plist.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq)]
+struct BtmRecord {
+    disposition: u64,
+    /// The name System Settings shows on the switch — the code-signing
+    /// developer, not the app ("ALL NATION CONNECT TECHNOLOGY PTE. LTD.").
+    developer_name: Option<String>,
+}
+
 #[cfg(target_os = "macos")]
 fn btm_disposition(root: &plist::Value, url: &str) -> Option<u64> {
+    btm_record(root, url).map(|r| r.disposition)
+}
+
+/// Walk the NSKeyedArchiver object table: an ItemRecord is a dictionary with
+/// an integer `disposition`, a `url` UID pointing at an NSURL whose
+/// `NS.relative` UID resolves to the URL string, and a `developerName` UID.
+#[cfg(target_os = "macos")]
+fn btm_record(root: &plist::Value, url: &str) -> Option<BtmRecord> {
     let objects = root.as_dictionary()?.get("$objects")?.as_array()?;
     let deref = |v: &plist::Value| match v {
         plist::Value::Uid(u) => objects.get(u.get() as usize),
@@ -114,8 +129,67 @@ fn btm_disposition(root: &plist::Value, url: &str) -> Option<u64> {
     objects.iter().find_map(|o| {
         let d = o.as_dictionary()?;
         let disposition = d.get("disposition")?.as_unsigned_integer()?;
-        (url_string(d.get("url")?)? == url).then_some(disposition)
+        if url_string(d.get("url")?)? != url {
+            return None;
+        }
+        let developer_name = d
+            .get("developerName")
+            .and_then(deref)
+            .and_then(|v| v.as_string())
+            .filter(|s| !s.is_empty() && *s != "$null")
+            .map(str::to_string);
+        Some(BtmRecord { disposition, developer_name })
     })
+}
+
+/// Why launchd will not run the daemon, when the cause is a user-facing
+/// switch the app can guide the user to. Serialized for the webapp
+/// (`_platform.getServiceBlocker`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceBlocker {
+    /// `background-disallowed`: System Settings → General → Login Items &
+    /// Extensions → Allow in the Background is off for our developer.
+    pub kind: &'static str,
+    /// Label of that switch as macOS shows it.
+    pub item_name: String,
+}
+
+/// Shown when the store has no developer name (same team for both brands —
+/// tauri.conf*.json signingIdentity).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const FALLBACK_ITEM_NAME: &str = "ALL NATION CONNECT TECHNOLOGY PTE. LTD.";
+
+/// The daemon is blocked iff BTM has it without the "allowed" bit (0x2).
+/// Verified on macOS 26.7 (testlab VM 150): turning the switch back on makes
+/// launchd start the daemon at once and at every boot — no reinstall needed;
+/// reinstalling without it never sticks past a reboot.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn blocker_from_record(rec: &BtmRecord) -> Option<ServiceBlocker> {
+    if rec.disposition & 0x2 != 0 {
+        return None;
+    }
+    Some(ServiceBlocker {
+        kind: "background-disallowed",
+        item_name: rec
+            .developer_name
+            .clone()
+            .unwrap_or_else(|| FALLBACK_ITEM_NAME.to_string()),
+    })
+}
+
+/// Current blocker for the k2 daemon, if any. Non-root; ~1 ms (4 KB store).
+#[cfg(target_os = "macos")]
+pub fn background_blocker() -> Option<ServiceBlocker> {
+    let store = newest_btm_store(Path::new("/private/var/db/com.apple.backgroundtaskmanagement"))?;
+    let v = plist::Value::from_file(store).ok()?;
+    let rec = btm_record(&v, &format!("file:///Library/LaunchDaemons/{}.plist", DAEMON_LABEL))?;
+    blocker_from_record(&rec)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn background_blocker() -> Option<ServiceBlocker> {
+    None
 }
 
 /// Same bit names as `sfltool dumpbtm` (0xb = enabled,allowed,notified;
@@ -314,6 +388,39 @@ mod tests {
             Some(0x9)
         );
         assert_eq!(btm_disposition(&v, "file:///Library/LaunchDaemons/kaitu"), None);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn btm_record_reads_developer_name() {
+        let v = plist::Value::from_file(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/testdata/btm-v16-kaitu-disallowed.btm"
+        ))
+        .unwrap();
+        let rec = btm_record(&v, "file:///Library/LaunchDaemons/kaitu.plist").unwrap();
+        assert_eq!(rec.developer_name.as_deref(), Some("ALL NATION CONNECT TECHNOLOGY PTE. LTD."));
+        assert_eq!(
+            blocker_from_record(&rec),
+            Some(ServiceBlocker {
+                kind: "background-disallowed",
+                item_name: "ALL NATION CONNECT TECHNOLOGY PTE. LTD.".into()
+            })
+        );
+    }
+
+    #[test]
+    fn blocker_only_when_not_allowed() {
+        let rec = |d, n: Option<&str>| BtmRecord { disposition: d, developer_name: n.map(str::to_string) };
+        assert_eq!(blocker_from_record(&rec(0xb, Some("X"))), None); // enabled,allowed,notified
+        assert_eq!(blocker_from_record(&rec(0x3, Some("X"))), None); // allowed, not notified
+        let b = blocker_from_record(&rec(0x9, Some("Dev Co"))).unwrap();
+        assert_eq!((b.kind, b.item_name.as_str()), ("background-disallowed", "Dev Co"));
+        // No name in the store → the signing team we ship with.
+        assert_eq!(blocker_from_record(&rec(0x8, None)).unwrap().item_name, FALLBACK_ITEM_NAME);
+        // Wire shape the webapp reads.
+        let json = serde_json::to_value(blocker_from_record(&rec(0x9, Some("Dev Co"))).unwrap()).unwrap();
+        assert_eq!(json, serde_json::json!({"kind": "background-disallowed", "itemName": "Dev Co"}));
     }
 
     #[cfg(target_os = "macos")]

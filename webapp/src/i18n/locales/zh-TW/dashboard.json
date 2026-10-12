@@ -93,7 +93,22 @@
       "resolving": "正在解決...",
       "more": "更多",
       "collecting": "正在收集診斷資訊...",
-      "reported": "已回報給支援團隊"
+      "reported": "已回報給支援團隊",
+      "backgroundBlocked": {
+        "bannerTitle": "背景服務已被系統關閉",
+        "howToEnable": "如何開啟",
+        "dialogTitle": "請開啟{{brand}}的背景執行權限",
+        "intro": "macOS「允許在背景執行」中的開關已被關閉，系統不會啟動{{brand}}的背景服務，因此無法連線。重新安裝無法解決，請依下列步驟開啟：",
+        "step1": "點選下方「開啟系統設定」（或手動開啟：系統設定 → 一般 → 登入項目與延伸功能）",
+        "step2": "在「允許在背景執行」清單中找到下面這一項，打開右側的開關：",
+        "itemNameNote": "這是{{brand}}的開發者名稱，不會顯示為「{{brand}}」",
+        "step3": "依提示輸入電腦登入密碼確認",
+        "statusWaiting": "正在等待開啟…",
+        "statusRecovering": "已偵測到開啟，正在恢復服務…",
+        "noReinstall": "開啟後會自動恢復連線，不需要重新安裝或重新開機。",
+        "openSettings": "開啟系統設定",
+        "later": "稍後"
+      }
     },
     "serviceError": {
       "title": "服務異常",

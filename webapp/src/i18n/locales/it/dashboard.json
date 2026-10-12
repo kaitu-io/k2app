@@ -93,7 +93,22 @@
       "resolving": "Risoluzione in corso...",
       "more": "Di Più",
       "collecting": "Raccolta diagnostica in corso...",
-      "reported": "Segnalato al team di supporto"
+      "reported": "Segnalato al team di supporto",
+      "backgroundBlocked": {
+        "bannerTitle": "Servizio in background disattivato da macOS",
+        "howToEnable": "Come attivarlo",
+        "dialogTitle": "Consenti a {{brand}} di funzionare in background",
+        "intro": "Un interruttore in «Consenti in background» è disattivato in macOS, quindi macOS non avvia il servizio in background di {{brand}} e non puoi connetterti. Reinstallare non risolve. Riattivalo:",
+        "step1": "Fai clic su «Apri Impostazioni di Sistema» qui sotto (oppure Impostazioni di Sistema → Generali → Elementi login ed estensioni)",
+        "step2": "In «Consenti in background», trova questo elemento e attiva il suo interruttore:",
+        "itemNameNote": "È il nome dello sviluppatore di {{brand}}: non compare come «{{brand}}»",
+        "step3": "Inserisci la password del Mac quando richiesto",
+        "statusWaiting": "In attesa dell'attivazione…",
+        "statusRecovering": "Attivato: ripristino del servizio…",
+        "noReinstall": "Si riconnette da solo una volta attivato. Non serve reinstallare né riavviare.",
+        "openSettings": "Apri Impostazioni di Sistema",
+        "later": "Più tardi"
+      }
     },
     "serviceError": {
       "title": "Errore Servizio",

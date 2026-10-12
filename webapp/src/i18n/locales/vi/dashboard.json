@@ -93,7 +93,22 @@
       "resolving": "Đang giải quyết...",
       "more": "Thêm",
       "collecting": "Đang thu thập chẩn đoán...",
-      "reported": "Đã báo cáo cho nhóm hỗ trợ"
+      "reported": "Đã báo cáo cho nhóm hỗ trợ",
+      "backgroundBlocked": {
+        "bannerTitle": "macOS đã tắt dịch vụ chạy nền",
+        "howToEnable": "Cách bật",
+        "dialogTitle": "Cho phép {{brand}} chạy nền",
+        "intro": "Một công tắc trong \"Cho phép chạy nền\" của macOS đang tắt, nên macOS không khởi động dịch vụ nền của {{brand}} và bạn không thể kết nối. Cài lại không khắc phục được. Hãy bật lại:",
+        "step1": "Bấm \"Mở Cài đặt hệ thống\" bên dưới (hoặc Cài đặt hệ thống → Cài đặt chung → Mục đăng nhập & Tiện ích mở rộng)",
+        "step2": "Trong \"Cho phép chạy nền\", tìm mục này và bật công tắc của nó:",
+        "itemNameNote": "Đây là tên nhà phát triển của {{brand}} — không hiển thị là \"{{brand}}\"",
+        "step3": "Nhập mật khẩu máy Mac khi được hỏi",
+        "statusWaiting": "Đang chờ bật công tắc…",
+        "statusRecovering": "Đã bật — đang khôi phục dịch vụ…",
+        "noReinstall": "Sau khi bật sẽ tự kết nối lại. Không cần cài lại hay khởi động lại.",
+        "openSettings": "Mở Cài đặt hệ thống",
+        "later": "Để sau"
+      }
     },
     "serviceError": {
       "title": "Lỗi dịch vụ",

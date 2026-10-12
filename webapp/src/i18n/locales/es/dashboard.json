@@ -93,7 +93,22 @@
       "resolving": "Resolviendo...",
       "more": "Más",
       "collecting": "Recopilando diagnósticos...",
-      "reported": "Reportado al equipo de soporte"
+      "reported": "Reportado al equipo de soporte",
+      "backgroundBlocked": {
+        "bannerTitle": "macOS desactivó el servicio en segundo plano",
+        "howToEnable": "Cómo activarlo",
+        "dialogTitle": "Permite que {{brand}} se ejecute en segundo plano",
+        "intro": "Un interruptor de «Permitir en segundo plano» está desactivado en macOS, así que macOS no inicia el servicio en segundo plano de {{brand}} y no puedes conectarte. Reinstalar no lo soluciona. Vuelve a activarlo:",
+        "step1": "Haz clic en «Abrir Ajustes del Sistema» abajo (o Ajustes del Sistema → General → Ítems de inicio y extensiones)",
+        "step2": "En «Permitir en segundo plano», busca este elemento y activa su interruptor:",
+        "itemNameNote": "Es el nombre del desarrollador de {{brand}}; no aparece como «{{brand}}»",
+        "step3": "Introduce la contraseña de tu Mac si se te pide",
+        "statusWaiting": "Esperando a que se active…",
+        "statusRecovering": "Activado: restaurando el servicio…",
+        "noReinstall": "Se reconecta solo una vez activado. No hace falta reinstalar ni reiniciar.",
+        "openSettings": "Abrir Ajustes del Sistema",
+        "later": "Más tarde"
+      }
     },
     "serviceError": {
       "title": "Error del Servicio",

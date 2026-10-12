@@ -300,6 +300,35 @@ pub fn get_platform_info() -> serde_json::Value {
     })
 }
 
+/// IPC: why the daemon cannot run, when the cause is a switch the user can
+/// flip (macOS "Allow in the Background"). `None` = no known blocker.
+#[tauri::command]
+pub fn get_service_blocker() -> Option<crate::service_diag::ServiceBlocker> {
+    crate::service_diag::background_blocker()
+}
+
+/// IPC: open System Settings → General → Login Items & Extensions (macOS 13+,
+/// the first release with the switch).
+#[tauri::command]
+pub fn open_service_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.LoginItems-Settings.extension")
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("open System Settings: {}", e))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("open_service_settings is macOS only".to_string())
+    }
+}
+
+fn macos_daemon_plist_exists() -> bool {
+    cfg!(target_os = "macos") && std::path::Path::new("/Library/LaunchDaemons/kaitu.plist").exists()
+}
+
 #[tauri::command]
 pub async fn admin_reinstall_service() -> Result<String, String> {
     log::info!("[service] Admin service install requested");
@@ -626,6 +655,24 @@ pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
     // Phase 2: install via admin elevation
     log::info!("[service] Install needed: {:?}", check);
     crate::service_diag::record(&format!("startup: daemon not ready ({:?})", check));
+
+    // macOS: the daemon is registered but the user (or a cleaner app) turned
+    // it off under Login Items → Allow in the Background. Reinstalling cannot
+    // fix that — the switch outlives reinstall and uninstall, and a root
+    // bootstrap only lasts until the next boot (verified, testlab VM 150) — so
+    // don't nag for the admin password; the webapp guides the user to the
+    // switch (get_service_blocker), and launchd starts the daemon by itself
+    // once it is back on. With no plist yet there is nothing for launchd to
+    // start, so a first install still goes ahead.
+    if macos_daemon_plist_exists() {
+        if let Some(b) = crate::service_diag::background_blocker() {
+            crate::service_diag::record(&format!(
+                "startup: blocked by Login Items switch \"{}\" — skipping admin install",
+                b.item_name
+            ));
+            return Err(format!("Service blocked: {} ({})", b.kind, b.item_name));
+        }
+    }
 
     // Diagnostic: check if k2 binary exists
     let exe_path = std::env::current_exe().ok();

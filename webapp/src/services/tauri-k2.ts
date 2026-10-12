@@ -11,7 +11,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
-import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse, RunningApp, InstalledApp, RouterRequestOptions, RouterResponse } from '../types/kaitu-core';
+import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse, RunningApp, InstalledApp, RouterRequestOptions, RouterResponse, ServiceBlocker } from '../types/kaitu-core';
 import type { StatusResponseData } from './vpn-types';
 import { transformStatus } from './status-transform';
 import { getDeviceUdid } from './device-udid';
@@ -205,6 +205,16 @@ export async function injectTauriGlobals(): Promise<void> {
 
     reinstallService: async (): Promise<void> => {
       await invoke('admin_reinstall_service');
+    },
+
+    // bridge v4. A shell older than these commands rejects the invoke —
+    // services/service-blocker.ts turns that into "no blocker".
+    getServiceBlocker: async (): Promise<ServiceBlocker | null> => {
+      return (await invoke<ServiceBlocker | null>('get_service_blocker')) ?? null;
+    },
+
+    openServiceSettings: async (): Promise<void> => {
+      await invoke('open_service_settings');
     },
 
     getPid: async (): Promise<number> => {
