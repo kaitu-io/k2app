@@ -45,7 +45,7 @@ import (
 // over unpopulated content fails for the wrong reason. Nothing will catch
 // drift here — bumping it is a k2 commit plus a submodule pointer bump,
 // and belongs in the same change set as the webapp-side bump.
-const LinuxBridgeVersion = 3
+const LinuxBridgeVersion = 4
 
 // webOTAPublicKey is the minisign public key verifying web OTA bundles.
 // Same key pair as the Tauri desktop updater — this is the key line of
