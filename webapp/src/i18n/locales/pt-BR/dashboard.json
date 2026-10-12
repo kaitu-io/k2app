@@ -105,8 +105,10 @@
         "step3": "Digite a senha do Mac quando solicitado",
         "statusWaiting": "Aguardando a ativação…",
         "statusRecovering": "Ativado — restaurando o serviço…",
+        "statusStalled": "A chave está ativada, mas o serviço ainda não iniciou. Clique em \"Reinstalar serviço\" e digite a senha do Mac.",
         "noReinstall": "Reconecta sozinho depois de ativado. Não é preciso reinstalar nem reiniciar.",
         "openSettings": "Abrir Ajustes do Sistema",
+        "reinstall": "Reinstalar serviço",
         "later": "Mais tarde"
       }
     },

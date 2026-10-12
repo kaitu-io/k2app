@@ -105,8 +105,10 @@
         "step3": "按提示輸入電腦登入密碼確認",
         "statusWaiting": "正在等待開啟…",
         "statusRecovering": "已偵測到開啟，正在恢復服務…",
+        "statusStalled": "開關已開啟，但服務仍未啟動。請按「重新安裝服務」並輸入電腦登入密碼。",
         "noReinstall": "開啟後會自動恢復連線，毋須重新安裝或重新開機。",
         "openSettings": "開啟系統設定",
+        "reinstall": "重新安裝服務",
         "later": "稍後"
       }
     },

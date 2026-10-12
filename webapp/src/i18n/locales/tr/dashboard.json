@@ -105,8 +105,10 @@
         "step3": "İstendiğinde Mac parolanızı girin",
         "statusWaiting": "Anahtarın açılması bekleniyor…",
         "statusRecovering": "Açıldı — hizmet geri yükleniyor…",
+        "statusStalled": "Anahtar açık ama hizmet hâlâ başlamadı. \"Hizmeti yeniden yükle\"ye tıklayın ve Mac parolanızı girin.",
         "noReinstall": "Açıldıktan sonra kendiliğinden yeniden bağlanır. Yeniden yükleme veya yeniden başlatma gerekmez.",
         "openSettings": "Sistem Ayarları'nı Aç",
+        "reinstall": "Hizmeti yeniden yükle",
         "later": "Daha sonra"
       }
     },

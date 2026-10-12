@@ -27,6 +27,10 @@ interface Props {
   itemName: string;
   /** The blocker is gone (switch on) but the service has not reconnected yet. */
   switchOn: boolean;
+  /** Switch on for a while and still no service → offer the reinstall. */
+  stalled: boolean;
+  reinstalling: boolean;
+  onReinstall: () => void;
   canOpenSettings: boolean;
   onOpenSettings: () => void;
   onClose: () => void;
@@ -36,8 +40,11 @@ export default function BackgroundBlockedDialog({
   open,
   itemName,
   switchOn,
+  stalled,
+  reinstalling,
   canOpenSettings,
   onOpenSettings,
+  onReinstall,
   onClose,
 }: Props) {
   const { t } = useTranslation();
@@ -93,13 +100,19 @@ export default function BackgroundBlockedDialog({
           </li>
         </Box>
 
-        <Box
-          role="status"
-          sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1, color: switchOn ? 'success.main' : 'text.secondary' }}
-        >
-          <CircularProgress size={14} color={switchOn ? 'success' : 'inherit'} />
-          <Typography variant="body2">{t(switchOn ? `${K}.statusRecovering` : `${K}.statusWaiting`)}</Typography>
-        </Box>
+        {stalled ? (
+          <Typography role="status" variant="body2" color="warning.main" sx={{ mt: 1 }}>
+            {t(`${K}.statusStalled`)}
+          </Typography>
+        ) : (
+          <Box
+            role="status"
+            sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1, color: switchOn ? 'success.main' : 'text.secondary' }}
+          >
+            <CircularProgress size={14} color={switchOn ? 'success' : 'inherit'} />
+            <Typography variant="body2">{t(switchOn ? `${K}.statusRecovering` : `${K}.statusWaiting`)}</Typography>
+          </Box>
+        )}
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
           {t(`${K}.noReinstall`)}
         </Typography>
@@ -108,10 +121,21 @@ export default function BackgroundBlockedDialog({
         <Button onClick={onClose} sx={{ whiteSpace: 'nowrap' }}>
           {t(`${K}.later`)}
         </Button>
-        {canOpenSettings && (
-          <Button variant="contained" onClick={onOpenSettings} sx={{ whiteSpace: 'nowrap' }}>
-            {t(`${K}.openSettings`)}
+        {stalled ? (
+          <Button
+            variant="contained"
+            onClick={onReinstall}
+            disabled={reinstalling}
+            sx={{ whiteSpace: 'nowrap' }}
+          >
+            {t(`${K}.reinstall`)}
           </Button>
+        ) : (
+          canOpenSettings && (
+            <Button variant="contained" onClick={onOpenSettings} sx={{ whiteSpace: 'nowrap' }}>
+              {t(`${K}.openSettings`)}
+            </Button>
+          )
         )}
       </DialogActions>
     </Dialog>

@@ -105,8 +105,10 @@
         "step3": "按提示输入电脑开机密码确认",
         "statusWaiting": "正在等待开启…",
         "statusRecovering": "已检测到开启，正在恢复服务…",
+        "statusStalled": "开关已开启，但服务仍未启动。请点击「重新安装服务」并输入开机密码。",
         "noReinstall": "开启后会自动恢复连接，无需重新安装或重启电脑。",
         "openSettings": "打开系统设置",
+        "reinstall": "重新安装服务",
         "later": "稍后"
       }
     },
