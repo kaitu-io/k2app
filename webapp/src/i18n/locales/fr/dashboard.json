@@ -93,7 +93,24 @@
       "resolving": "Résolution en cours...",
       "more": "Plus",
       "collecting": "Collecte des diagnostics...",
-      "reported": "Signalé à l'équipe d'assistance"
+      "reported": "Signalé à l'équipe d'assistance",
+      "backgroundBlocked": {
+        "bannerTitle": "Service d'arrière-plan désactivé par macOS",
+        "howToEnable": "Comment l'activer",
+        "dialogTitle": "Autorisez {{brand}} à s'exécuter en arrière-plan",
+        "intro": "Un interrupteur de « Autoriser en arrière-plan » est désactivé dans macOS : macOS ne démarre donc pas le service d'arrière-plan de {{brand}} et la connexion est impossible. Réinstaller ne règle pas le problème. Réactivez-le :",
+        "step1": "Cliquez sur « Ouvrir Réglages Système » ci-dessous (ou Réglages Système → Général → Ouverture et extensions)",
+        "step2": "Dans « Autoriser en arrière-plan », trouvez cet élément et activez son interrupteur :",
+        "itemNameNote": "C'est le nom du développeur de {{brand}} ; il n'apparaît pas sous le nom « {{brand}} »",
+        "step3": "Saisissez le mot de passe de votre Mac si demandé",
+        "statusWaiting": "En attente de l'activation…",
+        "statusRecovering": "Activé — rétablissement du service…",
+        "statusStalled": "L'interrupteur est activé, mais le service n'a toujours pas démarré. Cliquez sur « Réinstaller le service » et saisissez le mot de passe de votre Mac.",
+        "noReinstall": "La connexion reprend d'elle-même une fois activé. Ni réinstallation ni redémarrage nécessaires.",
+        "openSettings": "Ouvrir Réglages Système",
+        "reinstall": "Réinstaller le service",
+        "later": "Plus tard"
+      }
     },
     "serviceError": {
       "title": "Erreur du service",

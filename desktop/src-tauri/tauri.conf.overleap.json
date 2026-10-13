@@ -39,6 +39,7 @@
       "signCommand": "bash windows-sign.sh %1",
       "nsis": {
         "installMode": "perMachine",
+        "installerIcon": "icons-overleap/icon.ico",
         "languages": ["English"],
         "installerHooks": "installer-hooks.overleap.nsh"
       }

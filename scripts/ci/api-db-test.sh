@@ -70,6 +70,9 @@ fi
 if [ "$status" != "0" ]; then
   echo "--- failure tail ---" >&2
   grep -n -B2 -A25 -E '^--- FAIL|^panic:' "$LOG" | tail -200 >&2
+  # testify 的断言详情打在 --- FAIL 之前（子测试运行时），上面的窗口看不到
+  echo "--- assertion details ---" >&2
+  grep -n -A12 -E '^\s+[A-Za-z0-9_]+_test\.go:[0-9]+:' "$LOG" | tail -200 >&2
   exit "$status"
 fi
 echo "api DB suite OK"

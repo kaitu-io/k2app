@@ -18,7 +18,7 @@ import (
 // 访客身份解析（客服聊天）。
 // 规则：强证据（cid/sid，verified）自动合并 guest，弱证据（自报邮箱，claimed）永不合并；所有合并可撤销。
 // 不变量：guests.merged_into_id 要么为 NULL（根），要么直接指向一个根（深度恒为 1）。
-// 设计见 docs/superpowers/specs/2026-10-01-support-console-chatwoot-replacement-design.md §4
+// 设计见 docs/superpowers/specs/2026-10-01-support-chat-design.md §4
 
 var (
 	errGuestMergeAlreadyUndone  = errors.New("guest merge already undone")

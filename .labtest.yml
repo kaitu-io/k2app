@@ -1,0 +1,52 @@
+# Test suites for the shared runner on k2ci (testlab labtest/): run them with the `labtest` MCP
+# (test_plan / test_run / test_wait / test_logs), or ~/projects/testlab/tools/labtest from a terminal.
+# Each suite runs scripts/ci/k2ci-run.sh, which mirrors its ci.yml job — change a job's commands in
+# ci.yml and its suite there together. `paths` decides which suites a diff vs main selects (no match
+# = nothing runs). Editing this file or k2ci-run.sh itself selects nothing: run `all` after doing so.
+#
+# mem = anon (non-reclaimable) peak × 1.5, from labtest's summary (2026-10-10, job 54, cold
+# node_modules + cargo; max over jobs 54-56): webapp 3.3G · overleap 3.2G · rust 1.9G (warm 0.5G) ·
+# web 750M · api 754M · k2 368M.
+# memory.peak would overstate it — it counts page cache from builds/installs, which the kernel
+# reclaims at the cap. k2 gets 1G, not 512M: its anon was measured with a warm GOCACHE.
+# webapp (5G) now co-runs with suites ≤1G, so vitest's 10s timeouts can meet CPU contention —
+# cpus: 6 is what keeps that in check. Re-tune when a summary hints.
+# cpus is admission only (cpu_total 8).
+base: main
+suites:
+  webapp:
+    run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG webapp
+    paths: [webapp/**, mobile/plugins/k2-plugin/**, package.json, yarn.lock]
+    mem: 5G
+    cpus: 6
+  web:
+    run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG web
+    paths: [web/**]
+    mem: 1.1G
+  overleap:
+    run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG overleap
+    paths: [sites/overleap/**]
+    mem: 4.8G
+  api:
+    run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG api
+    paths: [api/**, contracts/**, .github/ci/center-config.yml, scripts/ci/api-db-test.sh]
+    needs: [mariadb]
+    mem: 1.1G
+  mcp:
+    run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG mcp
+    paths: [mcp/**]
+    mem: 512M
+  k2:
+    run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG k2
+    paths: [k2, k2/**]          # `k2` alone = the submodule pointer moved
+    mem: 1G
+    cpus: 4
+  rust:
+    run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG rust
+    paths: [desktop/**]
+    mem: 2.8G
+    cpus: 4
+  ci-scripts:
+    run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG ci-scripts
+    paths: [scripts/ci/*.mjs]
+    mem: 256M

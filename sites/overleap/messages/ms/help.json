@@ -26,7 +26,7 @@
     "items": {
       "manage": {
         "question": "Bagaimana saya mengurus atau membatalkan langganan?",
-        "answer": "Buka halaman akaun anda dan pilih Urus langganan. Di sana anda boleh membatalkan, menukar kad atau memuat turun invois. Pembatalan mengekalkan pelan anda aktif sehingga akhir tempoh yang telah dibayar."
+        "answer": "Buka halaman akaun anda dan pilih Urus langganan. Di sana anda boleh membatalkan, menukar kad atau memuat turun invois. Pembatalan mengekalkan pelan anda aktif sehingga akhir tempoh yang telah dibayar. Pembatalan menghentikan pembaharuan tetapi tidak memberi bayaran balik — lihat “Bolehkah saya mendapat bayaran balik?”"
       },
       "charge": {
         "question": "Bilakah saya dicaj?",
@@ -34,7 +34,7 @@
       },
       "refund": {
         "question": "Bolehkah saya mendapat bayaran balik?",
-        "answer": "Jika {brand} tidak sesuai untuk anda, e-mel kami dan kami akan selesaikannya."
+        "answer": "Anda boleh menarik diri daripada kontrak dan mendapat bayaran balik bagi hari yang belum digunakan dalam tempoh 14 hari selepas bayaran pertama untuk langganan yang dibilkan oleh kami (bukan melalui App Store), atau selepas pembaharuan tahunan. E-mel support@overleap.io. Pembelian App Store dibayar balik oleh Apple."
       },
       "devices": {
         "question": "Saya telah mencapai had lima peranti",

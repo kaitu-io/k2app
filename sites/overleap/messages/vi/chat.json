@@ -12,7 +12,7 @@
   "rateLimited": "Bạn đang gửi tin nhắn quá nhanh. Vui lòng đợi một lát.",
   "sendFailed": "Chưa gửi được tin nhắn. Vui lòng kiểm tra kết nối và thử lại.",
   "tooLong": "Tin nhắn quá dài. Vui lòng rút gọn và thử lại.",
-  "emailPrompt": "Đội ngũ của chúng tôi chưa tiếp nhận cuộc trò chuyện này. Hãy để lại email và chúng tôi sẽ báo cho bạn khi có phản hồi.",
+  "emailPrompt": "Vui lòng để lại email trước khi bắt đầu. Nếu bạn rời đi, chúng tôi sẽ gửi email khi trả lời.",
   "emailPlaceholder": "Email của bạn",
   "emailSubmit": "Gửi",
   "emailInvalid": "Vui lòng nhập địa chỉ email hợp lệ.",

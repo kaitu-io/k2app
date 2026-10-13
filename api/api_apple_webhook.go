@@ -77,6 +77,23 @@ func api_apple_webhook(c *gin.Context) {
 		return
 	}
 
+	// 信任边界：Apple 根证书签的是所有 app 的通知，签名有效 ≠ 是本品牌 app 的通知。
+	// 通知与交易的 bundleId 都必须是这条订阅所属品牌的 bundle；对不上一律 400（不重试）。
+	var owner User
+	if err := db.Get().Select("brand").First(&owner, sub.UserID).Error; err != nil {
+		log.Errorf(c, "[AppleWebhook] load owner of otx=%s: %v", otx, err)
+		c.AbortWithStatus(500)
+		return
+	}
+	wantBundle := appleBundleIDForBrand(Brand(owner.Brand))
+	if wantBundle == "" || asn.Payload.Data.BundleId != wantBundle ||
+		(asn.TransactionInfo.BundleId != "" && asn.TransactionInfo.BundleId != wantBundle) {
+		log.Warnf(c, "[AppleWebhook] bundle mismatch otx=%s: payload=%s txn=%s want=%s",
+			otx, asn.Payload.Data.BundleId, asn.TransactionInfo.BundleId, wantBundle)
+		c.AbortWithStatus(400)
+		return
+	}
+
 	// 幂等：同一通知 UUID 已处理过则跳过（Apple 偶发重送）。
 	if sub.LastEventID != "" && sub.LastEventID == uuid {
 		log.Infof(c, "[AppleWebhook] duplicate notification uuid=%s otx=%s, already processed", uuid, otx)
@@ -89,7 +106,10 @@ func api_apple_webhook(c *gin.Context) {
 		appstore.NotificationType_SUBSCRIBED,
 		appstore.NotificationType_OFFER_REDEEMED:
 		// 复核当前交易并入账（绝对 expiresDate，幂等抬升）。
-		if err := verifyAndGrantTransaction(c, sub.UserID, asn.TransactionInfo.TransactionId); err != nil {
+		if err := verifyAndGrantTransaction(c, sub.UserID, asn.TransactionInfo.TransactionId); errors.Is(err, errAppleTxnRevoked) {
+			// 被退款的交易永不入账；视为已处理，不让 Apple 重投。
+			log.Infof(c, "[AppleWebhook] txn %s already refunded, not crediting otx=%s", asn.TransactionInfo.TransactionId, otx)
+		} else if err != nil {
 			log.Errorf(c, "[AppleWebhook] grant failed otx=%s: %v", otx, err)
 			c.AbortWithStatus(500)
 			return
@@ -107,11 +127,39 @@ func api_apple_webhook(c *gin.Context) {
 		}
 
 	case appstore.NotificationType_REFUND, appstore.NotificationType_REVOKE:
-		if err := revokeSubscription(c, &sub, asn.TransactionInfo.TransactionId); err != nil {
-			log.Errorf(c, "[AppleWebhook] revoke failed otx=%s: %v", otx, err)
+		revType, pct := decodeAppleRevocation(asn.Payload.Data.SignedTransactionInfo)
+		if _, err := applyAppleRefund(c, otx, asn.TransactionInfo, appleRefundEvidence{
+			SignedAt: asn.Payload.SignedDate, RevocationType: revType, RevocationPercentage: pct, Source: "webhook",
+		}); err != nil {
+			log.Errorf(c, "[AppleWebhook] refund failed otx=%s: %v", otx, err)
 			c.AbortWithStatus(500)
 			return
 		}
+
+	case appleNotificationRefundReversed:
+		// 恢复时长是授予动作：与入账一样向 Apple 认证 API 复核（第二层信任锚点），
+		// 只有 Apple 现在确认这笔交易不再是已退款，才恢复。
+		info, err := fetchAppleTransaction(c, wantBundle, asn.TransactionInfo.TransactionId)
+		if err != nil {
+			log.Errorf(c, "[AppleWebhook] refund reversal re-verify failed otx=%s: %v", otx, err)
+			c.AbortWithStatus(500)
+			return
+		}
+		if info.TransactionId != asn.TransactionInfo.TransactionId || info.OriginalTransactionId != otx ||
+			info.BundleId != wantBundle || info.RevocationDate != 0 {
+			log.Warnf(c, "[AppleWebhook] refund reversal for txn %s not confirmed by Apple (revocationDate=%d), ignored",
+				asn.TransactionInfo.TransactionId, info.RevocationDate)
+			break
+		}
+		if err := reverseAppleRefund(c, otx, info, asn.Payload.SignedDate, "webhook"); err != nil {
+			log.Errorf(c, "[AppleWebhook] refund reversal failed otx=%s: %v", otx, err)
+			c.AbortWithStatus(500)
+			return
+		}
+
+	case appstore.NotificationType_REFUND_DECLINED, appstore.NotificationType_CONSUMPTION_REQUEST:
+		// Consumption 应答未上线（spec 2026-10-08 §5）：只留痕。
+		log.Infof(c, "[AppleWebhook] %s otx=%s txn=%s (no action)", nType, otx, asn.TransactionInfo.TransactionId)
 
 	case appstore.NotificationType_EXPIRED, appstore.NotificationType_GRACE_PERIOD_EXPIRED:
 		// 到期：expired_at 已等于 Apple expiresDate，自然过期，仅标记状态。
@@ -131,18 +179,26 @@ func api_apple_webhook(c *gin.Context) {
 	c.Status(200)
 }
 
+// setSubStatus 不覆盖 revoked：Apple 在退款后照常发 EXPIRED，把 revoked 改成 expired 会丢失
+// 复活判据（spec 2026-10-08 §3.4）。
 func setSubStatus(ctx context.Context, id uint64, status string) error {
-	return db.Get().Model(&Subscription{}).Where("id = ?", id).Update("status", status).Error
+	return db.Get().Model(&Subscription{}).Where("id = ? AND status <> ?", id, "revoked").Update("status", status).Error
 }
 
 func recordSubEventID(ctx context.Context, id uint64, eventID string) error {
 	return db.Get().Model(&Subscription{}).Where("id = ?", id).Update("last_event_id", eventID).Error
 }
 
+// appleNotificationRefundReversed qtoolkit v1.5.32 尚无此常量（Apple 2023-06 起下发）。
+const appleNotificationRefundReversed = "REFUND_REVERSED"
+
+// appleRootCAPEM webhook 的 JWS 信任根（var 仅供端到端测试注入合成 CA）。
+var appleRootCAPEM = appstore.AppleRootCAPEM
+
 // verifyAppleJWS validates an Apple JWS signed payload against the embedded
 // Apple Root CA G3. Delegates to verifyAppleJWSWithRoot.
 func verifyAppleJWS(payload string) error {
-	return verifyAppleJWSWithRoot(payload, appstore.AppleRootCAPEM)
+	return verifyAppleJWSWithRoot(payload, appleRootCAPEM)
 }
 
 // verifyAppleJWSWithRoot performs full two-stage JWS verification:

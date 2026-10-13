@@ -62,6 +62,7 @@ var actionDisplayNames = map[string]string{
 	"plan_delete":         "删除订阅套餐",
 	"withdraw_approve":    "审批提现",
 	"withdraw_complete":   "完成提现",
+	"stripe_withdrawal":   "Stripe 撤回退款",
 }
 
 func actionDisplayName(action string) string {

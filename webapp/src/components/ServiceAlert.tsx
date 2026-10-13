@@ -5,14 +5,41 @@
  * 1. 服务组件初始化中
  * 2. Service 连接失败超过 10 秒
  * 3. VPN 连接出现网络错误 (408/503)
+ *
+ * Service 连不上且 macOS「允许在后台」被关（#3911）时：标题改为「被系统关闭」，
+ * 按钮改为「如何开启」并在本次运行中自动弹一次指引——重装解决不了这种情况。
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useVPNMachine } from '../stores/vpn-machine.store';
 import { useVPNMachineStore } from '../stores/vpn-machine.store';
 import { isNetworkError } from '../services/vpn-types';
+import { useServiceBlocker } from '../hooks/useServiceBlocker';
+import {
+  canOpenServiceSettings,
+  openServiceSettings,
+  type ServiceBlocker,
+} from '../services/service-blocker';
+import BackgroundBlockedDialog from './BackgroundBlockedDialog';
+
+// The guide pops up by itself at most once per app run; afterwards the banner
+// button reopens it.
+let guideAutoOpened = false;
+
+/**
+ * Switch turned on but the service still unreachable after this long → offer
+ * the reinstall again. On macOS 26 launchd starts the daemon within ~1 s of the
+ * switch going on (testlab VM 150); whether every macOS version does so for a
+ * job that was never loaded at boot is unverified (no Sonoma box), and without
+ * this the guide would sit on "recovering" forever with no way out.
+ */
+export const RECOVERY_GRACE_MS = 10_000;
+/** Test hook: forget that the guide auto-opened. */
+export function __resetServiceAlertGuideForTests() {
+  guideAutoOpened = false;
+}
 
 interface ServiceAlertProps {
   sidebarWidth?: number;
@@ -77,8 +104,54 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
   const initialization = useVPNMachineStore((s) => s.initialization);
   const [isResolving, setIsResolving] = useState(false);
 
+  // Background-blocked guidance. `blocker` is live (polled while the service is
+  // down); `seenBlocker` keeps the guidance up after the user flips the switch
+  // until the service actually reconnects ("recovering").
+  const serviceFailureActive = !(initialization && !initialization.ready) && isServiceDown;
+  const blocker = useServiceBlocker(serviceFailureActive);
+  const [seenBlocker, setSeenBlocker] = useState<ServiceBlocker | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
+
+  useEffect(() => {
+    if (!blocker) return;
+    setSeenBlocker(blocker);
+    if (!guideAutoOpened) {
+      guideAutoOpened = true;
+      setGuideOpen(true);
+    }
+  }, [blocker]);
+
+  useEffect(() => {
+    if (!isServiceDown) {
+      setSeenBlocker(null);
+      setGuideOpen(false);
+    }
+  }, [isServiceDown]);
+
+  // Switch is on (blocker gone) but the service has not come back yet.
+  const switchOn = seenBlocker !== null && blocker === null;
+  const [recoveryStalled, setRecoveryStalled] = useState(false);
+  useEffect(() => {
+    if (!switchOn) {
+      setRecoveryStalled(false);
+      return;
+    }
+    const id = setTimeout(() => setRecoveryStalled(true), RECOVERY_GRACE_MS);
+    return () => clearTimeout(id);
+  }, [switchOn]);
+
   // Handle resolve button click - try to reinstall service with admin privileges
   const handleResolve = async () => {
+    if (seenBlocker && !recoveryStalled) {
+      // Reinstalling cannot clear the system switch — guide instead.
+      setGuideOpen(true);
+      return;
+    }
+    await reinstall();
+  };
+
+  // The pre-v4 "Resolve" path: admin reinstall of the service.
+  const reinstall = async () => {
     const platform = window._platform;
     if (!platform?.reinstallService) {
       // Fallback to more page if not available (web mode)
@@ -138,7 +211,12 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
     serviceFailure: 'dashboard:dashboard.serviceFailure.title',
     networkError: 'dashboard:dashboard.networkError.title',
   };
-  const title = t(titleKeys[alertType]);
+  // Stalled recovery: the switch is on, so the banner goes back to the plain
+  // failure title + reinstall button.
+  const blockedMode = alertType === 'serviceFailure' && seenBlocker !== null && !recoveryStalled;
+  const title = blockedMode
+    ? t('dashboard:dashboard.serviceFailure.backgroundBlocked.bannerTitle')
+    : t(titleKeys[alertType]);
 
   // Get theme colors
   const theme = ALERT_THEMES[alertType];
@@ -146,6 +224,20 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
   const Icon = alertType === 'initialization' ? InfoIcon : WarningIcon;
 
   return (
+    <>
+    {seenBlocker && (
+      <BackgroundBlockedDialog
+        open={guideOpen}
+        itemName={seenBlocker.itemName}
+        switchOn={switchOn}
+        stalled={recoveryStalled}
+        reinstalling={isResolving}
+        canOpenSettings={canOpenServiceSettings()}
+        onOpenSettings={() => void openServiceSettings()}
+        onReinstall={() => void reinstall()}
+        onClose={() => setGuideOpen(false)}
+      />
+    )}
     <div
       style={{
         position: 'fixed',
@@ -214,9 +306,11 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
               opacity: isResolving ? 0.7 : 1,
             }}
           >
-            {isResolving
-              ? t('dashboard:dashboard.serviceFailure.resolving', 'Resolving...')
-              : t('dashboard:dashboard.serviceFailure.resolve', 'Resolve')}
+            {blockedMode
+              ? t('dashboard:dashboard.serviceFailure.backgroundBlocked.howToEnable')
+              : isResolving
+                ? t('dashboard:dashboard.serviceFailure.resolving', 'Resolving...')
+                : t('dashboard:dashboard.serviceFailure.resolve', 'Resolve')}
           </button>
           <button
             onClick={() => navigate('/service-error', { state: { from: location.pathname } })}
@@ -243,5 +337,6 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
         </div>
       )}
     </div>
+    </>
   );
 }

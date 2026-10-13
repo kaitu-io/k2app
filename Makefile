@@ -125,19 +125,35 @@ build-webapp: build-k2-plugin
 	cd webapp && yarn build
 
 # --- k2 sidecar (delegates to k2/Makefile) ---
+# -trimpath strips the build machine's absolute source paths (/Users/runner/work/…)
+# from shipped desktop binaries; panics then show module paths. Passed as GOFLAGS
+# env so the k2 submodule (read-only from here) needs no change. Appends to any
+# GOFLAGS the caller already set.
+K2_DESKTOP_GOFLAGS = GOFLAGS="$(strip $(GOFLAGS) -trimpath)"
+
+# The darwin sidecar is cgo, linked by clang, which otherwise stamps the BUILD HOST's
+# macOS as LC_BUILD_VERSION minos (0.4.7–0.4.13 shipped k2 with minos 26.0 inside an
+# app that declares 12.0). Floor = the app's own tauri.conf.json minimumSystemVersion.
+# Passed via CGO_CFLAGS/CGO_LDFLAGS, NOT MACOSX_DEPLOYMENT_TARGET: that env var is not
+# part of Go's build-cache key, so cached cgo objects compiled for the host's macOS
+# get linked in unchanged. scripts/check-macos-minos.sh gates the result.
+MACOS_MIN_VERSION = $(shell node -p "require('./desktop/src-tauri/tauri.conf.json').bundle.macOS.minimumSystemVersion")
+K2_DARWIN_CGOFLAGS = CGO_CFLAGS="$(strip $(or $(CGO_CFLAGS),-O2 -g) -mmacosx-version-min=$(MACOS_MIN_VERSION))" \
+	CGO_LDFLAGS="$(strip $(CGO_LDFLAGS) -mmacosx-version-min=$(MACOS_MIN_VERSION))"
+
 build-k2-macos:
-	cd k2 && make build-darwin-universal $(K2_VARS)
+	cd k2 && $(K2_DESKTOP_GOFLAGS) $(K2_DARWIN_CGOFLAGS) make build-darwin-universal $(K2_VARS)
 	mkdir -p $(K2_BIN)
 	cp k2/build/k2-darwin-universal $(K2_BIN)/k2-universal-apple-darwin
 
 build-k2-windows:
 	cd k2/daemon/wintun && go run gen.go
-	cd k2 && make build-windows-amd64 $(K2_VARS)
+	cd k2 && $(K2_DESKTOP_GOFLAGS) make build-windows-amd64 $(K2_VARS)
 	mkdir -p $(K2_BIN)
 	cp k2/build/k2-windows-amd64.exe $(K2_BIN)/k2-x86_64-pc-windows-msvc.exe
 
 build-k2-linux:
-	cd k2 && make build-linux-amd64 $(K2_VARS)
+	cd k2 && $(K2_DESKTOP_GOFLAGS) make build-linux-amd64 $(K2_VARS)
 	mkdir -p $(K2_BIN)
 	cp k2/build/k2-linux-amd64 $(K2_BIN)/k2-x86_64-unknown-linux-gnu
 
@@ -241,6 +257,7 @@ build-linux: pre-build stage-k2-webui-dist
 		echo "--- [host] Go cross-compile k2 for linux/$$arch (embedded webapp) ---"; \
 		(cd k2 && CGO_ENABLED=0 GOOS=linux GOARCH=$$arch \
 			go build \
+			-trimpath \
 			-tags release \
 			-ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(K2_COMMIT) -X github.com/kaitu-io/k2/config.buildLogLevel=$(K2_BUILD_LOG_LEVEL)" \
 			-o build/k2-linux-$$arch ./cmd/k2) || exit 1; \
@@ -377,7 +394,9 @@ appext-android: appext-deps plugin-purity-check check-jdk-21
 	# than inherit whatever NDK the machine happens to have. A 16 KB-aligned library
 	# still loads fine on 4 KB kernels. Verify with:
 	#   llvm-readelf -l jni/arm64-v8a/libgojni.so   ->  every LOAD Align must be 0x4000
-	cd k2 && mkdir -p build && gomobile bind -tags "with_gvisor deadlock_disable release" -ldflags "-checklinkname=0 -extldflags=-Wl,-z,max-page-size=16384" -target=android/arm64 -o build/k2mobile.aar -androidapi 24 ./appext/
+	# -s -w: drop the ELF symtab and DWARF (29.2 MB -> 19.0 MB on 0.4.12). Go panic
+	# traces come from .gopclntab, which stays, so crash stacks are unaffected.
+	cd k2 && mkdir -p build && gomobile bind -tags "with_gvisor deadlock_disable release" -ldflags "-s -w -checklinkname=0 -extldflags=-Wl,-z,max-page-size=16384" -target=android/arm64 -o build/k2mobile.aar -androidapi 24 ./appext/
 
 build-ios: pre-build build-webapp appext-ios
 	cp -r k2/build/K2Mobile.xcframework mobile/ios/App/

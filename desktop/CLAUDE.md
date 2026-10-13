@@ -29,7 +29,9 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
 
 - 产物命名 `Overleap_{VERSION}_{ARCH}.{EXT}`；S3/CDN 路径段 `/overleap/desktop/`；
   latest.json 双份、独立 GitHub Release tag `overleap-v{VERSION}`
-  （`scripts/publish-desktop.sh --brand=overleap`）。
+  （`scripts/publish-desktop.sh --brand=overleap`）。kaitu 自 0.4.13 起同理用
+  `kaitu-v{VERSION}`：Release tag **绝不能以 `v` 开头**——`gh release create` 会推这个
+  tag，`v*` 触发两品牌全平台重建并覆盖刚签进 latest.json 的 CDN 产物（0.4.12 踩过，及时取消）。
 - **k2 daemon 品牌中立**：1777 端口、launchd label `kaitu`（`k2/cmd/k2/service_darwin.go`）、
   NSIS `SERVICE_NAME "kaitu"` 不随品牌变。两品牌同机共存 = last-install-wins 接管
   daemon，双方 app 都能控制 VPN。
@@ -105,7 +107,7 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
 ## Tauri Config (`src-tauri/tauri.conf.json`)
 
 - Window: 430×956 (mobile-like), non-maximizable, hidden title bar
-- Bundle: `targets: ["app", "nsis"]` — no DMG. The macOS installer is a `.pkg` built by `scripts/build-macos.sh` (`pkgbuild` + `productsign` + notarize) from the `.app`, with `scripts/pkg-scripts/{preinstall,postinstall}`; `createUpdaterArtifacts` yields the `.app.tar.gz` + `.sig`. NSIS is `perMachine` with `installerHooks: installer-hooks.nsh`. `csp: null`, `withGlobalTauri: true`.
+- Bundle: `targets: ["app", "nsis"]` — no DMG. The macOS installer is a `.pkg` built by `scripts/build-macos.sh` (`pkgbuild` + `productsign` + notarize) from the `.app`, with `scripts/pkg-scripts/{preinstall,postinstall}`; `createUpdaterArtifacts` yields the `.app.tar.gz` + `.sig`. **First download ≠ update**: the `.pkg` (and `_universal.app.tar.gz`, kept as `darwin-universal` + fallback) stay universal because a browser can't tell Apple Silicon from Intel; `build_thin_update` additionally ships `_aarch64.app.tar.gz` / `_x64.app.tar.gz` (`lipo -thin` → same `sign_app` → own notarize + staple, ~half size) and `publish-desktop.sh` points `darwin-aarch64` / `darwin-x86_64` at them only when **both** sigs exist on S3, otherwise at the universal one. The desktop k2 sidecar is built with `-trimpath` (`K2_DESKTOP_GOFLAGS` in the root Makefile) — no CI paths in shipped binaries. Its darwin build also gets `-mmacosx-version-min` = `tauri.conf.json` `minimumSystemVersion` via `CGO_CFLAGS`/`CGO_LDFLAGS` (`K2_DARWIN_CGOFLAGS`) — without it clang stamps the build host's macOS as minos (0.4.7–0.4.13 shipped k2 at 26.0 in a 12.0 app); `MACOSX_DEPLOYMENT_TARGET` alone is not enough (not in Go's build-cache key, stale cgo objects get relinked). `build-macos.sh` runs `scripts/check-macos-minos.sh` (every Mach-O slice ≤ the bundle's `LSMinimumSystemVersion`). NSIS is `perMachine` with `installerHooks: installer-hooks.nsh`. `csp: null`, `withGlobalTauri: true`.
 - Updater: CloudFront endpoints with minisign public key
 - Version: `"../../package.json"` (references root, single source of truth)
 - Identifier: `io.kaitu.desktop`

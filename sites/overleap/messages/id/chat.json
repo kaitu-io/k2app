@@ -12,7 +12,7 @@
   "rateLimited": "Anda mengirim pesan terlalu cepat. Mohon tunggu sebentar.",
   "sendFailed": "Pesan tidak terkirim. Periksa koneksi Anda lalu coba lagi.",
   "tooLong": "Pesan terlalu panjang. Mohon persingkat lalu coba lagi.",
-  "emailPrompt": "Tim kami belum menangani percakapan ini. Tinggalkan email Anda dan kami akan memberi tahu saat kami membalas.",
+  "emailPrompt": "Silakan tinggalkan email Anda sebelum memulai. Jika Anda pergi, kami akan mengirim email saat kami membalas.",
   "emailPlaceholder": "Email Anda",
   "emailSubmit": "Kirim",
   "emailInvalid": "Masukkan alamat email yang valid.",

@@ -1,6 +1,6 @@
-**Last updated: 2026-09**
+**Last updated: 2026-10**
 
-This page explains how to delete your Overleap account, and what happens to your data afterwards. Overleap is operated by Overleap LLC.
+This page explains how to delete your Overleap account, and what happens to your data afterwards. Overleap is operated by Wordgate LLC.
 
 ### 1. Delete from inside the app (recommended)
 
@@ -30,6 +30,7 @@ Permanently deleted the moment you confirm, with no way to recover it:
 The following is not removed with the account. Each entry gives the period and the reason:
 
 - **Transaction and order records** — kept for 7 years. Required by financial regulations; we cannot delete these earlier.
+- **Subscription consent records** — kept with payment records.
 - **Support correspondence** — kept for 2 years after the issue is resolved.
 - **Connection logs** (connection timestamps and the server location used — never browsing history) — deleted automatically after 7 days on their normal schedule.
 - **Traffic volume statistics** (byte-count totals only, with no record of what was accessed) — deleted automatically after 2 months on their normal schedule.
@@ -38,7 +39,8 @@ Apart from the records listed above, remaining account data is erased within 30 
 
 ### 5. Before you delete
 
-- Unused subscription time is **not** refunded and cannot be restored afterwards. Contact support@overleap.io first if you want a refund.
+- Unused subscription time is **not** refunded and cannot be restored afterwards. If you're within 14 days of your first payment for a subscription billed by us (not through the App Store), or of an annual renewal, email support@overleap.io before deleting your account to withdraw with a prorated refund (Terms, Section 7).
+- Deleting your account does not cancel a renewing subscription. Cancel it first on your account page, or in your App Store settings for iPhone purchases.
 - The action cannot be undone. If you only want to change device or change email address, use device management or the change-email feature in the app instead.
 
 ### 6. Questions

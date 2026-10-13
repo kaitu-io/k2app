@@ -93,7 +93,24 @@
       "resolving": "해결 중...",
       "more": "더보기",
       "collecting": "진단 정보 수집 중...",
-      "reported": "지원팀에 보고됨"
+      "reported": "지원팀에 보고됨",
+      "backgroundBlocked": {
+        "bannerTitle": "macOS에서 백그라운드 서비스를 껐습니다",
+        "howToEnable": "켜는 방법",
+        "dialogTitle": "{{brand}}의 백그라운드 실행을 허용해 주세요",
+        "intro": "macOS의 '백그라운드에서 허용' 스위치가 꺼져 있어 {{brand}} 백그라운드 서비스가 시작되지 않으므로 연결할 수 없습니다. 재설치로는 해결되지 않습니다. 다음 단계로 다시 켜 주세요:",
+        "step1": "아래 '시스템 설정 열기'를 클릭 (또는 시스템 설정 → 일반 → 로그인 항목 및 확장 프로그램)",
+        "step2": "'백그라운드에서 허용' 목록에서 아래 항목을 찾아 오른쪽 스위치를 켭니다:",
+        "itemNameNote": "{{brand}}의 개발자 이름이며 '{{brand}}'로 표시되지 않습니다",
+        "step3": "요청 시 Mac 암호를 입력합니다",
+        "statusWaiting": "스위치가 켜지기를 기다리는 중…",
+        "statusRecovering": "스위치가 켜졌습니다. 서비스를 복구하는 중…",
+        "statusStalled": "스위치는 켜졌지만 서비스가 아직 시작되지 않았습니다. '서비스 재설치'를 클릭하고 Mac 암호를 입력하세요.",
+        "noReinstall": "스위치를 켜면 자동으로 다시 연결됩니다. 재설치나 재시동은 필요 없습니다.",
+        "openSettings": "시스템 설정 열기",
+        "reinstall": "서비스 재설치",
+        "later": "나중에"
+      }
     },
     "serviceError": {
       "title": "서비스 오류",

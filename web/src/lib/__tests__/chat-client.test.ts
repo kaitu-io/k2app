@@ -143,6 +143,32 @@ describe('chat-client', () => {
     client.stop();
   });
 
+  it('session passes emailRequired through (absent = not required)', async () => {
+    const { client } = make({ 'POST /api/chat/session': () => session({ ws: null, emailRequired: true }) });
+    expect((await client.start('/p')).emailRequired).toBe(true);
+    client.stop();
+    const other = make({ 'POST /api/chat/session': () => session({ ws: null }) });
+    expect((await other.client.start('/p')).emailRequired).toBe(false);
+    other.client.stop();
+  });
+
+  it('a 422 "email required" on send is reported as email_required, once, without a re-session', async () => {
+    const { client, f, last } = make({
+      'POST /api/chat/session': () => session({ ws: null }),
+      'GET /api/chat/messages': () => ({ messages: [] }),
+      'POST /api/chat/messages': () => { throw { code: 422, message: 'email required' }; },
+    });
+    await client.start('/p');
+    const err = await client.send('text', 'hi').catch((e) => e);
+    expect((err as ChatError).kind).toBe('email_required');
+    expect((err as ChatError).retryable).toBe(false);
+    await tick(10000);
+    expect(f.of('POST /api/chat/messages')).toHaveLength(1);
+    expect(f.of('POST /api/chat/session')).toHaveLength(1);
+    expect(last()).toEqual([]);
+    client.stop();
+  });
+
   it.each(['invalid content', 'chat is not available', 'invalid clientId'])(
     'a validation 422 on send (%s) is reported at once and never triggers a re-session',
     async (message) => {

@@ -47,9 +47,16 @@ type BrandConfig struct {
 	// GeoDetect=true：按请求 IP 判定，判定不出或该国没有规则包时落到 GeoDefaultCountry。
 	GeoDetect         bool
 	GeoDefaultCountry string
-	// 访客会话是否由 AI 先接待。AI 的系统提示（data/system_prompt.md）与知识库只写了开途的产品与价格，
-	// 别的品牌接上会把开途的内容答给它的访客，所以为 false：会话一建出来就是人工，Slack 里 !ai 也被拒。
+	// 访客会话是否由 AI 先接待。为 false：会话一建出来就是人工，Slack 里 !ai 也被拒。
+	// 为 true 时必须同时有：ChatAIStore、chatAIBrandPrompts 里的提示词（TestChatBrandAI_EveryAIBrandIsWired 守着）。
 	ChatAI bool
+	// Wallet 钱包：订单退款进钱包、钱包提现、分销返现结算。overleap 没有钱包——它的退款走
+	// Stripe 撤回执行器原路退回 / Apple 自己退款；钱包入口与提现在后端按此位拒绝。
+	// 导出进跨层契约，webapp features.wallet 必须与之一致。
+	Wallet bool
+	// AI 作答用的知识库：配置 openai.filesearch.stores.<ChatAIStore>。每个品牌一个独立的 vector store，
+	// 源文件在 docs/customer-service/<brand>/，用 scripts/sync-kb.sh 同步。
+	ChatAIStore string
 }
 
 func (bc *BrandConfig) AllowsPayment(channel string) bool {
@@ -78,6 +85,8 @@ var brandRegistry = map[Brand]*BrandConfig{
 		GeoDetect:         false,
 		GeoDefaultCountry: "cn",
 		ChatAI:            true,
+		Wallet:            true,
+		ChatAIStore:       "crm",
 	},
 	BrandOverleap: {
 		ID:                 BrandOverleap,
@@ -93,7 +102,9 @@ var brandRegistry = map[Brand]*BrandConfig{
 		PaymentChannels:   []string{PayChannelStripe, PayChannelAppleIAP},
 		GeoDetect:         true,
 		GeoDefaultCountry: "gb",
-		ChatAI:            false,
+		ChatAI:            true,
+		Wallet:            false,
+		ChatAIStore:       "overleap",
 	},
 }
 

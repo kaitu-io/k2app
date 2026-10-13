@@ -12,7 +12,7 @@
   "rateLimited": "Anda menghantar mesej terlalu pantas. Sila tunggu sebentar.",
   "sendFailed": "Mesej tidak dihantar. Sila semak sambungan anda dan cuba lagi.",
   "tooLong": "Mesej itu terlalu panjang. Sila pendekkan dan cuba lagi.",
-  "emailPrompt": "Pasukan kami belum mengambil perbualan ini. Tinggalkan e-mel anda dan kami akan maklumkan apabila kami membalas.",
+  "emailPrompt": "Sila tinggalkan e-mel anda sebelum kita bermula. Jika anda beredar, kami akan menghantar e-mel apabila kami membalas.",
   "emailPlaceholder": "E-mel anda",
   "emailSubmit": "Hantar",
   "emailInvalid": "Sila masukkan alamat e-mel yang sah.",

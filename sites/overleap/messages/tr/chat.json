@@ -12,7 +12,7 @@
   "rateLimited": "Çok hızlı mesaj gönderiyorsunuz. Lütfen biraz bekleyin.",
   "sendFailed": "Mesaj gönderilemedi. Lütfen bağlantınızı kontrol edip tekrar deneyin.",
   "tooLong": "Bu mesaj çok uzun. Lütfen kısaltıp tekrar deneyin.",
-  "emailPrompt": "Ekibimiz henüz ilgilenmedi. E-posta adresinizi bırakın, yanıt verdiğimizde size haber verelim.",
+  "emailPrompt": "Başlamadan önce lütfen e-posta adresini bırak. Ayrılırsan, yanıt verdiğimizde sana e-posta göndereceğiz.",
   "emailPlaceholder": "E-posta adresiniz",
   "emailSubmit": "Gönder",
   "emailInvalid": "Lütfen geçerli bir e-posta adresi girin.",

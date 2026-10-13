@@ -845,7 +845,11 @@ func TestChatVisitorAppend_ConcurrentWithClose(t *testing.T) {
 					if owner.ID != conv.ID {
 						assert.Greater(t, owner.ID, conv.ID, "iter %d msg %d: 进的是新开的会话", iter, i)
 					} else if fresh.Status == ConvClosed && fresh.ClosedAt != nil {
-						assert.False(t, m.CreatedAt.After(*fresh.ClosedAt), "iter %d msg %d: 关闭之后的消息不得留在原会话", iter, i)
+						// 与库里的 closed_at 比较必须用库里读回的 created_at：datetime(3) 在 MariaDB 上截断到毫秒，
+						// 内存里的纳秒时间在关闭的同一毫秒内先提交也会显得"晚于关闭"（CI 本机 DB 偶发红）。
+						var stored ConversationMessage
+						require.NoError(t, db.Get().First(&stored, m.ID).Error)
+						assert.False(t, stored.CreatedAt.After(*fresh.ClosedAt), "iter %d msg %d: 关闭之后的消息不得留在原会话", iter, i)
 					}
 				}
 			}

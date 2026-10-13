@@ -26,7 +26,7 @@
     "items": {
       "manage": {
         "question": "Làm sao để quản lý hoặc hủy gói đăng ký?",
-        "answer": "Mở trang tài khoản và chọn Quản lý gói đăng ký. Tại đó bạn có thể hủy, đổi thẻ hoặc tải hóa đơn. Hủy gói vẫn giữ gói hoạt động đến hết kỳ đã thanh toán."
+        "answer": "Mở trang tài khoản và chọn Quản lý gói đăng ký. Tại đó bạn có thể hủy, đổi thẻ hoặc tải hóa đơn. Hủy gói vẫn giữ gói hoạt động đến hết kỳ đã thanh toán. Hủy gói sẽ dừng gia hạn nhưng không hoàn tiền — xem “Tôi có được hoàn tiền không?”"
       },
       "charge": {
         "question": "Khi nào tôi bị tính phí?",
@@ -34,7 +34,7 @@
       },
       "refund": {
         "question": "Tôi có được hoàn tiền không?",
-        "answer": "Nếu {brand} không phù hợp với bạn, hãy gửi email cho chúng tôi và chúng tôi sẽ giải quyết."
+        "answer": "Bạn có thể rút khỏi hợp đồng và được hoàn tiền cho những ngày chưa dùng trong vòng 14 ngày kể từ lần thanh toán đầu tiên cho gói đăng ký do chúng tôi tính phí (không qua App Store), hoặc kể từ một lần gia hạn theo năm. Gửi email tới support@overleap.io. Giao dịch mua qua App Store do Apple hoàn tiền."
       },
       "devices": {
         "question": "Tôi đã đạt giới hạn năm thiết bị",

@@ -23,7 +23,7 @@ import (
 // resume 令牌的边界（有意设计，不做一次性）：邮件里的链接会被多次打开，所以 7 天内可重放；
 // 但它只能：限于签发时的那一个品牌、只合并到那一个 guest 簇、只对"没有任何会话的新 guest"生效，
 // 且客服可撤销该合并（撤销过的不再被令牌重做）。见 chatApplyResume。
-// 设计见 docs/superpowers/specs/2026-10-01-support-console-chatwoot-replacement-design.md §5/§6
+// 设计见 docs/superpowers/specs/2026-10-01-support-chat-design.md §5/§6
 
 const (
 	chatWSPurpose     = "chat-ws-v1"

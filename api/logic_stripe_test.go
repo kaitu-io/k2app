@@ -221,11 +221,12 @@ func createStripeTestPlan(t *testing.T) *Plan {
 	return p
 }
 
-// mkStripeFacts 构造入账事实。
+// mkStripeFacts 构造入账事实。Brand 恒为 overleap：与 checkout 烘焙的 metadata 一致
+//（入账品牌哨兵看的是用户行的品牌，不是这个字段）。
 func mkStripeFacts(u *User, p *Plan, invoiceID, subID string, start, end int64) *stripeInvoiceFacts {
 	return &stripeInvoiceFacts{
 		InvoiceID: invoiceID, SubscriptionID: subID, CustomerID: "cus_" + subID,
-		UserUUID: u.UUID, PlanPID: p.PID, PriceID: p.StripePriceID,
+		UserUUID: u.UUID, PlanPID: p.PID, PriceID: p.StripePriceID, Brand: string(BrandOverleap),
 		PeriodStart: start, PeriodEnd: end, Livemode: false,
 	}
 }

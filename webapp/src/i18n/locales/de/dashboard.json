@@ -93,7 +93,24 @@
       "resolving": "Wird behoben...",
       "more": "Mehr",
       "collecting": "Diagnosen werden gesammelt...",
-      "reported": "An Support-Team gemeldet"
+      "reported": "An Support-Team gemeldet",
+      "backgroundBlocked": {
+        "bannerTitle": "Hintergrunddienst von macOS deaktiviert",
+        "howToEnable": "So aktivieren",
+        "dialogTitle": "{{brand}} im Hintergrund erlauben",
+        "intro": "Ein Schalter unter „Im Hintergrund erlauben“ ist in macOS ausgeschaltet. macOS startet den {{brand}}-Hintergrunddienst daher nicht, und du kannst keine Verbindung herstellen. Eine Neuinstallation hilft nicht. Schalte ihn wieder ein:",
+        "step1": "Klicke unten auf „Systemeinstellungen öffnen“ (oder Systemeinstellungen → Allgemein → Anmeldeobjekte & Erweiterungen)",
+        "step2": "Suche unter „Im Hintergrund erlauben“ diesen Eintrag und schalte ihn ein:",
+        "itemNameNote": "Das ist der Entwicklername von {{brand}} – er wird nicht als „{{brand}}“ angezeigt",
+        "step3": "Gib dein Mac-Passwort ein, wenn du dazu aufgefordert wirst",
+        "statusWaiting": "Warte auf das Einschalten…",
+        "statusRecovering": "Eingeschaltet – Dienst wird wiederhergestellt…",
+        "statusStalled": "Der Schalter ist an, aber der Dienst ist noch nicht gestartet. Klicke auf „Dienst neu installieren“ und gib dein Mac-Passwort ein.",
+        "noReinstall": "Danach verbindet sich die App von selbst. Keine Neuinstallation und kein Neustart nötig.",
+        "openSettings": "Systemeinstellungen öffnen",
+        "reinstall": "Dienst neu installieren",
+        "later": "Später"
+      }
     },
     "serviceError": {
       "title": "Service-Fehler",

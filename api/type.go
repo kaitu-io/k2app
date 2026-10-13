@@ -868,6 +868,8 @@ type CreateWithdrawRequest struct {
 // RefundOrderRequest 退款订单请求
 type RefundOrderRequest struct {
 	Reason string `json:"reason" binding:"required,min=2,max=500"` // 退款原因，必填，2-500 字符
+	// KeepInviteRewards 为 true 时不撤回这笔购买触发的邀请奖励（服务故障类善意退款）。默认撤回。
+	KeepInviteRewards bool `json:"keepInviteRewards"`
 }
 
 // ========================= 邮件发送日志类型定义 =========================

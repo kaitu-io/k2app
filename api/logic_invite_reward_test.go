@@ -63,6 +63,7 @@ func setupInviteRewardFixture(t *testing.T, planMonth int) *inviteRewardFixture 
 		db.Get().Unscoped().
 			Where("user_id IN ?", []uint64{f.inviter.ID, f.invitee.ID}).
 			Delete(&UserProHistory{})
+		db.Get().Unscoped().Where("invitee_user_id = ?", f.invitee.ID).Delete(&InviteRewardGrant{})
 	})
 
 	return f
@@ -186,7 +187,8 @@ func (f *inviteRewardFixture) appleIAPCredit(t *testing.T, plan *Plan, txnID, or
 			ProductId:             plan.AppleProductID,
 			AppAccountToken:       deriveAppleAccountToken(f.invitee.UUID),
 			InAppOwnershipType:    appstore.OwnershipType_PURCHASED,
-			Environment:           "Sandbox",
+			// 生产交易：沙盒交易不发邀请奖励（spec 2026-10-08 §3.7）。
+			Environment: appstore.Environment_Production,
 			PurchaseDate:          now * 1000,
 			ExpiresDate:           (now + int64(plan.Month)*30*86400) * 1000,
 		})
@@ -194,6 +196,7 @@ func (f *inviteRewardFixture) appleIAPCredit(t *testing.T, plan *Plan, txnID, or
 	t.Cleanup(func() {
 		db.Get().Where("user_id = ?", f.invitee.ID).Delete(&SubscriptionCredit{})
 		db.Get().Where("user_id = ?", f.invitee.ID).Delete(&Subscription{})
+		db.Get().Unscoped().Where("user_id = ? AND channel = ?", f.invitee.ID, OrderChannelAppleIAP).Delete(&Order{})
 	})
 }
 

@@ -1,6 +1,8 @@
 package center
 
 import (
+	"errors"
+
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
@@ -34,6 +36,11 @@ func api_apple_iap_verify(c *gin.Context) {
 	}
 
 	if err := verifyAndGrantTransaction(c, userID, req.TransactionID); err != nil {
+		if errors.Is(err, errAppleTxnRevoked) {
+			log.Warnf(c, "[AppleIAP] verify user=%d txn=%s: transaction was refunded", userID, req.TransactionID)
+			Error(c, ErrorInvalidOperation, "this purchase has been refunded")
+			return
+		}
 		log.Errorf(c, "[AppleIAP] verify failed user=%d txn=%s: %v", userID, req.TransactionID, err)
 		Error(c, ErrorInvalidOperation, "verification failed")
 		return

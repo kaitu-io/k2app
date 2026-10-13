@@ -17,11 +17,15 @@ set -euo pipefail
 #   ios/beta/latest.json                         ← this script publishes
 #
 # --brand=kaitu|overleap selects the S3/CDN prefix and artifact filename
-# prefix. Falls back to $K2_BRAND, then "kaitu". overleap has no live App
-# Store listing yet (Phase 0) — if OVERLEAP_APPSTORE_URL is unset, the ios
-# manifest publish is skipped with a warning (see below).
+# prefix. Falls back to $K2_BRAND, then "kaitu". The App Store link is built
+# from each brand's App Store Connect app id (kaitu 6448744655, overleap
+# 6759199298) — known before the listing goes live, so nothing waits on review.
+# OVERLEAP_APPSTORE_URL overrides overleap's.
 # overleap android is Play-only: --platform=android exits 0 without touching
 # S3, and --platform=both narrows to ios.
+#
+# kaitu android's manifest url is ABSOLUTE and points at the mainland mirror
+# (see "Mainland mirror" below); --no-mirror falls back to the relative CDN url.
 #
 # Usage:
 #   make publish-mobile VERSION=0.5.0            # Real S3 publish (stable)
@@ -37,6 +41,7 @@ DRY_RUN=false
 CHANNEL=""
 PLATFORM=""  # empty = both, "android" or "ios"
 BRAND="${K2_BRAND:-kaitu}"
+NO_MIRROR=false
 
 # Parse arguments
 shift || true
@@ -47,12 +52,13 @@ for arg in "$@"; do
         --channel=*) CHANNEL="${arg#*=}" ;;
         --platform=*) PLATFORM="${arg#*=}" ;;
         --brand=*) BRAND="${arg#*=}" ;;
+        --no-mirror) NO_MIRROR=true ;;
         *) echo "Unknown argument: $arg" >&2; exit 1 ;;
     esac
 done
 
 if [ -z "$VERSION" ]; then
-    echo "Usage: $0 VERSION [--s3-base=PATH] [--dry-run] [--channel=stable|beta] [--platform=android|ios] [--brand=kaitu|overleap]" >&2
+    echo "Usage: $0 VERSION [--s3-base=PATH] [--dry-run] [--channel=stable|beta] [--platform=android|ios] [--brand=kaitu|overleap] [--no-mirror]" >&2
     exit 1
 fi
 
@@ -64,7 +70,7 @@ BRAND_PRODUCT=$([ "$BRAND" = "overleap" ] && echo "Overleap" || echo "Kaitu")
 S3_PREFIX="${BRAND}"
 CDN_PRIMARY="https://d13jc1jqzlg4yt.cloudfront.net/${BRAND}"
 if [ "$BRAND" = "overleap" ]; then
-    APPSTORE_URL="${OVERLEAP_APPSTORE_URL:-}"
+    APPSTORE_URL="${OVERLEAP_APPSTORE_URL:-https://apps.apple.com/app/id6759199298}"
 else
     APPSTORE_URL="https://apps.apple.com/app/id6448744655"
 fi
@@ -77,9 +83,8 @@ fi
 # Overleap Android ships through Google Play only: no CDN APK, no android
 # manifest (the app's APK self-update lane is off — see k2_apk_updates in
 # mobile/android/app/src/overleap/res/values/brand.xml). Placed before the
-# artifact validation and the iOS-skip block below so that --platform=both
-# narrows to iOS first, and the iOS block may then still exit 0 on its own
-# (OVERLEAP_APPSTORE_URL unset). exit 0: expected state, CI legs stay green.
+# artifact validation so that --platform=both narrows to iOS first.
+# exit 0: expected state, CI legs stay green.
 if [ "$BRAND" = overleap ] && [ "$PLATFORM" != ios ]; then
     echo "WARN: overleap android is Play-only — skipping android manifest."
     if [ "$PLATFORM" = android ]; then
@@ -158,6 +163,66 @@ copy_s3() {
     fi
 }
 
+# --- Mainland mirror (kaitu android) ---
+# Every installed client opens the manifest's APK url in the system browser —
+# including old builds (0.4.7) whose update code can never change again. With
+# the VPN on, CloudFront is proxy-routed under the cn rule, so a user whose
+# tunnel is degraded cannot download the update at all (ticket #3902).
+#
+# https://anc.oetnn.cn is an ICP-filed .cn domain on Aliyun DCDN (mainland
+# edges; .cn is direct under the cn rule). DCDN back-sources to CloudFront
+# E17ZE1NIATCIWA (app.allnationconnect.com), whose /kaitu/android/* behavior
+# reads THIS bucket's kaitu/android/* — so the APK CI already uploaded is
+# served as-is: no copy, same bytes, strong ETag + Last-Modified (browsers can
+# resume). The DCDN is mainland-only (unreachable from abroad), so the read-back
+# goes through app.allnationconnect.com: same distribution, same behavior.
+# Rejected before this: jsDelivr mirrors drop slow mainland transfers and send
+# a weak ETag; npmmirror refuses to serve files of non-whitelisted packages.
+# Env overrides exist for scripts/test-publish-mobile.sh only.
+if [ -n "${APP_DIST_VERIFY_BASE+x}" ]; then APP_DIST_SET=true; else APP_DIST_SET=false; fi
+APP_DIST_URL_BASE="${APP_DIST_URL_BASE:-https://anc.oetnn.cn/${BRAND}}"
+APP_DIST_VERIFY_BASE="${APP_DIST_VERIFY_BASE:-https://app.allnationconnect.com/${BRAND}}"
+APP_DIST_RETRY_DELAY="${APP_DIST_RETRY_DELAY:-20}"
+APP_DIST_ATTEMPTS="${APP_DIST_ATTEMPTS:-6}"
+
+# Local mock-S3 runs (tests) only mirror when given a verify base explicitly.
+MIRROR=false
+if [ "$BRAND" = kaitu ] && [ "$NO_MIRROR" = false ]; then
+    if ! use_local || [ "$APP_DIST_SET" = true ]; then
+        MIRROR=true
+    fi
+fi
+
+# mirror_apk ARTIFACT_PATH SHA256_HEX — prints the mainland url on stdout.
+# ARTIFACT_PATH is the S3 key under the brand prefix (android/VER/NAME.apk).
+mirror_apk() {
+    local artifact="$1" sha="$2"
+    local url="${APP_DIST_URL_BASE}/${artifact}"
+    local check="${APP_DIST_VERIFY_BASE}/${artifact}"
+
+    if [ "$DRY_RUN" = true ] && ! use_local; then
+        echo "[dry-run] Would verify $check and publish $url" >&2
+        echo "$url"
+        return 0
+    fi
+
+    # Read it back through the serving path: the manifest must never point at
+    # bytes nobody has seen served.
+    local got="$WORK_TMPDIR/mirror-check" i
+    for i in $(seq 1 "$APP_DIST_ATTEMPTS"); do
+        if curl -fsSL --max-time 300 -o "$got" "$check" 2>/dev/null \
+            && [ "$(shasum -a 256 "$got" | cut -d' ' -f1)" = "$sha" ]; then
+            echo "  ✓ Mainland path serves identical bytes: $check" >&2
+            echo "$url"
+            return 0
+        fi
+        echo "  Mainland path not serving the exact bytes yet (attempt $i/$APP_DIST_ATTEMPTS)" >&2
+        [ "$i" -lt "$APP_DIST_ATTEMPTS" ] && sleep "$APP_DIST_RETRY_DELAY"
+    done
+    echo "ERROR: $check never served sha256 $sha — manifest not published." >&2
+    return 1
+}
+
 WORK_TMPDIR=$(mktemp -d)
 trap 'rm -rf "$WORK_TMPDIR"' EXIT
 
@@ -198,8 +263,14 @@ generate_manifest() {
     local size
     size=$(stat -f%z "$local_file" 2>/dev/null || stat -c%s "$local_file" 2>/dev/null)
 
-    # Relative URL: VERSION/filename (resolved against manifest baseURL by client)
+    # Relative URL: VERSION/filename (resolved against manifest baseURL by client);
+    # kaitu android uses the absolute mainland-mirror url instead.
     local rel_url="${VERSION}/${filename}"
+    if [ "$channel" = android ] && [ "$MIRROR" = true ]; then
+        rel_url=$(mirror_apk "$artifact" "${hash#sha256:}") || exit 1
+    elif [ "$channel" = android ] && [ "$BRAND" = kaitu ] && [ "$NO_MIRROR" = true ]; then
+        echo "  WARN: --no-mirror — users on a degraded tunnel cannot download this update (ticket #3902)." >&2
+    fi
 
     # Generate latest.json
     local manifest="$WORK_TMPDIR/${channel}-latest.json"
@@ -242,25 +313,6 @@ fi
 # For beta versions, we write ios/beta/latest.json (unused but consistent).
 # For stable versions, we write both ios/latest.json and ios/beta/latest.json.
 
-IOS_SKIPPED=false
-if [ "$PLATFORM" != "android" ] && [ -z "$APPSTORE_URL" ]; then
-    echo "WARN: overleap App Store listing not yet live (OVERLEAP_APPSTORE_URL unset) — skipping ios manifest."
-    if [ "$PLATFORM" = "ios" ]; then
-        # iOS was the ONLY thing requested — nothing at all will be
-        # published, so stop here. Running on would leak the PLATFORM
-        # override into the CDN invalidation (firing /${BRAND}/android/*
-        # for a run that wrote nothing) and print a false success line.
-        # exit 0: this is an expected pending-Phase-0 state, not an error —
-        # CI matrix legs must stay green.
-        echo "Nothing published (overleap iOS manifest skipped — OVERLEAP_APPSTORE_URL unset)."
-        exit 0
-    fi
-    # Both platforms requested: android half still publishes below; the
-    # override narrows the rest of the run (incl. CDN paths) to android,
-    # which is exactly what was actually published.
-    IOS_SKIPPED=true
-    PLATFORM="android"
-fi
 
 if [ "$PLATFORM" != "android" ]; then
 echo "Processing ios..."
@@ -304,9 +356,6 @@ if [ "$DRY_RUN" = false ] && ! use_local; then
 fi
 
 PLATFORM_LABEL="${PLATFORM:-mobile}"
-if [ "$IOS_SKIPPED" = true ]; then
-    PLATFORM_LABEL="android (ios manifest skipped — OVERLEAP_APPSTORE_URL unset)"
-fi
 echo ""
 if [ "$CHANNEL" = "beta" ]; then
     echo "Published ${PLATFORM_LABEL} v${VERSION} beta manifests successfully."

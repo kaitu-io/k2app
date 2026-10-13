@@ -23,7 +23,7 @@ const NO_LINKS: AllDownloadLinks = { desktop: { beta: null, stable: null }, mobi
 
 describe('buildInstallTargets', () => {
   it('nothing published → every platform is "coming soon" (empty url)', () => {
-    const targets = buildInstallTargets(NO_LINKS);
+    const targets = buildInstallTargets(NO_LINKS, { ios: '', android: '' });
     expect(targets.map((t) => t.platform)).toEqual(['windows', 'macos', 'ios', 'android']);
     expect(targets.every((t) => t.url === '')).toBe(true);
     expect(JSON.stringify(targets)).not.toContain('null');
@@ -44,12 +44,17 @@ describe('buildInstallTargets', () => {
       ...NO_LINKS,
       mobile: { ios: { url: 'https://apps.apple.com/app/id1', version: '1' }, android: { url: androidApkLink('1.2.3'), version: '1.2.3' } },
     };
-    const fromManifest = buildInstallTargets(withManifest);
+    const fromManifest = buildInstallTargets(withManifest, { ios: '', android: '' });
     expect(fromManifest[2]).toMatchObject({ platform: 'ios', url: 'https://apps.apple.com/app/id1', store: true });
     expect(fromManifest[3]).toMatchObject({ url: 'https://d13jc1jqzlg4yt.cloudfront.net/overleap/android/1.2.3/Overleap-1.2.3.apk', store: false });
     const fromStores = buildInstallTargets(withManifest, { ios: 'https://apps.apple.com/app/id9', android: 'https://play.google.com/store/apps/details?id=x' });
     expect(fromStores[2].url).toBe('https://apps.apple.com/app/id9');
     expect(fromStores[3]).toMatchObject({ url: 'https://play.google.com/store/apps/details?id=x', store: true });
+  });
+  it('live store listings: iOS App Store and Google Play are both offered', () => {
+    const targets = buildInstallTargets(NO_LINKS);
+    expect(targets[2]).toMatchObject({ platform: 'ios', url: 'https://apps.apple.com/app/id6759199298', store: true });
+    expect(targets[3]).toMatchObject({ platform: 'android', url: 'https://play.google.com/store/apps/details?id=io.overleap', store: true });
   });
 });
 
@@ -72,7 +77,7 @@ describe('InstallCards', () => {
 
   it('highlights and moves the detected platform first; unavailable cards are disabled', async () => {
     vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)');
-    const targets = buildInstallTargets({ desktop: { beta: null, stable: { version: '0.4.10', links: desktopLinks('0.4.10') } }, mobile: null });
+    const targets = buildInstallTargets({ desktop: { beta: null, stable: { version: '0.4.10', links: desktopLinks('0.4.10') } }, mobile: null }, { ios: '', android: '' });
     render(
       <NextIntlClientProvider locale="en-GB" messages={messages} onError={(e) => { throw e; }}>
         <InstallCards targets={targets} />
@@ -85,5 +90,18 @@ describe('InstallCards', () => {
     expect(within(cards[0]).getByText('Version 0.4.10')).toBeInTheDocument();
     const ios = screen.getByTestId('install-card-ios');
     expect(within(ios).getByRole('button', { name: 'Coming soon' })).toBeDisabled();
+  });
+
+  it('live store listings render as App Store / Google Play links', async () => {
+    vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)');
+    render(
+      <NextIntlClientProvider locale="en-GB" messages={messages} onError={(e) => { throw e; }}>
+        <InstallCards targets={buildInstallTargets(NO_LINKS)} />
+      </NextIntlClientProvider>,
+    );
+    const ios = await screen.findByTestId('install-card-ios');
+    expect(within(ios).getByRole('link', { name: 'Open the App Store' }).getAttribute('href')).toBe('https://apps.apple.com/app/id6759199298');
+    const android = screen.getByTestId('install-card-android');
+    expect(within(android).getByRole('link', { name: 'Get it on Google Play' }).getAttribute('href')).toBe('https://play.google.com/store/apps/details?id=io.overleap');
   });
 });

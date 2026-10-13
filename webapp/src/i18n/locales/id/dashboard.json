@@ -93,7 +93,24 @@
       "resolving": "Menyelesaikan...",
       "more": "Lainnya",
       "collecting": "Mengumpulkan diagnostik...",
-      "reported": "Dilaporkan ke tim dukungan"
+      "reported": "Dilaporkan ke tim dukungan",
+      "backgroundBlocked": {
+        "bannerTitle": "Layanan latar belakang dimatikan oleh macOS",
+        "howToEnable": "Cara menyalakan",
+        "dialogTitle": "Izinkan {{brand}} berjalan di latar belakang",
+        "intro": "Sebuah sakelar di \"Izinkan di Latar Belakang\" di macOS mati, sehingga macOS tidak menjalankan layanan latar belakang {{brand}} dan Anda tidak dapat terhubung. Memasang ulang tidak akan memperbaikinya. Nyalakan kembali:",
+        "step1": "Klik \"Buka Pengaturan Sistem\" di bawah (atau Pengaturan Sistem → Umum → Item Masuk & Ekstensi)",
+        "step2": "Di \"Izinkan di Latar Belakang\", cari item ini lalu nyalakan sakelarnya:",
+        "itemNameNote": "Ini nama pengembang {{brand}} — tidak tercantum sebagai \"{{brand}}\"",
+        "step3": "Masukkan kata sandi Mac jika diminta",
+        "statusWaiting": "Menunggu sakelar dinyalakan…",
+        "statusRecovering": "Sudah menyala — memulihkan layanan…",
+        "statusStalled": "Sakelar sudah menyala, tetapi layanan belum berjalan. Klik \"Pasang ulang layanan\" lalu masukkan kata sandi Mac.",
+        "noReinstall": "Akan tersambung kembali sendiri setelah dinyalakan. Tidak perlu memasang ulang atau memulai ulang.",
+        "openSettings": "Buka Pengaturan Sistem",
+        "reinstall": "Pasang ulang layanan",
+        "later": "Nanti"
+      }
     },
     "serviceError": {
       "title": "Kesalahan Layanan",

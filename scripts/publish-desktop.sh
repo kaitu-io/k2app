@@ -50,9 +50,13 @@ if [ "$CHANNEL" != "stable" ] && [ "$CHANNEL" != "beta" ]; then
 fi
 case "$BRAND" in kaitu|overleap) ;; *) echo "ERROR: --brand must be kaitu|overleap" >&2; exit 1 ;; esac
 BRAND_PRODUCT=$([ "$BRAND" = "overleap" ] && echo "Overleap" || echo "Kaitu")
-# kaitu keeps the shared "v${VERSION}" GitHub Release tag; overleap gets its
-# own "overleap-v${VERSION}" tag so releases never collide across brands.
-REL_TAG=$([ "$BRAND" = "overleap" ] && echo "overleap-v${VERSION}" || echo "v${VERSION}")
+# GitHub Release tag is "{brand}-v${VERSION}". It must NOT start with "v":
+# `gh release create` pushes the tag, and every workflow listening on `v*`
+# (release-desktop, build-mobile) would rebuild both brands from main HEAD and
+# overwrite the CDN artifacts this script just signed into latest.json
+# (happened with v0.4.12; kaitu releases <= 0.4.12 still carry bare v* tags).
+REL_TAG="${BRAND}-v${VERSION}"
+case "$REL_TAG" in v*) echo "ERROR: release tag '${REL_TAG}' would trigger v* build workflows" >&2; exit 1 ;; esac
 
 PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 S3_VER="s3://d0.all7.cc/${BRAND}/desktop/${VERSION}"
@@ -84,6 +88,23 @@ aws s3 cp "${S3_VER}/" "${TMPDIR}/" --recursive \
   --exclude "*" --include "*.sig"
 
 MACOS_SIG=$(cat "${TMPDIR}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz.sig" 2>/dev/null || echo "")
+# Per-arch updater archives (scripts/build-macos.sh build_thin_update): first
+# downloads use the universal .pkg, updates get the ~half-size thin app for
+# their own arch. Both or neither — builds before they existed (or a partial
+# upload) fall back to the universal archive for every macOS key.
+MAC_UNIVERSAL="${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz"
+MAC_ARM_FILE="${BRAND_PRODUCT}_${VERSION}_aarch64.app.tar.gz"
+MAC_X64_FILE="${BRAND_PRODUCT}_${VERSION}_x64.app.tar.gz"
+MAC_ARM_SIG=$(cat "${TMPDIR}/${MAC_ARM_FILE}.sig" 2>/dev/null || echo "")
+MAC_X64_SIG=$(cat "${TMPDIR}/${MAC_X64_FILE}.sig" 2>/dev/null || echo "")
+if [ -n "${MAC_ARM_SIG}" ] && [ -n "${MAC_X64_SIG}" ]; then
+  echo "macOS updates: per-arch archives (${MAC_ARM_FILE}, ${MAC_X64_FILE})"
+else
+  [ -n "${MAC_ARM_SIG}${MAC_X64_SIG}" ] && echo "WARNING: only one per-arch macOS archive found — using universal for both"
+  echo "macOS updates: universal archive for every arch"
+  MAC_ARM_FILE="${MAC_UNIVERSAL}"; MAC_ARM_SIG="${MACOS_SIG}"
+  MAC_X64_FILE="${MAC_UNIVERSAL}"; MAC_X64_SIG="${MACOS_SIG}"
+fi
 WINDOWS_SIG=$(cat "${TMPDIR}/${BRAND_PRODUCT}_${VERSION}_x64.exe.sig" 2>/dev/null || echo "")
 # Linux signatures refer to the embedded-webapp Go binary bundle
 # (packaging/linux/install.sh + kaitu.service). The Tauri updater's
@@ -148,7 +169,11 @@ verify_signature() {
 }
 
 echo "Verifying signatures against S3 artifacts..."
-verify_signature "${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz" "${MACOS_SIG}" "macOS"
+verify_signature "${MAC_UNIVERSAL}" "${MACOS_SIG}" "macOS"
+if [ "${MAC_ARM_FILE}" != "${MAC_UNIVERSAL}" ]; then
+  verify_signature "${MAC_ARM_FILE}" "${MAC_ARM_SIG}" "macOS aarch64"
+  verify_signature "${MAC_X64_FILE}" "${MAC_X64_SIG}" "macOS x86_64"
+fi
 verify_signature "${BRAND_PRODUCT}_${VERSION}_x64.exe" "${WINDOWS_SIG}" "Windows"
 if [ "$BRAND" = "kaitu" ]; then
   verify_signature "Kaitu_${VERSION}_linux_amd64.tar.gz" "${LINUX_AMD64_SIG}" "Linux amd64"
@@ -158,9 +183,10 @@ echo "All signatures verified."
 echo ""
 
 # Generate cloudfront.latest.json
-# All 3 macOS keys (aarch64, x86_64, universal) point to the same universal binary.
-# Tauri updater queries {os}-{arch} (e.g. darwin-aarch64) with NO fallback to darwin-universal,
-# so we must list all arch keys to support upgrades from older arch-specific builds.
+# Tauri updater queries {os}-{arch} (e.g. darwin-aarch64) with NO fallback to
+# darwin-universal, so every arch key must be listed. darwin-aarch64/x86_64 carry
+# the per-arch thin archive when present (see MAC_ARM_FILE above);
+# darwin-universal always points at the universal one.
 cat > "${TMPDIR}/cloudfront.latest.json" << EOF
 {
   "version": "${VERSION}",
@@ -168,12 +194,12 @@ cat > "${TMPDIR}/cloudfront.latest.json" << EOF
   "pub_date": "${PUB_DATE}",
   "platforms": {
     "darwin-aarch64": {
-      "url": "https://d13jc1jqzlg4yt.cloudfront.net/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz",
-      "signature": "${MACOS_SIG}"
+      "url": "https://d13jc1jqzlg4yt.cloudfront.net/${BRAND}/desktop/${VERSION}/${MAC_ARM_FILE}",
+      "signature": "${MAC_ARM_SIG}"
     },
     "darwin-x86_64": {
-      "url": "https://d13jc1jqzlg4yt.cloudfront.net/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz",
-      "signature": "${MACOS_SIG}"
+      "url": "https://d13jc1jqzlg4yt.cloudfront.net/${BRAND}/desktop/${VERSION}/${MAC_X64_FILE}",
+      "signature": "${MAC_X64_SIG}"
     },
     "darwin-universal": {
       "url": "https://d13jc1jqzlg4yt.cloudfront.net/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz",
@@ -195,12 +221,12 @@ cat > "${TMPDIR}/d0.latest.json" << EOF
   "pub_date": "${PUB_DATE}",
   "platforms": {
     "darwin-aarch64": {
-      "url": "https://d0.all7.cc/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz",
-      "signature": "${MACOS_SIG}"
+      "url": "https://d0.all7.cc/${BRAND}/desktop/${VERSION}/${MAC_ARM_FILE}",
+      "signature": "${MAC_ARM_SIG}"
     },
     "darwin-x86_64": {
-      "url": "https://d0.all7.cc/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz",
-      "signature": "${MACOS_SIG}"
+      "url": "https://d0.all7.cc/${BRAND}/desktop/${VERSION}/${MAC_X64_FILE}",
+      "signature": "${MAC_X64_SIG}"
     },
     "darwin-universal": {
       "url": "https://d0.all7.cc/${BRAND}/desktop/${VERSION}/${BRAND_PRODUCT}_${VERSION}_universal.app.tar.gz",
@@ -286,16 +312,17 @@ if [ "$CHANNEL" = "stable" ]; then
 fi
 
 # Create GitHub Release (stable only — beta skips GitHub Release)
-# kaitu keeps the shared "v${VERSION}" tag (REL_TAG, set above); overleap
-# gets its own "overleap-v${VERSION}" tag so the two brands never collide
-# in one release list, and its notes table drops the kaitu-only Linux rows.
+# REL_TAG is per brand (set above, never v*); overleap's notes table drops
+# the kaitu-only Linux rows. The tag is pinned to the commit the artifacts
+# were built from (the v* build tag that covers this brand's desktop), not
+# to the default branch HEAD that `gh release create` would otherwise use.
 if [ "$CHANNEL" = "stable" ]; then
   if [ "$BRAND" = "overleap" ]; then
     GH_NOTES="## Overleap Desktop v${VERSION}
 
 | Platform | Installer | Auto-Update |
 |----------|-----------|-------------|
-| **macOS** (Universal) | \`.pkg\` | \`.app.tar.gz\` |
+| **macOS** (Universal) | \`.pkg\` | per-arch \`.app.tar.gz\` |
 | **Windows** (x64) | \`.exe\` | \`.exe\` (auto-update) |
 "
   else
@@ -303,7 +330,7 @@ if [ "$CHANNEL" = "stable" ]; then
 
 | Platform | Installer | Auto-Update |
 |----------|-----------|-------------|
-| **macOS** (Universal) | \`.pkg\` | \`.app.tar.gz\` |
+| **macOS** (Universal) | \`.pkg\` | per-arch \`.app.tar.gz\` |
 | **Windows** (x64) | \`.exe\` | \`.exe\` (auto-update) |
 | **Linux** (x86_64) | \`Kaitu_${VERSION}_linux_amd64.tar.gz\` | \`tar.gz\` (auto-update) |
 | **Linux** (aarch64) | \`Kaitu_${VERSION}_linux_arm64.tar.gz\` | \`tar.gz\` (auto-update) |
@@ -313,7 +340,24 @@ if [ "$CHANNEL" = "stable" ]; then
   if gh release view "${REL_TAG}" &>/dev/null; then
     echo "GitHub Release ${REL_TAG} already exists, skipping."
   else
+    BUILD_SHA=""
+    if [ "$BRAND" = "overleap" ]; then
+      BUILD_TAGS="v${VERSION}-overleap-desktop v${VERSION}-overleap v${VERSION}"
+    else
+      BUILD_TAGS="v${VERSION}-kaitu v${VERSION}-desktop v${VERSION}"
+    fi
+    for t in $BUILD_TAGS; do
+      # ^{} dereferences an annotated tag to its commit
+      BUILD_SHA=$(git ls-remote origin "refs/tags/${t}" "refs/tags/${t}^{}" \
+        | awk '/\^\{\}$/{c=$1} NR==1{f=$1} END{print c ? c : f}')
+      [ -n "$BUILD_SHA" ] && { echo "Release ${REL_TAG} → ${t} (${BUILD_SHA})"; break; }
+    done
+    if [ -z "$BUILD_SHA" ]; then
+      echo "ERROR: no build tag found among: ${BUILD_TAGS} — create the release by hand with --target" >&2
+      exit 1
+    fi
     gh release create "${REL_TAG}" \
+      --target "${BUILD_SHA}" \
       --title "${BRAND_PRODUCT} v${VERSION}" \
       --notes "${GH_NOTES}"
     echo ""

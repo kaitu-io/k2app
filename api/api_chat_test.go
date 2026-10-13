@@ -121,6 +121,41 @@ func chatOpenSession(t *testing.T, r *gin.Engine, path string, extra func(*TestR
 	}
 	w := req.Execute(r)
 	_, data := chatDecode(t, w)
+	if c := chatCookie(w, CookieChatCid); c != nil {
+		chatSeedEmail(t, c.Value)
+	}
+	return w, data
+}
+
+// chatSeedEmail 给 cid 所在的 guest 簇留一个邮箱：没留邮箱的游客发不了消息（chatVisitorHasEmail），
+// 大多数用例测的不是这道门，由 chatOpenSession 统一补上。要测"没留邮箱"的用例用 chatOpenSessionNoEmail。
+// 邮箱按 cid 派生，同一簇重复调用是幂等的；随 chatCleanupCID 清理。
+func chatSeedEmail(t *testing.T, cid string) {
+	t.Helper()
+	ctx := context.Background()
+	for _, b := range AllBrands() {
+		owner, err := findIdentityOwner(ctx, b, IdentityCID, cid)
+		require.NoError(t, err)
+		if owner == nil {
+			continue
+		}
+		root, err := guestRootID(ctx, owner.GuestID)
+		require.NoError(t, err)
+		require.NoError(t, addGuestEmail(ctx, root, b, chatSeedEmailOf(cid)))
+	}
+}
+
+func chatSeedEmailOf(cid string) string { return "seed-" + strings.ToLower(cid) + "@example.com" }
+
+// chatOpenSessionNoEmail 同 chatOpenSession，但不替访客留邮箱。
+func chatOpenSessionNoEmail(t *testing.T, r *gin.Engine, path string, extra func(*TestRequest) *TestRequest) (*httptest.ResponseRecorder, map[string]any) {
+	t.Helper()
+	req := NewTestRequest("POST", "/api/chat/session").WithBody(map[string]any{"path": path})
+	if extra != nil {
+		req = extra(req)
+	}
+	w := req.Execute(r)
+	_, data := chatDecode(t, w)
 	return w, data
 }
 
@@ -305,7 +340,7 @@ func TestChat_CrossBrandIsolation(t *testing.T) {
 
 func TestChatEmail_AddsClaimedIdentity(t *testing.T) {
 	r := chatSetup(t, true)
-	w, _ := chatOpenSession(t, r, "/", nil)
+	w, _ := chatOpenSessionNoEmail(t, r, "/", nil)
 	cid := chatCookie(w, CookieChatCid).Value
 	chatCleanupCID(t, cid)
 
@@ -646,7 +681,7 @@ func TestChatMessages_PerSubjectSendLimit(t *testing.T) {
 
 func TestChatEmail_CapPerCluster(t *testing.T) {
 	r := chatSetup(t, true)
-	w, _ := chatOpenSession(t, r, "/", nil)
+	w, _ := chatOpenSessionNoEmail(t, r, "/", nil)
 	cid := chatCookie(w, CookieChatCid).Value
 	chatCleanupCID(t, cid)
 	post := func(e string) int {
@@ -1232,7 +1267,7 @@ func TestChat_StaffNameHiddenFromVisitor(t *testing.T) {
 // 留邮箱入口与发信前用同一个校验（chatMailAddrOK）：能过旧的简单校验、但发信时会被拒的地址，入口就拒掉（422）。
 func TestChatEmail_RejectsAddressesTheMailerWouldRefuse(t *testing.T) {
 	r := chatSetup(t, true)
-	w, _ := chatOpenSession(t, r, "/", nil)
+	w, _ := chatOpenSessionNoEmail(t, r, "/", nil)
 	cid := chatCookie(w, CookieChatCid).Value
 	chatCleanupCID(t, cid)
 	for _, bad := range []string{

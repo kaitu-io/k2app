@@ -93,7 +93,24 @@
       "resolving": "Menyelesaikan...",
       "more": "Lagi",
       "collecting": "Mengumpulkan diagnostik...",
-      "reported": "Dilaporkan kepada pasukan sokongan"
+      "reported": "Dilaporkan kepada pasukan sokongan",
+      "backgroundBlocked": {
+        "bannerTitle": "Perkhidmatan latar belakang dimatikan oleh macOS",
+        "howToEnable": "Cara menghidupkan",
+        "dialogTitle": "Benarkan {{brand}} berjalan di latar belakang",
+        "intro": "Satu suis di bawah \"Benarkan di Latar Belakang\" dalam macOS dimatikan, jadi macOS tidak memulakan perkhidmatan latar belakang {{brand}} dan anda tidak dapat menyambung. Memasang semula tidak akan membantu. Hidupkannya semula:",
+        "step1": "Klik \"Buka Seting Sistem\" di bawah (atau Seting Sistem → Umum → Item Log Masuk & Sambungan)",
+        "step2": "Di bawah \"Benarkan di Latar Belakang\", cari item ini dan hidupkan suisnya:",
+        "itemNameNote": "Ini ialah nama pembangun {{brand}} — ia tidak disenaraikan sebagai \"{{brand}}\"",
+        "step3": "Masukkan kata laluan Mac anda apabila diminta",
+        "statusWaiting": "Menunggu suis dihidupkan…",
+        "statusRecovering": "Sudah dihidupkan — memulihkan perkhidmatan…",
+        "statusStalled": "Suis sudah dihidupkan, tetapi perkhidmatan masih belum bermula. Klik \"Pasang semula perkhidmatan\" dan masukkan kata laluan Mac anda.",
+        "noReinstall": "Ia akan menyambung semula sendiri selepas dihidupkan. Tidak perlu pasang semula atau mula semula.",
+        "openSettings": "Buka Seting Sistem",
+        "reinstall": "Pasang semula perkhidmatan",
+        "later": "Kemudian"
+      }
     },
     "serviceError": {
       "title": "Ralat Perkhidmatan",

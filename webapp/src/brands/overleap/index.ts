@@ -48,7 +48,7 @@ export const OVERLEAP_BRAND: WebappBrandConfig = {
   antiblockCdnSources: [], // 非受限网络市场，无需入口伪装竞速
   // Play URL is determined by the package name; the App Store URL is filled
   // in once the listing is live (spec 2026-09-06 §1.6 backfill commit).
-  storeUrls: { ios: '', android: 'https://play.google.com/store/apps/details?id=io.overleap' },
+  storeUrls: { ios: 'https://apps.apple.com/app/id6759199298', android: 'https://play.google.com/store/apps/details?id=io.overleap' },
   defaultRoutingCountry: 'gb',
   theme: OVERLEAP_THEME,
   features: {

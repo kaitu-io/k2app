@@ -1,6 +1,7 @@
 package center
 
 import (
+	"strconv"
 	db "github.com/wordgate/qtoolkit/db"
 	"context"
 	"fmt"
@@ -94,14 +95,43 @@ func handleInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, order *Ord
 		log.Warnf(ctx, "[InviteReward] plan not found for order %d, skipping reward: %v", order.ID, err)
 		return nil
 	}
-	return grantInvitePurchaseRewardInTx(ctx, tx, order.UserID, plan)
+	trigger := inviteTrigger{Kind: InviteTriggerOrder, Ref: strconv.FormatUint(order.ID, 10), Production: true}
+	return grantInvitePurchaseRewardInTx(ctx, tx, order.UserID, plan, trigger)
+}
+
+// inviteTrigger 触发被邀请首购奖励的那笔购买。Apple 首购为 (apple_txn, 交易号)，网页订单为
+// (order, 订单 id)；沙盒交易 Production=false，不发奖励。
+type inviteTrigger struct {
+	Kind       string
+	Ref        string
+	Production bool
+}
+
+// inviteRewardClaimedInTx 被邀请人是否已领过被邀请首购奖励（一生一次，spec 2026-10-08 §3.7）。
+// 两个判据：InviteRewardGrant（新）或 invited_reward 历史行（本表上线前的存量；invited_reward
+// 只在本文件一处写入）。不依赖奖励天数配置——只配置了邀请人天数时也拦得住"买—退—再买"。
+func inviteRewardClaimedInTx(tx *gorm.DB, inviteeID uint64) (bool, error) {
+	var n int64
+	if err := tx.Model(&InviteRewardGrant{}).Where("invitee_user_id = ?", inviteeID).Count(&n).Error; err != nil {
+		return false, err
+	}
+	if n > 0 {
+		return true, nil
+	}
+	if err := tx.Model(&UserProHistory{}).Where("user_id = ? AND type = ?", inviteeID, VipInvitedReward).
+		Count(&n).Error; err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 // grantInvitePurchaseRewardInTx 邀请购买奖励的统一入口——wordgate 订单路径
 // （handleInvitePurchaseRewardInTx）与 Apple IAP 路径（creditAppleTransaction）共用，
 // 保证两条支付通道同一套规则。必须在 IsFirstOrderDone 置位之前调用。
 //
-// 发放条件：首单 + 有邀请码 + 首单套餐月数 >= configInvite().MinRewardMonths。
+// 发放条件：生产交易 + 首单 + 有邀请码 + 首单套餐月数 >= configInvite().MinRewardMonths
+// + 被邀请人从未领过（一生一次：退款会把 IsFirstOrderDone 翻回 false，没有这道门就能
+// "买—退—再买"反复刷双方奖励）。发放后写 InviteRewardGrant，退款时按触发它的购买精确撤回。
 // 首单套餐时长不足门槛时双方均不发放，且首单资格随 IsFirstOrderDone 一次性消耗
 // （即之后再买长套餐也不补发）——前端在下单前对此有明确提示。
 //
@@ -112,7 +142,11 @@ func handleInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, order *Ord
 // 注意：本函数会更新买家 user 行（ExpiredAt/IsActivated）。调用方若在同一事务中
 // 持有该 user 的内存快照并稍后 Save，必须在本函数返回后重新加载，否则旧快照会
 // 覆盖奖励天数（lost update）。
-func grantInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, userID uint64, plan *Plan) error {
+func grantInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, userID uint64, plan *Plan, trigger inviteTrigger) error {
+	if !trigger.Production {
+		log.Infof(ctx, "[InviteReward] user %d trigger %s/%s is not a production purchase, skipping", userID, trigger.Kind, trigger.Ref)
+		return nil
+	}
 	// 1. FOR UPDATE 锁定买家行，读取最新已提交的 IsFirstOrderDone
 	// 注意：Preload 走独立 SELECT 不带 FOR UPDATE，InvitedByCode 是不可变记录所以安全
 	var user User
@@ -139,6 +173,15 @@ func grantInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, userID uint
 	if plan.Month < cfg.MinRewardMonths {
 		log.Infof(ctx, "[InviteReward] user %d plan month %d < min reward months %d, skipping",
 			userID, plan.Month, cfg.MinRewardMonths)
+		return nil
+	}
+
+	claimed, err := inviteRewardClaimedInTx(tx, user.ID)
+	if err != nil {
+		return fmt.Errorf("check invite reward claimed for user %d: %w", user.ID, err)
+	}
+	if claimed {
+		log.Infof(ctx, "[InviteReward] user %d already claimed the invitee purchase reward once, skipping", userID)
 		return nil
 	}
 
@@ -173,5 +216,20 @@ func grantInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, userID uint
 		log.Infof(ctx, "[InviteReward] added %d days to inviter %d", inviterDays, inviter.ID)
 	}
 
+	if days <= 0 && inviterDays <= 0 {
+		return nil
+	}
+	grant := &InviteRewardGrant{
+		InviteeUserID:  user.ID,
+		InviterUserID:  inviter.ID,
+		InviteCodeID:   inviteCodeID,
+		TriggerKind:    trigger.Kind,
+		TriggerRef:     trigger.Ref,
+		InviteeSeconds: int64(max(days, 0)) * 86400,
+		InviterSeconds: int64(max(inviterDays, 0)) * 86400,
+	}
+	if err := tx.Create(grant).Error; err != nil {
+		return fmt.Errorf("record invite reward grant for user %d: %w", user.ID, err)
+	}
 	return nil
 }

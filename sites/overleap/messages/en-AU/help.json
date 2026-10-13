@@ -26,7 +26,7 @@
     "items": {
       "manage": {
         "question": "How do I manage or cancel my subscription?",
-        "answer": "Open your account page and choose Manage subscription. You can cancel, change your card or download invoices there. Cancelling keeps your plan active until the end of the period you've paid for."
+        "answer": "Open your account page and choose Manage subscription. You can cancel, change your card or download invoices there. Cancelling keeps your plan active until the end of the period you've paid for. Cancelling stops renewal; it doesn't refund — see “Can I get a refund?”"
       },
       "charge": {
         "question": "When am I charged?",
@@ -34,7 +34,7 @@
       },
       "refund": {
         "question": "Can I get a refund?",
-        "answer": "If {brand} doesn't work for you, email us and we'll sort it out."
+        "answer": "You can withdraw and get a refund for the days you haven't used within 14 days of your first payment for a subscription billed by us (not through the App Store), or of an annual renewal. Email support@overleap.io. App Store purchases are refunded by Apple."
       },
       "devices": {
         "question": "I've hit the five-device limit",

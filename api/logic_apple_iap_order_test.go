@@ -82,6 +82,8 @@ func setupIAPOrderFixture(t *testing.T, firstPct, renewalPct int) *iapOrderFixtu
 		db.Get().Unscoped().Where("user_id IN ?", ids).Delete(&Subscription{})
 		db.Get().Unscoped().Where("user_id IN ?", ids).Delete(&UserProHistory{})
 		db.Get().Unscoped().Where("user_id IN ?", ids).Delete(&Order{})
+		db.Get().Unscoped().Where("user_id IN ?", ids).Delete(&AppleRefund{})
+		db.Get().Unscoped().Where("invitee_user_id IN ?", ids).Delete(&InviteRewardGrant{})
 		// WalletChange 挂在 wallet_id 上（无 user_id 列），先摘钱包 id 再删变动流水。
 		var walletIDs []uint64
 		db.Get().Model(&Wallet{}).Where("user_id IN ?", ids).Pluck("id", &walletIDs)
@@ -107,6 +109,18 @@ func (f *iapOrderFixture) credit(t *testing.T, txnID string, purchaseSec, expire
 			ExpiresDate:           expiresSec * 1000,
 		})
 	})
+}
+
+// refund 对这笔交易执行一次 Apple 退款（webhook 路径）。
+func (f *iapOrderFixture) refund(t *testing.T, txnID string, purchaseSec, expiresSec int64) *appleRefundOutcome {
+	t.Helper()
+	out, err := applyAppleRefund(context.Background(), f.origTxn, &appstore.TransactionInfo{
+		OriginalTransactionId: f.origTxn, TransactionId: txnID, ProductId: f.productID,
+		InAppOwnershipType: appstore.OwnershipType_PURCHASED, Environment: f.env,
+		PurchaseDate: purchaseSec * 1000, ExpiresDate: expiresSec * 1000, RevocationDate: time.Now().UnixMilli(),
+	}, appleRefundEvidence{SignedAt: time.Now().UnixMilli(), Source: "webhook"})
+	require.NoError(t, err)
+	return out
 }
 
 func (f *iapOrderFixture) orders(t *testing.T) []Order {
@@ -201,7 +215,7 @@ func TestCreditAppleTransaction_Replay_NoDuplicateOrderOrCashback(t *testing.T) 
 }
 
 // 退款：撤销分销商返现 + 订单标记已退款。
-func TestRevokeSubscription_RefundsCashbackAndMarksOrder(t *testing.T) {
+func TestAppleRefund_RefundsCashbackAndMarksOrder(t *testing.T) {
 	skipIfNoDB(t)
 	f := setupIAPOrderFixture(t, 30, 10)
 	day := int64(86400)
@@ -210,12 +224,8 @@ func TestRevokeSubscription_RefundsCashbackAndMarksOrder(t *testing.T) {
 	require.NoError(t, f.credit(t, "IAPO-RF1", t0, t0+365*day))
 	require.Equal(t, int64(1470), f.retailerBalance(t), "前置：返现已发")
 
-	var sub Subscription
-	require.NoError(t, db.Get().Where(&Subscription{
-		Provider: "apple", ProviderSubscriptionID: f.origTxn,
-	}).First(&sub).Error)
 
-	require.NoError(t, revokeSubscription(context.Background(), &sub, "IAPO-RF1"))
+	f.refund(t, "IAPO-RF1", t0, t0+365*day)
 
 	assert.Equal(t, int64(0), f.retailerBalance(t), "退款后返现必须被撤回")
 
@@ -227,23 +237,19 @@ func TestRevokeSubscription_RefundsCashbackAndMarksOrder(t *testing.T) {
 }
 
 // 退款重投：Apple 重送 REFUND 通知不得把返现重复扣两次。
-func TestRevokeSubscription_ReplayIsIdempotent(t *testing.T) {
+func TestAppleRefund_ReplayIsIdempotent(t *testing.T) {
 	skipIfNoDB(t)
 	f := setupIAPOrderFixture(t, 30, 10)
 	day := int64(86400)
 	t0 := time.Now().Unix()
 
 	require.NoError(t, f.credit(t, "IAPO-RF2", t0, t0+365*day))
-	var sub Subscription
-	require.NoError(t, db.Get().Where(&Subscription{
-		Provider: "apple", ProviderSubscriptionID: f.origTxn,
-	}).First(&sub).Error)
 
-	require.NoError(t, revokeSubscription(context.Background(), &sub, "IAPO-RF2"))
+	f.refund(t, "IAPO-RF2", t0, t0+365*day)
 	require.Equal(t, int64(0), f.retailerBalance(t))
 
 	// Apple 重投同一通知
-	require.NoError(t, revokeSubscription(context.Background(), &sub, "IAPO-RF2"))
+	f.refund(t, "IAPO-RF2", t0, t0+365*day)
 	assert.Equal(t, int64(0), f.retailerBalance(t), "重投不得二次扣款（余额不得变负）")
 }
 
@@ -307,13 +313,8 @@ func TestCreditAppleTransaction_UnmappedProduct_StillGrantsEntitlement(t *testin
 	assert.Equal(t, int64(0), f.retailerBalance(t), "不建单则无返现")
 }
 
-// 后台退款支持 IAP 订单：钱包打款、按 SubscriptionCredit 精确撤销权益、冲销分销返现。
-//
-// 关键在权益那一步——IAP 入账写的是 UserProHistory{type=apple_sub, reference_id=credit 行 id}，
-// 按网页订单的 (type=purchase, reference_id=orderID) 口径反算恒为 0，会出现"钱退了权益没扣"。
-// 本用例断言扣掉的秒数与 SubscriptionCredit.CreditedSeconds 完全相等，若 orderEntitlementSecondsInTx
-// 退回按 VipPurchase 查，expiredAt 一秒都不会少，用例立刻红。
-func TestProcessOrderRefund_AppleIAPOrder_RefundsWalletAndRevokesEntitlement(t *testing.T) {
+// App Store 订单不走后台钱包退款（spec 2026-10-08 §3.9）：执行点拒绝，钱一分不打、权益不动、订单不标退款。
+func TestProcessOrderRefund_AppleIAPOrder_Rejected(t *testing.T) {
 	skipIfNoDB(t)
 	f := setupIAPOrderFixture(t, 30, 10)
 	day := int64(86400)
@@ -322,78 +323,22 @@ func TestProcessOrderRefund_AppleIAPOrder_RefundsWalletAndRevokesEntitlement(t *
 	require.NoError(t, f.credit(t, "IAPO-ARF1", t0, t0+365*day))
 	orders := f.orders(t)
 	require.Len(t, orders, 1)
-	iapOrder := orders[0]
-	require.Equal(t, OrderChannelAppleIAP, iapOrder.Channel)
-	require.Equal(t, "IAPO-ARF1", iapOrder.AppleTransactionID)
+	var before User
+	require.NoError(t, db.Get().First(&before, f.buyer.ID).Error)
 
-	// 入账后的基准：权益到期时刻 + 该交易实际入账的秒数
-	var beforeUser User
-	require.NoError(t, db.Get().First(&beforeUser, f.buyer.ID).Error)
-	var credit SubscriptionCredit
-	require.NoError(t, db.Get().Where(&SubscriptionCredit{TransactionID: "IAPO-ARF1"}).First(&credit).Error)
-	require.Greater(t, credit.CreditedSeconds, int64(0), "fixture 必须真的发了权益，否则本用例测不到东西")
-
-	require.NoError(t, ProcessOrderRefund(context.Background(), iapOrder.ID, "客服补偿", 1))
-
-	// 1. 权益按入账秒数精确回退
-	var afterUser User
-	require.NoError(t, db.Get().First(&afterUser, f.buyer.ID).Error)
-	assert.Equal(t, beforeUser.ExpiredAt-credit.CreditedSeconds, afterUser.ExpiredAt,
-		"必须按 SubscriptionCredit.CreditedSeconds 扣回，不是按 VipPurchase（那会一秒不扣）")
-
-	// 2. 钱包收到 PayAmount
-	var buyerWallet Wallet
-	require.NoError(t, db.Get().Where(&Wallet{UserID: f.buyer.ID}).First(&buyerWallet).Error)
-	assert.Equal(t, int64(iapOrder.PayAmount), buyerWallet.Balance)
-
-	// 3. 分销商返现被冲销
-	assert.Equal(t, int64(0), f.retailerBalance(t), "退款必须冲销分销商返现")
-
-	// 4. 订单状态与反向审计记录
-	after := f.orders(t)
-	require.Len(t, after, 1)
-	require.NotNil(t, after[0].IsRefunded)
-	assert.True(t, *after[0].IsRefunded)
-	assert.Equal(t, iapOrder.PayAmount, after[0].RefundAmount)
-
-	var reverse UserProHistory
-	require.NoError(t, db.Get().Where("user_id = ? AND type = ? AND reference_id = ?",
-		f.buyer.ID, VipRefund, iapOrder.ID).First(&reverse).Error)
-	assert.Equal(t, -int(credit.CreditedSeconds/86400), reverse.Days)
-}
-
-// 缺 apple_transaction_id 的 IAP 订单必须拒绝退款，而不是"查到 0 秒→只打钱不扣权益"。
-func TestProcessOrderRefund_AppleIAPOrder_RejectsMissingTransactionID(t *testing.T) {
-	skipIfNoDB(t)
-	f := setupIAPOrderFixture(t, 30, 10)
-	day := int64(86400)
-	t0 := time.Now().Unix()
-
-	require.NoError(t, f.credit(t, "IAPO-ARF2", t0, t0+365*day))
-	orders := f.orders(t)
-	require.Len(t, orders, 1)
-	iapOrder := orders[0]
-
-	// 模拟被手工改过 / 早期数据形态的脏订单
-	require.NoError(t, db.Get().Model(&Order{}).Where("id = ?", iapOrder.ID).
-		Update("apple_transaction_id", "").Error)
-
-	err := ProcessOrderRefund(context.Background(), iapOrder.ID, "客服补偿", 1)
+	err := ProcessOrderRefund(context.Background(), orders[0].ID, "客服补偿", 1)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "缺少 apple_transaction_id")
+	assert.Contains(t, err.Error(), "App Store 订单不能退到钱包")
 
-	// 事务整体回滚：钱一分没打，订单没被标记
-	var buyerWallet Wallet
-	werr := db.Get().Where(&Wallet{UserID: f.buyer.ID}).First(&buyerWallet).Error
-	if werr == nil {
-		assert.Equal(t, int64(0), buyerWallet.Balance, "拒绝后不得打款")
-	} else {
-		assert.ErrorIs(t, werr, gorm.ErrRecordNotFound)
-	}
-	after := f.orders(t)
-	require.Len(t, after, 1)
-	if after[0].IsRefunded != nil {
-		assert.False(t, *after[0].IsRefunded)
+	var after User
+	require.NoError(t, db.Get().First(&after, f.buyer.ID).Error)
+	assert.Equal(t, before.ExpiredAt, after.ExpiredAt)
+	var wallets int64
+	db.Get().Model(&Wallet{}).Where("user_id = ?", f.buyer.ID).Count(&wallets)
+	assert.Zero(t, wallets)
+	assert.Equal(t, int64(1470), f.retailerBalance(t), "返现不动")
+	if o := f.orders(t)[0]; o.IsRefunded != nil {
+		assert.False(t, *o.IsRefunded)
 	}
 }
 
@@ -431,7 +376,7 @@ func TestCreditAppleTransaction_SandboxCreditsEntitlementButCreatesNoOrder(t *te
 
 // Apple 退款后，若无其它有效付费订单，IsFirstOrderDone 必须翻回 false，
 // 否则退款用户仍被 first_order 活动码当成老客拒绝。
-func TestRevokeSubscription_ResetsIsFirstOrderDone(t *testing.T) {
+func TestAppleRefund_ResetsIsFirstOrderDone(t *testing.T) {
 	skipIfNoDB(t)
 	f := setupIAPOrderFixture(t, 30, 10)
 	day := int64(86400)
@@ -444,11 +389,7 @@ func TestRevokeSubscription_ResetsIsFirstOrderDone(t *testing.T) {
 	require.NotNil(t, beforeUser.IsFirstOrderDone)
 	require.True(t, *beforeUser.IsFirstOrderDone, "前置：入账后应标记已完成首单")
 
-	var sub Subscription
-	require.NoError(t, db.Get().Where(&Subscription{
-		Provider: "apple", ProviderSubscriptionID: f.origTxn,
-	}).First(&sub).Error)
-	require.NoError(t, revokeSubscription(context.Background(), &sub, "IAPO-FOD1"))
+	f.refund(t, "IAPO-FOD1", t0, t0+365*day)
 
 	var afterUser User
 	require.NoError(t, db.Get().First(&afterUser, f.buyer.ID).Error)

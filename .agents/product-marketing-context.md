@@ -266,7 +266,7 @@
 
 **中文：** 稳定 · 高丢包 · 满速 · 隐身 · 零配置 · 5 台设备 · 全球节点 · 即时开通 · 7 天退款
 
-**英文：** stable · high-loss · line-rate · stealth · zero-config · 5 devices · global nodes · instant · 7-day refund
+**英文：** stable · high-loss · line-rate · stealth · zero-config · 5 devices · global nodes · instant · cancel anytime
 
 ### 禁用词
 
@@ -275,6 +275,7 @@
 - 不使用 AI 指纹词：首先/其次/最后、值得注意的是、在当今、总的来说、"In conclusion"、"It's worth noting that"、"Here's the thing:"
 - 不攻击友商个人 / 公司（"跑路 / 骗子 / 垃圾"禁用）
 - 家庭 / 消费者场景不用协议术语（ECH / QUIC / k2cc）—— 术语放到技术内容里
+- Overleap 不把退款 / 撤回当卖点（法定权利不能宣传成产品特色，英国 CPUT / DMCCA 禁止）
 
 ### Glossary
 

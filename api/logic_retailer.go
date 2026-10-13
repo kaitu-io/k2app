@@ -456,6 +456,11 @@ func processRetailerCashbackInTx(ctx context.Context, tx *gorm.DB, orderID uint6
 		if err := incrementPaidUserCountInTx(ctx, tx, retailerConfig.ID); err != nil {
 			log.Errorf(ctx, "[ProcessRetailerCashback] 增加付费用户计数失败: %v", err)
 			// 计数失败不影响主流程，仅记录错误
+		} else if err := tx.Model(&Order{}).Where("id = ?", orderID).
+			Update("retailer_counted_id", retailerConfig.ID).Error; err != nil {
+			// 记下这笔单计入了哪个分销商，退款时据此精确扣回（spec 2026-10-08 §3.5）。必须在
+			// 下面"分成比例为 0"的早退之前。
+			return fmt.Errorf("记录分销计数标记失败: %v", err)
 		}
 	} else {
 		cashbackPercent = retailerConfig.RenewalPercent
@@ -477,7 +482,12 @@ func processRetailerCashbackInTx(ctx context.Context, tx *gorm.DB, orderID uint6
 	}
 
 	// 7. 发放返现到钱包（数据库唯一索引 idx_type_order 防止重复）
-	freezeDays := 30 // 冻结期 30 天
+	// 冻结期：网页订单 30 天；App Store 订单 90 天——Apple 退款可在购买后约 90 天内发生，
+	// 冻结短于退款窗口时分销商能先提现、退款后钱包扣成负数无从追回（spec 2026-10-08 §3.9）。
+	freezeDays := 30
+	if order.Channel == OrderChannelAppleIAP {
+		freezeDays = 90
+	}
 	remark := fmt.Sprintf("%s返现 - 订单ID: %s, L%d等级, 比例: %d%%",
 		orderType, order.UUID, retailerConfig.Level, cashbackPercent)
 

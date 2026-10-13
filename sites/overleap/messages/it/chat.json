@@ -12,7 +12,7 @@
   "rateLimited": "Stai inviando messaggi troppo velocemente. Attendi un momento.",
   "sendFailed": "Messaggio non inviato. Controlla la connessione e riprova.",
   "tooLong": "Il messaggio è troppo lungo. Accorcialo e riprova.",
-  "emailPrompt": "Il nostro team non ha ancora preso in carico la richiesta. Lascia la tua email e ti avviseremo quando risponderemo.",
+  "emailPrompt": "Lascia la tua email prima di iniziare. Se ti allontani, ti scriveremo quando risponderemo.",
   "emailPlaceholder": "La tua email",
   "emailSubmit": "Invia",
   "emailInvalid": "Inserisci un indirizzo email valido.",

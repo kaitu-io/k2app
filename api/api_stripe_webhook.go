@@ -116,15 +116,17 @@ func handleStripeEvent(c *gin.Context, event *stripe.Event) error {
 		return markStripeSubscriptionDeleted(c, &s)
 
 	case "charge.refunded":
-		return recordStripeRefundAlert(c, event.Data.Raw)
+		return handleStripeChargeRefunded(c, event.Data.Raw)
 
 	case "charge.dispute.created":
-		return recordStripeDisputeAlert(c, event.Data.Raw)
+		return handleStripeDisputeCreated(c, event.Data.Raw)
+
+	case "charge.dispute.closed":
+		return handleStripeDisputeClosed(c, event.Data.Raw)
 
 	case "checkout.session.completed":
-		// 绑定与入账统一发生在 invoice.paid（订阅 metadata 自足），此处仅记录。
-		log.Infof(c, "[StripeWebhook] checkout.session.completed received (credit happens on invoice.paid)")
-		return nil
+		// 绑定与入账统一发生在 invoice.paid（订阅 metadata 自足）；这里只落条款同意记录。
+		return recordStripeCheckoutConsent(c, event.Data.Raw, event.Created)
 
 	default:
 		log.Infof(c, "[StripeWebhook] unhandled type=%s", event.Type)

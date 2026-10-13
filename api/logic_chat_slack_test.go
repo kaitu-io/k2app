@@ -282,8 +282,12 @@ func TestSlackStatus(t *testing.T) {
 
 func TestSlackChannelNameAndURL(t *testing.T) {
 	// UTC 10-01 17:00 = 上海 10-02 01:00：日期按客服所在时区
-	conv := &Conversation{UUID: "ABCDEF12-3456-7890-abcd-ef1234567890", CreatedAt: time.Date(2026, 10, 1, 17, 0, 0, 0, time.UTC)}
-	assert.Equal(t, "chat-1002-abcdef", chatSlackChannelName(conv))
+	conv := &Conversation{Brand: string(BrandKaitu), UUID: "ABCDEF12-3456-7890-abcd-ef1234567890", CreatedAt: time.Date(2026, 10, 1, 17, 0, 0, 0, time.UTC)}
+	assert.Equal(t, "chat-kaitu-1002-abcdef", chatSlackChannelName(conv))
+	conv.Brand = string(BrandOverleap)
+	assert.Equal(t, "chat-overleap-1002-abcdef", chatSlackChannelName(conv))
+	conv.Brand = "" // 无效品牌按 kaitu
+	assert.Equal(t, "chat-kaitu-1002-abcdef", chatSlackChannelName(conv))
 	assert.Equal(t, "https://slack.com/app_redirect?channel=C123", chatSlackChannelURL("C123"))
 }
 

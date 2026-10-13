@@ -19,6 +19,7 @@ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import { useTranslation } from 'react-i18next';
 import type { DataUser } from '../services/api-types';
 import { formatDate } from '../utils/time';
+import { brandConfig } from '../brands';
 
 // 注销是这个 app 里唯一无法回滚的用户操作：登录标识与设备是硬删除，付费
 // 时长随账号一起作废。所以这里故意做得「难」——三步、每一步都要一个新的
@@ -145,7 +146,10 @@ export default function DeleteAccountDialog({
                   {t('account:account.deleteLoseDevices', { n: deviceCount })}
                 </Typography>
               )}
-              <Typography variant="body2">{t('account:account.deleteLoseWallet')}</Typography>
+              {/* 钱包是开途专属（features.wallet）；没有钱包的品牌不提"会失去钱包余额"。 */}
+              {brandConfig.features.wallet && (
+                <Typography variant="body2">{t('account:account.deleteLoseWallet')}</Typography>
+              )}
               <Typography variant="body2">{t('account:account.deleteLoseData')}</Typography>
             </Stack>
           </>

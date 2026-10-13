@@ -18,7 +18,7 @@ import (
 // 库里的 slack_mirrored_at 是 outbox 标记：为空 = 还没处理；实时钩子发不出去的由 chatSlackSweep 补。
 // 总览频道（chatSlackLobby）未配置 = 整个镜像关闭，所有函数直接返回 nil。
 // Slack 的任何失败只记日志并返回 error，绝不影响 appendMessage。
-// 设计见 docs/superpowers/specs/2026-10-01-support-console-chatwoot-replacement-design.md §8
+// 设计见 docs/superpowers/specs/2026-10-01-support-chat-design.md §8
 
 const (
 	// chatSlackLockTTL 会话级镜像锁的有效期。长积压 + 限流会超过它，所以每次 Slack 调用前都续期。

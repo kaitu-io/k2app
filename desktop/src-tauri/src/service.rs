@@ -300,6 +300,35 @@ pub fn get_platform_info() -> serde_json::Value {
     })
 }
 
+/// IPC: why the daemon cannot run, when the cause is a switch the user can
+/// flip (macOS "Allow in the Background"). `None` = no known blocker.
+#[tauri::command]
+pub fn get_service_blocker() -> Option<crate::service_diag::ServiceBlocker> {
+    crate::service_diag::background_blocker()
+}
+
+/// IPC: open System Settings → General → Login Items & Extensions (macOS 13+,
+/// the first release with the switch).
+#[tauri::command]
+pub fn open_service_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.LoginItems-Settings.extension")
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("open System Settings: {}", e))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("open_service_settings is macOS only".to_string())
+    }
+}
+
+fn macos_daemon_plist_exists() -> bool {
+    cfg!(target_os = "macos") && std::path::Path::new("/Library/LaunchDaemons/kaitu.plist").exists()
+}
+
 #[tauri::command]
 pub async fn admin_reinstall_service() -> Result<String, String> {
     log::info!("[service] Admin service install requested");
@@ -420,7 +449,20 @@ fn read_install_log_tail() -> Option<String> {
     Some(content[tail_start..].to_string())
 }
 
-#[cfg(not(target_os = "windows"))]
+/// macOS: `k2 service install` (run as root via osascript or the pkg
+/// postinstall) writes its step-by-step trail next to the daemon log.
+#[cfg(target_os = "macos")]
+fn read_install_log_tail() -> Option<String> {
+    let content = std::fs::read_to_string("/var/log/kaitu/k2-service-install.log").ok()?;
+    const TAIL: usize = 2048;
+    let start = content.len().saturating_sub(TAIL);
+    let tail_start = (start..content.len())
+        .find(|&i| content.is_char_boundary(i))
+        .unwrap_or(content.len());
+    Some(content[tail_start..].to_string())
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 fn read_install_log_tail() -> Option<String> {
     None
 }
@@ -468,6 +510,13 @@ fn admin_reinstall_service_macos() -> Result<String, String> {
         .args(["-e", &script])
         .output()
         .map_err(|e| format!("osascript failed: {}", e))?;
+
+    // `k2 service install` mirrors every install-log step to stdout — keep it
+    // in desktop.log too: k2-service-install.log is overwritten on each run.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !stdout.trim().is_empty() {
+        log::info!("[service] k2 service install output:\n{}", stdout.trim_end());
+    }
 
     if output.status.success() {
         log::info!("[service] Service installed successfully via osascript");
@@ -599,11 +648,31 @@ pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
 
     if matches!(check, VersionCheckResult::VersionMatch) {
         log::info!("[service] Service ready");
+        crate::service_diag::record("startup: daemon ready");
         return Ok(());
     }
 
     // Phase 2: install via admin elevation
     log::info!("[service] Install needed: {:?}", check);
+    crate::service_diag::record(&format!("startup: daemon not ready ({:?})", check));
+
+    // macOS: the daemon is registered but the user (or a cleaner app) turned
+    // it off under Login Items → Allow in the Background. Reinstalling cannot
+    // fix that — the switch outlives reinstall and uninstall, and a root
+    // bootstrap only lasts until the next boot (verified, testlab VM 150) — so
+    // don't nag for the admin password; the webapp guides the user to the
+    // switch (get_service_blocker), and launchd starts the daemon by itself
+    // once it is back on. With no plist yet there is nothing for launchd to
+    // start, so a first install still goes ahead.
+    if macos_daemon_plist_exists() {
+        if let Some(b) = crate::service_diag::background_blocker() {
+            crate::service_diag::record(&format!(
+                "startup: blocked by Login Items switch \"{}\" — skipping admin install",
+                b.item_name
+            ));
+            return Err(format!("Service blocked: {} ({})", b.kind, b.item_name));
+        }
+    }
 
     // Diagnostic: check if k2 binary exists
     let exe_path = std::env::current_exe().ok();
@@ -647,6 +716,7 @@ pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
             );
         }
         log::info!("[service] Service ready after install");
+        crate::service_diag::record("after install: daemon ready");
         Ok(())
     } else {
         // Surface the k2-side install log so the failure cause lands in
@@ -654,6 +724,10 @@ pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
         if let Some(tail) = read_install_log_tail() {
             log::error!("[service] k2-service-install.log tail:\n{}", tail);
         }
+        crate::service_diag::record(&format!(
+            "after install: daemon NOT ready (install reported: {})",
+            install_error.as_deref().unwrap_or("success")
+        ));
         match install_error {
             Some(e) => Err(format!("Service did not start after install: {}", e)),
             None => Err(

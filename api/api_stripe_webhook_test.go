@@ -134,6 +134,26 @@ func TestStripeWebhook(t *testing.T) {
 		assert.Equal(t, 503, w.Code)
 	})
 
+	// 共用 Stripe 账户：别家业务的订阅 invoice（metadata 无本服务 brand）→ 200 放过，不建行、不重试
+	t.Run("InvoicePaid_ForeignSubscription_Ignored200", func(t *testing.T) {
+		kaituUser := createStripeTestUser(t, BrandKaitu)
+		cases := []struct{ name, replace, userUUID string }{
+			{"NoBrand", ``, ""},
+			{"NoBrandWithUUID", ``, kaituUser.UUID},
+			{"KaituBrand", `, "brand": "kaitu"`, kaituUser.UUID},
+		}
+		for _, c := range cases {
+			subID := "sub_" + stripeUniq()
+			payload := invoicePaidPayload("evt_"+stripeUniq(), "in_"+stripeUniq(), subID, c.userUUID, "plan-foreign", "price-foreign", now, now+month)
+			payload = []byte(strings.Replace(string(payload), `, "brand": "overleap"`, c.replace, 1))
+			w := postStripeWebhook(t, r, payload, stripeSigHeader(payload))
+			assert.Equal(t, 200, w.Code, c.name)
+			var n int64
+			getDB().Model(&Subscription{}).Where("provider_subscription_id = ?", subID).Count(&n)
+			assert.Zero(t, n, c.name)
+		}
+	})
+
 	t.Run("InvoicePaid_FullCreditFlow", func(t *testing.T) {
 		u := createStripeTestUser(t, BrandOverleap)
 		p := createStripeTestPlan(t)

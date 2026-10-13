@@ -94,6 +94,18 @@ func api_stripe_checkout(c *gin.Context) {
 				"brand":     user.Brand,
 			},
 		},
+		// 条款同意 + "要求立即开始服务"：14 天撤回按天折算的依据（spec A 期 §4）。
+		// 前置：Stripe Dashboard → Settings → Public details 必须已填 Terms of service URL，
+		// 否则带 consent_collection 的 Checkout 创建直接报错。同意结果在
+		// checkout.session.completed 落 SubscriptionConsent。
+		ConsentCollection: &stripe.CheckoutSessionConsentCollectionParams{
+			TermsOfService: stripe.String("required"),
+		},
+		CustomText: &stripe.CheckoutSessionCustomTextParams{
+			TermsOfServiceAcceptance: &stripe.CheckoutSessionCustomTextTermsOfServiceAcceptanceParams{
+				Message: stripe.String(stripeConsentMessage()),
+			},
+		},
 	}
 	// 复用既有 Stripe Customer：到期后重新订阅若恒传 CustomerEmail，Stripe 会新建**第二个**
 	// Customer —— 账单历史就此割裂，portal 只看得到最新那个（portal 按 provider_customer_id

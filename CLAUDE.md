@@ -20,6 +20,8 @@ cd desktop/src-tauri && cargo test          # Rust tests
 cd api && go test ./...                     # Center API tests — DB-backed tests silently SKIP without ../center/config.yml (gitignored); see api/CLAUDE.md
 cd mcp && go test ./...                     # Go MCP server tests
 scripts/test_build.sh                       # Full build verification (count is dynamic, not fixed)
+# Pre-merge tests (GitHub CI only runs after main is pushed): the `labtest` MCP — test_plan(path) → test_run(path[, "all"]) → test_wait(job) / test_logs(job, suite)
+#   runs this worktree's suites (.labtest.yml, auto-picked from the diff vs main) on the PVE box k2ci. Terminal: ~/projects/testlab/tools/labtest run . [all] --wait
 ```
 
 ## Constitutional Rule: Work Isolation
@@ -120,6 +122,6 @@ Loaded on demand when you work in the directory — read the layer doc before ch
 
 ## Marketing / Brand
 
-**品牌架构**：**Overleap（海外）与 开途·Kaitu（中国）是完全隔离的两个独立品牌**——不是母子层级，任何面向用户的语境都不互相提及（唯一例外：法务文书署名 Overleap LLC）。协议层 k2 / k2cc / k2s / k2r 全球共享，不属于任一品牌。中文用户面禁用 "Kaitu" 裸词（用「开途」）；海外面禁用 "Kaitu" 裸词（Google 会纠错成 kaitai）。
+**品牌架构**：**Overleap（海外）与 开途·Kaitu（中国）是完全隔离的两个独立品牌**——不是母子层级，任何面向用户的语境都不互相提及（唯一例外：法务文书署名——开途侧沿用现有署名，Overleap 侧署名其运营公司 Wordgate LLC，即 Stripe 收单主体）。协议层 k2 / k2cc / k2s / k2r 全球共享，不属于任一品牌。中文用户面禁用 "Kaitu" 裸词（用「开途」）；海外面禁用 "Kaitu" 裸词（Google 会纠错成 kaitai）。
 
 策略 / 审查 / 内容日历见 [`docs/marketing/README.md`](docs/marketing/README.md)（目录索引 + 更新规则）。单一事实源是 [`.agents/product-marketing-context.md`](.agents/product-marketing-context.md)（路径硬编码，所有 `marketing-skills:*` 启动时自动读，**不可挪动**）。

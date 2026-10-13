@@ -63,7 +63,7 @@ export const SITE = {
   brandId: 'overleap',
   name: 'Overleap',
   baseUrl: 'https://overleap.io',
-  legalName: 'Overleap LLC',
+  legalName: 'Wordgate LLC',
   contactEmail: 'support@overleap.io',
   privacyEmail: 'privacy@overleap.io',
   legalEmail: 'legal@overleap.io',
@@ -137,6 +137,10 @@ export const DOWNLOADS = {
   desktopBases: ['https://d13jc1jqzlg4yt.cloudfront.net/overleap/desktop'],
   mobileBases: ['https://d13jc1jqzlg4yt.cloudfront.net/overleap'],
   artifactPrefix: 'Overleap',
-  /** Store listings; '' = not live yet, the download page shows "Coming soon". */
-  storeLinks: { ios: '', android: '' },
+  /** Store listings; '' = not live yet, the download page shows "Coming soon".
+   *  iOS = App Store Connect app 6759199298, Android = Play package io.overleap (Play-only, no APK channel). */
+  storeLinks: {
+    ios: 'https://apps.apple.com/app/id6759199298',
+    android: 'https://play.google.com/store/apps/details?id=io.overleap',
+  },
 } as const;

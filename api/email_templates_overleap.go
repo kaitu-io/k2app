@@ -194,11 +194,10 @@ func ticketReplyNotification(b Brand, ticketID uint64, replies string) (subject,
 		fmt.Sprintf("您好，\n\n您的工单 (#%d) 收到了新的回复：\n\n---\n%s\n---\n\n请登录 Kaitu 客户端查看完整对话。\n", ticketID, replies)
 }
 
-// chatWelcomeTextFor 访客会话欢迎语（不落库，前端渲染）。overleap 的会话没有 AI 接待
-// （BrandConfig.ChatAI），文案按"客服会在这里回复"写；已登记进 overleapTemplateCorpus。
+// chatWelcomeTextFor 访客会话欢迎语（不落库，前端渲染）。overleap 文案已登记进 overleapTemplateCorpus。
 func chatWelcomeTextFor(b Brand) string {
 	if b == BrandOverleap {
-		return "Hi! How can we help? Send us a message and our support team will reply here."
+		return "Hi! How can we help?"
 	}
 	return chatWelcomeText
 }

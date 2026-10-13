@@ -184,6 +184,18 @@ export interface RouterResponse {
 }
 
 /**
+ * 后台服务无法运行的、可由用户解除的原因。
+ * - `background-disallowed`：macOS 系统设置 → 通用 → 登录项与扩展 →「允许在后台」
+ *   里，开关（按签名开发者名列出，即 itemName）被关掉。重装无效，打开开关后系统
+ *   会立即拉起服务（#3911，testlab VM 150 实测）。
+ */
+export interface ServiceBlocker {
+  kind: 'background-disallowed';
+  /** 系统设置里该开关显示的名字（开发者名，不是 App 名）。 */
+  itemName: string;
+}
+
+/**
  * 平台能力接口
  *
  * Injected as window._platform before React loads.
@@ -225,6 +237,15 @@ export interface IPlatform {
 
   /** 以管理员权限重新安装 daemon service */
   reinstallService?(): Promise<void>;
+
+  /**
+   * 后台服务被用户可操作的系统开关挡住时的原因（bridge v4，桌面 macOS）。
+   * null = 没有已知的阻止项。只经 services/service-blocker.ts 使用。
+   */
+  getServiceBlocker?(): Promise<ServiceBlocker | null>;
+
+  /** 打开解除阻止所需的系统设置页（macOS：登录项与扩展）。bridge v4。 */
+  openServiceSettings?(): Promise<void>;
 
   /**
    * 获取当前进程 PID

@@ -147,6 +147,15 @@ func TestStripeCheckoutHandler(t *testing.T) {
 		assert.Equal(t, string(stripe.CheckoutSessionModeSubscription), *captured.Mode)
 		require.Len(t, captured.LineItems, 1)
 		assert.Equal(t, p.StripePriceID, *captured.LineItems[0].Price)
+		// 条款同意 + 立即开始的确认（14 天撤回折算的依据）
+		require.NotNil(t, captured.ConsentCollection)
+		assert.Equal(t, "required", *captured.ConsentCollection.TermsOfService)
+		require.NotNil(t, captured.CustomText)
+		require.NotNil(t, captured.CustomText.TermsOfServiceAcceptance)
+		msg := *captured.CustomText.TermsOfServiceAcceptance.Message
+		assert.Contains(t, msg, "begin immediately")
+		assert.Contains(t, msg, "first payment, or of an annual renewal")
+		assert.LessOrEqual(t, len(msg), 1200)
 		assert.Equal(t, u.UUID, *captured.ClientReferenceID)
 		require.NotNil(t, captured.SubscriptionData)
 		assert.Equal(t, u.UUID, captured.SubscriptionData.Metadata["user_uuid"])
