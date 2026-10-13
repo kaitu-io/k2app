@@ -81,6 +81,8 @@ nextpay:
   access_key: "ak_ci-placeholder"
   webhook_secret: "ws_ci-placeholder"
   payment_method: "more"
+  # 按用户分流到 NextPay 自有支付页的百分比（0–100，缺省 0 = 全部走 Stripe Checkout）
+  payment_page_percent: 0
 
 files:
   domain: "https://files.ci.kaitu.test"
