@@ -88,8 +88,14 @@ func chatConfigProblems() []string {
 		problems = append(problems, "chat.brands 为空：所有品牌的访客会话都处于关闭")
 	}
 	for _, v := range brands {
-		if !Brand(strings.ToLower(strings.TrimSpace(v))).Valid() {
+		b := Brand(strings.ToLower(strings.TrimSpace(v)))
+		if !b.Valid() {
 			problems = append(problems, "chat.brands 里有未注册的品牌 \""+v+"\"")
+			continue
+		}
+		// 接 AI 的品牌缺知识库：filesearch 找不到 store 只会返回错误，每条访客消息都静默转人工
+		if cfg := b.Config(); cfg.ChatAI && viper.GetString(chatAIStoreKey(cfg.ChatAIStore)) == "" {
+			problems = append(problems, chatAIStoreKey(cfg.ChatAIStore)+" 未配置：品牌 "+string(b)+" 的 AI 客服找不到知识库，所有消息直接转人工")
 		}
 	}
 	if chatSlackLobby() == "" {
@@ -102,6 +108,11 @@ func chatConfigProblems() []string {
 		problems = append(problems, "slack.bot_token 未配置：建频道、发消息等 Slack 调用全部失败")
 	}
 	return problems
+}
+
+// chatAIStoreKey 品牌知识库的配置键（qtoolkit filesearch 读 openai.filesearch.stores.<name>）。
+func chatAIStoreKey(store string) string {
+	return "openai.filesearch.stores." + store + ".vector_store_id"
 }
 
 // chatLogConfigProblems 启动时把配置问题逐条记成 Error。

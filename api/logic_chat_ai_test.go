@@ -23,7 +23,7 @@ func withAIAsk(t *testing.T, fn aiAskFn) *atomic.Int32 {
 	t.Helper()
 	orig := chatAIAsk
 	var n atomic.Int32
-	chatAIAsk = func(ctx context.Context, _, q string, imgs []string, h []filesearch.Message) (string, error) {
+	chatAIAsk = func(ctx context.Context, _, _, q string, imgs []string, h []filesearch.Message) (string, error) {
 		n.Add(1)
 		return fn(ctx, q, h)
 	}
@@ -396,7 +396,7 @@ func TestChatAI_SystemPromptCarriesFormatRules(t *testing.T) {
 	var got atomic.Value
 	orig := chatAIAsk
 	t.Cleanup(func() { chatAIAsk = orig })
-	chatAIAsk = func(_ context.Context, system, _ string, _ []string, _ []filesearch.Message) (string, error) {
+	chatAIAsk = func(_ context.Context, _, system, _ string, _ []string, _ []filesearch.Message) (string, error) {
 		got.Store(system)
 		return "好的", nil
 	}
@@ -404,16 +404,18 @@ func TestChatAI_SystemPromptCarriesFormatRules(t *testing.T) {
 
 	system, _ := got.Load().(string)
 	require.NotEmpty(t, system, "对照：确实调用了模型")
-	assert.True(t, strings.HasPrefix(system, systemPrompt), "共用的系统提示原样保留在前面")
-	rules := strings.TrimPrefix(system, systemPrompt)
+	assert.True(t, strings.HasPrefix(system, systemPromptKaitu), "品牌的系统提示原样保留在前面")
+	rules := strings.TrimPrefix(system, systemPromptKaitu)
 	for _, want := range []string{"纯文本", "不要使用 Markdown", "**", "换行", "「1.」", "「·」",
 		"「" + BrandKaitu.Config().DisplayName + "」", "括号"} {
 		assert.Contains(t, rules, want)
 	}
 	assert.Equal(t, system, chatAISystemPrompt(BrandKaitu))
 
-	// 品牌名跟着会话的品牌走，不写死
-	other := strings.TrimPrefix(chatAISystemPrompt(BrandOverleap), systemPrompt)
-	assert.Contains(t, other, "「"+BrandOverleap.Config().DisplayName+"」")
+	// 品牌名跟着会话的品牌走，不写死；overleap 用英文约束
+	other := strings.TrimPrefix(chatAISystemPrompt(BrandOverleap), systemPromptOverleap)
+	for _, want := range []string{"Plain text only", "Markdown", "**", "\"" + BrandOverleap.Config().DisplayName + "\""} {
+		assert.Contains(t, other, want)
+	}
 	assert.NotContains(t, other, BrandKaitu.Config().DisplayName)
 }

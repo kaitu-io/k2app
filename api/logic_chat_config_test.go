@@ -124,6 +124,11 @@ func TestChatConfigProblems(t *testing.T) {
 		setChatViper(t, "slack.chat_lobby_channel_id", lobby)
 		setChatViper(t, "slack.signing_secret", secret)
 		setChatViper(t, "slack.bot_token", token)
+		for _, b := range AllBrands() {
+			if b.Config().ChatAI {
+				setChatViper(t, chatAIStoreKey(b.Config().ChatAIStore), "vs_test")
+			}
+		}
 	}
 	all := chatAllBrandNames()
 	has := func(problems []string, key string) bool {
@@ -178,6 +183,20 @@ func TestChatConfigProblems(t *testing.T) {
 			}
 		})
 	}
+	t.Run("接 AI 的品牌缺知识库", func(t *testing.T) {
+		set(t, true, false, all, "C1", "sec", "xoxb-1")
+		key := chatAIStoreKey(BrandOverleap.Config().ChatAIStore)
+		setChatViper(t, key, "")
+		p := chatConfigProblems()
+		if len(p) != 1 || !has(p, key) {
+			t.Errorf("want exactly the %s problem, got %v", key, p)
+		}
+		// 不在 chat.brands 名单里的品牌不检查（它的会话本来就关着）
+		setChatViper(t, "chat.brands", []string{string(BrandKaitu)})
+		if p := chatConfigProblems(); len(p) != 0 {
+			t.Errorf("名单外的品牌不该报: %v", p)
+		}
+	})
 	t.Run("名单里有未注册的品牌", func(t *testing.T) {
 		set(t, true, false, append([]string{"no-such-brand"}, all...), "C1", "sec", "xoxb-1")
 		p := chatConfigProblems()

@@ -41,10 +41,21 @@ const (
 // transferHumanMarker AI 回复末尾带它 = 请求转人工（访客看不到，入库前剥掉）。
 const transferHumanMarker = "[TRANSFER_HUMAN]"
 
-// systemPrompt 会话 AI 的共用系统提示（知识与转人工规则）；会话专用的输出约束见 chatAIFormatRules。
+// 各品牌会话 AI 的系统提示（知识与转人工规则）；会话专用的输出约束见 chatAIFormatRules。
+// 两个品牌完全隔离：提示词各写各的，不共用，也不互相提及。
 //
 //go:embed data/system_prompt.md
-var systemPrompt string
+var systemPromptKaitu string
+
+//go:embed data/system_prompt_overleap.md
+var systemPromptOverleap string
+
+// chatAIBrandPrompts 接 AI 的品牌（BrandConfig.ChatAI）必须在这里有提示词——
+// TestChatBrandAI_EveryAIBrandIsWired 守着；漏登记会让该品牌拿到空提示。
+var chatAIBrandPrompts = map[Brand]string{
+	BrandKaitu:    systemPromptKaitu,
+	BrandOverleap: systemPromptOverleap,
+}
 
 // chatAIAskTimeout 单次 AI 调用超时；变量以便测试缩短。必须小于 chatAILockTTL。
 var chatAIAskTimeout = 45 * time.Second
@@ -52,8 +63,10 @@ var chatAIAskTimeout = 45 * time.Second
 // chatAILockFn 取锁函数；变量以便测试注入 Redis 故障。
 var chatAILockFn = chatAILock
 
-// chatAIAsk 调 OpenAI filesearch 取回复（system 是系统提示，见 chatAISystemPrompt）；测试里替换，避免打到真实 OpenAI。
-var chatAIAsk = func(ctx context.Context, system, question string, images []string, history []filesearch.Message) (string, error) {
+// chatAIAsk 调 OpenAI filesearch 取回复：store 是该品牌的知识库（BrandConfig.ChatAIStore，
+// 对应配置 openai.filesearch.stores.<store>），system 是系统提示（见 chatAISystemPrompt）；
+// 测试里替换，避免打到真实 OpenAI。
+var chatAIAsk = func(ctx context.Context, store, system, question string, images []string, history []filesearch.Message) (string, error) {
 	opts := []filesearch.Option{filesearch.WithSystemPrompt(system)}
 	for _, u := range images {
 		opts = append(opts, filesearch.WithImage(u))
@@ -61,7 +74,7 @@ var chatAIAsk = func(ctx context.Context, system, question string, images []stri
 	if len(history) > 0 {
 		opts = append(opts, filesearch.WithHistory(history))
 	}
-	result, err := filesearch.Ask(ctx, "crm", question, opts...)
+	result, err := filesearch.Ask(ctx, store, question, opts...)
 	if err != nil {
 		return "", err
 	}
@@ -79,9 +92,23 @@ const chatAIFormatRules = `
 - 链接直接写完整网址。
 - 提到本产品的品牌时一律只写「%s」（中文回复也一样），不要换成别的语言的写法，也不要在后面用括号附注别名。`
 
-// chatAISystemPrompt 会话 AI 的系统提示：共用提示 + 会话专用的输出约束（品牌名取自该会话品牌的 DisplayName）。
+// chatAIFormatRulesEN 同 chatAIFormatRules 的英文版，给 overleap：中文的约束块放在提示词最后，
+// 会把短问句、纯截图这类输入的回复带成中文。
+const chatAIFormatRulesEN = `
+
+## Output format (web chat widget — mandatory, overrides any formatting examples above)
+- Plain text only. The widget shows text as-is and does not render Markdown, so do not use Markdown: no **bold**, no # headings, no lists starting with - or *, no code blocks, no tables, no [text](link).
+- When you need several points, put each on its own line, numbered "1." "2." or prefixed with "·".
+- Write links as full URLs.
+- Always write the product's brand as "%s" exactly — no other spelling, no alias in parentheses.`
+
+// chatAISystemPrompt 会话 AI 的系统提示：该品牌的提示 + 会话专用的输出约束（品牌名取自该会话品牌的 DisplayName）。
 func chatAISystemPrompt(brand Brand) string {
-	return systemPrompt + fmt.Sprintf(chatAIFormatRules, brand.Config().DisplayName)
+	rules := chatAIFormatRules
+	if brand == BrandOverleap {
+		rules = chatAIFormatRulesEN
+	}
+	return chatAIBrandPrompts[brand] + fmt.Sprintf(rules, brand.Config().DisplayName)
 }
 
 type chatOption struct{ Label, Value string }
@@ -93,6 +120,13 @@ func chatAIWelcome(b Brand) (text string, options []chatOption) {
 	if !b.Config().ChatAI {
 		return text, nil
 	}
+	if b == BrandOverleap {
+		return text, []chatOption{
+			{Label: "📱 Installation help", Value: "install"},
+			{Label: "💳 Plans & billing", Value: "purchase"},
+			{Label: "❓ Using the app", Value: "usage"},
+		}
+	}
 	return text, []chatOption{
 		{Label: "📱 安装问题", Value: "install"},
 		{Label: "💳 购买/续费", Value: "purchase"},
@@ -100,8 +134,20 @@ func chatAIWelcome(b Brand) (text string, options []chatOption) {
 	}
 }
 
-// chatOptionQuestion 把 option_reply 的 value 映射成给 AI 的问题；未知 value 原样返回。
-func chatOptionQuestion(value string) string {
+// chatOptionQuestion 把 option_reply 的 value 映射成给 AI 的问题（语言跟品牌走：
+// 模型按用户语言回复，中文问题会把 overleap 访客的回复带成中文）；未知 value 原样返回。
+func chatOptionQuestion(b Brand, value string) string {
+	if b == BrandOverleap {
+		switch value {
+		case "install":
+			return "I need help installing the app"
+		case "purchase":
+			return "I'd like to know about plans and renewal"
+		case "usage":
+			return "I have a question about using the app"
+		}
+		return value
+	}
 	switch value {
 	case "install":
 		return "我需要安装帮助"
@@ -180,7 +226,8 @@ func chatLatestVisitorMessage(ctx context.Context, convID uint64) (*Conversation
 }
 
 // chatAIHistory 取 beforeID 之前最近 30 条非 note、非 event 的消息：visitor→user，ai/staff→assistant。
-func chatAIHistory(ctx context.Context, convID, beforeID uint64) ([]filesearch.Message, error) {
+func chatAIHistory(ctx context.Context, conv *Conversation, beforeID uint64) ([]filesearch.Message, error) {
+	convID, brand := conv.ID, Brand(conv.Brand)
 	var msgs []ConversationMessage
 	err := db.Get().WithContext(ctx).
 		Where("conversation_id = ? AND id < ? AND kind NOT IN ? AND sender_type IN ?", convID, beforeID,
@@ -199,9 +246,9 @@ func chatAIHistory(ctx context.Context, convID, beforeID uint64) ([]filesearch.M
 			role = "user"
 			switch m.Kind {
 			case MsgOptionReply:
-				content = chatOptionQuestion(content)
+				content = chatOptionQuestion(brand, content)
 			case MsgImage:
-				content, images = chatAIImageInput(ctx, &m)
+				content, images = chatAIImageInput(ctx, brand, &m)
 			}
 		}
 		hist = append(hist, filesearch.Message{Role: role, Content: content, Images: images})
@@ -211,8 +258,16 @@ func chatAIHistory(ctx context.Context, convID, beforeID uint64) ([]filesearch.M
 
 // chatAIImageInput 图片消息交给 AI 的形式：一句说明 + S3 临时地址（OpenAI 自己下载）。
 // 存储不可用时只给说明文字，AI 会请访客描述问题或转人工。
-func chatAIImageInput(ctx context.Context, m *ConversationMessage) (string, []string) {
-	if u := chatImageAIURL(ctx, m.Content); u != "" {
+// 说明文字的语言跟品牌走（理由同 chatOptionQuestion）。
+func chatAIImageInput(ctx context.Context, b Brand, m *ConversationMessage) (string, []string) {
+	u := chatImageAIURL(ctx, m.Content)
+	if b == BrandOverleap {
+		if u != "" {
+			return "[The visitor sent a screenshot]", []string{u}
+		}
+		return "[The visitor sent a screenshot, but it can't be viewed right now]", nil
+	}
+	if u != "" {
 		return "[访客发来一张截图]", []string{u}
 	}
 	return "[访客发来一张截图，但图片暂时无法查看]", nil
@@ -285,20 +340,21 @@ func chatAIReply(ctx context.Context, conv *Conversation, q *ConversationMessage
 		return chatAIFallback(ctx, conv.ID, "")
 	}
 
-	history, err := chatAIHistory(ctx, conv.ID, q.ID)
+	history, err := chatAIHistory(ctx, conv, q.ID)
 	if err != nil {
 		return fmt.Errorf("load history: %w", err)
 	}
+	brand := Brand(conv.Brand)
 	question := q.Content
 	var images []string
 	switch q.Kind {
 	case MsgOptionReply:
-		question = chatOptionQuestion(question)
+		question = chatOptionQuestion(brand, question)
 	case MsgImage:
-		question, images = chatAIImageInput(ctx, q)
+		question, images = chatAIImageInput(ctx, brand, q)
 	}
 	askCtx, cancel := context.WithTimeout(ctx, chatAIAskTimeout)
-	reply, err := chatAIAsk(askCtx, chatAISystemPrompt(Brand(conv.Brand)), question, images, history)
+	reply, err := chatAIAsk(askCtx, brand.Config().ChatAIStore, chatAISystemPrompt(brand), question, images, history)
 	cancel()
 	if err != nil || strings.TrimSpace(reply) == "" {
 		log.Errorf(ctx, "chat ai ask failed: conv=%d err=%v", conv.ID, err)
