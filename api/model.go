@@ -463,6 +463,39 @@ func (o *Order) GetCheckout() (string, int64) {
 	return meta.CheckoutUrl, meta.CheckoutAt
 }
 
+// SetCheckoutMode 在 Meta 里记下最近一次 checkout 走的路径（checkoutModeStripeCheckout /
+// checkoutModePaymentPage），保留其它字段。复用窗口与灰度对比都读它。
+func (o *Order) SetCheckoutMode(mode string) error {
+	var meta map[string]interface{}
+	if o.Meta != "" {
+		if err := json.Unmarshal([]byte(o.Meta), &meta); err != nil {
+			return err
+		}
+	} else {
+		meta = make(map[string]interface{})
+	}
+	meta["checkoutMode"] = mode
+	data, err := json.Marshal(meta)
+	if err != nil {
+		return err
+	}
+	o.Meta = string(data)
+	return nil
+}
+
+// GetCheckoutMode 读取 Meta 中的 checkout 路径；没有该字段（灰度前的订单）按 Stripe Checkout。
+func (o *Order) GetCheckoutMode() string {
+	if o.Meta != "" {
+		var meta struct {
+			CheckoutMode string `json:"checkoutMode"`
+		}
+		if err := json.Unmarshal([]byte(o.Meta), &meta); err == nil && meta.CheckoutMode != "" {
+			return meta.CheckoutMode
+		}
+	}
+	return checkoutModeStripeCheckout
+}
+
 // GetPayUrl 从 Meta 中提取已保存的支付链接
 func (o *Order) GetPayUrl() string {
 	if o.Meta == "" {

@@ -163,6 +163,9 @@ type NextpayConfig struct {
 	AccessKey     string
 	WebhookSecret string
 	PaymentMethod string // confirm 时传给 NextPay 的渠道；缺省 more（Stripe 按账号设置自动列出）
+	// PaymentPagePercent：按用户分流到 NextPay 自有支付页（paymentUrl，不调 confirm）的百分比，
+	// 0–100，缺省 0 = 全部走 Stripe Checkout。分组规则见 nextpayPaymentPageBucket。
+	PaymentPagePercent int
 }
 
 // Ready 判断 NextPay 渠道是否配置可用：access_key 与 webhook_secret 缺一不可。
@@ -174,9 +177,10 @@ func (nc NextpayConfig) Ready() bool {
 // configNextpay 获取 NextPay 配置。
 func configNextpay(ctx context.Context) NextpayConfig {
 	cfg := NextpayConfig{
-		AccessKey:     viper.GetString("nextpay.access_key"),
-		WebhookSecret: viper.GetString("nextpay.webhook_secret"),
-		PaymentMethod: viper.GetString("nextpay.payment_method"),
+		AccessKey:          viper.GetString("nextpay.access_key"),
+		WebhookSecret:      viper.GetString("nextpay.webhook_secret"),
+		PaymentMethod:      viper.GetString("nextpay.payment_method"),
+		PaymentPagePercent: viper.GetInt("nextpay.payment_page_percent"),
 	}
 	if cfg.PaymentMethod == "" {
 		cfg.PaymentMethod = "more"
@@ -400,4 +404,3 @@ func getString(m map[string]interface{}, key string) string {
 	}
 	return ""
 }
-
