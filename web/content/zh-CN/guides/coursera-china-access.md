@@ -48,7 +48,6 @@ Coursera 官方的说法（[Course loading problems in China](https://www.course
 
 - 网页端支持的付款方式有：Visa、MasterCard、Discover、JCB 信用卡，Visa 和 Mastercard 借记卡，以及 PayPal。<strong>没有支付宝、银联和微信支付</strong>（[官方](https://www.coursera.support/s/article/209819003-Accepted-payment-methods)）。Coursera 在 2015 年曾支持支付宝（[TechNode，2015](https://technode.com/2015/07/14/u-s-based-online-education-coursera-now-offers-alipay/)），现在的官方付款页上已经没有了。
 - 付款报错时，官方建议：确认用的是支持的付款方式，换浏览器或设备，清除缓存和 Cookie（[官方](https://www.coursera.support/s/article/209819083-Solve-problems-with-payments)）。
-- iPhone 上的 Coursera App 可以在中国区 App Store 下载（[App Store](https://apps.apple.com/cn/app/id736535961)）。App 内购买走 Apple ID 结算，而中国大陆的 Apple ID 支持支付宝和微信支付（[Apple 官方](https://support.apple.com/en-us/111741)）。所以用中国区 Apple ID 在 App 内购买，<strong>理论上</strong>可以用支付宝或微信付款。这是我们把两份官方资料合起来得出的推断，没有实际验证过；App 内的价格和网页端也可能不同。
 
 ## 还是不行时
 
@@ -68,7 +67,7 @@ Coursera 官方的说法（[Course loading problems in China](https://www.course
 
 <strong>Coursera 可以用支付宝付款吗？</strong>
 
-网页端不行。官方付款方式里没有支付宝、银联和微信支付，要用国际信用卡、借记卡或 PayPal。用中国区 Apple ID 在 iPhone App 里购买，理论上可以用 Apple ID 绑定的支付宝或微信付款，但我们没有实际验证过。
+网页端不行。官方付款方式里没有支付宝、银联和微信支付，要用国际信用卡、借记卡或 PayPal。
 
 <strong>Coursera 有中文版吗？</strong>
 
