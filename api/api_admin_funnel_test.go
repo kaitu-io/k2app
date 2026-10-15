@@ -119,7 +119,7 @@ func TestAdminFunnels_List(t *testing.T) {
 		GroupDims []string
 	}
 	require.NoError(t, json.Unmarshal(resp.Data, &data))
-	require.Len(t, data.Paths, 6)
+	require.Len(t, data.Paths, len(funnelPathRegistry))
 	var keys, want []string
 	for _, p := range data.Paths {
 		keys = append(keys, p.Key)
