@@ -228,10 +228,21 @@ export interface FunnelStep {
   medianSecFromPrev: number | null;
 }
 
+// 推断归因（网页点下载 → App 首开，按出口 + 平台推断）的摘要；只在请求带 inferred 时出现。
+export interface FunnelInferredSummary {
+  method: string;
+  links: number;
+  applied: number;
+  confirmed: number;
+  conflicts: number;
+  outcomes: Record<string, number>; // matched / ambiguous / none / late / noip
+}
+
 export interface FunnelResult {
   steps: FunnelStep[];
   daily: { date: string; entered: number; completed: number }[];
   groups: { key: string; steps: number[] }[];
+  inferred?: FunnelInferredSummary;
 }
 
 export interface PaidRetentionRow {
@@ -2283,13 +2294,14 @@ export const api = {
 
   async getFunnel(
     key: string,
-    p: { brand?: BrandId | string; from: string; to: string; groupBy?: string },
+    p: { brand?: BrandId | string; from: string; to: string; groupBy?: string; inferred?: boolean },
   ): Promise<FunnelResult> {
     const qs = new URLSearchParams();
     if (p.brand) qs.set('brand', p.brand);
     qs.set('from', p.from);
     qs.set('to', p.to);
     if (p.groupBy) qs.set('groupBy', p.groupBy);
+    if (p.inferred) qs.set('inferred', '1');
     return this.request<FunnelResult>(`/app/stats/funnels/${encodeURIComponent(key)}?${qs}`);
   },
 

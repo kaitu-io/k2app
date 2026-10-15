@@ -72,6 +72,7 @@ export const statsTools: ToolRegistration[] = [
       from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Start date YYYY-MM-DD'),
       to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('End date YYYY-MM-DD, inclusive; from..to spans at most 90 days'),
       group_by: z.string().optional().describe('Dimension to group by — must be one of the groupDims returned by funnel_paths (e.g. source)'),
+      inferred: z.boolean().optional().describe('Also merge INFERRED web-download → app-first-open links (same egress IP + same platform within 24h; not a deterministic identity). The response then carries an `inferred` summary (confirmed / conflicts / per-outcome counts) — always say the numbers include inference.'),
     },
     path: (p) => `/app/stats/funnels/${encodeURIComponent(String(p.key))}`,
     mapQuery: (p) => {
@@ -81,6 +82,7 @@ export const statsTools: ToolRegistration[] = [
       if (p.from !== undefined) q.from = String(p.from)
       if (p.to !== undefined) q.to = String(p.to)
       if (p.group_by !== undefined) q.groupBy = String(p.group_by)
+      if (p.inferred === true) q.inferred = '1'
       return q
     },
   }),

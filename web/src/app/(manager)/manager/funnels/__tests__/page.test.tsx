@@ -121,6 +121,34 @@ describe('manager funnels page', () => {
     expect(screen.getByText('10.0%')).toBeTruthy(); // organic 6/60
   });
 
+  it('inferred attribution is off by default and shows no inferred note', async () => {
+    renderPage();
+    await waitFor(() => expect(mockFunnel).toHaveBeenCalledTimes(1));
+    expect(mockFunnel.mock.calls[0][1].inferred).toBe(false);
+    await screen.findByText('40.0%');
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+
+  it('toggling inferred refetches with inferred and labels the result as inferred', async () => {
+    renderPage();
+    await waitFor(() => expect(mockFunnel).toHaveBeenCalledTimes(1));
+    mockFunnel.mockResolvedValue({
+      ...funnel([12, 5, 2]),
+      inferred: {
+        method: 'ip_os_v1', links: 6, applied: 5, confirmed: 3, conflicts: 1,
+        outcomes: { matched: 6, ambiguous: 2, none: 40, late: 1, noip: 0 },
+      },
+    });
+    fireEvent.click(screen.getByRole('switch', { name: '含推断归因' }));
+    await waitFor(() => expect(mockFunnel).toHaveBeenCalledTimes(2));
+    expect(mockFunnel.mock.calls[1][1]).toMatchObject({ inferred: true });
+    const note = await screen.findByRole('note');
+    expect(note.textContent).toContain('含推断（ip_os_v1）');
+    expect(note.textContent).toContain('证实 3 条、证伪 1 条');
+    expect(note.textContent).toContain('实测误配率 25.0%');
+    expect(note.textContent).toContain('同出口多人·丢弃 2');
+  });
+
   it('retention tab loads paid cohorts and renders null as a dash', async () => {
     renderPage();
     await waitFor(() => expect(mockFunnel).toHaveBeenCalled());

@@ -114,6 +114,14 @@ describe('funnel / retention tools', () => {
     expect(path).not.toContain('key=')
     expect(path).not.toContain('group_by')
   })
+  it('funnel forwards inferred=1 only when asked', async () => {
+    const on = invoke('funnel', { key: 'web_to_app', inferred: true })
+    await on.run()
+    expect(on.request.mock.calls[0][0] as string).toContain('inferred=1')
+    const off = invoke('funnel', { key: 'web_to_app' })
+    await off.run()
+    expect(off.request.mock.calls[0][0] as string).not.toContain('inferred')
+  })
   it('funnel schema rejects path-steering keys and malformed dates', () => {
     const { tool, request } = invoke('funnel', { key: 'web_purchase' })
     for (const k of ['../orders', 'x?y=1', 'a/b', 'A', 'x#y', '']) {

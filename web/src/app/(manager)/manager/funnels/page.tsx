@@ -7,6 +7,7 @@ import {
   api,
   ApiError,
   type ActiveRetentionResult,
+  type FunnelInferredSummary,
   type FunnelPathInfo,
   type FunnelResult,
   type PaidRetentionResult,
@@ -15,6 +16,7 @@ import { getApiErrorMessageZh } from "@/lib/api-errors";
 import { useManagerBrand } from "@/components/manager/brand";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const NO_GROUP = "__none__";
@@ -57,6 +59,8 @@ export default function FunnelsPage() {
   const [pathKey, setPathKey] = useState("");
   const [days, setDays] = useState("30");
   const [groupBy, setGroupBy] = useState(NO_GROUP);
+  // 推断归因默认关：开了之后数字不再是纯确定性的，页面必须标注。
+  const [inferred, setInferred] = useState(false);
   const [tab, setTab] = useState("funnel");
 
   const [funnel, setFunnel] = useState<FunnelResult | null>(null);
@@ -94,7 +98,7 @@ export default function FunnelsPage() {
     setFunnelLoading(true);
     setFunnelError(null);
     api
-      .getFunnel(pathKey, { brand: brandParam, from, to, groupBy: groupBy === NO_GROUP ? undefined : groupBy })
+      .getFunnel(pathKey, { brand: brandParam, from, to, groupBy: groupBy === NO_GROUP ? undefined : groupBy, inferred })
       .then((r) => !cancelled && setFunnel(r))
       .catch((e) => {
         if (cancelled) return;
@@ -105,7 +109,7 @@ export default function FunnelsPage() {
     return () => {
       cancelled = true;
     };
-  }, [pathKey, days, groupBy, brandParam]);
+  }, [pathKey, days, groupBy, brandParam, inferred]);
 
   useEffect(() => {
     if (tab !== "retention") return;
@@ -168,6 +172,10 @@ export default function FunnelsPage() {
             ))}
           </SelectContent>
         </Select>
+        <label className="flex items-center gap-2 text-sm h-9">
+          <Switch aria-label="含推断归因" checked={inferred} onCheckedChange={setInferred} />
+          含推断归因
+        </label>
       </div>
       )}
 
@@ -187,11 +195,14 @@ export default function FunnelsPage() {
           {pathsLoading || funnelLoading ? (
             <div className="text-muted-foreground text-sm py-8 text-center">加载中…</div>
           ) : funnel ? (
+            <>
+            {funnel.inferred && <InferredNote s={funnel.inferred} />}
             <FunnelView
               funnel={funnel}
               windowHours={current?.windowHours}
               dimLabel={groupBy === NO_GROUP ? "" : DIM_LABELS[groupBy] ?? groupBy}
             />
+            </>
           ) : null}
         </TabsContent>
 
@@ -200,6 +211,31 @@ export default function FunnelsPage() {
           <ActiveTable state={active} />
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+// 推断归因的结果计数（服务端字段名 → 中文）。
+const OUTCOME_LABELS: [string, string][] = [
+  ["matched", "配上"],
+  ["ambiguous", "同出口多人·丢弃"],
+  ["none", "无对应点击"],
+  ["late", "上报迟到·跳过"],
+  ["noip", "出口无效"],
+];
+
+function InferredNote({ s }: { s: FunnelInferredSummary }) {
+  const checked = s.confirmed + s.conflicts;
+  return (
+    <div role="note" className="rounded-md border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm space-y-1">
+      <p className="font-medium">以下数字含推断（{s.method}）：网页点下载与 App 首开按「同出口 + 同平台」推断为同一人，不是确定性身份。</p>
+      <p className="text-muted-foreground">
+        {`本次涉及推断关联 ${s.links} 条，并入 ${s.applied} 条；被登录身份证实 ${s.confirmed} 条、证伪 ${s.conflicts} 条（已忽略）`}
+        {checked > 0 ? `，实测误配率 ${pct(s.conflicts / checked)}` : "，暂无可核对的样本"}
+      </p>
+      <p className="text-muted-foreground">
+        首开匹配：{OUTCOME_LABELS.map(([k, label]) => `${label} ${s.outcomes?.[k] ?? 0}`).join(" · ")}
+      </p>
     </div>
   );
 }
