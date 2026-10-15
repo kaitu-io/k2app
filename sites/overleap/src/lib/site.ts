@@ -20,6 +20,18 @@ export const LOCALES = [
 export type Locale = (typeof LOCALES)[number];
 export const DEFAULT_LOCALE: Locale = 'en-GB';
 
+/**
+ * Locales search engines may index. The rest are machine translations: they stay
+ * served and in the language picker, but render `noindex, follow` and are left out
+ * of the sitemap and of every hreflang set, so thin duplicate pages don't drag the
+ * whole site down. Open a language here only after a human has reviewed it.
+ */
+export const INDEXED_LOCALES = ['en-GB', 'en-US', 'en-AU'] as const satisfies readonly Locale[];
+
+export function isIndexedLocale(locale: string): boolean {
+  return (INDEXED_LOCALES as readonly string[]).includes(locale);
+}
+
 /** `englishName` lets the picker's search match "korean" as well as "한국어". */
 export const LOCALE_META: Record<Locale, { nativeName: string; englishName: string; dir: 'ltr' | 'rtl' }> = {
   'en-GB': { nativeName: 'English (UK)', englishName: 'English (UK)', dir: 'ltr' },

@@ -10,7 +10,7 @@ import path from 'path';
 import { LOCALES } from '@/lib/site';
 
 const ROOT = path.resolve(__dirname, '..');
-const SCAN_DIRS = ['src', 'messages', 'public/legal'];
+const SCAN_DIRS = ['src', 'messages', 'public/legal', 'content'];
 const TEXT_EXT = /\.(tsx?|json|md|css)$/;
 
 function files(dir: string): string[] {
