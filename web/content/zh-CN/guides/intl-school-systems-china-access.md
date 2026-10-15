@@ -1,7 +1,7 @@
 ---
 title: "国际学校和留学家长常用的境外系统：国内访问情况汇总（2026 年 10 月）"
 date: 2026-10-15
-summary: "ManageBac、Toddle、College Board、Flywire 在国内能不能用？本文按系统汇总：有没有中国专用域名、登录页依赖哪些外部服务、官方怎么建议，每一行都附来源和核对日期，并链到单独的详细说明。适合国际学校和留学家庭的家长收藏转发。"
+summary: "ManageBac、Google Classroom、Common App、College Board、Flywire 等 9 个境外系统在国内能不能用？本文按系统汇总：有没有中国专用域名、登录页依赖哪些外部服务、官方怎么建议，每行附来源和核对日期，并链到详细说明。适合国际学校和留学家庭收藏转发。"
 tags: ["国际学校", "留学", "ManageBac", "Toddle", "College Board", "Flywire"]
 brand: kaitu
 draft: true
@@ -19,8 +19,13 @@ draft: true
 | Toddle | IB / 国际学校的教学平台和家长端 | <strong>有</strong>：web.toddleapp.cn，以及中国区 App Store 的 Toddle Family China，和国际版完全分开 | 国际版家长登录页加载 Google 登录组件（accounts.google.com）和 Cloudflare 人机验证，接口在欧洲；中国版没有这两项，接口在国内 | 中国迁移指南需要登录才能看；按学校公开的家长指南，迁到中国服务器的学校要改用 .cn 和中国版 App | [Toddle 单页](/guides/toddle-china-access) | 2026-10-15 |
 | College Board | AP、SAT 账号，查分，AP Classroom | <strong>没有</strong>；AP 本地报名信息在 Prometric 中国站（prometric.com.cn/apchina） | collegeboard.org 有部分网址受干扰（GreatFire 测了 15 个：3 个被封、6 个受干扰）；登录走 Okta（okta.com 测了 26 个，17 个受干扰）；登录页没有 Google 依赖 | 出分前先试登录、不要重复注册、用新版浏览器；Bluebook 考试流量要绕开 VPN 和代理 | [College Board 单页](/guides/college-board-china-access) | 2026-10-15 |
 | Flywire（飞汇） | 付境外学费 | 没有中国专用域名，有中文站 flywire.com/zh 和中文付款页；选“付款来源国：中国”后可用人民币转账、支付宝、微信、银联 | 首页的 Vimeo 视频被封、“用 Google / Facebook 登录”在国内不可靠，这些都不影响付款；卡号页卡住多是网络超时 | <strong>付款时关闭 VPN</strong>，避开学校或公司 Wi-Fi；不要在微信里打开支付宝链接；信用卡页卡住就取消付款单重建 | [Flywire 单页](/guides/flywire-china-access) | 2026-10-15 |
+| Google Classroom（Google 课堂） | 课堂作业、资料、通知 | <strong>没有</strong>；中国区 App Store 能下载 App，但背后的服务和网页版是同一套 | 整个流程依赖 Google：classroom.google.com、accounts.google.com 不稳定，drive / docs / YouTube 被封 | 没有找到 Google 针对中国大陆的明确说明；Workspace 教育版注册页的国家列表里没有中国大陆 | [Google Classroom 单页](/guides/google-classroom-china-access) | 2026-10-15 |
+| Common App | 美国本科申请 | <strong>没有</strong>；没有中文界面 | 申请系统本身可访问；“从 Google Drive 选取”上传依赖 apis.google.com、accounts.google.com 和 Drive，在国内容易失败 | 用官方支持的浏览器、开启 Cookies、<strong>关闭弹窗拦截</strong>；把 appsupport@commonapp.net 加进白名单 | [Common App 单页](/guides/common-app-china-access) | 2026-10-15 |
+| ClassDojo | 小学班级动态、家校沟通 | <strong>没有</strong>中国服务器；有简体中文界面，iOS App 在中国区上架 | 实时同步走 PubNub，照片视频走 AWS S3 加速域名；“使用 Google 继续”登录在国内容易卡住 | 出现 “error syncing” 时换网络对比；App 有问题改用网页版；查看 status.classdojo.com | [ClassDojo 单页](/guides/classdojo-china-access) | 2026-10-15 |
+| Khan Academy（可汗学院） | 网课、练习 | 有中文版 zh.khanacademy.org；App 和 Kids 版都在中国区上架 | 境外网络下视频用 YouTube 播放（被封）；“Continue with Google”登录不稳定 | <strong>YouTube 在中国被封时会改用其他播放器</strong>；连接有问题时可以试离线工具 Kolibri | [Khan Academy 单页](/guides/khan-academy-china-access) | 2026-10-15 |
+| Coursera | 网课、证书课程 | <strong>没有</strong>中国专用域名；有简体中文界面，iOS App 在中国区上架 | coursera.org 测了 30 个网址：1 个被封、19 个受干扰；“用 Google / Facebook 继续”登录不可靠；网页端不支持支付宝和银联 | 官方承认<strong>在中国加载课程是已知问题</strong>，建议刷新或等待；视频可能要一两天才正常 | [Coursera 单页](/guides/coursera-china-access) | 2026-10-15 |
 
-后续会陆续补上 Schoology、PowerSchool、Google Classroom 等系统。
+后续会陆续补上 Schoology、PowerSchool、Seesaw 等系统。
 
 ## 怎么看这张表
 
