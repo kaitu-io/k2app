@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -31,6 +32,9 @@ import (
 //   - 首开侧（app_first_open）：只有发生后 5 分钟内送达的首开参与（迟到的首开可能已在隧道里，看到的
 //     是节点 IP）；用今天和昨天的盐查窗口内的 sid，去重后恰好一个才写 funnel_inferred_links，
 //     多于一个记为 ambiguous 丢弃——共享出口宁可漏配，不可误配。
+//   - 同一品牌的同一 did 只处理第一次首开（fattr:open:<brand>:<did>，25h）：重发 / 重装不重复计数。
+//   - 出口是我们自己的节点（slave_nodes 的 IPv4 / IPv6 /64）时两侧都不参与：开着开途浏览的老用户与
+//     同节点出口（含 k2r 路由器下）的新设备会被误配成同一人。首开侧记 outcome=node。
 //   - 推断关联绝不写 funnel_identities，只在管理端漏斗显式 ?inferred=1 时参与计算
 //     （applyFunnelInferredLinks），确定性身份永远优先。
 //
@@ -46,6 +50,8 @@ const (
 	funnelAttrStatsTTL     = 130 * 24 * time.Hour
 	funnelAttrRedisTimeout = 300 * time.Millisecond
 	funnelAttrDayForm      = "20060102"
+	funnelAttrOpenSeenTTL  = funnelAttrWindow + time.Hour
+	funnelAttrNodeCacheTTL = 10 * time.Minute
 )
 
 // 首开匹配的结果（计数器的字段名）。
@@ -55,9 +61,11 @@ const (
 	funnelAttrNone      = "none"
 	funnelAttrLate      = "late"
 	funnelAttrNoIP      = "noip"
+	funnelAttrNode      = "node"
+	funnelAttrDup       = "dup" // 同一 did 的重复首开：不计数、不匹配
 )
 
-var funnelAttrOutcomes = []string{funnelAttrMatched, funnelAttrAmbiguous, funnelAttrNone, funnelAttrLate, funnelAttrNoIP}
+var funnelAttrOutcomes = []string{funnelAttrMatched, funnelAttrAmbiguous, funnelAttrNone, funnelAttrLate, funnelAttrNoIP, funnelAttrNode}
 
 // funnelAttrPlatforms：install_click 的 p 与 App 上报的 os（normalizeFunnelOS 后）共用的取值。
 var funnelAttrPlatforms = map[string]bool{"windows": true, "macos": true, "linux": true, "android": true, "ios": true}
@@ -98,10 +106,58 @@ func funnelAttrHash(salt string, brand Brand, platform, ipKey string) string {
 
 func funnelAttrDay(t time.Time) string { return t.UTC().Format(funnelAttrDayForm) }
 
-// funnelAttrStore 包一层 Redis，便于测试注入独立实例。
-type funnelAttrStore struct{ rdb goredis.Cmdable }
+// funnelAttrStore 包一层 Redis，便于测试注入独立实例。isNode 判断出口键是否是我们自己的节点（nil = 都不是）。
+type funnelAttrStore struct {
+	rdb    goredis.Cmdable
+	isNode func(ctx context.Context, ipKey string) bool
+}
 
-func defaultFunnelAttrStore() funnelAttrStore { return funnelAttrStore{rdb: redis.Client()} }
+func defaultFunnelAttrStore() funnelAttrStore {
+	return funnelAttrStore{rdb: redis.Client(), isNode: funnelAttrNodes.contains}
+}
+
+func (s funnelAttrStore) nodeEgress(ctx context.Context, ipKey string) bool {
+	return s.isNode != nil && s.isNode(ctx, ipKey)
+}
+
+// funnelAttrNodeCache：slave_nodes 的出口键集合，进程内缓存。读库失败时沿用旧集合（首次失败 = 空集）。
+type funnelAttrNodeCache struct {
+	mu       sync.Mutex
+	keys     map[string]bool
+	loadedAt time.Time
+}
+
+var funnelAttrNodes = &funnelAttrNodeCache{}
+
+func (c *funnelAttrNodeCache) contains(ctx context.Context, ipKey string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.keys == nil || time.Since(c.loadedAt) > funnelAttrNodeCacheTTL {
+		c.loadedAt = time.Now()
+		var rows []SlaveNode
+		if err := db.Get().WithContext(ctx).Model(&SlaveNode{}).Select("ipv4", "ipv6").Find(&rows).Error; err != nil {
+			log.Warnf(ctx, "[FunnelAttr] load node IPs failed: %v", err)
+			if c.keys == nil {
+				c.keys = map[string]bool{}
+			}
+		} else {
+			c.keys = funnelAttrNodeKeys(rows)
+		}
+	}
+	return c.keys[ipKey]
+}
+
+func funnelAttrNodeKeys(rows []SlaveNode) map[string]bool {
+	keys := make(map[string]bool, 2*len(rows))
+	for i := range rows {
+		for _, ip := range []string{rows[i].Ipv4, rows[i].Ipv6} {
+			if k := funnelAttrIPKey(ip); k != "" {
+				keys[k] = true
+			}
+		}
+	}
+	return keys
+}
 
 // salt 取某天的盐；create=true 时不存在就生成（SETNX，两台 center 共用同一份）。
 // create=false 且不存在时返回 ""（那天没有任何点击，不必生成）。
@@ -129,7 +185,7 @@ func (s funnelAttrStore) recordClick(ctx context.Context, brand Brand, platform,
 		return nil
 	}
 	ipKey := funnelAttrIPKey(clientIP)
-	if ipKey == "" {
+	if ipKey == "" || s.nodeEgress(ctx, ipKey) {
 		return nil
 	}
 	salt, err := s.salt(ctx, funnelAttrDay(now), true)
@@ -153,6 +209,9 @@ func (s funnelAttrStore) matchOpen(ctx context.Context, brand Brand, platform, c
 	ipKey := funnelAttrIPKey(clientIP)
 	if ipKey == "" || !funnelAttrPlatforms[platform] {
 		return "", time.Time{}, funnelAttrNoIP, nil
+	}
+	if s.nodeEgress(ctx, ipKey) {
+		return "", time.Time{}, funnelAttrNode, nil
 	}
 	latest := map[string]int64{}
 	lo := strconv.FormatInt(now.Add(-funnelAttrWindow).Unix(), 10)
@@ -210,6 +269,14 @@ func funnelAttrOpenOnTime(createdAt, now time.Time) bool {
 // onFirstOpen 处理一次合法的 app_first_open：判定、计数、匹配上则写推断关联（插入幂等）。
 // 返回写入（或本应写入）的关联；未匹配返回 nil。
 func (s funnelAttrStore) onFirstOpen(ctx context.Context, brand Brand, platform, clientIP, did string, createdAt, now time.Time) (*FunnelInferredLink, string, error) {
+	// 同一 did 只处理第一次：响应丢失后同 eid 重发、重装后 once 标志丢失都会再报首开。
+	first, err := s.rdb.SetNX(ctx, "fattr:open:"+string(brand)+":"+did, 1, funnelAttrOpenSeenTTL).Result()
+	if err != nil {
+		return nil, "", err
+	}
+	if !first {
+		return nil, funnelAttrDup, nil
+	}
 	if !funnelAttrOpenOnTime(createdAt, now) {
 		s.count(ctx, brand, funnelAttrLate, now)
 		return nil, funnelAttrLate, nil
@@ -298,7 +365,7 @@ func loadFunnelAttrStats(ctx context.Context, brand Brand, hasBrand bool, from, 
 //   - Applied：实际改变了归属的关联数（确定性身份没有覆盖它）
 //   - Confirmed：两端各自确定性关联到同一用户（推断被证实）
 //   - Conflicts：两端各自确定性关联到不同用户（推断被证伪，已忽略）——Conflicts/(Conflicts+Confirmed) 即实测误配率
-//   - Outcomes：区间内每天首开匹配结果计数（matched / ambiguous / none / late / noip）
+//   - Outcomes：区间内每天首开匹配结果计数（matched / ambiguous / none / late / noip / node；重复首开不计）
 type FunnelInferredSummary struct {
 	Method    string           `json:"method"`
 	Links     int              `json:"links"`

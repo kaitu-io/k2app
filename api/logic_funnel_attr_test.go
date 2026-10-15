@@ -56,16 +56,27 @@ func TestFunnelAttrOpenOnTime(t *testing.T) {
 
 // ===================== 匹配：随机 fixture + oracle =====================
 
+// fixture 里的节点出口：一个 IPv4、一个 IPv6 /64。
+const (
+	faNodeV4     = "198.51.100.7"
+	faNodePrefix = "2001:db8:c0:1"
+)
+
 func faStore(t *testing.T) (funnelAttrStore, *miniredis.Miniredis) {
 	t.Helper()
 	mr := miniredis.RunT(t)
-	return funnelAttrStore{rdb: goredis.NewClient(&goredis.Options{Addr: mr.Addr()})}, mr
+	nodes := funnelAttrNodeKeys([]SlaveNode{{Ipv4: faNodeV4, Ipv6: faNodePrefix + "::1"}})
+	return funnelAttrStore{
+		rdb:    goredis.NewClient(&goredis.Options{Addr: mr.Addr()}),
+		isNode: func(_ context.Context, k string) bool { return nodes[k] },
+	}, mr
 }
 
 // faNet 是 fixture 里的「出口」：oracle 只按 id 判等，不调用 funnelAttrIPKey。
 // id < 0 表示无效出口（私网 / 回环 / 空），永远不参与匹配。
 type faNet struct {
 	id   int
+	node bool // 我们自己的节点出口
 	addr func(r *rand.Rand) string
 }
 
@@ -86,6 +97,12 @@ func faNets() []faNet {
 			return fmt.Sprintf("2001:db8:%x:%x:%x:%x:%x:%x", 0xa0+i, i, r.Intn(0xffff), r.Intn(0xffff), r.Intn(0xffff), r.Intn(0xffff))
 		}})
 	}
+	nets = append(nets,
+		faNet{id: len(nets), node: true, addr: func(*rand.Rand) string { return faNodeV4 }},
+		faNet{id: len(nets) + 1, node: true, addr: func(r *rand.Rand) string {
+			return fmt.Sprintf("%s:%x:%x:%x:%x", faNodePrefix, r.Intn(0xffff), r.Intn(0xffff), r.Intn(0xffff), r.Intn(0xffff))
+		}},
+	)
 	for _, bad := range []string{"10.0.0.5", "127.0.0.1", "", "fe80::5"} {
 		bad := bad
 		nets = append(nets, faNet{id: -1, addr: func(*rand.Rand) string { return bad }})
@@ -141,6 +158,9 @@ func faGenerate(r *rand.Rand) []faEvent {
 			}
 		} else {
 			e.did = fmt.Sprintf("d%03d", i)
+			if r.Intn(6) == 0 && i > 0 { // 重发 / 重装：复用较早的 did（品牌可能不同）
+				e.did = fmt.Sprintf("d%03d", r.Intn(i))
+			}
 			onTime := []time.Duration{0, 30 * time.Second, funnelAttrMaxOpenDelay, -3 * time.Minute, -funnelAttrMaxOpenDelay}
 			late := []time.Duration{funnelAttrMaxOpenDelay + time.Second, 20 * time.Minute, -funnelAttrMaxOpenDelay - time.Second}
 			switch k := r.Intn(10); {
@@ -157,25 +177,35 @@ func faGenerate(r *rand.Rand) []faEvent {
 }
 
 // faOracle：暴力法逐条计算每次首开的期望结果，只看 fixture 的语义字段。
-func faOracle(evs []faEvent) map[string]faExpect {
-	out := map[string]faExpect{}
+func faOracle(evs []faEvent) map[int]faExpect {
+	out := map[int]faExpect{}
 	validPlat := map[string]bool{"windows": true, "ios": true, "android": true, "macos": true, "linux": true}
+	opened := map[string]bool{} // brand|did 已处理过首开
 	for i, o := range evs {
 		if o.click {
 			continue
 		}
+		if opened[string(o.brand)+"|"+o.did] {
+			out[i] = faExpect{outcome: funnelAttrDup}
+			continue
+		}
+		opened[string(o.brand)+"|"+o.did] = true
 		d := o.at.Sub(o.createdAt)
 		if o.createdAt.IsZero() || d > funnelAttrMaxOpenDelay || d < -funnelAttrMaxOpenDelay {
-			out[o.did] = faExpect{outcome: funnelAttrLate}
+			out[i] = faExpect{outcome: funnelAttrLate}
 			continue
 		}
 		if o.net.id < 0 {
-			out[o.did] = faExpect{outcome: funnelAttrNoIP}
+			out[i] = faExpect{outcome: funnelAttrNoIP}
+			continue
+		}
+		if o.net.node {
+			out[i] = faExpect{outcome: funnelAttrNode}
 			continue
 		}
 		latest := map[string]int64{}
 		for _, c := range evs[:i] { // 只有先于这次首开处理的点击
-			if !c.click || c.sid == "" || !validPlat[c.platform] || c.net.id < 0 {
+			if !c.click || c.sid == "" || !validPlat[c.platform] || c.net.id < 0 || c.net.node {
 				continue
 			}
 			if c.brand != o.brand || c.platform != o.platform || c.net.id != o.net.id {
@@ -190,23 +220,23 @@ func faOracle(evs []faEvent) map[string]faExpect {
 		}
 		switch len(latest) {
 		case 0:
-			out[o.did] = faExpect{outcome: funnelAttrNone}
+			out[i] = faExpect{outcome: funnelAttrNone}
 		case 1:
 			for s, at := range latest {
-				out[o.did] = faExpect{outcome: funnelAttrMatched, sid: s, clickAt: at}
+				out[i] = faExpect{outcome: funnelAttrMatched, sid: s, clickAt: at}
 			}
 		default:
-			out[o.did] = faExpect{outcome: funnelAttrAmbiguous}
+			out[i] = faExpect{outcome: funnelAttrAmbiguous}
 		}
 	}
 	return out
 }
 
-func faRun(t *testing.T, s funnelAttrStore, evs []faEvent) map[string]faExpect {
+func faRun(t *testing.T, s funnelAttrStore, evs []faEvent) map[int]faExpect {
 	t.Helper()
 	ctx := context.Background()
-	got := map[string]faExpect{}
-	for _, e := range evs {
+	got := map[int]faExpect{}
+	for i, e := range evs {
 		if e.click {
 			require.NoError(t, s.recordClick(ctx, e.brand, e.platform, e.ip, e.sid, e.at))
 			continue
@@ -224,7 +254,7 @@ func faRun(t *testing.T, s funnelAttrStore, evs []faEvent) map[string]faExpect {
 		} else {
 			require.NotEqual(t, funnelAttrMatched, outcome)
 		}
-		got[e.did] = g
+		got[i] = g
 	}
 	return got
 }
@@ -241,10 +271,13 @@ func TestFunnelAttrOracle_RandomFixtures(t *testing.T) {
 
 		// 计数器与 oracle 一致（按品牌 × UTC 日）。
 		wantCounts := map[string]int{}
-		for _, e := range evs {
-			if !e.click {
-				wantCounts[string(e.brand)+":"+funnelAttrDay(e.at)+":"+want[e.did].outcome]++
-				seen[want[e.did].outcome]++
+		for i, e := range evs {
+			if e.click {
+				continue
+			}
+			seen[want[i].outcome]++
+			if want[i].outcome != funnelAttrDup { // 重复首开不计数
+				wantCounts[string(e.brand)+":"+funnelAttrDay(e.at)+":"+want[i].outcome]++
 			}
 		}
 		gotCounts := map[string]int{}
@@ -263,7 +296,7 @@ func TestFunnelAttrOracle_RandomFixtures(t *testing.T) {
 		mr.Close()
 	}
 	// fixture 要真的走到每一种结果，否则 oracle 比对是空转。
-	for _, o := range funnelAttrOutcomes {
+	for _, o := range append(funnelAttrOutcomes, funnelAttrDup) {
 		assert.Greater(t, seen[o], 20, "outcome %s rarely reached: %v", o, seen)
 	}
 }
@@ -542,14 +575,44 @@ func TestCompute_InferredLinkBridgesWebToApp(t *testing.T) {
 	assert.Equal(t, fnStepCounts(computeFunnel(p, recs, ids3, from, to, "")), fnStepCounts(computeFunnel(p, r3, ids3b, from, to, "")))
 }
 
-// GPC / optout 访客没有 sid：store 层也不写任何点击（不只靠 px 入口那道门）。
+// GPC / optout 访客没有 sid：store 层也不写任何点击（不只靠 px 入口那道门）；平台未知、私网、节点出口同样不写。
 func TestFunnelAttr_EmptySidWritesNothing(t *testing.T) {
 	s, mr := faStore(t)
 	now := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
 	require.NoError(t, s.recordClick(context.Background(), BrandKaitu, "ios", "203.0.113.5", "", now))
 	require.NoError(t, s.recordClick(context.Background(), BrandKaitu, "bogus", "203.0.113.5", "sid", now))
 	require.NoError(t, s.recordClick(context.Background(), BrandKaitu, "ios", "10.0.0.1", "sid", now))
+	require.NoError(t, s.recordClick(context.Background(), BrandKaitu, "ios", faNodeV4, "sid", now))
+	require.NoError(t, s.recordClick(context.Background(), BrandKaitu, "ios", faNodePrefix+":1:2:3:4", "sid", now))
 	for _, k := range mr.Keys() {
 		assert.False(t, strings.HasPrefix(k, "fattr:c:"), "unexpected click key %s", k)
 	}
+}
+
+// 重复首开的标记会过期（25h），不会永久占用 Redis；同 did 不同品牌互不影响。
+func TestFunnelAttr_OpenDedupe(t *testing.T) {
+	s, mr := faStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
+	require.NoError(t, s.recordClick(ctx, BrandKaitu, "ios", "203.0.113.5", "sidA", now))
+	_, o1, err := s.onFirstOpen(ctx, BrandKaitu, "ios", "203.0.113.5", "didA", now, now)
+	require.NoError(t, err)
+	_, o2, err := s.onFirstOpen(ctx, BrandKaitu, "ios", "203.0.113.5", "didA", now, now)
+	require.NoError(t, err)
+	_, o3, err := s.onFirstOpen(ctx, BrandOverleap, "ios", "203.0.113.5", "didA", now, now)
+	require.NoError(t, err)
+	assert.Equal(t, funnelAttrMatched, o1)
+	assert.Equal(t, funnelAttrDup, o2)
+	assert.Equal(t, funnelAttrNone, o3, "other brand is a different install")
+	assert.Equal(t, "1", mr.HGet("fattr:stats:kaitu:"+funnelAttrDay(now), funnelAttrMatched), "dup must not be counted")
+	assert.Equal(t, funnelAttrOpenSeenTTL, mr.TTL("fattr:open:kaitu:didA"))
+}
+
+func TestFunnelAttrNodeKeys(t *testing.T) {
+	keys := funnelAttrNodeKeys([]SlaveNode{{Ipv4: "198.51.100.7", Ipv6: "2001:db8:c0:1::1"}, {Ipv4: "198.51.100.8"}})
+	assert.True(t, keys[funnelAttrIPKey("198.51.100.7")])
+	assert.True(t, keys[funnelAttrIPKey("198.51.100.8")])
+	assert.True(t, keys[funnelAttrIPKey("2001:db8:c0:1:dead:beef::9")], "same /64 as a node's IPv6")
+	assert.False(t, keys[funnelAttrIPKey("198.51.100.9")])
+	assert.Len(t, keys, 3)
 }

@@ -1,6 +1,7 @@
 package center
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -115,4 +116,23 @@ func TestStatsIngest_FirstOpen_WritesInferredLink(t *testing.T) {
 	var n int64
 	require.NoError(t, db.Get().Model(&FunnelIdentity{}).Where("anon_id = ?", sid).Count(&n).Error)
 	assert.Zero(t, n)
+}
+
+// 生产的节点缓存从 slave_nodes 读出 IPv4 与 IPv6 /64。
+func TestFunnelAttrNodeCache_LoadsSlaveNodes(t *testing.T) {
+	skipIfNoDB(t)
+	v4, v6 := "198.51.100.211", "2001:db8:ee:77::1"
+	db.Get().Unscoped().Where("ipv4 = ?", v4).Delete(&SlaveNode{})
+	require.NoError(t, db.Get().Create(&SlaveNode{Ipv4: v4, Ipv6: v6, Name: "tfa-node", Country: "JP", SecretToken: "x"}).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Where("ipv4 = ?", v4).Delete(&SlaveNode{}) })
+
+	orig := funnelAttrNodes
+	funnelAttrNodes = &funnelAttrNodeCache{}
+	t.Cleanup(func() { funnelAttrNodes = orig })
+
+	s := defaultFunnelAttrStore()
+	ctx := context.Background()
+	assert.True(t, s.nodeEgress(ctx, funnelAttrIPKey(v4)))
+	assert.True(t, s.nodeEgress(ctx, funnelAttrIPKey("2001:db8:ee:77:aaaa::5")))
+	assert.False(t, s.nodeEgress(ctx, funnelAttrIPKey("198.51.100.212")))
 }
