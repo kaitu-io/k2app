@@ -616,3 +616,37 @@ func TestFunnelAttrNodeKeys(t *testing.T) {
 	assert.False(t, keys[funnelAttrIPKey("198.51.100.9")])
 	assert.Len(t, keys, 3)
 }
+
+// 读库失败：沿用旧集合，30 秒后重试；成功：缓存 10 分钟。
+func TestFunnelAttrNodeCache_RetryAfterFailure(t *testing.T) {
+	now := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
+	calls, fail := 0, true
+	c := &funnelAttrNodeCache{
+		now: func() time.Time { return now },
+		loadNodes: func(context.Context) ([]SlaveNode, error) {
+			calls++
+			if fail {
+				return nil, fmt.Errorf("timeout")
+			}
+			return []SlaveNode{{Ipv4: "198.51.100.7"}}, nil
+		},
+	}
+	key := funnelAttrIPKey("198.51.100.7")
+	ctx := context.Background()
+	assert.False(t, c.contains(ctx, key)) // 冷启动失败 → 空集
+	assert.Equal(t, 1, calls)
+	now = now.Add(funnelAttrNodeRetry - time.Second)
+	assert.False(t, c.contains(ctx, key))
+	assert.Equal(t, 1, calls, "no retry before funnelAttrNodeRetry")
+	fail = false
+	now = now.Add(time.Second)
+	assert.True(t, c.contains(ctx, key), "retried after funnelAttrNodeRetry")
+	assert.Equal(t, 2, calls)
+	now = now.Add(funnelAttrNodeCacheTTL - time.Second)
+	assert.True(t, c.contains(ctx, key))
+	assert.Equal(t, 2, calls, "success is cached for the full TTL")
+	fail = true
+	now = now.Add(time.Second)
+	assert.True(t, c.contains(ctx, key), "failed reload keeps the previous set")
+	assert.Equal(t, 3, calls)
+}

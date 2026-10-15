@@ -52,6 +52,7 @@ const (
 	funnelAttrDayForm      = "20060102"
 	funnelAttrOpenSeenTTL  = funnelAttrWindow + time.Hour
 	funnelAttrNodeCacheTTL = 10 * time.Minute
+	funnelAttrNodeRetry    = 30 * time.Second // 读库失败后多久重试（失败期间节点过滤用旧集合或空集）
 )
 
 // 首开匹配的结果（计数器的字段名）。
@@ -120,11 +121,14 @@ func (s funnelAttrStore) nodeEgress(ctx context.Context, ipKey string) bool {
 	return s.isNode != nil && s.isNode(ctx, ipKey)
 }
 
-// funnelAttrNodeCache：slave_nodes 的出口键集合，进程内缓存。读库失败时沿用旧集合（首次失败 = 空集）。
+// funnelAttrNodeCache：slave_nodes 的出口键集合，进程内缓存 funnelAttrNodeCacheTTL。读库失败时沿用旧集合
+// （首次失败 = 空集），funnelAttrNodeRetry 后重试，而不是带着空集用满整个 TTL。
 type funnelAttrNodeCache struct {
-	mu       sync.Mutex
-	keys     map[string]bool
-	loadedAt time.Time
+	mu        sync.Mutex
+	keys      map[string]bool
+	nextLoad  time.Time
+	now       func() time.Time                               // 测试注入；nil = time.Now
+	loadNodes func(ctx context.Context) ([]SlaveNode, error) // 测试注入；nil = 读 slave_nodes
 }
 
 var funnelAttrNodes = &funnelAttrNodeCache{}
@@ -132,16 +136,28 @@ var funnelAttrNodes = &funnelAttrNodeCache{}
 func (c *funnelAttrNodeCache) contains(ctx context.Context, ipKey string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.keys == nil || time.Since(c.loadedAt) > funnelAttrNodeCacheTTL {
-		c.loadedAt = time.Now()
-		var rows []SlaveNode
-		if err := db.Get().WithContext(ctx).Model(&SlaveNode{}).Select("ipv4", "ipv6").Find(&rows).Error; err != nil {
+	now := time.Now()
+	if c.now != nil {
+		now = c.now()
+	}
+	if c.keys == nil || !now.Before(c.nextLoad) {
+		load := c.loadNodes
+		if load == nil {
+			load = func(ctx context.Context) ([]SlaveNode, error) {
+				var rows []SlaveNode
+				err := db.Get().WithContext(ctx).Model(&SlaveNode{}).Select("ipv4", "ipv6").Find(&rows).Error
+				return rows, err
+			}
+		}
+		if rows, err := load(ctx); err != nil {
 			log.Warnf(ctx, "[FunnelAttr] load node IPs failed: %v", err)
 			if c.keys == nil {
 				c.keys = map[string]bool{}
 			}
+			c.nextLoad = now.Add(funnelAttrNodeRetry)
 		} else {
 			c.keys = funnelAttrNodeKeys(rows)
+			c.nextLoad = now.Add(funnelAttrNodeCacheTTL)
 		}
 	}
 	return c.keys[ipKey]
