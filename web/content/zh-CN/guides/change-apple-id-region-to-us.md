@@ -4,6 +4,7 @@ date: 2026-10-15
 summary: "国区 Apple ID 可以直接改成美区：先清空余额、取消订阅并等到期、退出家人共享，再在 iPhone「媒体与购买项目」里改国家或地区。本文按苹果官方文档整理条件、各设备步骤，以及付款方式选不到「无」时怎么办。"
 tags: ["美区苹果ID", "Apple ID", "转区", "App Store"]
 brand: kaitu
+section: apple-id
 draft: true
 ---
 
