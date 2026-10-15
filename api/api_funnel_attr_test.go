@@ -3,6 +3,8 @@ package center
 import (
 	"fmt"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -36,6 +38,19 @@ func faPxClick(m, ip, platform string) *TestRequest {
 		WithHeader("User-Agent", pxDesktopUA).WithHeader("X-Forwarded-For", ip)
 }
 
+// faExec 按生产链路的形态发请求：TCP 对端是代理（ALB），访客 IP 在 X-Forwarded-For 里。
+// TestRequest.Execute 不设 RemoteAddr，gin 的 ClientIP() 会因此返回空。
+func faExec(r *TestRequest, router http.Handler) *httptest.ResponseRecorder {
+	req, err := r.Build()
+	if err != nil {
+		panic(err)
+	}
+	req.RemoteAddr = "172.31.32.50:40000"
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
 // GPC / optout 的点击一个出口哈希都不写；普通点击写一个。
 func TestPx_InstallClick_AttributionRespectsConsent(t *testing.T) {
 	skipIfNoConfig(t)
@@ -43,14 +58,14 @@ func TestPx_InstallClick_AttributionRespectsConsent(t *testing.T) {
 	ip := faTestIP()
 	before := len(faClickKeys(t))
 
-	faPxClick("tfa", ip, "ios").WithHeader("Sec-GPC", "1").Execute(pxRouter())
+	faExec(faPxClick("tfa", ip, "ios").WithHeader("Sec-GPC", "1"), pxRouter())
 	assert.Len(t, faClickKeys(t), before, "GPC click must not be recorded")
-	faPxClick("tfa", ip, "ios").WithCookie(CookieFunnelSid, funnelSidOptOut).Execute(pxRouter())
+	faExec(faPxClick("tfa", ip, "ios").WithCookie(CookieFunnelSid, funnelSidOptOut), pxRouter())
 	assert.Len(t, faClickKeys(t), before, "opted-out click must not be recorded")
-	pxReq("tfa", "install_view").WithHeader("X-Forwarded-For", ip).Execute(pxRouter())
+	faExec(pxReq("tfa", "install_view").WithHeader("X-Forwarded-For", ip), pxRouter())
 	assert.Len(t, faClickKeys(t), before, "only install_click is recorded")
 
-	faPxClick("tfa", ip, "ios").Execute(pxRouter())
+	faExec(faPxClick("tfa", ip, "ios"), pxRouter())
 	assert.Len(t, faClickKeys(t), before+1)
 }
 
@@ -60,7 +75,7 @@ func TestStatsIngest_FirstOpen_WritesInferredLink(t *testing.T) {
 	pxMarker(t)
 	prefix := faTestPrefix()
 	ip := prefix + "::1"
-	w := faPxClick("tfa", ip, "macos").Execute(pxRouter())
+	w := faExec(faPxClick("tfa", ip, "macos"), pxRouter())
 	sid := sidFromSetCookie(w)
 	require.NotEmpty(t, sid)
 
@@ -78,7 +93,7 @@ func TestStatsIngest_FirstOpen_WritesInferredLink(t *testing.T) {
 		t.Cleanup(func() { db.Get().Where("did = ?", did).Delete(&FunnelInferredLink{}) })
 		it := sfItem(m, did, "app_first_open")
 		it["os"] = tc.os
-		sfPost(it).WithHeader("X-Forwarded-For", tc.ip).Execute(statsFunnelRouter())
+		faExec(sfPost(it).WithHeader("X-Forwarded-For", tc.ip), statsFunnelRouter())
 
 		var link FunnelInferredLink
 		found := false

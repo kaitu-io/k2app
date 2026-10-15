@@ -369,10 +369,9 @@ func applyFunnelInferredLinks(recs []funnelRecord, identities map[string]uint64,
 		if r.AnonKind != "did" {
 			continue
 		}
+		// alias 只在 did 没有任何用户映射时建立，之后也不会再被赋值，所以无需复查。
 		if s, ok := alias[r.AnonID]; ok {
-			if _, linked := ids["did:"+r.AnonID]; !linked {
-				r.AnonKind, r.AnonID = "sid", s
-			}
+			r.AnonKind, r.AnonID = "sid", s
 		}
 	}
 	return out, ids, sum

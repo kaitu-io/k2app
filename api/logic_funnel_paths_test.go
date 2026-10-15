@@ -70,6 +70,10 @@ func TestFunnelPaths_RegistryContent(t *testing.T) {
 		{"web_install", 7 * day, []step{
 			{"访问", "web", views}, {"安装页", "", []string{"install_view"}}, {"点下载", "", []string{"install_click"}},
 		}},
+		{"web_to_app", 14 * day, []step{
+			{"点下载", "web", []string{"install_click"}}, {"首次打开", "", []string{"app_first_open"}},
+			{"注册 / 登录", "", []string{"signup", "auth_done"}}, {"付款", "", []string{"purchase", "renewal"}},
+		}},
 		{"guide_conversion", 14 * day, []step{
 			{"读指南", "web", []string{"page_view"}},
 			{"注册 / 登录", "", []string{"signup", "auth_done"}}, {"付款", "", []string{"purchase", "renewal"}},
@@ -194,6 +198,12 @@ var funnelStepEmitSites = map[string][][]string{
 		{"web/src/components/FunnelPageView.tsx"},
 		{"web/src/app/[locale]/install/InstallClient.tsx"},   // 安装页挂载即发
 		{"web/src/app/[locale]/install/platform-panels.tsx"}, // 下载按钮：这条路径的终点动作
+	},
+	"web_to_app": {
+		{"web/src/app/[locale]/install/platform-panels.tsx"}, // 下载按钮
+		{"webapp/src/main.tsx"},                              // 启动即发（每次安装一次）
+		{"web/src/app/[locale]/purchase/PurchaseClient.tsx", "webapp/src/components/LoginDialog.tsx", "webapp/src/components/EmailLoginForm.tsx"},
+		nil, // 事实
 	},
 	"guide_conversion": {
 		{"web/src/components/FunnelPageView.tsx"}, // 每个页面挂载即发（PathPrefix 限 /guides/）

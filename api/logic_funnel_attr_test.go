@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -539,4 +540,16 @@ func TestCompute_InferredLinkBridgesWebToApp(t *testing.T) {
 	assert.Equal(t, 1, sum.Conflicts)
 	p := fnMustPath(t, "web_to_app")
 	assert.Equal(t, fnStepCounts(computeFunnel(p, recs, ids3, from, to, "")), fnStepCounts(computeFunnel(p, r3, ids3b, from, to, "")))
+}
+
+// GPC / optout 访客没有 sid：store 层也不写任何点击（不只靠 px 入口那道门）。
+func TestFunnelAttr_EmptySidWritesNothing(t *testing.T) {
+	s, mr := faStore(t)
+	now := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
+	require.NoError(t, s.recordClick(context.Background(), BrandKaitu, "ios", "203.0.113.5", "", now))
+	require.NoError(t, s.recordClick(context.Background(), BrandKaitu, "bogus", "203.0.113.5", "sid", now))
+	require.NoError(t, s.recordClick(context.Background(), BrandKaitu, "ios", "10.0.0.1", "sid", now))
+	for _, k := range mr.Keys() {
+		assert.False(t, strings.HasPrefix(k, "fattr:c:"), "unexpected click key %s", k)
+	}
 }
