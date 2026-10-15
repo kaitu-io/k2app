@@ -28,6 +28,7 @@ const RANGES = [
 const DIM_LABELS: Record<string, string> = {
   source: "来源",
   utm_campaign: "投放活动",
+  landing_path: "落地页",
   country: "国家",
   os: "系统",
   device: "设备",

@@ -1,6 +1,7 @@
 package center
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -49,6 +50,8 @@ func TestFunnelPaths_RegistryContent(t *testing.T) {
 		label, surface string
 		events         []string
 	}
+	// 只有指南转化的进入步带路径前缀；其余步骤一律不限路径。
+	pathPrefix := map[string]string{"guide_conversion/0": "/guides/"}
 	views := []string{"page_view", "pricing_view", "checkout_view", "install_view", "welcome_view"}
 	day := 24 * time.Hour
 	want := []struct {
@@ -66,6 +69,10 @@ func TestFunnelPaths_RegistryContent(t *testing.T) {
 		}},
 		{"web_install", 7 * day, []step{
 			{"访问", "web", views}, {"安装页", "", []string{"install_view"}}, {"点下载", "", []string{"install_click"}},
+		}},
+		{"guide_conversion", 14 * day, []step{
+			{"读指南", "web", []string{"page_view"}},
+			{"注册 / 登录", "", []string{"signup", "auth_done"}}, {"付款", "", []string{"purchase", "renewal"}},
 		}},
 		{"app_activation", 7 * day, []step{
 			{"首次打开", "", []string{"app_first_open"}}, {"登录", "app", []string{"auth_done"}},
@@ -90,6 +97,7 @@ func TestFunnelPaths_RegistryContent(t *testing.T) {
 			assert.Equal(t, ws.surface, p.Steps[j].Surface, "%s step %d", w.key, j)
 			assert.Equal(t, ws.events, p.Steps[j].Events, "%s step %d", w.key, j)
 			assert.Empty(t, p.Steps[j].UtmSource, "%s step %d", w.key, j)
+			assert.Equal(t, pathPrefix[fmt.Sprintf("%s/%d", w.key, j)], p.Steps[j].PathPrefix, "%s step %d", w.key, j)
 		}
 	}
 }
@@ -152,7 +160,7 @@ func TestFunnelPaths_EventNames(t *testing.T) {
 }
 
 func TestFunnelGroupDims(t *testing.T) {
-	assert.Equal(t, []string{"source", "utm_campaign", "country", "os", "device", "app_version", "paywall_source", "plan", "channel"}, funnelGroupDims)
+	assert.Equal(t, []string{"source", "utm_campaign", "landing_path", "country", "os", "device", "app_version", "paywall_source", "plan", "channel"}, funnelGroupDims)
 }
 
 // web_checkout_auth 量的是购买页的内联登录，不是全站登录：标题问句必须说清楚。
@@ -186,6 +194,12 @@ var funnelStepEmitSites = map[string][][]string{
 		{"web/src/components/FunnelPageView.tsx"},
 		{"web/src/app/[locale]/install/InstallClient.tsx"},   // 安装页挂载即发
 		{"web/src/app/[locale]/install/platform-panels.tsx"}, // 下载按钮：这条路径的终点动作
+	},
+	"guide_conversion": {
+		{"web/src/components/FunnelPageView.tsx"}, // 每个页面挂载即发（PathPrefix 限 /guides/）
+		// signup 是事实（新用户从哪登录都有）；auth_done 覆盖已有账号的登录。
+		{"web/src/app/[locale]/purchase/PurchaseClient.tsx", "webapp/src/components/LoginDialog.tsx", "webapp/src/components/EmailLoginForm.tsx"},
+		nil, // 事实
 	},
 	"app_activation": {
 		{"webapp/src/main.tsx"},                   // 启动即发（每设备一次）

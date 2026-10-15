@@ -28,6 +28,7 @@ func fnWithRefHost(s string) fnRecOpt     { return func(r *funnelRecord) { r.Ref
 func fnWithUtmCampaign(s string) fnRecOpt { return func(r *funnelRecord) { r.UtmCampaign = s } }
 func fnWithCountry(s string) fnRecOpt     { return func(r *funnelRecord) { r.Country = s } }
 func fnWithAt(at time.Time) fnRecOpt      { return func(r *funnelRecord) { r.At = at } }
+func fnWithPath(s string) fnRecOpt        { return func(r *funnelRecord) { r.Path = s } }
 
 // fnRec 构造一条记录。person："sid:A" / "did:D"（匿名）、"u:7"（已登录）、""（无任何身份）。
 // 面的默认值：事实 = ""；单面事件 = 那个面；双面事件 = did → app，否则 web。
@@ -479,7 +480,7 @@ func TestCompute_GroupByPlanUsesLastStep(t *testing.T) {
 }
 
 func TestCompute_GroupByEntryDims(t *testing.T) {
-	entry := fnRec("did:D", "paywall_view", 0, fnWithSource("quota_wall"), fnWithUtmCampaign("c1"), fnWithCountry("JP"))
+	entry := fnRec("did:D", "paywall_view", 0, fnWithSource("quota_wall"), fnWithUtmCampaign("c1"), fnWithCountry("JP"), fnWithPath("/guides/x"))
 	entry.OS, entry.Device, entry.AppVersion = "ios", "mobile", "0.4.10"
 	later := fnRec("did:D", "checkout_start", 1, fnWithSource("other"), fnWithCountry("US"))
 	later.OS = "android"
@@ -487,6 +488,7 @@ func TestCompute_GroupByEntryDims(t *testing.T) {
 	recs := []funnelRecord{entry, later, bare}
 	want := map[string][2]string{
 		"utm_campaign":   {"c1", "unknown"},
+		"landing_path":   {"/guides/x", "unknown"},
 		"country":        {"JP", "unknown"},
 		"os":             {"ios", "unknown"},
 		"device":         {"mobile", "unknown"},
@@ -831,6 +833,8 @@ func genFunnelFixture(seed int64, p funnelPath) funnelFixture {
 			fnWithUtmCampaign(pick("", "c1", "c2")), fnWithCountry(pick("", "JP", "US", "DE")),
 			fnWithPlan(pick("", "p1", "p2")), fnWithChannel(pick("", "stripe", "apple")), fnWithSource(pick("", "quota", "banner")))
 		r.OS, r.Device, r.AppVersion = pick("", "ios", "macos"), pick("", "mobile", "desktop"), pick("", "0.4.9", "0.4.10")
+		// 路径由时间偏移派生、不消耗 rng：加这一维不改变其它维度的既有随机序列。
+		r.Path = []string{"/guides/a", "/guides/b", "/guides/a", "/guides/b", "/guides", ""}[off%6]
 		if funnelEventKind(ev) != FunnelKindFact && rng.Intn(4) == 0 {
 			r.Surface = pick(FunnelSurfaceWeb, FunnelSurfaceApp)
 		}
@@ -1026,6 +1030,9 @@ func fnOracleMatches(st funnelStep, r funnelRecord) bool {
 	if st.UtmSource != "" && st.UtmSource != r.UtmSource {
 		return false
 	}
+	if st.PathPrefix != "" && (len(r.Path) < len(st.PathPrefix) || r.Path[:len(st.PathPrefix)] != st.PathPrefix) {
+		return false
+	}
 	return true
 }
 
@@ -1043,6 +1050,8 @@ func fnOracleGroupKey(groupBy string, entry, last funnelRecord) string {
 		return v
 	case "utm_campaign":
 		v = entry.UtmCampaign
+	case "landing_path":
+		v = entry.Path
 	case "country":
 		v = entry.Country
 	case "os":
@@ -1238,4 +1247,32 @@ func TestCompute_RulingsOnStepEvents(t *testing.T) {
 		assert.Equal(t, []int{1, 1, 1, 1}, fnStepCounts(fnCompute30d(t, "web_purchase", web, nil, "")), "plan_select=%v", withPlanSelect)
 		assert.Equal(t, []int{1, 1, 1}, fnStepCounts(fnCompute30d(t, "app_purchase", app, map[string]uint64{"did:D": 7}, "")), "plan_select=%v", withPlanSelect)
 	}
+}
+
+// 指南转化：只有 /guides/ 下的 page_view 能进入；按 landing_path 分组即每篇指南的转化。
+// 匿名读者登录后经 identity 映射与付款事实串成一个人；老用户靠 auth_done 走过第 2 步。
+func TestCompute_GuideConversionByLandingPath(t *testing.T) {
+	recs := []funnelRecord{
+		// 新用户：读 /guides/a → 注册（事实）→ 首购
+		fnRec("sid:A", "page_view", 0, fnWithPath("/guides/a")),
+		fnRec("u:7", "signup", 5),
+		fnRec("u:7", "purchase", 9),
+		// 老用户：读 /guides/a → 网页登录 → 续费
+		fnRec("sid:B", "page_view", 0, fnWithPath("/guides/a")),
+		fnRec("sid:B", "auth_done", 2),
+		fnRec("u:8", "renewal", 4),
+		// 读 /guides/b 后什么都没做
+		fnRec("sid:C", "page_view", 0, fnWithPath("/guides/b")),
+		// 列表页与其它页面不进入
+		fnRec("sid:D", "page_view", 0, fnWithPath("/guides")),
+		fnRec("sid:E", "page_view", 0, fnWithPath("/pricing")),
+		fnRec("sid:E", "auth_done", 1),
+	}
+	ids := map[string]uint64{"sid:A": 7, "sid:B": 8}
+	res := fnCompute30d(t, "guide_conversion", recs, ids, "landing_path")
+	assert.Equal(t, []int{3, 2, 2}, []int{res.Steps[0].Count, res.Steps[1].Count, res.Steps[2].Count})
+	assert.Equal(t, []FunnelGroup{
+		{Key: "/guides/a", Steps: []int{2, 2, 2}},
+		{Key: "/guides/b", Steps: []int{1, 0, 0}},
+	}, res.Groups)
 }

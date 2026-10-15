@@ -14,6 +14,9 @@ type funnelStep struct {
 	Events    []string // 任一命中
 	Surface   string   // "" = 不限；非空时事实（Surface==""）永远不匹配
 	UtmSource string   // "" = 不限
+	// PathPrefix："" = 不限；非空时只匹配 Path 以它开头的记录（web 事件的 Path 已去掉 locale 前缀）。
+	// 事实与 app 事件没有 Path，永远不匹配。
+	PathPrefix string
 }
 
 type funnelPath struct {
@@ -72,6 +75,19 @@ var funnelPathRegistry = []funnelPath{
 			{Label: "访问", Events: funnelViewsWeb(), Surface: FunnelSurfaceWeb},
 			{Label: "安装页", Events: []string{"install_view"}},
 			{Label: "点下载", Events: []string{"install_click"}},
+		},
+	},
+	{
+		// 长尾指南的归因：进入记录就是指南页本身（搜索进来的人第一条 page_view 没有 utm），
+		// 所以按 landing_path 分组即「每篇指南带来了多少注册 / 付款」。
+		// 已登录的老用户读完直接买不会产生第 2 步——看他们用 web_purchase 按 landing_path 分组。
+		// 局限：读完去下载 App、在 App 里注册 / 付款的人，App 侧身份（did）与网页 sid 不关联，算作流失。
+		Key: "guide_conversion", Title: "指南转化", Question: "读过指南的人里，有多少注册 / 登录并最终付款？按落地页分组看每篇指南。",
+		Window: 14 * funnelDay,
+		Steps: []funnelStep{
+			{Label: "读指南", Events: []string{"page_view"}, Surface: FunnelSurfaceWeb, PathPrefix: "/guides/"},
+			{Label: "注册 / 登录", Events: []string{funnelFactSignup, "auth_done"}},
+			{Label: "付款", Events: funnelPaidFacts},
 		},
 	},
 	{

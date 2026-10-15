@@ -4,6 +4,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -11,7 +12,7 @@ import (
 // 不碰数据库、不读时钟；结果不依赖 map 迭代顺序。
 
 // funnelGroupDims 是 computeFunnel 接受的 groupBy 取值；其它值一律按不分组处理。
-var funnelGroupDims = []string{"source", "utm_campaign", "country", "os", "device", "app_version", "paywall_source", "plan", "channel"}
+var funnelGroupDims = []string{"source", "utm_campaign", "landing_path", "country", "os", "device", "app_version", "paywall_source", "plan", "channel"}
 
 const (
 	funnelMaxGroups     = 50
@@ -54,6 +55,9 @@ func (s funnelStep) matches(r *funnelRecord) bool {
 	if s.UtmSource != "" && r.UtmSource != s.UtmSource {
 		return false
 	}
+	if s.PathPrefix != "" && !strings.HasPrefix(r.Path, s.PathPrefix) {
+		return false
+	}
 	return slices.Contains(s.Events, r.Event)
 }
 
@@ -93,6 +97,8 @@ func funnelGroupKey(groupBy string, entry, last *funnelRecord) string {
 		return funnelGroupDirect
 	case "utm_campaign":
 		return funnelOrUnknown(entry.UtmCampaign)
+	case "landing_path":
+		return funnelOrUnknown(entry.Path)
 	case "country":
 		return funnelOrUnknown(entry.Country)
 	case "os":
