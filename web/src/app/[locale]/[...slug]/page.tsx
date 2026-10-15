@@ -150,37 +150,64 @@ function CategoryListPage({
   return (
     <>
       <Header />
-      <main className="mx-auto max-w-3xl px-4 py-12">
+      <main className="mx-auto max-w-5xl px-4 py-12">
         <Breadcrumb locale={locale} brand={brand} items={[{ label: category.name }]} className="mb-6" />
-        <h1 className="mb-8 text-3xl font-bold">{category.name}</h1>
-        {posts.length === 0 ? (
-          <p className="text-muted-foreground">
-            {locale.startsWith('zh') ? '即将上线，敬请期待。' : 'Coming soon.'}
-          </p>
-        ) : (
-          groupPostsBySection(posts, category.sections, '更多').map((group) => {
-            const PostTitle = group.name ? 'h3' : 'h2';
-            return (
-              <section key={group.key ?? 'other'} className="mb-12 last:mb-0">
-                {group.name && (
-                  <h2 className="mb-6 border-b pb-2 text-2xl font-bold">{group.name}</h2>
-                )}
-                <ul className="space-y-6">
-                  {group.posts.map((post) => (
-                    <li key={post.slug}>
-                      <Link href={`/${post.slug}`} className="block hover:underline">
-                        <PostTitle className="text-xl font-semibold">{post.title}</PostTitle>
-                        {post.summary && (
-                          <p className="mt-2 text-muted-foreground">{post.summary}</p>
-                        )}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            );
-          })
+        <h1 className="text-3xl font-bold">{category.name}</h1>
+        {category.description && (
+          <p className="mt-3 max-w-2xl text-muted-foreground">{category.description}</p>
         )}
+        <div className="mt-10">
+          {posts.length === 0 ? (
+            <p className="text-muted-foreground">
+              {locale.startsWith('zh') ? '即将上线，敬请期待。' : 'Coming soon.'}
+            </p>
+          ) : (
+            groupPostsBySection(posts, category.sections, '更多').map((group) => {
+              const PostTitle = group.name ? 'h3' : 'h2';
+              return (
+                <section key={group.key ?? 'other'} className="mb-14 last:mb-0">
+                  {group.name && (
+                    <h2 className="mb-5 flex items-baseline gap-3 text-2xl font-bold">
+                      {group.name}
+                      <span className="text-sm font-normal text-muted-foreground">
+                        {group.posts.length} 篇
+                      </span>
+                    </h2>
+                  )}
+                  <ul className="grid gap-4 md:grid-cols-2">
+                    {group.posts.map((post) => {
+                      const pinned = post.order !== undefined;
+                      return (
+                        <li key={post.slug} className={pinned ? 'md:col-span-2' : undefined}>
+                          <Link
+                            href={`/${post.slug}`}
+                            className={`group flex h-full flex-col rounded-xl border p-5 transition-colors hover:border-primary ${
+                              pinned ? 'border-primary/40 bg-primary/5' : 'bg-card'
+                            }`}
+                          >
+                            {pinned && (
+                              <span className="mb-2 w-fit rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-medium text-primary">
+                                {locale === 'zh-CN' ? '先看这篇' : '先看這篇'}
+                              </span>
+                            )}
+                            <PostTitle className="text-lg font-semibold leading-snug group-hover:text-primary">
+                              {post.title}
+                            </PostTitle>
+                            {post.summary && (
+                              <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+                                {post.summary}
+                              </p>
+                            )}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              );
+            })
+          )}
+        </div>
       </main>
       <Footer />
     </>
