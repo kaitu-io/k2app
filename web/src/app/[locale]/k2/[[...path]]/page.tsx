@@ -124,7 +124,7 @@ export async function generateMetadata({
     locale,
     pathname,
     {
-      title: `k2 | ${brand.displayName}`,
+      title: `k2 | ${brand.wordmark}`,
     },
     brand
   );

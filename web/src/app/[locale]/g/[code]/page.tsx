@@ -9,7 +9,7 @@ import { siteBrand } from '@/lib/brands';
 type Locale = (typeof routing.locales)[number];
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: `兑换授权码 | ${siteBrand().displayName}` };
+  return { title: `兑换授权码 | ${siteBrand().wordmark}` };
 }
 
 export default async function GiftCodeDirectPage({

@@ -10,7 +10,7 @@ type Locale = (typeof routing.locales)[number];
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
-    title: `兑换授权码 | ${siteBrand().displayName}`,
+    title: `兑换授权码 | ${siteBrand().wordmark}`,
     // zh copy uses brand.wordmark, never the bare latin brand word.
     description: `输入授权码，免费获取${siteBrand().wordmark}会员`,
   };

@@ -30,6 +30,7 @@ import { generateMetadata as generatePageMetadata } from '../metadata';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import Breadcrumb from '@/components/Breadcrumb';
+import { faqPageJsonLd } from '@/lib/content-faq';
 import type { Brand } from '@/lib/brands';
 
 type Props = {
@@ -110,6 +111,7 @@ export default async function CatchAll({ params }: Props) {
       publisher: { '@type': 'Organization', name: brand.displayName, url: brand.baseUrl },
       mainEntityOfPage: { '@type': 'WebPage', '@id': `${brand.baseUrl}/${locale}/${post.slug}` },
     };
+    const faq = faqPageJsonLd(post.content);
 
     return (
       <>
@@ -117,6 +119,12 @@ export default async function CatchAll({ params }: Props) {
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(article) }}
         />
+        {faq && (
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(faq) }}
+          />
+        )}
         <PostDetailPage post={post} category={category} locale={locale} brand={brand} />
       </>
     );
@@ -217,7 +225,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       locale,
       pathname,
       {
-        title: `${category.name} | ${brand.displayName}`,
+        title: `${category.name} | ${brand.wordmark}`,
         description: category.description,
       },
       brand
@@ -237,7 +245,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       locale,
       pathname,
       {
-        title: `${post.title} | ${brand.displayName}`,
+        title: `${post.title} | ${brand.wordmark}`,
         description: post.summary,
         ogType: 'article',
         ogImage: post.coverImage,
