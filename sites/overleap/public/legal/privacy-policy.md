@@ -50,19 +50,23 @@
 
 4.3 **Payment Records**: Transaction records are retained for 7 years as required by financial regulations. This includes records of the subscription terms you agreed to at checkout (time, country and wording), kept as proof of your consent.
 
-4.4 **Support Records**: Communication records related to customer support are retained for 2 years after issue resolution.
+4.4 **Website Visit Statistics**: Retained for 120 days, then automatically deleted (see Section 5.3).
 
-4.5 **Deletion Requests**: You may request deletion of your account and related data at any time, and we will process your request within 30 days.
+4.5 **Support Records**: Communication records related to customer support are retained for 2 years after issue resolution.
+
+4.6 **Deletion Requests**: You may request deletion of your account and related data at any time, and we will process your request within 30 days.
 
 ### 5. Cookies and Tracking Technologies
 
 5.1 **Essential Cookies**: We use essential cookies to maintain your login session and remember your preferences.
 
-5.2 **No Analytics Cookies**: Our website does not use analytics cookies or session recording.
+5.2 **No Analytics Cookies**: Our website does not use analytics cookies or session recording, and stores nothing on your device for statistics.
 
-5.3 **No Ad Tracking**: We do not use any third-party ad trackers or marketing cookies.
+5.3 **Website Visit Statistics**: To understand which pages lead people to sign up and subscribe, our website sends us a small first-party record when you view a page, open the pricing page, sign in or start a checkout. Each record contains the page path, any campaign tags in the link (`utm_*`), the website that referred you, your country (looked up from your IP address when the record arrives — **the IP address itself is not stored with the record**) and your device type. To tell one visit's pages apart from another's, the page creates a random identifier that exists only in your browser's memory while the page is open; it is never written to a cookie or to storage on your device, and a new one is created every time you reload the page or open a new tab. If you are signed in to your account on our website, the visit is linked to your account so we can count which pages lead to purchases. We do not use this information for advertising or share it with anyone, and we do not combine it with information from other websites. If your browser sends the Global Privacy Control signal, the record is counted without the identifier or account link. We rely on our legitimate interest in improving our website; you can object at any time by contacting us.
 
-5.4 **Cookie Management**: You can manage or disable cookies through your browser settings, though this may affect certain features.
+5.4 **No Ad Tracking**: We do not use any third-party ad trackers or marketing cookies.
+
+5.5 **Cookie Management**: You can manage or disable cookies through your browser settings, though this may affect certain features.
 
 ### 6. Third-Party Services
 

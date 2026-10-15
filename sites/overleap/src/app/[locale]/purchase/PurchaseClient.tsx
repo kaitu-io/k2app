@@ -16,6 +16,7 @@ import { api, ApiError, ErrorCode, type Plan } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { displayCurrency, formatMinor, pickAmount, type DisplayCurrency } from '@/lib/pricing';
+import { track } from '@/lib/funnel';
 
 /** A plan's price in the display currency: API `currencyPrices` (Stripe truth) first, else `price` (USD minor units). */
 function planAmount(p: Plan, currency: DisplayCurrency): { amount: number; currency: string } {
@@ -78,6 +79,7 @@ export default function PurchaseClient() {
     setError(null);
     try {
       const { url } = await api.createStripeCheckout(selectedPid);
+      track('checkout_start', { plan: selectedPid });
       window.location.assign(url);
     } catch (err) {
       setError(err instanceof ApiError && err.code === ErrorCode.ChannelUnavailable ? t('channelUnavailable') : t('genericError'));

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { safeNext } from '@/lib/safe-next';
+import { track } from '@/lib/funnel';
 
 type Mode = 'code' | 'password';
 
@@ -36,6 +37,7 @@ export default function LoginForm() {
 
   async function finish(accessToken: string) {
     await api.applyLoginCredentials(accessToken);
+    track('auth_done'); // after the auth cookie exists, so the Center can tie this visit to the account
     await refresh(); // the effect above redirects once the profile arrives
   }
 
