@@ -5,6 +5,7 @@ summary: "用临时手机号注册 Telegram、Signal、WhatsApp 后，必须立�
 tags: ["安全通讯", "两步验证", "Telegram安全", "Signal注册锁", "隐私保护", "账号安全"]
 brand: kaitu
 draft: false
+section: kaitu
 ---
 
 手机号只是"入场券"，不是"房产证"。注册完成后，**必须立即**通过"两步验证"和"恢复密钥"将账号所有权从手机号转移到你掌握的密码上。

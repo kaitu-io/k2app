@@ -5,6 +5,7 @@ summary: "為什麼剛連上不是峰速？遇到存取問題怎麼排查？講�
 tags: ["k2cc", "故障排查"]
 brand: kaitu
 draft: false
+section: kaitu
 ---
 
 Overleap 使用 <strong>k2cc 自研壅塞控制演算法</strong>，能在 30% 掉包率下保持滿速。但和所有 TCP 類演算法一樣，<strong>首次連線需要 30 秒到 2 分鐘探測峰值頻寬</strong>，期間速度會逐步上升。如果遇到存取問題，按<strong>斷網檢查 → 重啟路由器 → 切換手機熱點 → 提交服務單或投訴電信業者</strong> 這條決策樹排查，60 秒就能定位根本原因。

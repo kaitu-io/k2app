@@ -28,6 +28,15 @@ export interface ContentCategory {
   slug: string;
   name: string;
   description?: string;
+  /** 列表页分组（有序，已按 locale 取名）；未配置时为空数组。 */
+  sections: { key: string; name: string }[];
+}
+
+/** 列表页的一组文章。key 为 null 的是末尾的「更多」组。 */
+export interface ContentPostGroup {
+  key: string | null;
+  name: string;
+  posts: ContentPost[];
 }
 
 /** Resolve a registered category for the given locale, or null. */
@@ -40,7 +49,37 @@ export function findCategory(locale: string, slug: string, brand: Brand = siteBr
     slug,
     name: pick(def.name) ?? slug,
     description: description === undefined ? undefined : fillBrandTemplate(description, brand),
+    sections: (def.sections ?? []).map((sec) => ({ key: sec.key, name: fillBrandTemplate(pick(sec.name) ?? sec.key, brand) })),
   };
+}
+
+/**
+ * 按分类配置的 sections 给列表页分组：组顺序 = 配置顺序；组内带 frontmatter `order` 的置顶（升序，
+ * 用于专题的汇总页），其余保持传入顺序（新到旧）；
+ * 没有 section 或 section 未登记的文章进末尾的「更多」组；空组不返回。
+ * 分类没配 sections 时返回单组（key null、name 为空），调用方据此不渲染组标题。
+ */
+export function groupPostsBySection(
+  posts: ContentPost[],
+  sections: ContentCategory['sections'],
+  otherName: string
+): ContentPostGroup[] {
+  if (sections.length === 0) return posts.length ? [{ key: null, name: '', posts }] : [];
+  const known = new Set(sections.map((sec) => sec.key));
+  // Array.prototype.sort 是稳定的：没有 order 的文章保持传入的新到旧顺序。
+  const pinnedFirst = (list: ContentPost[]) =>
+    [...list].sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
+  const groups: ContentPostGroup[] = sections.map((sec) => ({
+    key: sec.key,
+    name: sec.name,
+    posts: pinnedFirst(posts.filter((p) => p.section === sec.key)),
+  }));
+  groups.push({
+    key: null,
+    name: otherName,
+    posts: posts.filter((p) => !p.section || !known.has(p.section)),
+  });
+  return groups.filter((g) => g.posts.length > 0);
 }
 
 /** Registered category slugs (for static params generation). */

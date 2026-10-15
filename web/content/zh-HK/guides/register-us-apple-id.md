@@ -5,6 +5,7 @@ summary: "申請美區 Apple ID 最簡單嘅方法係網頁申請：用全新電
 tags: ["美区苹果ID", "Apple ID", "海外账号"]
 brand: kaitu
 draft: false
+section: apple-id
 ---
 
 <strong>申請美區 Apple ID 最簡單嘅方法係用網頁申請：打開 account.apple.com，將「國家或地區」揀做美國，用一個從未申請過 Apple ID 嘅電郵完成驗證就得喇——全程唔使美國信用卡，本地手提電話號碼（+86）都用得。</strong>唯一硬性前提係申請嗰陣部電腦或者手提電話要喺純美利堅互聯網環境下，如果唔係 Apple 會用 IP 判定你嘅真實地區，搞到申請失敗或者付款方式度搵唔到「無（None）」。

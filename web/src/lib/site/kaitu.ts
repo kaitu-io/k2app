@@ -117,6 +117,11 @@ export const KAITU_SITE: SiteConfig = {
         'zh-TW': '使用方法、最佳實踐與故障排查指南',
         'zh-HK': '使用方法、最佳實踐與故障排查指南',
       },
+      sections: [
+        { key: 'kaitu', name: { 'zh-CN': '{wordmark}入门与使用', 'zh-TW': '{wordmark}入門與使用', 'zh-HK': '{wordmark}入門與使用' } },
+        { key: 'study', name: { 'zh-CN': '国际学校、留学与网课', 'zh-TW': '國際學校、留學與網課', 'zh-HK': '國際學校、留學與網課' } },
+        { key: 'apple-id', name: { 'zh-CN': '海外 Apple ID', 'zh-TW': '海外 Apple ID', 'zh-HK': '海外 Apple ID' } },
+      ],
     },
   },
   seo: {

@@ -30,6 +30,12 @@ export interface ContentCategoryDef {
   name: Partial<Record<Locale, string>>;
   /** 列表页 meta description。 */
   description?: Partial<Record<Locale, string>>;
+  /**
+   * 列表页按主题分组（有序）：文章 frontmatter `section` 等于某组 key 即归入该组。
+   * 没有 `section` 或 key 不在这里的文章落进末尾的「更多」组。不配置 = 不分组。
+   * 分组只影响列表页展示，文章 URL 不变。
+   */
+  sections?: { key: string; name: Partial<Record<Locale, string>> }[];
 }
 
 export interface SiteConfig {

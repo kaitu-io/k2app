@@ -5,6 +5,8 @@ summary: "ManageBac、Google Classroom、Common App、College Board、Flywire �
 tags: ["国际学校", "留学", "ManageBac", "Toddle", "College Board", "Flywire"]
 brand: kaitu
 draft: false
+order: 1
+section: study
 ---
 
 <strong>国际学校和留学家庭常用的境外系统，大多数在国内能打开，只是不稳定。真正卡住的通常是其中某个外部服务，例如“用 Google 账号登录”、境外视频，或者第三方登录服务。</strong>有中国专用域名的系统（ManageBac 的 managebac.cn、Toddle 的 toddleapp.cn），先问学校能不能用中国版。没有中国版的，先按单页里不需要任何工具的办法试一遍。

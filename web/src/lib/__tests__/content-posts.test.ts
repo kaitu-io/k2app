@@ -63,7 +63,9 @@ import {
   categorySlugs,
   findCategory,
   findContentPost,
+  groupPostsBySection,
   listCategoryPosts,
+  type ContentPost,
 } from '../content-posts';
 
 describe('findCategory', () => {
@@ -111,5 +113,53 @@ describe('listCategoryPosts', () => {
     // getting-started has a real zh-TW copy; zh-only falls back to zh-CN.
     expect(list.find((p) => p.slug === 'guides/getting-started')?.locale).toBe('zh-TW');
     expect(list.find((p) => p.slug === 'guides/zh-only')?.locale).toBe('zh-CN');
+  });
+});
+
+describe('groupPostsBySection', () => {
+  const post = (slug: string, section?: string) => ({ slug, section } as ContentPost);
+  const sections = [
+    { key: 'kaitu', name: '开途入门与使用' },
+    { key: 'study', name: '国际学校、留学与网课' },
+  ];
+
+  it('groups in configured order, keeps input order inside a group, unknown/missing → trailing 更多', () => {
+    const groups = groupPostsBySection(
+      [post('a', 'study'), post('b', 'kaitu'), post('c'), post('d', 'study'), post('e', 'typo')],
+      sections,
+      '更多'
+    );
+    expect(groups.map((g) => [g.key, g.name, g.posts.map((p) => p.slug)])).toEqual([
+      ['kaitu', '开途入门与使用', ['b']],
+      ['study', '国际学校、留学与网课', ['a', 'd']],
+      [null, '更多', ['c', 'e']],
+    ]);
+  });
+
+  it('frontmatter order pins a post (e.g. a topic hub) to the top of its group', () => {
+    const hub = { slug: 'hub', section: 'study', order: 1 } as ContentPost;
+    const groups = groupPostsBySection([post('a', 'study'), hub, post('b', 'study')], sections, '更多');
+    expect(groups[0].posts.map((p) => p.slug)).toEqual(['hub', 'a', 'b']);
+  });
+
+  it('drops empty groups, and every post lands in exactly one group', () => {
+    const input = [post('a', 'study'), post('b', 'study')];
+    const groups = groupPostsBySection(input, sections, '更多');
+    expect(groups.map((g) => g.key)).toEqual(['study']);
+    expect(groups.flatMap((g) => g.posts)).toHaveLength(input.length);
+  });
+
+  it('no sections configured → one untitled group (list page renders no group headings)', () => {
+    expect(groupPostsBySection([post('a', 'x')], [], '更多')).toEqual([
+      { key: null, name: '', posts: [post('a', 'x')] },
+    ]);
+    expect(groupPostsBySection([], [], '更多')).toEqual([]);
+  });
+
+  it('guides category exposes its sections localized, brand template filled', () => {
+    const names = findCategory('zh-TW', 'guides', KAITU)?.sections.map((s) => s.name) ?? [];
+    expect(names).toContain('國際學校、留學與網課');
+    expect(names[0]).toBe(`${KAITU.wordmark}入門與使用`);
+    expect(names.join('')).not.toContain('{');
   });
 });

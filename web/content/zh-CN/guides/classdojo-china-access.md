@@ -5,6 +5,7 @@ summary: "ClassDojo 在国内能用吗？iOS App 在中国区上架，家长网�
 tags: ["ClassDojo", "ClassDojo 登录", "ClassDojo 家长", "国际学校", "家长端"]
 brand: kaitu
 draft: false
+section: study
 ---
 
 <strong>ClassDojo 在国内一般能打开：iOS App 在中国区 App Store 上架，家长网页端（home.classdojo.com）也有简体中文界面。但它没有中国版或中国服务器，消息同步、照片和视频都要连接境外服务，所以常见的问题是“同步失败”和图片、视频加载慢，而不是完全打不开。</strong>家长登录时用邮箱或 Apple 账号，不要用 Google 账号。

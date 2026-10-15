@@ -6,6 +6,7 @@ tags: ["分应用分流", "腾讯系应用"]
 coverImage: "/images/content/app-bypass-1-annotated.png"
 brand: kaitu
 draft: false
+section: kaitu
 ---
 
 开途最新一轮规则优化带来两项升级。第一，<strong>除 iPhone / iPad 外，电脑端（Mac / Windows / Linux）与安卓现已支持按应用、甚至按进程精准分流</strong>，可以把任意一个 App 一键强制「直连」；第二，<strong>针对微信、QQ、腾讯文档、腾讯会议等腾讯系应用做了专项归属优化</strong>，彻底解决这类「怕换 IP」的应用在代理下被风控、掉登录、消息延迟的老问题。常用应用清单由云端持续更新，<strong>无需升级 App、无需重连即可生效</strong>。

@@ -5,6 +5,7 @@ summary: "在国内用 Flywire（飞汇）交境外学费，多数问题出在�
 tags: ["Flywire", "飞汇", "交学费", "留学", "国际学校", "Flywire 国内"]
 brand: kaitu
 draft: false
+section: study
 ---
 
 <strong>Flywire（飞汇）在国内可以正常使用，付款时一般也不需要任何加速工具。官方帮助中心甚至明确建议：卡号页加载不出来时，先关闭 VPN。</strong>飞汇的中文官网是 flywire.com/zh，中文付款入口是 pay.flywire.com/zh。在国内交学费失败，常见原因有四个：选的付款方式不适合（例如付款人不是直系亲属）、在微信里直接打开支付宝链接、学费账单审核没通过，以及网络超时导致付款单作废。下面逐一说明。

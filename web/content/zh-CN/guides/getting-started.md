@@ -5,6 +5,8 @@ summary: "五分钟内完成开途的安装和首次连接，开始享受安全�
 tags: ["教程", "入门", "安装"]
 brand: kaitu
 draft: false
+order: 1
+section: kaitu
 ---
 
 本指南将帮助您在五分钟内完成开途的安装并建立第一次 VPN 连接。

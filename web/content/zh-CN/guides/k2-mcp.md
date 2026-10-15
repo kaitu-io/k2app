@@ -5,6 +5,7 @@ summary: "k2-mcp 随开途桌面端内置，无需单独安装。本指南介绍
 tags: ["MCP", "Claude", "Cursor", "OpenClaw", "AI", "k2"]
 brand: kaitu
 draft: false
+section: kaitu
 ---
 
 **k2-mcp 是随[开途 k2](/zh-CN/k2/quickstart) 桌面端一起安装的 MCP 服务器，无需单独下载。配置完成后，Claude、Cursor、OpenClaw 等 AI 工具可以直接连接节点、查询状态、管理订阅，不再需要手动打开 App。**

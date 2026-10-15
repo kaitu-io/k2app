@@ -24,6 +24,7 @@ import {
   contentPostLocales,
   findCategory,
   findContentPost,
+  groupPostsBySection,
   listCategoryPosts,
   type ContentCategory,
   type ContentPost,
@@ -157,18 +158,28 @@ function CategoryListPage({
             {locale.startsWith('zh') ? '即将上线，敬请期待。' : 'Coming soon.'}
           </p>
         ) : (
-          <ul className="space-y-6">
-            {posts.map((post) => (
-              <li key={post.slug}>
-                <Link href={`/${post.slug}`} className="block hover:underline">
-                  <h2 className="text-xl font-semibold">{post.title}</h2>
-                  {post.summary && (
-                    <p className="mt-2 text-muted-foreground">{post.summary}</p>
-                  )}
-                </Link>
-              </li>
-            ))}
-          </ul>
+          groupPostsBySection(posts, category.sections, '更多').map((group) => {
+            const PostTitle = group.name ? 'h3' : 'h2';
+            return (
+              <section key={group.key ?? 'other'} className="mb-12 last:mb-0">
+                {group.name && (
+                  <h2 className="mb-6 border-b pb-2 text-2xl font-bold">{group.name}</h2>
+                )}
+                <ul className="space-y-6">
+                  {group.posts.map((post) => (
+                    <li key={post.slug}>
+                      <Link href={`/${post.slug}`} className="block hover:underline">
+                        <PostTitle className="text-xl font-semibold">{post.title}</PostTitle>
+                        {post.summary && (
+                          <p className="mt-2 text-muted-foreground">{post.summary}</p>
+                        )}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })
         )}
       </main>
       <Footer />

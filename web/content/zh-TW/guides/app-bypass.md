@@ -6,6 +6,7 @@ tags: ["分应用分流", "腾讯系应用"]
 coverImage: "/images/content/app-bypass-1-annotated.png"
 brand: kaitu
 draft: false
+section: kaitu
 ---
 
 開途最新一輪規則優化帶來兩項升級。第一，<strong>除 iPhone / iPad 外，電腦版（Mac / Windows / Linux）與 Android 現已支援依應用程式，甚至依處理程序精準分流</strong>，可以將任意一個 App 一鍵強制「直連」；第二，<strong>針對微信、QQ、騰訊文件、騰訊會議等騰訊系列應用程式做了專項歸屬優化</strong>，徹底解決這類「怕換 IP」的應用程式在代理下被風控、登出、訊息延遲的老問題。常用應用程式清單由雲端持續更新，<strong>無需升級 App、無需重新連線即可生效</strong>。
