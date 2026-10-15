@@ -14,7 +14,7 @@ import { setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
 import { posts } from '#velite';
 import { routing } from '@/i18n/routing';
-import { type K2Post, isPostVisibleToBrand, findK2Post } from '@/lib/k2-posts';
+import { type K2Post, isPostVisibleToBrand, findK2Post, k2PostLocales } from '@/lib/k2-posts';
 import { getBrand } from '@/lib/brand-server';
 import { siteBrand } from '@/lib/brands';
 import { generateMetadata as generateBaseMetadata } from '../../metadata';
@@ -115,6 +115,7 @@ export async function generateMetadata({
           section: post.section,
           tags: post.tags,
         },
+        availableLocales: k2PostLocales(slug, brand.id),
       },
       brand
     );

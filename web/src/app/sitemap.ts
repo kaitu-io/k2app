@@ -2,7 +2,7 @@ import { MetadataRoute } from 'next';
 import { posts } from '#velite';
 import { getBrand } from '@/lib/brand-server';
 import { isPostVisibleToBrand } from '@/lib/k2-posts';
-import { categorySlugs, listCategoryPosts } from '@/lib/content-posts';
+import { categoryLocales, categorySlugs } from '@/lib/content-posts';
 import { siteConfig } from '@/lib/site';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
@@ -71,19 +71,23 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   );
   const uniqueSlugs = [...new Set(publishedPosts.map(p => p.slug))];
 
+  // One entry per locale that has its OWN version of the slug. A zh-TW/zh-HK
+  // URL that would render the zh-CN text as a fallback is noindex +
+  // canonicalised to zh-CN (see localeSeo), so it must not be advertised here.
   for (const slug of uniqueSlugs) {
     const postsForSlug = publishedPosts.filter(p => p.slug === slug);
     const latestDate = postsForSlug.reduce(
       (latest, p) => (new Date(p.date) > latest ? new Date(p.date) : latest),
       new Date(0)
     );
+    const ownLocales = locales.filter(locale => postsForSlug.some(p => p.locale === locale));
 
     const alternates: Record<string, string> = {};
-    locales.forEach(locale => {
+    ownLocales.forEach(locale => {
       alternates[locale] = `${baseUrl}/${locale}/${slug}`;
     });
 
-    locales.forEach(locale => {
+    ownLocales.forEach(locale => {
       sitemapEntries.push({
         url: `${baseUrl}/${locale}/${slug}`,
         lastModified: latestDate,
@@ -94,19 +98,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     });
   }
 
-  // Category listing pages (e.g. /guides) — only when this brand's deployment
-  // actually lists something there; an empty category page is not advertised.
+  // Category listing pages (e.g. /guides) — only in locales with at least one
+  // post of their own; a locale listing nothing but fallbacks duplicates zh-CN.
   for (const category of categorySlugs()) {
-    const hasPosts = locales.some(
-      (locale) => listCategoryPosts(locale, category, brand).length > 0
-    );
-    if (!hasPosts) continue;
+    const ownLocales = locales.filter(locale => categoryLocales(category, brand).includes(locale));
+    if (ownLocales.length === 0) continue;
 
     const alternates: Record<string, string> = {};
-    locales.forEach(locale => {
+    ownLocales.forEach(locale => {
       alternates[locale] = `${baseUrl}/${locale}/${category}`;
     });
-    locales.forEach(locale => {
+    ownLocales.forEach(locale => {
       sitemapEntries.push({
         url: `${baseUrl}/${locale}/${category}`,
         lastModified: new Date(),

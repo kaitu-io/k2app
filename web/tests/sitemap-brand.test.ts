@@ -14,6 +14,9 @@ vi.mock('#velite', () => ({
     { slug: 'k2/protocol', locale: 'zh-CN', date: '2026-01-01', draft: false, brand: 'both' },
     { slug: 'k2/en-only', locale: 'en-US', date: '2026-01-01', draft: false, brand: 'both' },
     { slug: 'k2/other-brand', locale: 'zh-CN', date: '2026-01-01', draft: false, brand: 'overleap' },
+    // Translated into zh-TW only: zh-HK would render the zh-CN text as a fallback.
+    { slug: 'guides/tw-too', locale: 'zh-CN', date: '2026-01-01', draft: false, brand: 'kaitu' },
+    { slug: 'guides/tw-too', locale: 'zh-TW', date: '2026-01-01', draft: false, brand: 'kaitu' },
   ],
 }));
 
@@ -50,5 +53,35 @@ describe('sitemap', () => {
   it.each(['/guides', '/routers', '/releases', '/pricing'])('%s is present', async (route) => {
     const entries = await sitemap();
     expect(entries.some((e) => e.url.endsWith(route))).toBe(true);
+  });
+
+  describe('locale fallback is not advertised', () => {
+    const urlsFor = (entries: { url: string }[], needle: string) =>
+      entries.map((e) => e.url).filter((u) => u.endsWith(needle));
+
+    it('a zh-CN-only post is listed once, with only its own hreflang', async () => {
+      const entries = await sitemap();
+      expect(urlsFor(entries, '/guides/cn-guide')).toEqual(['https://kaitu.io/zh-CN/guides/cn-guide']);
+      const entry = entries.find((e) => e.url.endsWith('/zh-CN/guides/cn-guide'))!;
+      expect(Object.keys(entry.alternates?.languages ?? {})).toEqual(['zh-CN']);
+    });
+
+    it('a post translated into zh-TW lists zh-CN + zh-TW but not zh-HK', async () => {
+      const entries = await sitemap();
+      expect(urlsFor(entries, '/guides/tw-too').sort()).toEqual([
+        'https://kaitu.io/zh-CN/guides/tw-too',
+        'https://kaitu.io/zh-TW/guides/tw-too',
+      ]);
+      const entry = entries.find((e) => e.url.endsWith('/zh-TW/guides/tw-too'))!;
+      expect(Object.keys(entry.alternates?.languages ?? {}).sort()).toEqual(['zh-CN', 'zh-TW']);
+    });
+
+    it('a category listing appears only in locales with posts of their own', async () => {
+      const entries = await sitemap();
+      expect(urlsFor(entries, '/guides').sort()).toEqual([
+        'https://kaitu.io/zh-CN/guides',
+        'https://kaitu.io/zh-TW/guides',
+      ]);
+    });
   });
 });

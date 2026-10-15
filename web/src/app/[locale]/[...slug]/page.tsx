@@ -19,14 +19,16 @@ import { getBrand } from '@/lib/brand-server';
 import { siteBrand } from '@/lib/brands';
 import { isPostVisibleToBrand } from '@/lib/k2-posts';
 import {
+  categoryLocales,
   categorySlugs,
+  contentPostLocales,
   findCategory,
   findContentPost,
   listCategoryPosts,
   type ContentCategory,
   type ContentPost,
 } from '@/lib/content-posts';
-import { generateMetadata as generatePageMetadata } from '../metadata';
+import { generateMetadata as generatePageMetadata, localeSeo } from '../metadata';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import Breadcrumb from '@/components/Breadcrumb';
@@ -227,6 +229,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       {
         title: `${category.name} | ${brand.wordmark}`,
         description: category.description,
+        availableLocales: categoryLocales(category.slug, brand),
       },
       brand
     );
@@ -239,7 +242,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const post = findContentPost(locale, catSlug, postSlug, brand);
     if (!post) return {};
 
-    const canonicalUrl = `${brand.baseUrl}/${locale}/${category.slug}/${postSlug}`;
+    const availableLocales = contentPostLocales(category.slug, postSlug, brand);
+    // A zh-TW/zh-HK URL rendering the zh-CN text canonicalises to zh-CN.
+    const { canonicalLocale } = localeSeo(locale, brand, availableLocales);
+    const canonicalUrl = `${brand.baseUrl}/${canonicalLocale}/${category.slug}/${postSlug}`;
 
     const meta = generatePageMetadata(
       locale,
@@ -254,6 +260,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
           section: category.name,
           tags: post.tags,
         },
+        availableLocales,
       },
       brand
     );

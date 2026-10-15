@@ -14,6 +14,36 @@ interface MetadataOverrides {
     section?: string;
     tags?: string[];
   };
+  /**
+   * Locales that have their own version of this page. Omitted = every brand
+   * locale (UI pages, translated through messages). A locale outside this list
+   * is rendering another locale's content as a fallback: it is not advertised
+   * in hreflang, canonicalises to a locale that has the content, and is
+   * noindex — otherwise three URLs serve one simplified-Chinese text.
+   */
+  availableLocales?: readonly string[];
+}
+
+export interface LocaleSeo {
+  /** Locales advertised in hreflang (own versions only), brand order. */
+  served: string[];
+  /** Locale the canonical URL points at. */
+  canonicalLocale: string;
+  /** True when `locale` only renders another locale's content. */
+  isFallback: boolean;
+}
+
+export function localeSeo(
+  locale: string,
+  brand: Pick<Brand, 'allowedLocales' | 'defaultLocale'>,
+  availableLocales?: readonly string[]
+): LocaleSeo {
+  const own = brand.allowedLocales.filter((l) => !availableLocales || availableLocales.includes(l));
+  // Nothing available would mean the page 404s; keep the plain behaviour.
+  const served: string[] = own.length > 0 ? own : [...brand.allowedLocales];
+  const isFallback = !served.includes(locale);
+  const primary = served.includes(brand.defaultLocale) ? brand.defaultLocale : served[0];
+  return { served, canonicalLocale: isFallback ? primary : locale, isFallback };
 }
 
 export function generateMetadata(
@@ -39,16 +69,18 @@ export function generateMetadata(
     : `${resolvedBaseUrl}${ogImageSrc}`;
   const ogType = overrides.ogType || 'website';
 
-  // hreflang links only this site's own locales on its own host; x-default is
-  // the default locale. No cross-domain linking to the other brand's site.
+  // hreflang links only this site's own locales on its own host (and only those
+  // with their own version of the page); x-default is the default locale when served. No cross-domain linking to the other brand's site.
   //
   // Hreflang must use the brand's own baseUrl — NOT NEXT_PUBLIC_BASE_URL —
   // because a preview env override would poison the published SEO graph.
+  const loc = localeSeo(locale, brand, overrides.availableLocales);
   const languages: Record<string, string> = {};
-  brand.allowedLocales.forEach(loc => {
-    languages[loc.toLowerCase()] = `${brand.baseUrl}/${loc}${pathname}`;
+  loc.served.forEach(l => {
+    languages[l.toLowerCase()] = `${brand.baseUrl}/${l}${pathname}`;
   });
-  languages['x-default'] = `${brand.baseUrl}/${brand.defaultLocale}${pathname}`;
+  const xDefault = loc.served.includes(brand.defaultLocale) ? brand.defaultLocale : loc.served[0];
+  languages['x-default'] = `${brand.baseUrl}/${xDefault}${pathname}`;
 
   const ogBase = {
     title,
@@ -81,9 +113,10 @@ export function generateMetadata(
       images: [ogImageUrl],
     },
     alternates: {
-      canonical: `${resolvedBaseUrl}/${locale}${pathname}`,
+      canonical: `${resolvedBaseUrl}/${loc.canonicalLocale}${pathname}`,
       languages,
     },
+    ...(loc.isFallback ? { robots: { index: false, follow: true } } : {}),
     // The default brand's faviconPrefix is '' — its URLs stay byte-identical to
     // the legacy root paths (no cache churn). Other brands get a namespaced set.
     icons: {

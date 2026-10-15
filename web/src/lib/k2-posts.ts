@@ -91,6 +91,17 @@ export function findK2Post(
   return undefined;
 }
 
+/** Locales with their own (non-fallback) published version of a k2 slug. */
+export function k2PostLocales(slug: string, brandId: BrandId = siteBrand().id): string[] {
+  return [
+    ...new Set(
+      (posts as K2Post[])
+        .filter((p) => p.slug === slug && !p.draft && isPostVisibleToBrand(p, brandId))
+        .map((p) => p.locale)
+    ),
+  ];
+}
+
 export function getK2Posts(locale: string, brandId: BrandId = siteBrand().id): K2PostGroup[] {
   const k2Posts = (posts as K2Post[]).filter(
     (post) =>

@@ -93,7 +93,9 @@ describe('test_sitemap_includes_content', () => {
     // Must include the zh-CN guides post, in every kaitu locale (zh-HK reads
     // the zh-CN copy via brand-default-locale fallback)
     expect(urls).toContain('https://kaitu.io/zh-CN/guides/getting-started');
-    expect(urls).toContain('https://kaitu.io/zh-HK/guides/getting-started');
+    // zh-CN only: zh-HK would render the zh-CN text as a fallback (noindex), so
+    // it is not advertised.
+    expect(urls).not.toContain('https://kaitu.io/zh-HK/guides/getting-started');
 
     // blog/ is NOT a registered category in content-posts.ts — no route serves
     // it, so the sitemap must not advertise it (it would 404).

@@ -80,6 +80,36 @@ export function findContentPost(
   return undefined;
 }
 
+/** Locales with their own (non-fallback) version of `{category}/{postSlug}`. */
+export function contentPostLocales(
+  category: string,
+  postSlug: string,
+  brand: Brand = siteBrand()
+): string[] {
+  const slug = `${category}/${postSlug}`;
+  return [
+    ...new Set(
+      (posts as ContentPost[])
+        .filter((p) => p.slug === slug && isServablePost(p, category, brand.id))
+        .map((p) => p.locale)
+    ),
+  ];
+}
+
+/**
+ * Locales with at least one post of their own in the category. A locale outside
+ * this set only lists default-locale fallbacks — a duplicate of that listing.
+ */
+export function categoryLocales(category: string, brand: Brand = siteBrand()): string[] {
+  return [
+    ...new Set(
+      (posts as ContentPost[])
+        .filter((p) => isServablePost(p, category, brand.id))
+        .map((p) => p.locale)
+    ),
+  ];
+}
+
 /**
  * List a category's posts for the given locale, newest first. A slug missing
  * in this locale falls back to the brand default locale's version, so the
