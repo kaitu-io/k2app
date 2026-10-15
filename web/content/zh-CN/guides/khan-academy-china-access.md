@@ -4,7 +4,7 @@ date: 2026-10-15
 summary: "Khan Academy 在国内能用吗？官方说明，在中国会改用自有播放器，不依赖 YouTube；中文版在 zh.khanacademy.org，App 和 Khan Academy Kids 也都在中国区 App Store 上架。本文按官方帮助中心和页面依赖分析，说明视频放不了、登录卡住的原因和办法。"
 tags: ["Khan Academy", "可汗学院", "Khan Academy Kids", "网课", "可汗学院中文版"]
 brand: kaitu
-draft: true
+draft: false
 ---
 
 <strong>Khan Academy（可汗学院）在国内大体可以用，而且官方专门为中国做了处理：YouTube 在中国被封时，网站会改用自己的视频播放器。</strong>常见的卡点有两个：一是用“Continue with Google”登录，二是视频没有切换到自有播放器，一直在等 YouTube。在国内请用邮箱或用户名登录；中文内容可以直接上 zh.khanacademy.org。

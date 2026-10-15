@@ -4,7 +4,7 @@ date: 2026-10-15
 summary: "在国内申请美本，Common App 能打开吗？申请系统本身在大陆可以访问，登录只用邮箱和密码；最容易卡的是“从 Google Drive 选文件上传”。本文按官方系统要求和页面依赖分析，说明卡在哪里、上传失败先查什么，以及推荐信和学校材料怎么提交。"
 tags: ["Common App", "Common App 登录", "美本申请", "留学", "国际学校"]
 brand: kaitu
-draft: true
+draft: false
 ---
 
 <strong>Common App 的申请系统（apply.commonapp.org）在国内一般可以打开，登录只用邮箱和密码，没有 Google 登录或 reCAPTCHA 验证。</strong>最容易卡住的是上传文件时选“从 Google Drive 选取”，这一步要连接 Google 的账号、接口和云端硬盘服务，而它们在大陆受干扰或被封。把文件先存到电脑本地再上传，大多数问题就能绕开。

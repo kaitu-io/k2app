@@ -4,7 +4,7 @@ date: 2026-10-15
 summary: "Google Classroom 在国内能下载 App，但网页版和 App 背后的服务都依赖 Google 账号、云端硬盘和 YouTube，这些在大陆受干扰或被封。本文按 GreatFire 记录和页面依赖分析说明卡在哪里，哪些事不用工具就能先做，以及什么情况下只能用加速工具。"
 tags: ["Google Classroom", "Google 课堂", "Google Classroom 登录", "国际学校", "网课"]
 brand: kaitu
-draft: true
+draft: false
 ---
 
 <strong>在中国大陆，Google Classroom（Google 课堂）基本无法直接使用。App 在中国区 App Store 能下载，但登录要用 Google 账号，作业和资料放在 Google 云端硬盘和文档里，视频多半来自 YouTube，这几项在大陆都受干扰或被封。</strong>孩子的学校如果用 Google Classroom，先和老师确认有没有其他交作业、拿资料的方式；确实要每天用的，通常只能借助加速工具。

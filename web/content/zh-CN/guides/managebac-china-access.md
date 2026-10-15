@@ -4,7 +4,7 @@ date: 2026-10-15
 summary: "ManageBac 在国内打不开或很慢？官方为中国学校提供 managebac.cn 中国版，数据放在国内。本文按官方帮助中心和登录页依赖分析，说明国际版和中国版的区别、家长端怎么登录、为什么“用 Google 登录”容易卡住，以及不用任何工具可以先试的办法。"
 tags: ["ManageBac", "ManageBac 登录", "managebac.cn", "国际学校", "IB", "家长端"]
 brand: kaitu
-draft: true
+draft: false
 ---
 
 <strong>ManageBac 有中国版。学校用的如果是以 managebac.cn 结尾的网址，数据和网页都在国内，一般不需要任何工具。</strong>在国内卡住的情况多数有三种：学校用的是国际版（managebac.com），用了“Sign in with Google”登录，或者上传作业时要用 Google Drive。先看清楚学校给的登录网址，再按下面的步骤试。

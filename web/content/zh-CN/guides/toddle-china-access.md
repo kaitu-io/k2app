@@ -4,7 +4,7 @@ date: 2026-10-15
 summary: "Toddle 在国内登录不上或很慢？Toddle 为中国大陆的学校单独提供 web.toddleapp.cn 和 Toddle Family China App，和国际版完全分开。本文根据登录页依赖分析和公开资料，说明两个版本的区别、家长该用哪个入口，以及国际版为什么容易卡在 Google 登录和人机验证。"
 tags: ["Toddle", "Toddle 登录", "Toddle Family China", "toddleapp.cn", "国际学校", "家长端"]
 brand: kaitu
-draft: true
+draft: false
 ---
 
 <strong>Toddle 为中国大陆的学校单独提供了中国版：网页是 web.toddleapp.cn，iPhone 上用中国区 App Store 里的 Toddle Family China。</strong>中国版和国际版（web.toddleapp.com、Toddle Family）的服务器完全分开。学校如果已经迁到中国服务器，家长就要用中国版登录，用国际版是登不进去的。学校如果还在用国际版，登录页依赖 Google 登录和 Cloudflare 的人机验证，在国内更容易卡住。

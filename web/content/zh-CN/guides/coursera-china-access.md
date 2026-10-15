@@ -4,7 +4,7 @@ date: 2026-10-15
 summary: "Coursera 在国内能用吗？能用，但不稳定：官方帮助中心专门承认“在中国加载课程内容是已知问题”。本文按官方资料、GreatFire 记录和登录页依赖分析，说明视频加载不出来、Google 登录卡住、支付宝付不了这几个常见问题的原因，以及能先试的办法。"
 tags: ["Coursera", "Coursera 国内", "Coursera 登录", "网课", "Coursera 付款"]
 brand: kaitu
-draft: true
+draft: false
 ---
 
 <strong>Coursera 在国内能用，但不稳定。官方帮助中心有一篇专门的文章，承认“在中国加载课程内容是 Coursera 平台的已知问题”，通常是暂时的，官方给的办法是刷新或等几分钟再试，视频有时要一两天才能正常加载。</strong>登录时用邮箱和密码，不要用 Google。网页端付款不支持支付宝和银联，要用国际信用卡或 PayPal。

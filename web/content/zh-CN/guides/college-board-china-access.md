@@ -4,7 +4,7 @@ date: 2026-10-15
 summary: "College Board 在国内打不开、登录转圈？主站部分网址受干扰，登录走 Okta 身份服务，也有不少干扰记录。本文按官方资料和页面依赖分析，说明卡在哪一步、哪些办法不用任何工具就能先试，以及 Bluebook 考试时为什么不能开加速工具。"
 tags: ["College Board", "AP", "SAT", "College Board 打不开", "国际学校", "留学"]
 brand: kaitu
-draft: true
+draft: false
 ---
 
 <strong>College Board 在国内能用，但不稳定：打开慢、登录页一直转圈、登录后跳不回来，都是常见情况。</strong>原因主要有两点。第一，collegeboard.org 主站有一部分网址在大陆受到干扰。第二，账号登录走的是第三方身份服务 Okta，而 okta.com 在大陆的干扰记录也不少。遇到问题时，先换一个直接的入口：AP Classroom 和 AP 成绩都从 My AP（myap.collegeboard.org）登录，用的是同一个 College Board 账号。并且要提前试登录，不要等到出分当天才发现进不去。<strong>Bluebook 考试时不要开任何加速工具</strong>，官方要求考试流量绕开 VPN 和代理。
