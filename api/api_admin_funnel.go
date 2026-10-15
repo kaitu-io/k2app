@@ -113,7 +113,7 @@ func parseFunnelDateRange(rawFrom, rawTo string, now time.Time) (from, to time.T
 	return from, to, true
 }
 
-// api_admin_get_funnel GET /app/stats/funnels/:key?brand=&from=&to=&groupBy=
+// api_admin_get_funnel GET /app/stats/funnels/:key?brand=&from=&to=&groupBy=&inferred=1
 func api_admin_get_funnel(c *gin.Context) {
 	path, ok := funnelPathByKey(c.Param("key"))
 	if !ok {
@@ -153,12 +153,29 @@ func api_admin_get_funnel(c *gin.Context) {
 		Error(c, ErrorSystemError, "failed to compute funnel")
 		return
 	}
-	// 身份映射只需要行为事件里的匿名身份（事实没有匿名身份）。
-	identities, err := loadFunnelIdentities(c, recs)
+	// 推断归因（?inferred=1）：did ↔ sid 的推断关联只在显式要求时并入，确定性身份永远优先。
+	withInferred := c.Query("inferred") == "1"
+	var links map[string]string
+	if withInferred {
+		if links, err = loadFunnelInferredLinks(c, brand, hasBrand, recs); err != nil {
+			log.Errorf(c, "failed to load funnel inferred links for %s: %v", path.Key, err)
+			Error(c, ErrorSystemError, "failed to compute funnel")
+			return
+		}
+	}
+	// 身份映射只需要行为事件里的匿名身份（事实没有匿名身份），外加推断关联两端的身份。
+	identities, err := loadFunnelIdentities(c, append(funnelInferredEndpointRecs(links), recs...))
 	if err != nil {
 		log.Errorf(c, "failed to load funnel identities for %s: %v", path.Key, err)
 		Error(c, ErrorSystemError, "failed to compute funnel")
 		return
+	}
+	var inferred *FunnelInferredSummary
+	if withInferred {
+		var sum FunnelInferredSummary
+		recs, identities, sum = applyFunnelInferredLinks(recs, identities, links)
+		sum.Outcomes = loadFunnelAttrStats(c, brand, hasBrand, from, to)
+		inferred = &sum
 	}
 	factRecs, err := loadFunnelFacts(c, brand, hasBrand, from, loadTo, facts)
 	if err != nil {
@@ -170,6 +187,7 @@ func api_admin_get_funnel(c *gin.Context) {
 	recs = append(recs, factRecs...)
 
 	res := computeFunnel(path, recs, identities, from, to, c.Query("groupBy"))
+	res.Inferred = inferred
 	Success(c, &res)
 }
 

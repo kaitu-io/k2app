@@ -285,6 +285,12 @@ func executeApprovalUserHardDelete(ctx context.Context, params json.RawMessage) 
 		return fmt.Errorf("delete email send logs: %w", err)
 	}
 
+	// 12.0 删除推断归因（靠身份关联定位，必须先于 12.1）
+	if err := deleteFunnelInferredLinksForUsers(tx, userIDs); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("delete funnel inferred links: %w", err)
+	}
+
 	// 12.1 删除转化漏斗的身份关联
 	if err := tx.Where("user_id IN ?", userIDs).Delete(&FunnelIdentity{}).Error; err != nil {
 		tx.Rollback()

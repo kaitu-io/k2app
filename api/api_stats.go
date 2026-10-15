@@ -289,6 +289,9 @@ func ingestStatsFunnel(c *gin.Context, raws []json.RawMessage) {
 			OS:         normalizeFunnelOS(e.OS),
 			AppVersion: funnelTruncate(e.AppVersion, 32),
 		})
+		if e.Event == "app_first_open" {
+			funnelAttrFirstOpen(c, brand, normalizeFunnelOS(e.OS), c.ClientIP(), hash, e.CreatedAt)
+		}
 		if uid != 0 {
 			if _, done := linked[hash]; !done {
 				linked[hash] = struct{}{}

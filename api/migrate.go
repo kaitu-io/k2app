@@ -174,6 +174,7 @@ func Migrate() error {
 		&StatK2sDownload{},
 		&FunnelEvent{},
 		&FunnelIdentity{},
+		&FunnelInferredLink{},
 		// Support chat
 		&Guest{},
 		&GuestIdentity{},

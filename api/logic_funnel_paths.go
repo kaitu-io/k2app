@@ -78,10 +78,23 @@ var funnelPathRegistry = []funnelPath{
 		},
 	},
 	{
+		// 网页 → App：第 2 步起是 App 侧身份（did），与网页 sid 之间没有确定性关联，
+		// 所以不带 ?inferred=1 时第 2 步基本为 0；带上后由推断归因（ip_os_v1）接上，结果需标注「推断」。
+		Key: "web_to_app", Title: "网站下载到应用", Question: "在网站点了下载的人里，有多少打开了应用、注册 / 登录并最终付款？（依赖推断归因）",
+		Window: 14 * funnelDay,
+		Steps: []funnelStep{
+			{Label: "点下载", Events: []string{"install_click"}, Surface: FunnelSurfaceWeb},
+			{Label: "首次打开", Events: []string{"app_first_open"}},
+			{Label: "注册 / 登录", Events: []string{funnelFactSignup, "auth_done"}},
+			{Label: "付款", Events: funnelPaidFacts},
+		},
+	},
+	{
 		// 长尾指南的归因：进入记录就是指南页本身（搜索进来的人第一条 page_view 没有 utm），
 		// 所以按 landing_path 分组即「每篇指南带来了多少注册 / 付款」。
 		// 已登录的老用户读完直接买不会产生第 2 步——看他们用 web_purchase 按 landing_path 分组。
-		// 局限：读完去下载 App、在 App 里注册 / 付款的人，App 侧身份（did）与网页 sid 不关联，算作流失。
+		// 局限：读完去下载 App、在 App 里注册 / 付款的人，App 侧身份（did）与网页 sid 没有确定性关联，
+		// 默认算作流失；?inferred=1 时由推断归因（ip_os_v1）接上一部分。
 		Key: "guide_conversion", Title: "指南转化", Question: "读过指南的人里，有多少注册 / 登录并最终付款？按落地页分组看每篇指南。",
 		Window: 14 * funnelDay,
 		Steps: []funnelStep{

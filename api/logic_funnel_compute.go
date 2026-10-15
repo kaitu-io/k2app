@@ -44,7 +44,9 @@ type FunnelGroup struct {
 type FunnelResult struct {
 	Steps  []FunnelStepResult `json:"steps"`
 	Daily  []FunnelDay        `json:"daily"`  // 按所选进入记录的日期（UTC），区间内每天都有一项
-	Groups []FunnelGroup      `json:"groups"` // 不分组时为空数组。前 50 组按第 1 步人数降序、key 升序；其余并进末尾的 "(other)"，它不参与排序，人数可以比前面的组多
+	Groups []FunnelGroup      `json:"groups"`
+	// Inferred 仅在 ?inferred=1 时出现：本结果并入了推断归因（ip_os_v1），数字不再是纯确定性的。
+	Inferred *FunnelInferredSummary `json:"inferred,omitempty"` // 不分组时为空数组。前 50 组按第 1 步人数降序、key 升序；其余并进末尾的 "(other)"，它不参与排序，人数可以比前面的组多
 }
 
 // matches 判断一条记录是否满足该步。带 Surface 过滤的步骤不匹配事实（事实的 Surface 为 ""）。

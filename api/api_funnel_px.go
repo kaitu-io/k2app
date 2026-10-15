@@ -72,6 +72,10 @@ func api_funnel_px(c *gin.Context) {
 		Device:      device,
 		OS:          osName,
 	})
+	// 推断归因：只为有 sid 的点击记出口（GPC 访客 anon 为空，optout 早已 return）。
+	if event == "install_click" && anon != "" {
+		funnelAttrRecordClick(c, brand, q("p"), c.ClientIP(), anon)
+	}
 }
 
 // api_funnel_px_optout: GET /api/px/optout —— 写 sid=optout，回到 Referer 同 host 的路径。

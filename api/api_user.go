@@ -283,6 +283,10 @@ func api_delete_user_account(c *gin.Context) {
 		if err := tx.Where("user_id = ?", userID).Delete(&Device{}).Error; err != nil {
 			return err
 		}
+		// 推断归因靠该用户的确定性身份定位，必须先于 funnel_identities 删除。
+		if err := deleteFunnelInferredLinksForUsers(tx, []uint64{uint64(userID)}); err != nil {
+			return err
+		}
 		if err := tx.Where("user_id = ?", userID).Delete(&FunnelIdentity{}).Error; err != nil {
 			return err
 		}
