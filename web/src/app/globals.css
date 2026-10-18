@@ -302,18 +302,57 @@
   word-break: break-all;
 }
 
-/* Tables scroll horizontally on narrow screens, natural layout on ≥md */
+/* Tables: below lg they scroll sideways inside the text column, and every cell
+   keeps a readable minimum width (CJK otherwise wraps 2-3 glyphs per line).
+   On lg+ they break out of the 68ch text column to a wider centered band. */
 .prose table {
   display: block;
   overflow-x: auto;
-  white-space: nowrap;
   -webkit-overflow-scrolling: touch;
 }
-@media (min-width: 768px) {
+.prose th,
+.prose td {
+  min-width: 11em;
+  vertical-align: top;
+  line-height: 1.65;
+  /* the .prose-wide break-word would split domains like managebac.cn mid-word */
+  word-break: normal;
+  overflow-wrap: normal;
+}
+.prose th:first-child,
+.prose td:first-child {
+  min-width: 9em;
+}
+@media (min-width: 1024px) {
   .prose table {
     display: table;
-    white-space: normal;
+    width: min(64rem, calc(100vw - 4rem));
+    max-width: none;
+    position: relative;
+    left: 50%;
+    transform: translateX(-50%);
   }
+}
+
+/* Screenshots are mostly light UIs: frame them so they don't float on the dark page,
+   and cap tall ones so a single phone-shaped capture doesn't eat two screens */
+.prose img {
+  display: block;
+  width: auto;
+  max-height: 560px;
+  margin-inline: auto;
+  border: 1px solid var(--border);
+}
+/* Caption: an italic-only paragraph right after an image paragraph */
+.prose p:has(> img) + p:has(> em:only-child) {
+  margin-top: -0.75em;
+  text-align: center;
+  font-size: 0.875em;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+.prose p:has(> img) + p > em:only-child {
+  font-style: normal;
 }
 
 /* Mobile typography scale (<640px) */
