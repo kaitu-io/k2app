@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { LOCALES, DEFAULT_LOCALE, SITE } from './site';
+import { DEFAULT_LOCALE, INDEXED_LOCALES, SITE, isIndexedLocale } from './site';
 
 interface PageMeta {
   title: string;
@@ -19,9 +19,7 @@ interface PageMeta {
  */
 export function pageMetadata(locale: string, path: string, meta: PageMeta): Metadata {
   const url = `${SITE.baseUrl}/${locale}${path}`;
-  const languages: Record<string, string> = {};
-  for (const l of LOCALES) languages[l.toLowerCase()] = `${SITE.baseUrl}/${l}${path}`;
-  languages['x-default'] = `${SITE.baseUrl}/${DEFAULT_LOCALE}${path}`;
+  const languages = hreflangLanguages(path);
   const image = `${SITE.baseUrl}${SITE.ogImagePath}`;
 
   return {
@@ -38,8 +36,21 @@ export function pageMetadata(locale: string, path: string, meta: PageMeta): Meta
       images: [{ url: image, width: 1200, height: 630, alt: SITE.name }],
     },
     twitter: { card: 'summary_large_image', title: meta.title, description: meta.description, images: [image] },
-    robots: meta.index === false ? { index: false, follow: false } : undefined,
+    robots:
+      meta.index === false
+        ? { index: false, follow: false }
+        : isIndexedLocale(locale)
+          ? undefined
+          : { index: false, follow: true },
   };
+}
+
+/** hreflang set for a locale-less path: indexed locales only, x-default → en-GB. */
+export function hreflangLanguages(path: string): Record<string, string> {
+  const languages: Record<string, string> = {};
+  for (const l of INDEXED_LOCALES) languages[l.toLowerCase()] = `${SITE.baseUrl}/${l}${path}`;
+  languages['x-default'] = `${SITE.baseUrl}/${DEFAULT_LOCALE}${path}`;
+  return languages;
 }
 
 export const ICONS: Metadata['icons'] = {

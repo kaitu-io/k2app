@@ -57,6 +57,10 @@ type BrandConfig struct {
 	// AI 作答用的知识库：配置 openai.filesearch.stores.<ChatAIStore>。每个品牌一个独立的 vector store，
 	// 源文件在 docs/customer-service/<brand>/，用 scripts/sync-kb.sh 同步。
 	ChatAIStore string
+	// FunnelCookieless 官网漏斗不用 cookie（overleap：UK PECR 下不弹同意框的前提）。/api/px 不读不写 sid
+	// cookie，访客标识只取页面内存里生成、随像素 a= 参数带上的随机 id（整页刷新即换）；也不参与推断归因
+	// （那会在 Redis 落出口 IP 的哈希）。为 false：沿用 sid cookie（开途）。
+	FunnelCookieless bool
 }
 
 func (bc *BrandConfig) AllowsPayment(channel string) bool {
@@ -105,6 +109,7 @@ var brandRegistry = map[Brand]*BrandConfig{
 		ChatAI:            true,
 		Wallet:            false,
 		ChatAIStore:       "overleap",
+		FunnelCookieless:  true,
 	},
 }
 

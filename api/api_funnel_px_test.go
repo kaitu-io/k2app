@@ -445,3 +445,56 @@ func TestPx_AccessKeyPresent_Anonymous(t *testing.T) {
 		WithBearerToken(GenerateTestToken(user.ID, "", time.Hour)).Execute(pxRouter())
 	pxExpectAnonymous(t, m, w)
 }
+
+// ---- cookieless 品牌（overleap）：不读不写 sid cookie，访客标识只来自页面内存 id（a=）----
+
+func olPxReq(m, event, anon string) *TestRequest {
+	url := "/api/px?e=" + event + "&p=" + m + "&u=/en-GB/pricing%3Futm_source%3Dnews"
+	if anon != "" {
+		url += "&a=" + anon
+	}
+	return NewTestRequest("GET", url).WithHeader("User-Agent", pxDesktopUA).WithHeader("X-K2-Brand", "overleap")
+}
+
+func TestBrand_FunnelCookielessOnlyOverleap(t *testing.T) {
+	assert.True(t, BrandOverleap.Config().FunnelCookieless)
+	assert.False(t, BrandKaitu.Config().FunnelCookieless)
+}
+
+func TestPx_Cookieless_UsesPageAnonNeverSetsCookie(t *testing.T) {
+	skipIfNoConfig(t)
+	m := pxMarker(t)
+	anon := newFunnelSid()
+	w := olPxReq(m, "pricing_view", anon).Execute(pxRouter())
+	assertGIF(t, w)
+	assert.Empty(t, w.Header().Values("Set-Cookie"))
+	rows := pxRows(t, m)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "overleap", rows[0].Brand)
+	assert.Equal(t, anon, rows[0].AnonID)
+	assert.Equal(t, "/pricing", rows[0].Path)
+	assert.Equal(t, "news", rows[0].UtmSource)
+}
+
+func TestPx_Cookieless_IgnoresSidCookie(t *testing.T) {
+	skipIfNoConfig(t)
+	m := pxMarker(t)
+	w := olPxReq(m, "pricing_view", "").WithCookie("sid", newFunnelSid()).Execute(pxRouter())
+	assertGIF(t, w)
+	assert.Empty(t, w.Header().Values("Set-Cookie"))
+	rows := pxRows(t, m)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "", rows[0].AnonID)
+}
+
+func TestPx_Cookieless_InvalidOrGPCAnonDropped(t *testing.T) {
+	skipIfNoConfig(t)
+	m := pxMarker(t)
+	olPxReq(m, "page_view", "not-a-valid-id").Execute(pxRouter())
+	olPxReq(m, "page_view", newFunnelSid()).WithHeader("Sec-GPC", "1").Execute(pxRouter())
+	rows := pxRows(t, m)
+	require.Len(t, rows, 2)
+	for _, r := range rows {
+		assert.Equal(t, "", r.AnonID)
+	}
+}

@@ -6,6 +6,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, setRequestLocale } from 'next-intl/server';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { Toaster } from '@/components/ui/sonner';
+import FunnelPageViews from '@/components/FunnelPageViews';
 import { LOCALES, LOCALE_META, SITE } from '@/lib/site';
 import { ICONS } from '@/lib/metadata';
 import { CHAT_RESUME_SCRIPT } from '@/components/chat/resume-script';
@@ -49,6 +50,7 @@ export default async function LocaleLayout({
           <AuthProvider>
             {children}
             <Toaster />
+            <FunnelPageViews />
           </AuthProvider>
         </NextIntlClientProvider>
       </body>

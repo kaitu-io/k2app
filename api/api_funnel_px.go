@@ -36,11 +36,17 @@ func api_funnel_px(c *gin.Context) {
 	if isBot || !funnelEventAllowed(event, FunnelSurfaceWeb) {
 		return
 	}
-	if _, optedOut := readFunnelSid(c); optedOut {
-		return
-	}
-	anon := ensureFunnelSid(c)
 	brand := ReqBrand(c)
+	cookieless := brand.Config().FunnelCookieless
+	var anon string
+	if cookieless {
+		anon = funnelPageAnon(c, q("a"))
+	} else {
+		if _, optedOut := readFunnelSid(c); optedOut {
+			return
+		}
+		anon = ensureFunnelSid(c)
+	}
 	// GPC = 完全不归因：anon 已为空（ensureFunnelSid），登录用户也不记，连凭据都不解析。
 	var uid uint64
 	if !funnelGPC(c) {
@@ -73,9 +79,18 @@ func api_funnel_px(c *gin.Context) {
 		OS:          osName,
 	})
 	// 推断归因：只为有 sid 的点击记出口（GPC 访客 anon 为空，optout 早已 return）。
-	if event == "install_click" && anon != "" {
+	if event == "install_click" && anon != "" && !cookieless {
 		funnelAttrRecordClick(c, brand, q("p"), c.ClientIP(), anon)
 	}
+}
+
+// funnelPageAnon：cookieless 品牌的访客标识——页面内存里的随机 id（格式同 sid）。GPC 时不用。
+// 服务端不 Set-Cookie，也不读 sid cookie：同一浏览器整页刷新后就是另一个访客。
+func funnelPageAnon(c *gin.Context, raw string) string {
+	if funnelGPC(c) || !validFunnelSid(raw) {
+		return ""
+	}
+	return raw
 }
 
 // api_funnel_px_optout: GET /api/px/optout —— 写 sid=optout，回到 Referer 同 host 的路径。
