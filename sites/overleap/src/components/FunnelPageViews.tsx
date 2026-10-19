@@ -6,7 +6,7 @@ import { externalReferrerHost, track } from '@/lib/funnel';
 import { isEmbeddedPage } from '@/lib/embed';
 
 /**
- * page_view on every route (and pricing_view on /pricing; usePathname is locale-less). The first view
+ * page_view on every route (plus pricing_view on /pricing and install_view on /install; usePathname is locale-less). The first view
  * of the loaded app carries the external referrer host; later views are internal.
  * Pages opened inside the app (embed mode) are app screens, not site visits.
  */
@@ -19,6 +19,7 @@ export default function FunnelPageViews() {
     track('page_view', first.current ? { ref: externalReferrerHost() } : undefined);
     first.current = false;
     if (pathname === '/pricing') track('pricing_view');
+    if (pathname === '/install') track('install_view');
   }, [pathname]);
 
   return null;

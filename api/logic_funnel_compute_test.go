@@ -829,7 +829,7 @@ func genFunnelFixture(seed int64, p funnelPath) funnelFixture {
 		}
 		ev := events[rng.Intn(len(events))]
 		r := fnRec(who, ev, off-lead,
-			fnWithUtmSource(pick("", "", "tw", "fb")), fnWithRefHost(pick("", "google.com", "t.co")),
+			fnWithUtmSource(pick("", "", "tw", "fb", "app")), fnWithRefHost(pick("", "google.com", "t.co")),
 			fnWithUtmCampaign(pick("", "c1", "c2")), fnWithCountry(pick("", "JP", "US", "DE")),
 			fnWithPlan(pick("", "p1", "p2")), fnWithChannel(pick("", "stripe", "apple")), fnWithSource(pick("", "quota", "banner")))
 		r.OS, r.Device, r.AppVersion = pick("", "ios", "macos"), pick("", "mobile", "desktop"), pick("", "0.4.9", "0.4.10")
@@ -1275,4 +1275,25 @@ func TestCompute_GuideConversionByLandingPath(t *testing.T) {
 		{Key: "/guides/a", Steps: []int{2, 2, 2}},
 		{Key: "/guides/b", Steps: []int{1, 0, 0}},
 	}, res.Groups)
+}
+
+// 应用跳到网站：只有链接上带 utm_source=app 的那次访问能进入；之后在网页登录、付款按账号接上。
+func TestCompute_AppToWebEntersOnlyOnAppTaggedVisit(t *testing.T) {
+	recs := []funnelRecord{
+		// A：从 App 打开官网（带标记）→ 看定价 → 网页登录后发起支付 → 付款。
+		fnRec("sid:A", "page_view", 0, fnWithUtmSource("app"), fnWithUtmCampaign("account")),
+		fnRec("sid:A", "pricing_view", 1),
+		fnRec("u:7", "checkout_start", 3, fnWithSurface("web")),
+		fnRec("u:7", "purchase", 5),
+		// B：直接访问官网走完全程——不是从 App 来的，不进入。
+		fnRec("sid:B", "page_view", 0),
+		fnRec("sid:B", "pricing_view", 1),
+		// C：别的活动标记——不进入。
+		fnRec("sid:C", "page_view", 0, fnWithUtmSource("edm")),
+	}
+	ids := map[string]uint64{"sid:A": 7}
+	res := fnCompute30d(t, "app_to_web", recs, ids, "utm_campaign")
+	assert.Equal(t, []int{1, 1, 1, 1}, fnStepCounts(res))
+	require.Len(t, res.Groups, 1)
+	assert.Equal(t, "account", res.Groups[0].Key)
 }

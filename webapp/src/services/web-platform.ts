@@ -13,6 +13,7 @@
  */
 
 import { plainLocalStorage } from './plain-storage';
+import { withAppAttribution } from '../utils/site-link';
 
 /**
  * Web Platform implementation
@@ -28,7 +29,7 @@ export const webPlatform = {
 
   // External links (browser native)
   openExternal: async (url: string) => {
-    window.open(url, '_blank', 'noopener,noreferrer');
+    window.open(withAppAttribution(url), '_blank', 'noopener,noreferrer');
   },
 
   // Clipboard (browser native — works in browser context, unreliable in WebView)

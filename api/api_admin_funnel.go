@@ -48,6 +48,9 @@ type AdminFunnelPath struct {
 	Title       string   `json:"title"`
 	Question    string   `json:"question"`
 	Steps       []string `json:"steps"`
+	StepWhere   []string `json:"stepWhere"` // 与 steps 一一对应：web / app / any / facts
+	Lane        string   `json:"lane"`      // web / app：路线总览按它分两列
+	Hop         string   `json:"hop,omitempty"`
 	WindowHours float64  `json:"windowHours"`
 }
 
@@ -66,11 +69,14 @@ func api_admin_list_funnels(c *gin.Context) {
 	resp := AdminFunnelListResponse{Paths: make([]AdminFunnelPath, 0, len(funnelPathRegistry)), GroupDims: funnelGroupDims}
 	for _, p := range funnelPathRegistry {
 		labels := make([]string, 0, len(p.Steps))
+		where := make([]string, 0, len(p.Steps))
 		for _, s := range p.Steps {
 			labels = append(labels, s.Label)
+			where = append(where, s.where())
 		}
 		resp.Paths = append(resp.Paths, AdminFunnelPath{
-			Key: p.Key, Title: p.Title, Question: p.Question, Steps: labels, WindowHours: p.Window.Hours(),
+			Key: p.Key, Title: p.Title, Question: p.Question, Steps: labels, StepWhere: where,
+			Lane: p.Lane, Hop: p.Hop, WindowHours: p.Window.Hours(),
 		})
 	}
 	Success(c, &resp)

@@ -10,6 +10,7 @@ import { PlatformIcon } from '@/components/marketing/PlatformIcon';
 import { detectPlatform } from '@/lib/device-detection';
 import type { InstallPlatform, InstallTarget } from '@/lib/downloads';
 import { SITE } from '@/lib/site';
+import { track } from '@/lib/funnel';
 
 const ORDER: InstallPlatform[] = ['windows', 'macos', 'ios', 'android'];
 const NEXT_STEPS = ['step1', 'step2', 'step3'] as const;
@@ -71,7 +72,13 @@ export default function InstallCards({ targets }: { targets: InstallTarget[] }) 
               <div className="mt-auto space-y-2">
                 {available ? (
                   <Button asChild className="w-full font-semibold" variant={featured ? 'default' : 'outline'}>
-                    <a href={target.url} {...(target.store ? { target: '_blank', rel: 'noopener noreferrer' } : {})}>
+                    <a
+                      href={target.url}
+                      {...(target.store ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                      // The platform rides in `p` (same as the other site's install_click). Center skips
+                      // the IP-based web→app inference for this brand, so nothing beyond the click is kept.
+                      onClick={() => track('install_click', { plan: platform })}
+                    >
                       {target.store ? <ExternalLink /> : <Download />}
                       {label}
                     </a>
