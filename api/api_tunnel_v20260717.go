@@ -61,6 +61,7 @@ func api_v20260717_tunnels(c *gin.Context) {
 	now := time.Now().Unix()
 
 	items := make([]DataSlaveTunnelV20260717, 0, len(tunnels))
+	locked := newLockedSummaryCounter()
 	for _, tunnel := range tunnels {
 		if tunnel.Node == nil || tunnel.Node.ID == 0 {
 			continue
@@ -81,6 +82,16 @@ func api_v20260717_tunnels(c *gin.Context) {
 
 		u := usageMap[tunnel.Node.Ipv4] // nil if no usage row yet
 		if shouldHideTunnelForUser(u, false, now) {
+			continue
+		}
+
+		// Trial-pool isolation (spec §3.7). Deliberately the LAST filter: a node
+		// counted into lockedSummary must have passed every other one (brand-
+		// visible, online, not over quota), so the summary only advertises member
+		// lines a paying user would really get. Only country is recorded — never
+		// domain / IP / serverUrl. No admin bypass, matching this handler.
+		if !nodeAllowedForUser(tunnel.Node, user) {
+			locked.add(tunnel.Node)
 			continue
 		}
 
@@ -116,8 +127,11 @@ func api_v20260717_tunnels(c *gin.Context) {
 		// token 认证、不携带 tunnel token，无法做 50% 条件续期——每次成功
 		// 响应按当前锚点重签（无条件续期，锚点不变故旧 token 不失效）。
 		TunnelToken string `json:"tunnelToken,omitempty"`
+		// LockedSummary：仅试用用户有值——被体验线路规则挡掉的会员节点按国家计数，
+		// 供付费页展示「会员私密线路」（spec §3.7 / §4.2）。不含任何节点地址。
+		LockedSummary []LockedTunnelGroup `json:"lockedSummary,omitempty"`
 	}
-	resp := response{Items: items}
+	resp := response{Items: items, LockedSummary: locked.groups()}
 	if dev := ReqDevice(c); dev != nil && user != nil {
 		if tok, err := issueTunnelTokenForDevice(c, dev, user.Roles); err != nil {
 			// 凭据升级失败不拖垮隧道列表（同 subs 的降级哲学）。
