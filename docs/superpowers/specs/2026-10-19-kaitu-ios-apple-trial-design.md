@@ -104,7 +104,32 @@
 - 变异验证：把判定函数改成恒返回 `paid`，上述试用用例必须变红。
 - 跨品牌：overleap 用户的试用交易走同一规则（brand-agnostic），不破坏 `logic_apple_iap_brand_test.go`。
 
-### 3.7 上线
+### 3.7 体验线路隔离（2026-10-19 David 追加：「按最好的转化收益推进」）
+
+目的：试用用户只能用单独的「体验线路」，拿不到会员节点地址；会员线路保持私密，付费页用「体验线路 vs 会员私密线路」的对比制造升级理由。
+
+**谁算试用用户**：`users.in_trial = true`（新列，bool）。
+- 免费试用交易入账时置 true，**但用户已付过费（`IsFirstOrderDone=true`）时不置**——付过费的人换个 Apple ID 开试用，不能被降级。
+- 首笔付费入账、或该试用订阅 `EXPIRED` / `REVOKE` 时置 false。
+- 放在 User 上而不是每次查 Subscription：节点鉴权是热路径，`AuthorizeNodeAccess` 手里已经有 user。
+
+**节点**：`slave_nodes` 加 `pool` 列（varchar，默认 `""` = 会员节点，`"trial"` = 体验线路）。后台节点编辑（`api_admin_node.go:129-173`）与 MCP `update_node` 能设置它。
+- 试用用户：只看到、只能连 `pool="trial"` 的节点。
+- 付费用户：看到全部节点（含体验线路，容量不浪费）。
+- 体验线路同样要按品牌可见（`VisibleTo`），否则另一个品牌的试用用户列表为空。
+
+**一个判定函数，五处调用**：`nodeAllowedForUser(node *SlaveNode, user *User) bool`，加在所有下发节点地址的地方：`api_tunnel.go:137`（含 MCP 走的 `/api/tunnels/k2v5`）、`api_tunnel_v20260717.go:78`、`api_relay.go:76`、`api_subs.go:362`（`fetchK2V5Tunnels`）。
+- **节点鉴权是真正的门**：`AuthorizeNodeAccess`（`entitlement_authorize.go:11-22`）shared 分支加「试用用户只能连 `pool=trial`」。列表过滤只防新地址下发；客户端缓存里已有的地址（webapp 缓存、k2subs 30 分钟刷新）只能靠节点鉴权挡。k2s 只缓存成功鉴权 15 分钟，所以「付费 → 试用」方向最多 15 分钟延迟（实际不会发生：付过费的人不会被置试用），「试用 → 付费」不受影响。
+- **不改**：antiblock 公开种子（`api_antiblock.go:122-131`）照旧；`/slave/accelerate-tunnels` 照旧（节点间中继，用户看不到）；路由器只拿私有节点，不涉及。
+- ⚠️ 已知事实：antiblock 种子本来就把健康的共享节点公开发到 CDN（无需登录），所以「会员节点地址完全不外泄」现在并不成立；体验线路隔离挡住的是「试用用户直接连会员节点」。
+
+**锁定的会员线路展示**：`/api/v20260717/tunnels` 对试用用户额外返回 `lockedSummary: [{country, count}]`（被过滤掉的会员节点按国家计数），**不含域名 / IP / serverUrl**。客户端渲染见 §4.2。
+
+**体验线路选哪几台**：上线第 ③ 步前从现有共享节点里指定 2–3 台（不同地区，负载低的），不新开机器；试用量起来后再按负载加。具体选哪台在 ③ 步按节点数据定。
+
+**测试**：判定函数的表驱动测试（试用 / 付费 / 付过费又开试用 / 试用过期后有赠送天数）；五个列表接口各一个「试用用户拿不到会员节点」的测试；`AuthorizeNodeAccess` 试用用户连会员节点被拒、连体验线路通过。
+
+### 3.8 上线
 
 `make deploy-api` 双机滚动。部署后、ASC 未开试用前，线上行为应与现在**完全一致**（除新增 storefront 列有值）——用最近的真实续费通知核对一遍。
 
@@ -123,6 +148,8 @@
   - **无资格或字段不存在**（旧壳）：保持现在的「立即订阅」。
   - 删掉对所有非会员都显示的 `purchase.currentlyInTrial`（zh-CN 现为「目前您正在试用，完成首次充值后即可使用云端节点服务。」，`zh-CN/purchase.json:48-49`）和不再准确的 `completeFirstPurchase` 表述，换成中性的「订阅后即可使用云端节点」。
   - `autoRenewalDisclosure`（`purchase.json:6`）补试用条款。
+- 节点列表（`CloudTunnelList.tsx`）：试用用户在体验线路下方显示「会员私密线路」区块（按 `lockedSummary` 列国家和数量，不可选，点击进付费页）。
+- 付费页整体优化（David：「在引导付费的 UI/UX 上花大功夫」）：先讲稳定（晚高峰、丢包），再给可信证据（2023 年起持续运营），再讲「体验线路 vs 会员私密线路」，最后讲清取消方式。具体设计在第 ② 步单独出稿给 David 看。
 - `IosMembershipPanel`：`isTrial` 时显示「免费试用中 · {trialEndsAt} 到期后自动续订」，并保留「管理订阅」入口。
 - 漏斗：有资格时点击记 `checkout_start` 并带 `trial=1`（或等价维度），以区分试用开始与直接购买。
 - 所有 webapp 语言包同步（webapp 现有全部 locale）；品牌字面量规则照旧（文案里不写品牌名）。
@@ -134,7 +161,7 @@
 
 ## 5. 第 ③ 步：App Store Connect
 
-- 前置：第 ① 步已部署并核对；第 ② 步的版本**已提交审核**（审核员需要在沙盒里看到试用按钮能用）。
+- 前置：第 ① 步已部署并核对；体验线路节点已在后台标记 `pool=trial` 并确认试用测试账号只能看到它们；第 ② 步的版本**已提交审核**（审核员需要在沙盒里看到试用按钮能用）。
 - 在 `io.kaitu.sub.basic.1y` 的订阅价格 → Introductory Offers：Free，1 week，全部已上架地区。
 - 打开后，旧版 App 的用户点「立即订阅」时，Apple 支付表单会自己显示「1 周免费，之后 $X/年」——可接受（Apple 表单本身有披露），只是我们的旧付费墙文案没写试用。
 - 打开后第一周：每天看 Slack 告警、`trial_start` / `purchase` 漏斗、storefront 分布、有无试用产生的订单或返佣（应为 0）。
