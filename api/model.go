@@ -558,12 +558,12 @@ const (
 	NodeClassPrivate = "private" // 专属节点（单一主人）
 )
 
-// SlaveNode 物理节点模型
-// Note: Only active nodes exist in the database. When a node goes offline,
-// it should be deleted along with its associated tunnels.
 // NodePoolTrial 是 SlaveNode.Pool 的试用池取值。
 const NodePoolTrial = "trial"
 
+// SlaveNode 物理节点模型
+// Note: Only active nodes exist in the database. When a node goes offline,
+// it should be deleted along with its associated tunnels.
 type SlaveNode struct {
 	ID        uint64 `gorm:"primarykey"`
 	CreatedAt time.Time

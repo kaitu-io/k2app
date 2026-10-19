@@ -310,7 +310,7 @@ func TestTrial_WebhookBeforeVerify(t *testing.T) {
 	byID["TR-WA"] = fa.trialTxn("TR-WA", t0, t0+7*aDay)
 	require.Equal(t, 200, postSubscribed(fa, "TR-WA"))
 	var n int64
-	db.Get().Model(&Subscription{}).Where("provider_subscription_id = ?", fa.origTxn).Count(&n)
+	require.NoError(t, db.Get().Model(&Subscription{}).Where("provider_subscription_id = ?", fa.origTxn).Count(&n).Error)
 	require.Zero(t, n, "未绑定的 webhook 什么都不写")
 	require.NoError(t, verifyAndGrantTransaction(context.Background(), fa.buyer.ID, "TR-WA"))
 

@@ -109,6 +109,13 @@ func api_apple_webhook(c *gin.Context) {
 		if err := verifyAndGrantTransaction(c, sub.UserID, asn.TransactionInfo.TransactionId); errors.Is(err, errAppleTxnRevoked) {
 			// 被退款的交易永不入账；视为已处理，不让 Apple 重投。
 			log.Infof(c, "[AppleWebhook] txn %s already refunded, not crediting otx=%s", asn.TransactionInfo.TransactionId, otx)
+		} else if errors.Is(err, errAppleTxnAwaitingRebind) {
+			// 试用链上别的账号的付费交易：等那个账号的 verify 改绑。5xx 让 Apple 重投——改绑之后的重投
+			// 命中去重；不记 LastEventID（下面的 return 跳过），重投不会被 UUID 去重门挡掉。
+			log.Warnf(c, "[AppleWebhook] txn %s awaits trial-chain rebind, asking Apple to retry otx=%s: %v",
+				asn.TransactionInfo.TransactionId, otx, err)
+			c.AbortWithStatus(503)
+			return
 		} else if err != nil {
 			log.Errorf(c, "[AppleWebhook] grant failed otx=%s: %v", otx, err)
 			c.AbortWithStatus(500)

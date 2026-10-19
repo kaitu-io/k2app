@@ -100,6 +100,11 @@ func deriveActiveOrExpired(periodEnd, now int64) string {
 // 错误；webhook 与对账视为已处理。
 var errAppleTxnRevoked = errors.New("apple transaction has been refunded")
 
+// errAppleTxnAwaitingRebind 从没付过费的试用链上来了一笔付费交易，它的 appAccountToken 属于另一个
+// 账号（spec 2026-10-19 §3.3 改绑）：只有那个账号的 verify 能入账（改绑）。webhook 映射成 5xx 让
+// Apple 重投（verify 改绑后重投命中去重）；对账 worker 记日志跳过。返回它时什么都没写。
+var errAppleTxnAwaitingRebind = errors.New("apple txn awaits trial-chain rebind by its token owner")
+
 // lastActiveAppleRefundAt 这条订阅链上仍生效、且曾把订阅置为 revoked 的退款里最晚的
 // revocationDate（毫秒）；无则 0。复活判据：新付款的 purchaseDate 必须严格晚于它。
 func lastActiveAppleRefundAt(tx *gorm.DB, otx string) (int64, error) {
@@ -136,6 +141,19 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	}
 	// 试用链首笔付费：订阅链从没付过费（is_trial 仍为真），这笔不是试用 → 按首购处理。
 	trialChainFirstPaid := !isFirst && sub.IsTrial && !isTrialTxn
+	// 改绑竞态门（spec §3.3）：B 在 A 从没付过费的试用链上重订阅时，webhook / 对账 worker 永远以
+	// sub.UserID（A）入账。这笔付费交易的 token 若不是 A 的，它是在等 B 的客户端 verify 来改绑——
+	// 现在以 A 入账会让 A 白拿首购、B 的 verify 再被 INV9 拒掉。什么都不写，交给调用方重试/跳过。
+	if !isFirst && sub.IsTrial && !isTrialTxn && info.AppAccountToken != "" && sub.UserID == userID {
+		var owner User
+		if err := tx.Select("id", "uuid").First(&owner, userID).Error; err != nil {
+			return fmt.Errorf("load user %d for trial-chain token check: %w", userID, err)
+		}
+		if !strings.EqualFold(info.AppAccountToken, deriveAppleAccountToken(owner.UUID)) {
+			return fmt.Errorf("%w: chain %s owned by user %d, txn %s carries another account's token",
+				errAppleTxnAwaitingRebind, info.OriginalTransactionId, userID, info.TransactionId)
+		}
+	}
 	var rebindFromUserID uint64
 	if !isFirst && sub.UserID != userID {
 		// INV9: never re-bind an existing subscription to a different user —— 唯一例外（spec §3.3）：

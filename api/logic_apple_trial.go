@@ -34,9 +34,11 @@ func classifyAppleTxn(info *appstore.TransactionInfo) appleTxnClass {
 
 // canRebindTrialChain 是 INV9 永久绑定的唯一例外（spec 2026-10-19 §3.3）：一条**从没付过费**的试用链
 // （sub.IsTrial 仍为真），在第一笔**正常付费**交易入账时，若交易的 appAccountToken 是当前账号派生的，
-// 允许改绑到当前账号。其余情形（链付过费、试用/其他优惠交易、空 token、别人的 token）一律拒绝。
+// 允许改绑到当前账号。其余情形（链付过费、试用交易、空 token、别人的 token）一律拒绝。
 func canRebindTrialChain(tx *gorm.DB, sub *Subscription, class appleTxnClass, info *appstore.TransactionInfo, userID uint64) (bool, error) {
-	if !sub.IsTrial || class != appleTxnPaid || info.AppAccountToken == "" {
+	// OtherOffer 也按付费入账（只多一条告警），所以同样允许改绑——否则带 B token 的 OtherOffer
+	// 交易会被 errAppleTxnAwaitingRebind 永远挂起、B 的 verify 又被拒。
+	if !sub.IsTrial || class == appleTxnFreeTrial || info.AppAccountToken == "" {
 		return false, nil
 	}
 	var u User
