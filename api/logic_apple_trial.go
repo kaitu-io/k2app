@@ -1,6 +1,12 @@
 package center
 
-import "github.com/wordgate/qtoolkit/appstore"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/wordgate/qtoolkit/appstore"
+	"gorm.io/gorm"
+)
 
 // appleTxnClass 是一笔 Apple 交易的入账分类（spec 2026-10-19 §3.2）。
 type appleTxnClass int
@@ -24,4 +30,18 @@ func classifyAppleTxn(info *appstore.TransactionInfo) appleTxnClass {
 		return appleTxnFreeTrial
 	}
 	return appleTxnOtherOffer
+}
+
+// canRebindTrialChain 是 INV9 永久绑定的唯一例外（spec 2026-10-19 §3.3）：一条**从没付过费**的试用链
+// （sub.IsTrial 仍为真），在第一笔**正常付费**交易入账时，若交易的 appAccountToken 是当前账号派生的，
+// 允许改绑到当前账号。其余情形（链付过费、试用/其他优惠交易、空 token、别人的 token）一律拒绝。
+func canRebindTrialChain(tx *gorm.DB, sub *Subscription, class appleTxnClass, info *appstore.TransactionInfo, userID uint64) (bool, error) {
+	if !sub.IsTrial || class != appleTxnPaid || info.AppAccountToken == "" {
+		return false, nil
+	}
+	var u User
+	if err := tx.Select("id", "uuid").First(&u, userID).Error; err != nil {
+		return false, fmt.Errorf("load user %d for trial-chain rebind: %w", userID, err)
+	}
+	return strings.EqualFold(info.AppAccountToken, deriveAppleAccountToken(u.UUID)), nil
 }
