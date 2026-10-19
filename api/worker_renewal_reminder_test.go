@@ -311,3 +311,34 @@ func TestHandlerDispatch(t *testing.T) {
 		}
 	}
 }
+
+// TestRenewalReminder_ExcludesNeverPaid 锁住续费提醒 / 过期召回的候选过滤：从没付过费
+// （is_first_order_done=false，例如 Apple 试用到期未转付费）的用户不进候选——给他们发
+// "续费"邮件语义错误（spec 2026-10-19 §3.5）。集成测试，跑真实 dev MySQL。
+func TestRenewalReminder_ExcludesNeverPaid(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+
+	nowUTC := time.Now().UTC()
+	dayStart := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 3)
+	dayEnd := dayStart.AddDate(0, 0, 1)
+	exp := dayStart.Add(12 * time.Hour).Unix()
+	uniq := nowUTC.UnixNano()
+
+	paid := User{UUID: fmt.Sprintf("usr-rr-paid-%d", uniq), ExpiredAt: exp, IsFirstOrderDone: BoolPtr(true)}
+	trial := User{UUID: fmt.Sprintf("usr-rr-trial-%d", uniq), ExpiredAt: exp, IsFirstOrderDone: BoolPtr(false), InTrial: true}
+	for _, u := range []*User{&paid, &trial} {
+		require.NoError(t, db.Get().Create(u).Error)
+		u := u
+		t.Cleanup(func() { db.Get().Unscoped().Delete(u) })
+	}
+
+	users, err := lifecycleEmailCandidates(dayStart, dayEnd)
+	require.NoError(t, err)
+	ids := map[uint64]bool{}
+	for _, u := range users {
+		ids[u.ID] = true
+	}
+	assert.True(t, ids[paid.ID], "付过费的即将到期用户进候选")
+	assert.False(t, ids[trial.ID], "从没付过费的用户不进续费提醒 / 召回候选")
+}

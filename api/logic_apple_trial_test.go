@@ -431,3 +431,129 @@ func TestTrial_StorefrontRecorded(t *testing.T) {
 	assert.Equal(t, "CHN", creditRowOf(t, "TR-SF1").Storefront)
 	assert.Equal(t, "USA", creditRowOf(t, "TR-SF2").Storefront)
 }
+
+// ---------- 试用生命周期（spec 2026-10-19 §3.3 / §3.5）----------
+
+// EXPIRED：试用链到期清 in_trial；expired_at 不动（另有 10 天赠送叠加，照常保留）。
+func TestTrial_ExpiredClearsInTrial(t *testing.T) {
+	trialDB(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	f.noInvite(t)
+	t0 := time.Now().Unix()
+	require.NoError(t, creditInfo(t, f.buyer.ID, f.trialTxn("TR-E1", t0-7*aDay, t0)))
+	f.addGift(t, 10*aDay)
+	before := f.userNow(t, f.buyer.ID)
+	require.True(t, before.InTrial)
+
+	sub := f.subNow(t)
+	require.NoError(t, applyAppleExpired(context.Background(), &sub))
+
+	u := f.userNow(t, f.buyer.ID)
+	assert.False(t, u.InTrial, "试用到期清标志")
+	assert.Equal(t, before.ExpiredAt, u.ExpiredAt, "到期不改 expired_at（赠送保留）")
+	assert.Equal(t, "expired", f.subNow(t).Status)
+}
+
+// 非试用链到期不碰 in_trial（对照：只按 sub.IsTrial 判定）。
+func TestTrial_ExpiredNonTrialChainLeavesFlag(t *testing.T) {
+	trialDB(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	f.noInvite(t)
+	t0 := time.Now().Unix()
+	require.NoError(t, creditInfo(t, f.buyer.ID, f.paidTxn("TR-EN1", t0-365*aDay, t0)))
+	require.NoError(t, db.Get().Model(&User{}).Where("id = ?", f.buyer.ID).Update("in_trial", true).Error)
+
+	sub := f.subNow(t)
+	require.False(t, sub.IsTrial)
+	require.NoError(t, applyAppleExpired(context.Background(), &sub))
+	assert.True(t, f.userNow(t, f.buyer.ID).InTrial, "非试用链到期不改 in_trial")
+}
+
+// REVOKE（家庭共享撤销 / 退款）落地：试用链清 in_trial。
+func TestTrial_RevokeClearsInTrial(t *testing.T) {
+	trialDB(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	f.noInvite(t)
+	t0 := time.Now().Unix()
+	require.NoError(t, creditInfo(t, f.buyer.ID, f.trialTxn("TR-RV1", t0, t0+7*aDay)))
+	require.True(t, f.userNow(t, f.buyer.ID).InTrial)
+
+	f.refundEv(t, "TR-RV1", t0, t0+7*aDay, appleRefundEvidence{SignedAt: time.Now().UnixMilli()})
+	assert.False(t, f.userNow(t, f.buyer.ID).InTrial, "试用链被撤销清标志")
+}
+
+// 试用链进入宽限期：不做 grace cover-through（expired_at 与 current_period_end 都不推进）；
+// 状态照常落 grace。非试用链的延长由 TestApplyRenewalInfo_Integration 守着。
+func TestTrial_NoGraceExtensionForTrialChain(t *testing.T) {
+	trialDB(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	f.noInvite(t)
+	t0 := time.Now().Unix()
+	require.NoError(t, creditInfo(t, f.buyer.ID, f.trialTxn("TR-G1", t0, t0+7*aDay)))
+	before := f.userNow(t, f.buyer.ID)
+	sub := f.subNow(t)
+	require.True(t, sub.IsTrial)
+	cpe := sub.CurrentPeriodEnd
+
+	ri := &appstore.RenewalInfo{
+		AutoRenewStatus:        appstore.AutoRenewStatus_On,
+		GracePeriodExpiresDate: (t0 + 16*aDay) * 1000,
+	}
+	require.NoError(t, applyRenewalInfo(context.Background(), &sub, ri, "GRACE_PERIOD"))
+
+	u := f.userNow(t, f.buyer.ID)
+	s := f.subNow(t)
+	assert.Equal(t, before.ExpiredAt, u.ExpiredAt, "试用链不享宽限延长")
+	assert.Equal(t, cpe, s.CurrentPeriodEnd, "current_period_end 不推进")
+	assert.Equal(t, cpe, sub.CurrentPeriodEnd, "内存快照也不推进")
+	assert.Equal(t, "grace", s.Status, "状态更新照旧")
+}
+
+// 读模型暴露试用状态：试用中 isTrial=true + trialEndsAt；转付费后 isTrial=false、trialEndsAt=0。
+func TestTrial_DataSubscriptionExposesTrial(t *testing.T) {
+	trialDB(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	f.noInvite(t)
+	t0 := time.Now().Unix()
+	trialEnd := t0 + 7*aDay
+	require.NoError(t, creditInfo(t, f.buyer.ID, f.trialTxn("TR-D1", t0, trialEnd)))
+
+	subs := GetActiveSubscriptions(f.buyer.ID)
+	require.Len(t, subs, 1)
+	assert.True(t, subs[0].IsTrial)
+	assert.Equal(t, trialEnd, subs[0].TrialEndsAt)
+	js, err := json.Marshal(subs[0])
+	require.NoError(t, err)
+	assert.Contains(t, string(js), `"isTrial":true`)
+	assert.Contains(t, string(js), fmt.Sprintf(`"trialEndsAt":%d`, trialEnd))
+
+	require.NoError(t, creditInfo(t, f.buyer.ID, f.paidTxn("TR-D2", trialEnd, trialEnd+365*aDay)))
+	subs = GetActiveSubscriptions(f.buyer.ID)
+	require.Len(t, subs, 1)
+	assert.False(t, subs[0].IsTrial)
+	assert.Zero(t, subs[0].TrialEndsAt)
+}
+
+// 控制者裁定：试用用户走非 Apple 渠道（NextPay/WordGate 订单入账）付费，同一事务里清 in_trial。
+func TestTrial_NonApplePaymentClearsInTrial(t *testing.T) {
+	trialDB(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	f.noInvite(t)
+	t0 := time.Now().Unix()
+	require.NoError(t, creditInfo(t, f.buyer.ID, f.trialTxn("TR-NA1", t0, t0+7*aDay)))
+	require.True(t, f.userNow(t, f.buyer.ID).InTrial)
+
+	order := &Order{
+		UUID: generateId("ord"), Title: f.plan.Label, OriginAmount: f.plan.Price, PayAmount: f.plan.Price,
+		UserID: f.buyer.ID, IsPaid: BoolPtr(false),
+	}
+	require.NoError(t, order.SetPlan(f.plan))
+	require.NoError(t, db.Get().Create(order).Error)
+	require.NoError(t, db.Get().Transaction(func(tx *gorm.DB) error {
+		return MarkOrderAsPaid(context.Background(), tx, order, nil)
+	}))
+
+	u := f.userNow(t, f.buyer.ID)
+	assert.False(t, u.InTrial, "非 Apple 付费清试用标志")
+	assert.True(t, isTrue(u.IsFirstOrderDone))
+}

@@ -169,6 +169,10 @@ func reconcileAppleSubscription(ctx context.Context, sub *Subscription, now int6
 			if res.RowsAffected > 0 {
 				log.Infof(ctx, "[SUB-RECONCILE] sub %s marked expired (was %s)", sub.ProviderSubscriptionID, sub.Status)
 				changed = true
+				// 与 webhook EXPIRED 同语义：漏收通知时由对账兜底清试用标志。
+				if err := clearInTrialIfTrialChain(db.Get(), sub); err != nil {
+					return changed, err
+				}
 			} else {
 				log.Debugf(ctx, "[SUB-RECONCILE] sub %s expired write guarded off (status/period changed under us)", sub.ProviderSubscriptionID)
 			}

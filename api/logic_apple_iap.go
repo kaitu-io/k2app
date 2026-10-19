@@ -734,7 +734,10 @@ func applyRenewalInfo(ctx context.Context, sub *Subscription, ri *appstore.Renew
 	// 周期末,delta 会把宽限补时误当"礼物"叠加,双算整段宽限窗(review finding 1)。两处写
 	// 都是条件式原子 UPDATE(单调守卫进 SQL),不先读后写,避免与并发 credit 事务的
 	// lost-update（review finding 2）；RowsAffected 判断是否真的改了再打日志,错误一律上抛。
-	if status == "grace" && ri != nil && ri.GracePeriodExpiresDate > 0 {
+	//
+	// 试用链（sub.IsTrial：从没付过费）不享宽限延长——宽限是给"扣费失败的付费用户"的，试用到期
+	// 扣不到款就该按 expiresDate 停（spec 2026-10-19 §3.5）。状态/auto_renew 照常落地。
+	if status == "grace" && ri != nil && ri.GracePeriodExpiresDate > 0 && !sub.IsTrial {
 		graceEnd := ri.GracePeriodExpiresDate / 1000
 
 		// 订阅已被退款置 revoked 时不做宽限延长（与上面的状态守卫同一理由）。
@@ -825,12 +828,20 @@ func GetActiveSubscriptions(userID uint64) []DataSubscription {
 			}
 			manage = ManageSurface{Kind: "stripe_portal"} // 客户端调 POST /api/user/stripe/portal 换 URL
 		}
+		// 试用只存在于 Apple 链；Stripe / 非试用恒为 false / 0。
+		isTrial := s.Provider == SubscriptionProviderApple && s.IsTrial
+		var trialEndsAt int64
+		if isTrial {
+			trialEndsAt = s.TrialEndsAt
+		}
 		out = append(out, DataSubscription{
 			Provider:         s.Provider,
 			Tier:             tier,
 			CurrentPeriodEnd: s.CurrentPeriodEnd,
 			AutoRenew:        s.AutoRenew,
 			Manage:           manage,
+			IsTrial:          isTrial,
+			TrialEndsAt:      trialEndsAt,
 		})
 	}
 	return out

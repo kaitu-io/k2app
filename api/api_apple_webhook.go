@@ -162,8 +162,7 @@ func api_apple_webhook(c *gin.Context) {
 		log.Infof(c, "[AppleWebhook] %s otx=%s txn=%s (no action)", nType, otx, asn.TransactionInfo.TransactionId)
 
 	case appstore.NotificationType_EXPIRED, appstore.NotificationType_GRACE_PERIOD_EXPIRED:
-		// 到期：expired_at 已等于 Apple expiresDate，自然过期，仅标记状态。
-		if err := setSubStatus(c, sub.ID, "expired"); err != nil {
+		if err := applyAppleExpired(c, &sub); err != nil {
 			log.Errorf(c, "[AppleWebhook] mark expired failed otx=%s: %v", otx, err)
 			c.AbortWithStatus(500)
 			return
@@ -183,6 +182,16 @@ func api_apple_webhook(c *gin.Context) {
 // 复活判据（spec 2026-10-08 §3.4）。
 func setSubStatus(ctx context.Context, id uint64, status string) error {
 	return db.Get().Model(&Subscription{}).Where("id = ? AND status <> ?", id, "revoked").Update("status", status).Error
+}
+
+// applyAppleExpired 落地 EXPIRED / GRACE_PERIOD_EXPIRED：expired_at 已等于 Apple expiresDate，
+// 自然过期，只标记状态；试用链顺带清 in_trial（不动 expired_at，叠加的赠送照常保留）。
+// 两步都幂等，失败由 webhook 500 → Apple 重投整体重来。
+func applyAppleExpired(ctx context.Context, sub *Subscription) error {
+	if err := setSubStatus(ctx, sub.ID, "expired"); err != nil {
+		return err
+	}
+	return clearInTrialIfTrialChain(db.Get(), sub)
 }
 
 func recordSubEventID(ctx context.Context, id uint64, eventID string) error {

@@ -109,6 +109,10 @@ func applyAppleRefund(ctx context.Context, otx string, txn *appstore.Transaction
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "expired_at", "brand").First(&user, sub.UserID).Error; err != nil {
 			return fmt.Errorf("lock user %d: %w", sub.UserID, err)
 		}
+		// 3b. 试用链被退款 / 撤销：清试用线路隔离标志（spec 2026-10-19 §3.5）。
+		if err := clearInTrialIfTrialChain(tx, &sub); err != nil {
+			return err
+		}
 
 		// 4–5. 入账与订单。
 		var credits int64

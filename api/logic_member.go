@@ -43,6 +43,9 @@ func addProExpiredDays(ctx context.Context, tx *gorm.DB, user *User, vipType Vip
 			user.IsFirstOrderDone = BoolPtr(true)
 			log.Infof(ctx, "[addProExpiredDays] marking user %d first order as completed", user.ID)
 		}
+		// 非 Apple 渠道付费（NextPay/WordGate 订单）= 已是付费用户，退出试用线路隔离
+		// （spec 2026-10-19 §3.5；随下方 tx.Save 同一事务落库）。
+		user.InTrial = false
 	}
 
 	// 付费时自动激活用户账号(避免出现已付费但未激活的状态)
@@ -113,6 +116,9 @@ func applyOrderToBuyer(ctx context.Context, tx *gorm.DB, order *Order, pc *Order
 		updates := map[string]any{}
 		if buyer.IsFirstOrderDone == nil || !*buyer.IsFirstOrderDone {
 			updates["is_first_order_done"] = true
+		}
+		if buyer.InTrial {
+			updates["in_trial"] = false // 付费买家退出试用线路隔离（spec 2026-10-19 §3.5）
 		}
 		if buyer.IsActivated == nil || !*buyer.IsActivated {
 			updates["is_activated"] = true

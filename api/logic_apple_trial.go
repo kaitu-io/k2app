@@ -45,3 +45,16 @@ func canRebindTrialChain(tx *gorm.DB, sub *Subscription, class appleTxnClass, in
 	}
 	return strings.EqualFold(info.AppAccountToken, deriveAppleAccountToken(u.UUID)), nil
 }
+
+// clearInTrialIfTrialChain 试用链终结（EXPIRED / GRACE_PERIOD_EXPIRED / REFUND / REVOKE）时清掉用户的
+// in_trial（试用线路隔离，spec 2026-10-19 §3.5）。sub.IsTrial 在转付费前一直为真，所以它就是
+// "这条链从没付过费"的判据；付过费的链不碰标志。只改 users.in_trial 这一列，绝不碰 expired_at。
+func clearInTrialIfTrialChain(tx *gorm.DB, sub *Subscription) error {
+	if !sub.IsTrial {
+		return nil
+	}
+	if err := tx.Model(&User{}).Where("id = ?", sub.UserID).Update("in_trial", false).Error; err != nil {
+		return fmt.Errorf("clear in_trial of user %d (trial sub %d): %w", sub.UserID, sub.ID, err)
+	}
+	return nil
+}
