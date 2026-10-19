@@ -29,6 +29,17 @@ type SlaveNodeUpsertRequest struct {
 	IPType       string              `json:"ipType"`                                             // residential|non_residential|unknown，sidecar 始终上报（未配置=unknown）
 	PrivateClaim string              `json:"privateClaim,omitempty"`                             // 专属节点认领令牌（cloud-init 注入，sidecar 回传）
 	Brands       []string            `json:"brands,omitempty"`                                   // 节点自我声明可服务的品牌（K2_NODE_BRANDS）；缺省/老 sidecar 不发 = 仅 kaitu
+	Pool         string              `json:"pool,omitempty"`                                     // 节点池（K2_NODE_POOL）：'' = 会员节点，"trial" = 体验线路；缺省/老 sidecar 不发 = ''
+}
+
+// normalizeDeclaredPool 校验节点上报的池（K2_NODE_POOL）。与品牌不同，非法值**拒绝注册**而不是丢弃：
+// 拼错的 "trail" 静默落成空串会把体验线路变成会员节点、试用用户列表变空，宁可注册失败被运维看见。
+func normalizeDeclaredPool(in string) (string, bool) {
+	p := strings.ToLower(strings.TrimSpace(in))
+	if p == "" || p == NodePoolTrial {
+		return p, true
+	}
+	return "", false
 }
 
 // normalizeDeclaredBrands 把节点上报的品牌列表规范成可入库的规范形式。
@@ -69,8 +80,12 @@ func nodeDeclaredColumns(req *SlaveNodeUpsertRequest, region, class string) map[
 		"ipv6":         req.IPv6,
 		"meta":         meta,
 		"ip_type":      NormalizeIPType(req.IPType),
-		"brands":       normalizeDeclaredBrands(req.Brands),
-		"class":        class,
+		// pool 与 brands 同理：节点 .env（K2_NODE_POOL）是唯一真相源，每次注册重发——
+		// sidecar 关机时 Unregister 会硬删节点行，只有节点自己声明才扛得住重启。
+		// 调用方已用 normalizeDeclaredPool 校验过。
+		"brands": normalizeDeclaredBrands(req.Brands),
+		"pool":   req.Pool,
+		"class":  class,
 		// 复活软删的节点：旧实现靠"硬删+重建"顺带把 deleted_at 清掉了，改成 UPDATE
 		// 之后必须显式清，否则一个软删过的 IP 重新注册会留在软删状态、对谁都不可见。
 		"deleted_at": nil,
@@ -273,6 +288,14 @@ func api_slave_node_upsert(c *gin.Context) {
 		return
 	}
 
+	pool, ok := normalizeDeclaredPool(req.Pool)
+	if !ok {
+		log.Warnf(c, "node %s declared invalid pool %q (K2_NODE_POOL), registration rejected", ipv4Param, req.Pool)
+		Error(c, ErrorInvalidArgument, "pool must be \"\" or \""+NodePoolTrial+"\" (K2_NODE_POOL)")
+		return
+	}
+	req.Pool = pool
+
 	// Check if node exists (including soft-deleted)
 	var existingNode SlaveNode
 	err := db.Get().Unscoped().Where("ipv4 = ?", ipv4Param).First(&existingNode).Error
@@ -332,7 +355,7 @@ func api_slave_node_upsert(c *gin.Context) {
 			return
 		}
 
-		log.Infof(c, "node updated successfully: ipv4=%s brands=%s", ipv4Param, node.Brands)
+		log.Infof(c, "node updated successfully: ipv4=%s brands=%s pool=%q", ipv4Param, node.Brands, node.Pool)
 	} else if util.DbIsNotFoundErr(err) {
 		// Node doesn't exist - create new
 		node = SlaveNode{
@@ -345,6 +368,7 @@ func api_slave_node_upsert(c *gin.Context) {
 			Meta:        string(req.Meta),
 			IPType:      NormalizeIPType(req.IPType),
 			Brands:      normalizeDeclaredBrands(req.Brands),
+			Pool:        req.Pool,
 			Class:       classForRegistration(req.PrivateClaim, ""),
 		}
 		if err := db.Get().Create(&node).Error; err != nil {

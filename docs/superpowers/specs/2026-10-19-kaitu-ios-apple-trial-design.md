@@ -113,7 +113,7 @@
 - 首笔付费入账、或该试用订阅 `EXPIRED` / `REVOKE` 时置 false。
 - 放在 User 上而不是每次查 Subscription：节点鉴权是热路径，`AuthorizeNodeAccess` 手里已经有 user。
 
-**节点**：`slave_nodes` 加 `pool` 列（varchar，默认 `""` = 会员节点，`"trial"` = 体验线路）。后台节点编辑（`api_admin_node.go:129-173`）与 MCP `update_node` 能设置它。
+**节点**：`slave_nodes` 加 `pool` 列（varchar，默认 `""` = 会员节点，`"trial"` = 体验线路）。后台节点编辑（`api_admin_node.go:129-173`）与 MCP `update_node` 能设置它。**真相源是节点 `.env` 的 `K2_NODE_POOL`**（2026-10-20 终审改：与 `K2_NODE_BRANDS` 同机制，sidecar 每次注册上报；sidecar 关机 Unregister 会硬删节点行，Center 侧设的值扛不过重启）。后台/MCP 改的值只撑到该节点下次注册。
 - 试用用户：只看到、只能连 `pool="trial"` 的节点。
 - 付费用户：看到全部节点（含体验线路，容量不浪费）。
 - 体验线路同样要按品牌可见（`VisibleTo`），否则另一个品牌的试用用户列表为空。
@@ -161,7 +161,7 @@
 
 ## 5. 第 ③ 步：App Store Connect
 
-- 前置：第 ① 步已部署并核对；体验线路节点已在后台标记 `pool=trial` 并确认试用测试账号只能看到它们；第 ② 步的版本**已提交审核**（审核员需要在沙盒里看到试用按钮能用）。
+- 前置：第 ① 步已部署并核对；体验线路节点已在 `.env` 写 `K2_NODE_POOL=trial` 并重启（重注册后 `slave_nodes.pool=trial`） 并确认试用测试账号只能看到它们；第 ② 步的版本**已提交审核**（审核员需要在沙盒里看到试用按钮能用）。
 - 在 `io.kaitu.sub.basic.1y` 的订阅价格 → Introductory Offers：Free，1 week，全部已上架地区。
 - 打开后，旧版 App 的用户点「立即订阅」时，Apple 支付表单会自己显示「1 周免费，之后 $X/年」——可接受（Apple 表单本身有披露），只是我们的旧付费墙文案没写试用。
 - 打开后第一周：每天看 Slack 告警、`trial_start` / `purchase` 漏斗、storefront 分布、有无试用产生的订单或返佣（应为 0）。

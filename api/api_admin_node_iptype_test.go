@@ -102,7 +102,8 @@ func TestAdminUpdateNodeIPType(t *testing.T) {
 }
 
 // TestAdminNodeUpdate_SetsPool —— 后台可把节点划进 / 移出体验线路（spec §3.7）；
-// 非法取值拒绝且不改库；不带 pool 的更新不动 pool；列表回显 pool。Needs dev MySQL.
+// 非法取值拒绝且不改库；不带 pool 的更新不动 pool；列表回显 pool。后台值只撑到下次注册
+// （节点声明的 K2_NODE_POOL 为准）。Needs dev MySQL.
 func TestAdminNodeUpdate_SetsPool(t *testing.T) {
 	testInitConfig()
 	skipIfNoConfig(t)
@@ -126,13 +127,17 @@ func TestAdminNodeUpdate_SetsPool(t *testing.T) {
 	adminUpdateNodeForTest(t, r, ipv4, AdminUpdateNodeRequest{Name: strptr("pool-renamed-" + uniq)})
 	require.Equal(t, NodePoolTrial, reloadNode(t, ipv4).Pool)
 
-	// Node re-registration (every k2s restart) must not reset the ops-owned pool.
+	// Node re-registration (every k2s restart) re-declares pool from K2_NODE_POOL —
+	// the node-declared value is the source of truth (final-review ruling, mirrors
+	// K2_NODE_BRANDS). A node that declares trial stays trial; one that declares
+	// nothing is reset (TestUpsert_PoolIsNodeDeclared covers the reset + hard-delete path).
 	upsertNodeForTest(t, r, ipv4, SlaveNodeUpsertRequest{
 		Country:     "US",
 		Name:        "pool-admin-test-" + uniq,
 		SecretToken: "tok-pool-" + uniq,
+		Pool:        NodePoolTrial,
 	})
-	require.Equal(t, NodePoolTrial, reloadNode(t, ipv4).Pool, "re-register must keep pool")
+	require.Equal(t, NodePoolTrial, reloadNode(t, ipv4).Pool, "re-register with K2_NODE_POOL=trial keeps trial")
 
 	// List echoes pool so ops can see which nodes are trial lines.
 	w := httptest.NewRecorder()

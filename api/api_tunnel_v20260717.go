@@ -120,6 +120,8 @@ func api_v20260717_tunnels(c *gin.Context) {
 	}
 
 	log.Infof(c, "v20260717 tunnels: returned %d items", len(items))
+	// 体验线路全挂 / 节点重注册丢了 pool 时，试用用户会拿到空列表——没人报障就没人发现。
+	maybeAlertTrialPoolEmpty(user, len(items), len(locked.seen), time.Now())
 	type response struct {
 		Items []DataSlaveTunnelV20260717 `json:"items"`
 		// TunnelToken 是该设备的 90 天隧道专用凭据（Phase 0，spec §4.2）。

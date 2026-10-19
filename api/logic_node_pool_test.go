@@ -1,6 +1,7 @@
 package center
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"net/http/httptest"
@@ -137,4 +138,64 @@ func countPresentIP(body string, nodes ...poolFixtureNode) int {
 		}
 	}
 	return n
+}
+
+// 体验线路为空告警：只在「被池规则限制的试用用户拿到空列表」时发；每品牌每小时至多一条。
+func TestShouldAlertTrialPoolEmpty(t *testing.T) {
+	trial := poolTrialUser()
+	assert.True(t, shouldAlertTrialPoolEmpty(trial, 0))
+	assert.False(t, shouldAlertTrialPoolEmpty(trial, 1), "有线路不告警")
+	assert.False(t, shouldAlertTrialPoolEmpty(poolPaidUser(), 0), "付费用户空列表不是体验线路问题")
+	assert.False(t, shouldAlertTrialPoolEmpty(&User{InTrial: true, IsFirstOrderDone: BoolPtr(true)}, 0), "付过费又开试用的不受限")
+	assert.False(t, shouldAlertTrialPoolEmpty(&User{}, 0))
+	assert.False(t, shouldAlertTrialPoolEmpty(nil, 0))
+}
+
+func TestMaybeAlertTrialPoolEmpty_DedupedPerBrandPerHour(t *testing.T) {
+	type sent struct {
+		brand  Brand
+		locked int
+	}
+	ch := make(chan sent, 10)
+	old := alertTrialPoolEmpty
+	alertTrialPoolEmpty = func(_ context.Context, b Brand, locked int) { ch <- sent{b, locked} }
+	trialPoolEmptyAlerts.mu.Lock()
+	saved := trialPoolEmptyAlerts.last
+	trialPoolEmptyAlerts.last = map[Brand]time.Time{}
+	trialPoolEmptyAlerts.mu.Unlock()
+	t.Cleanup(func() {
+		alertTrialPoolEmpty = old
+		trialPoolEmptyAlerts.mu.Lock()
+		trialPoolEmptyAlerts.last = saved
+		trialPoolEmptyAlerts.mu.Unlock()
+	})
+	recv := func() sent {
+		select {
+		case s := <-ch:
+			return s
+		case <-time.After(2 * time.Second):
+			t.Fatal("alert not sent")
+			return sent{}
+		}
+	}
+
+	t0 := time.Now()
+	kaitu := poolTrialUser()
+	overleap := poolTrialUser()
+	overleap.Brand = string(BrandOverleap)
+
+	require.False(t, maybeAlertTrialPoolEmpty(poolPaidUser(), 0, 3, t0), "不命中判定不发")
+	require.False(t, maybeAlertTrialPoolEmpty(kaitu, 2, 3, t0), "有线路不发")
+	require.True(t, maybeAlertTrialPoolEmpty(kaitu, 0, 3, t0))
+	assert.Equal(t, sent{BrandKaitu, 3}, recv())
+	assert.False(t, maybeAlertTrialPoolEmpty(kaitu, 0, 3, t0.Add(59*time.Minute)), "一小时内同品牌去重")
+	require.True(t, maybeAlertTrialPoolEmpty(overleap, 0, 1, t0.Add(time.Minute)), "品牌之间独立")
+	assert.Equal(t, sent{BrandOverleap, 1}, recv())
+	require.True(t, maybeAlertTrialPoolEmpty(kaitu, 0, 4, t0.Add(61*time.Minute)), "窗口过后再告警")
+	assert.Equal(t, sent{BrandKaitu, 4}, recv())
+	select {
+	case s := <-ch:
+		t.Fatalf("unexpected extra alert %+v", s)
+	default:
+	}
 }

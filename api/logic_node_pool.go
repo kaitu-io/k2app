@@ -1,6 +1,15 @@
 package center
 
-import "sort"
+import (
+	"context"
+	"fmt"
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/wordgate/qtoolkit/log"
+	"github.com/wordgate/qtoolkit/slack"
+)
 
 // nodeAllowedForUser 是体验线路隔离（spec §3.7）的唯一判定：试用用户只能
 // 拿到、只能连 pool=trial 的节点；其他人（含付费用户）不受池限制。
@@ -54,4 +63,50 @@ func (l *lockedSummaryCounter) groups() []LockedTunnelGroup {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Country < out[j].Country })
 	return out
+}
+
+// ---------- 体验线路为空告警 ----------
+
+// trialPoolEmptyAlertWindow 同一品牌「试用用户拿到空列表」告警的最短间隔。
+const trialPoolEmptyAlertWindow = time.Hour
+
+// alertTrialPoolEmpty 发 Slack 告警。var 形态供测试替换（同 alertPaymentAnomaly）。
+var alertTrialPoolEmpty = func(ctx context.Context, brand Brand, lockedNodes int) {
+	msg := fmt.Sprintf("[TRIAL-POOL-EMPTY] 品牌 %s：试用用户的线路列表为空（另有 %d 台会员节点被体验线路规则挡掉）——"+
+		"检查体验线路节点是否在线、.env 是否写了 K2_NODE_POOL=trial（节点重注册以它为准）", brand, lockedNodes)
+	log.Errorf(ctx, "%s", msg)
+	if err := slack.Send("alert", msg); err != nil {
+		log.Errorf(ctx, "failed to send slack alert [TRIAL-POOL-EMPTY]: %v", err)
+	}
+}
+
+// trialPoolEmptyAlerts 进程内按品牌去重（多实例各自至多每小时一条，可接受）。
+var trialPoolEmptyAlerts = struct {
+	mu   sync.Mutex
+	last map[Brand]time.Time
+}{last: map[Brand]time.Time{}}
+
+// shouldAlertTrialPoolEmpty 纯判定：这次响应是否属于「被池规则限制的试用用户拿到了空列表」。
+// 非试用用户（含付过费又开试用的人）列表为空是别的问题，不走这条告警。
+func shouldAlertTrialPoolEmpty(user *User, items int) bool {
+	return items == 0 && user != nil && !nodeAllowedForUser(&SlaveNode{Pool: ""}, user)
+}
+
+// maybeAlertTrialPoolEmpty 在 /api/v20260717/tunnels 末尾调用：命中判定且该品牌一小时内没告过警时
+// 异步发一条（不拖慢列表响应）。返回是否发出，供测试断言。
+func maybeAlertTrialPoolEmpty(user *User, items, lockedNodes int, now time.Time) bool {
+	if !shouldAlertTrialPoolEmpty(user, items) {
+		return false
+	}
+	brand := Brand(user.Brand)
+	trialPoolEmptyAlerts.mu.Lock()
+	if last, ok := trialPoolEmptyAlerts.last[brand]; ok && now.Sub(last) < trialPoolEmptyAlertWindow {
+		trialPoolEmptyAlerts.mu.Unlock()
+		return false
+	}
+	trialPoolEmptyAlerts.last[brand] = now
+	trialPoolEmptyAlerts.mu.Unlock()
+	// 不传请求的 gin.Context：gin 会回收复用它，handler 返回后在 goroutine 里读就是数据竞争。
+	go alertTrialPoolEmpty(context.Background(), brand, lockedNodes)
+	return true
 }

@@ -10,7 +10,8 @@ export const nodeTools: ToolRegistration[] = [
     name: 'update_node',
     description:
       'Update a physical node (name/country/ipv6/ipType/pool). ipType: residential|non_residential|unknown. ' +
-      'pool: "" = member node, "trial" = trial line (free-trial users only see and can only connect to trial-pool nodes).',
+      'pool: "" = member node, "trial" = trial line (free-trial users only see and can only connect to trial-pool nodes). ' +
+      'pool is node-declared (K2_NODE_POOL in the node .env, resent on every registration): an edit here only lasts until the node next registers (restart/redeploy) — set the .env to make it stick.',
     group: 'nodes.write',
     method: 'PUT',
     params: {

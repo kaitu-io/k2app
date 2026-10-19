@@ -132,7 +132,9 @@ type AdminUpdateNodeRequest struct {
 	VisibleOverleap *bool `json:"visibleOverleap"`
 
 	// 节点池（spec §3.7）：'' = 会员节点，"trial" = 体验线路（免费试用用户只能
-	// 拿到、只能连这个池）。运营决策，节点重注册不覆盖（不在 nodeDeclaredColumns）。
+	// 拿到、只能连这个池）。真相源是节点 .env 的 K2_NODE_POOL（与 K2_NODE_BRANDS 同机制，
+	// 每次注册重发、在 nodeDeclaredColumns 里）——这里改的值只撑到该节点下次注册（重启 /
+	// 重新部署）就会被节点声明覆盖；要持久，改节点 .env。保留此入口供临时调整 / 应急摘池。
 	Pool *string `json:"pool" example:"trial"`
 }
 
