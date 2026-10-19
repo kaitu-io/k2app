@@ -18,13 +18,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { dateRange, formatWindow, FUNNEL_RANGES as RANGES, INFERRED_OUTCOME_LABELS as OUTCOME_LABELS, pct } from "@/components/manager/funnel-format";
 
 const NO_GROUP = "__none__";
-const RANGES = [
-  { value: "7", label: "最近 7 天" },
-  { value: "30", label: "最近 30 天" },
-  { value: "90", label: "最近 90 天" },
-];
 
 // 分组维度的中文名；未登记的维度原样显示键名。
 const DIM_LABELS: Record<string, string> = {
@@ -81,7 +77,9 @@ export default function FunnelsPage() {
         if (cancelled) return;
         setPaths(r.paths);
         setGroupDims(r.groupDims);
-        setPathKey(r.paths[0]?.key ?? "");
+        // 转化路线页的「查看明细」带 ?path=<key> 过来；未知的 key 按默认（第一条）处理。
+        const wanted = new URLSearchParams(window.location.search).get("path");
+        setPathKey(r.paths.find((p) => p.key === wanted)?.key ?? r.paths[0]?.key ?? "");
       })
       .catch((e) => !cancelled && setFunnelError(errorText(e)))
       .finally(() => !cancelled && setPathsLoading(false));
@@ -214,15 +212,6 @@ export default function FunnelsPage() {
     </div>
   );
 }
-
-// 推断归因的结果计数（服务端字段名 → 中文）。
-const OUTCOME_LABELS: [string, string][] = [
-  ["matched", "配上"],
-  ["ambiguous", "同出口多人·丢弃"],
-  ["none", "无对应点击"],
-  ["late", "上报迟到·跳过"],
-  ["noip", "出口无效"],
-];
 
 function InferredNote({ s }: { s: FunnelInferredSummary }) {
   const checked = s.confirmed + s.conflicts;
@@ -542,10 +531,6 @@ function errorText(e: unknown): string {
   return getApiErrorMessageZh(e instanceof ApiError ? e.code : 0);
 }
 
-function pct(fraction: number): string {
-  return `${(fraction * 100).toFixed(1)}%`;
-}
-
 function pctOrDash(v: number | null | undefined): string {
   return v === null || v === undefined ? "—" : pct(v);
 }
@@ -553,12 +538,6 @@ function pctOrDash(v: number | null | undefined): string {
 function rateOf(steps: number[]): number {
   const first = steps[0] ?? 0;
   return first > 0 ? (steps[steps.length - 1] ?? 0) / first : 0;
-}
-
-// 归因窗口：满 24 小时按天显示（336 小时 → 14 天），不足一天才用小时。
-function formatWindow(hours: number): string {
-  if (hours < 24) return `${hours} 小时`;
-  return `${(hours / 24).toFixed(1).replace(/\.0$/, "")} 天`;
 }
 
 function formatDuration(sec: number | null): string {
@@ -571,12 +550,4 @@ function formatDuration(sec: number | null): string {
   ];
   const [size, name] = units.find(([s]) => sec >= s) ?? units[units.length - 1];
   return `${(sec / size).toFixed(1).replace(/\.0$/, "")} ${name}`;
-}
-
-// 日期按 UTC 计算：to = 今天，from = 往前 days-1 天（含今天共 days 天）。
-function dateRange(days: number): { from: string; to: string } {
-  const now = new Date();
-  const to = now.toISOString().slice(0, 10);
-  const from = new Date(now.getTime() - (days - 1) * 86400000).toISOString().slice(0, 10);
-  return { from, to };
 }

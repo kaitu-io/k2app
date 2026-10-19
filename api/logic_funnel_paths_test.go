@@ -52,6 +52,8 @@ func TestFunnelPaths_RegistryContent(t *testing.T) {
 	}
 	// 只有指南转化的进入步带路径前缀；其余步骤一律不限路径。
 	pathPrefix := map[string]string{"guide_conversion/0": "/guides/"}
+	// 只有「应用跳到网站」的进入步按 utm_source 过滤（App 打开官网时链接上带的标记）。
+	utmSource := map[string]string{"app_to_web/0": "app"}
 	views := []string{"page_view", "pricing_view", "checkout_view", "install_view", "welcome_view"}
 	day := 24 * time.Hour
 	want := []struct {
@@ -86,6 +88,10 @@ func TestFunnelPaths_RegistryContent(t *testing.T) {
 			{"付费墙", "", []string{"paywall_view"}},
 			{"发起支付", "", []string{"checkout_start"}}, {"付款", "", []string{"purchase", "renewal"}},
 		}},
+		{"app_to_web", 14 * day, []step{
+			{"从 App 打开官网", "web", views}, {"看定价", "", []string{"pricing_view"}},
+			{"发起支付", "", []string{"checkout_start"}}, {"付款", "", []string{"purchase", "renewal"}},
+		}},
 		{"post_purchase_activation", 7 * day, []step{
 			{"付款", "", []string{"purchase"}}, {"连上", "", []string{"first_connect_ok", "connect_ok"}},
 		}},
@@ -100,7 +106,7 @@ func TestFunnelPaths_RegistryContent(t *testing.T) {
 			assert.Equal(t, ws.label, p.Steps[j].Label, "%s step %d", w.key, j)
 			assert.Equal(t, ws.surface, p.Steps[j].Surface, "%s step %d", w.key, j)
 			assert.Equal(t, ws.events, p.Steps[j].Events, "%s step %d", w.key, j)
-			assert.Empty(t, p.Steps[j].UtmSource, "%s step %d", w.key, j)
+			assert.Equal(t, utmSource[fmt.Sprintf("%s/%d", w.key, j)], p.Steps[j].UtmSource, "%s step %d", w.key, j)
 			assert.Equal(t, pathPrefix[fmt.Sprintf("%s/%d", w.key, j)], p.Steps[j].PathPrefix, "%s step %d", w.key, j)
 		}
 	}
@@ -183,10 +189,11 @@ func TestFunnelPaths_CheckoutAuthQuestionSaysInline(t *testing.T) {
 // 新增 / 修改步骤时在这里登记发射点，并确认它是无条件发的；这个测试只能校验
 // 「登记了、文件在、文件里有这个事件名」，「无条件」要靠评审读发射点。
 var funnelStepEmitSites = map[string][][]string{
+	// 两个官网各自的发射点都登记（sites/overleap 是独立应用，见 sites/overleap/CLAUDE.md）。
 	"web_purchase": {
-		{"web/src/components/FunnelPageView.tsx"},                                                     // 每个页面挂载即发
-		{"web/src/app/[locale]/purchase/PurchaseClient.tsx", "web/src/app/[locale]/pricing/page.tsx"}, // 定价 / 购买页挂载即发
-		{"web/src/app/[locale]/purchase/PurchaseClient.tsx"},                                          // 下单按钮：唯一的付款入口，带 plan
+		{"web/src/components/FunnelPageView.tsx", "sites/overleap/src/components/FunnelPageViews.tsx"},                                                     // 每个页面挂载即发
+		{"web/src/app/[locale]/purchase/PurchaseClient.tsx", "web/src/app/[locale]/pricing/page.tsx", "sites/overleap/src/components/FunnelPageViews.tsx"}, // 定价 / 购买页挂载即发
+		{"web/src/app/[locale]/purchase/PurchaseClient.tsx", "sites/overleap/src/app/[locale]/purchase/PurchaseClient.tsx"},                                // 下单按钮：唯一的付款入口，带 plan
 		nil, // 事实
 	},
 	"web_checkout_auth": {
@@ -195,13 +202,13 @@ var funnelStepEmitSites = map[string][][]string{
 		{"web/src/app/[locale]/purchase/PurchaseClient.tsx"}, // 下单按钮
 	},
 	"web_install": {
-		{"web/src/components/FunnelPageView.tsx"},
-		{"web/src/app/[locale]/install/InstallClient.tsx"},   // 安装页挂载即发
-		{"web/src/app/[locale]/install/platform-panels.tsx"}, // 下载按钮：这条路径的终点动作
+		{"web/src/components/FunnelPageView.tsx", "sites/overleap/src/components/FunnelPageViews.tsx"},
+		{"web/src/app/[locale]/install/InstallClient.tsx", "sites/overleap/src/components/FunnelPageViews.tsx"},          // 安装页挂载即发
+		{"web/src/app/[locale]/install/platform-panels.tsx", "sites/overleap/src/app/[locale]/install/InstallCards.tsx"}, // 下载按钮：这条路径的终点动作
 	},
 	"web_to_app": {
-		{"web/src/app/[locale]/install/platform-panels.tsx"}, // 下载按钮
-		{"webapp/src/main.tsx"},                              // 启动即发（每次安装一次）
+		{"web/src/app/[locale]/install/platform-panels.tsx", "sites/overleap/src/app/[locale]/install/InstallCards.tsx"}, // 下载按钮
+		{"webapp/src/main.tsx"}, // 启动即发（每次安装一次）
 		{"web/src/app/[locale]/purchase/PurchaseClient.tsx", "webapp/src/components/LoginDialog.tsx", "webapp/src/components/EmailLoginForm.tsx"},
 		nil, // 事实
 	},
@@ -220,6 +227,13 @@ var funnelStepEmitSites = map[string][][]string{
 	"app_purchase": {
 		{"webapp/src/pages/Purchase.tsx"}, // 购买页挂载即发
 		{"webapp/src/pages/Purchase.tsx", "webapp/src/components/stripe/StripePurchasePanel.tsx", "webapp/src/components/ios/IosSubscribePanel.tsx"}, // 各渠道的下单按钮，带 plan
+		nil, // 事实
+	},
+	"app_to_web": {
+		// 进入步的 utm_source=app 由 App 打开官网时加在链接上（webapp/src/utils/site-link.ts），网页按常规发 page_view。
+		{"web/src/components/FunnelPageView.tsx", "sites/overleap/src/components/FunnelPageViews.tsx"},
+		{"web/src/app/[locale]/purchase/PurchaseClient.tsx", "web/src/app/[locale]/pricing/page.tsx", "sites/overleap/src/components/FunnelPageViews.tsx"},
+		{"web/src/app/[locale]/purchase/PurchaseClient.tsx", "sites/overleap/src/app/[locale]/purchase/PurchaseClient.tsx"},
 		nil, // 事实
 	},
 	"post_purchase_activation": {
@@ -265,4 +279,60 @@ func TestFunnelPaths_EveryStepHasUnconditionalEmitSite(t *testing.T) {
 	// plan_select 仍是注册的、照常记录的事件，只是不当步骤。
 	assert.True(t, funnelEventAllowed("plan_select", FunnelSurfaceWeb))
 	assert.True(t, funnelEventAllowed("plan_select", FunnelSurfaceApp))
+}
+
+// 路线归属与跨面说明：每条路径都属于一条路线；跨面（中途换了网站 / App）的路径必须写明靠什么接上。
+func TestFunnelPaths_LaneAndHop(t *testing.T) {
+	wantLane := map[string]string{
+		"web_purchase": "web", "web_checkout_auth": "web", "web_install": "web", "web_to_app": "web", "guide_conversion": "web",
+		"app_activation": "app", "app_purchase": "app", "app_to_web": "app", "post_purchase_activation": "app",
+	}
+	require.Len(t, wantLane, len(funnelPathRegistry))
+	for _, p := range funnelPathRegistry {
+		assert.Equal(t, wantLane[p.Key], p.Lane, p.Key)
+		crosses := false
+		prev := p.Lane // 路线本身就是「从哪个面进来」
+		for _, s := range p.Steps {
+			w := s.where()
+			if (w == funnelWhereWeb || w == funnelWhereApp) && w != prev {
+				crosses = true
+			}
+			if w == funnelWhereWeb || w == funnelWhereApp {
+				prev = w
+			}
+		}
+		if crosses {
+			assert.NotEmpty(t, p.Hop, "%s crosses web↔app: say how the hop is linked", p.Key)
+		}
+	}
+	// 推断归因的路径必须说出「推断」与它不覆盖的品牌。
+	for _, k := range []string{"web_to_app", "guide_conversion"} {
+		p, _ := funnelPathByKey(k)
+		assert.Contains(t, p.Hop, "推断", k)
+		assert.Contains(t, p.Hop, "仅开途", k)
+	}
+	// App → 网站靠的是链接标记，常量必须与 webapp 的 APP_UTM_SOURCE 一致。
+	src, err := os.ReadFile(filepath.Join("..", "webapp", "src", "utils", "site-link.ts"))
+	require.NoError(t, err)
+	assert.Contains(t, string(src), "APP_UTM_SOURCE = '"+funnelUtmSourceApp+"'")
+}
+
+func TestFunnelStep_Where(t *testing.T) {
+	cases := []struct {
+		step funnelStep
+		want string
+	}{
+		{funnelStep{Events: []string{"page_view"}}, "web"},
+		{funnelStep{Events: []string{"paywall_view"}}, "app"},
+		{funnelStep{Events: []string{"checkout_start"}}, "any"},
+		{funnelStep{Events: []string{"checkout_start"}, Surface: "web"}, "web"},
+		{funnelStep{Events: []string{"auth_done"}, Surface: "app"}, "app"},
+		{funnelStep{Events: []string{"purchase", "renewal"}}, "facts"},
+		// 事实 + 两面都能报的行为事件：人可能在任一面完成这一步。
+		{funnelStep{Events: []string{"signup", "auth_done"}}, "any"},
+		{funnelStep{Events: []string{"install_click"}}, "web"},
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, c.step.where(), "%v/%q", c.step.Events, c.step.Surface)
+	}
 }

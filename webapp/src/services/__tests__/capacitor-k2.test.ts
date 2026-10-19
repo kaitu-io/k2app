@@ -587,6 +587,17 @@ describe('capacitor-k2', () => {
       expect(mockK2Plugin.openUrl).toHaveBeenCalledWith({ url: 'https://example.com' });
     });
 
+    it('test_platform_openExternal_tags_own_site_links', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+      const { brandConfig } = await import('../../brands');
+
+      await window._platform.openExternal(`${brandConfig.baseURL}/install`);
+
+      const { url } = mockK2Plugin.openUrl.mock.calls.at(-1)![0] as { url: string };
+      expect(new URL(url).searchParams.get('utm_source')).toBe('app');
+    });
+
     it('test_platform_writeClipboard_uses_clipboard_plugin', async () => {
       const { injectCapacitorGlobals } = await import('../capacitor-k2');
       await injectCapacitorGlobals();

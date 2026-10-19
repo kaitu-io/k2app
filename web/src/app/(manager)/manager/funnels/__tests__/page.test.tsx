@@ -136,7 +136,7 @@ describe('manager funnels page', () => {
       ...funnel([12, 5, 2]),
       inferred: {
         method: 'ip_os_v1', links: 6, applied: 5, confirmed: 3, conflicts: 1,
-        outcomes: { matched: 6, ambiguous: 2, none: 40, late: 1, noip: 0 },
+        outcomes: { matched: 6, ambiguous: 2, none: 40, late: 1, noip: 0, node: 3 },
       },
     });
     fireEvent.click(screen.getByRole('switch', { name: '含推断归因' }));
@@ -147,6 +147,31 @@ describe('manager funnels page', () => {
     expect(note.textContent).toContain('证实 3 条、证伪 1 条');
     expect(note.textContent).toContain('实测误配率 25.0%');
     expect(note.textContent).toContain('同出口多人·丢弃 2');
+    // 每个服务端结局都要显示，否则各项加起来对不上首开数。
+    expect(note.textContent).toContain('出口是我方节点·跳过 3');
+  });
+
+  it('?path=<key> from the routes page opens that path directly', async () => {
+    window.history.pushState({}, '', '/manager/funnels?path=install_to_connect');
+    try {
+      renderPage();
+      await waitFor(() => expect(mockFunnel).toHaveBeenCalled());
+      expect(mockFunnel.mock.calls[0][0]).toBe('install_to_connect');
+      expect(mockFunnel).toHaveBeenCalledTimes(1); // 不先按第一条拉一次
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
+
+  it('an unknown ?path= falls back to the first path', async () => {
+    window.history.pushState({}, '', '/manager/funnels?path=nope');
+    try {
+      renderPage();
+      await waitFor(() => expect(mockFunnel).toHaveBeenCalled());
+      expect(mockFunnel.mock.calls[0][0]).toBe('acquisition_to_paid');
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
   });
 
   it('retention tab loads paid cohorts and renders null as a dash', async () => {

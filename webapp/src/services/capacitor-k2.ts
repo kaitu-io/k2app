@@ -19,6 +19,7 @@ import type { StatusResponseData } from './vpn-types';
 import { transformStatus } from './status-transform';
 import { createCapacitorStorage } from './capacitor-storage';
 import { mapInstalledApp, type AndroidInstalledApp } from './capacitor-app-map';
+import { withAppAttribution } from '../utils/site-link';
 
 /**
  * Check if running inside a Capacitor native environment.
@@ -384,7 +385,7 @@ export async function injectCapacitorGlobals(): Promise<void> {
     storage: createCapacitorStorage(K2Plugin),
 
     openExternal: async (url: string): Promise<void> => {
-      await K2Plugin.openUrl({ url });
+      await K2Plugin.openUrl({ url: withAppAttribution(url) });
     },
 
     writeClipboard: async (text: string): Promise<void> => {

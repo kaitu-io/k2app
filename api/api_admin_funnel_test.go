@@ -112,9 +112,9 @@ func TestAdminFunnels_List(t *testing.T) {
 	require.Equal(t, int(ErrorNone), resp.Code, resp.Message)
 	var data struct {
 		Paths []struct {
-			Key, Title, Question string
-			Steps                []string
-			WindowHours          *float64
+			Key, Title, Question, Lane, Hop string
+			Steps, StepWhere                []string
+			WindowHours                     *float64
 		}
 		GroupDims []string
 	}
@@ -135,6 +135,14 @@ func TestAdminFunnels_List(t *testing.T) {
 	first := data.Paths[0]
 	require.Equal(t, "web_purchase", first.Key)
 	assert.Equal(t, []string{"访问", "看定价", "发起支付", "付款"}, first.Steps)
+	assert.Equal(t, []string{"web", "web", "any", "facts"}, first.StepWhere)
+	assert.Equal(t, "web", first.Lane)
+	assert.Empty(t, first.Hop)
+	for i, p := range data.Paths {
+		assert.Len(t, p.StepWhere, len(p.Steps), p.Key)
+		assert.Equal(t, funnelPathRegistry[i].Lane, p.Lane, p.Key)
+		assert.Equal(t, funnelPathRegistry[i].Hop, p.Hop, p.Key)
+	}
 	require.NotNil(t, first.WindowHours)
 	assert.InDelta(t, 336, *first.WindowHours, 1e-9)
 
@@ -144,6 +152,8 @@ func TestAdminFunnels_List(t *testing.T) {
 	assert.Contains(t, raw, "paths")
 	assert.Contains(t, raw, "groupDims")
 	assert.Contains(t, string(raw["paths"]), `"windowHours":336`)
+	assert.Contains(t, string(raw["paths"]), `"stepWhere":[`)
+	assert.Contains(t, string(raw["paths"]), `"lane":"web"`)
 }
 
 func TestAdminFunnel_EndToEnd(t *testing.T) {

@@ -4,7 +4,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import fs from 'fs';
 import path from 'path';
@@ -16,6 +16,9 @@ vi.mock('@/i18n/routing', () => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Link: ({ href, children, ...rest }: any) => <a href={href} {...rest}>{children}</a>,
 }));
+
+const trackMock = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/funnel', () => ({ track: trackMock }));
 
 import InstallCards from '../src/app/[locale]/install/InstallCards';
 
@@ -103,5 +106,19 @@ describe('InstallCards', () => {
     expect(within(ios).getByRole('link', { name: 'Open the App Store' }).getAttribute('href')).toBe('https://apps.apple.com/app/id6759199298');
     const android = screen.getByTestId('install-card-android');
     expect(within(android).getByRole('link', { name: 'Get it on Google Play' }).getAttribute('href')).toBe('https://play.google.com/store/apps/details?id=io.overleap');
+  });
+
+  it('a download / store click reports install_click with the platform', async () => {
+    vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)');
+    trackMock.mockClear();
+    render(
+      <NextIntlClientProvider locale="en-GB" messages={messages} onError={(e) => { throw e; }}>
+        <InstallCards targets={buildInstallTargets(NO_LINKS)} />
+      </NextIntlClientProvider>,
+    );
+    const ios = await screen.findByTestId('install-card-ios');
+    expect(trackMock).not.toHaveBeenCalled(); // detection never counts as a click
+    fireEvent.click(within(ios).getByRole('link', { name: 'Open the App Store' }));
+    expect(trackMock).toHaveBeenCalledWith('install_click', { plan: 'ios' });
   });
 });

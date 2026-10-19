@@ -21,11 +21,59 @@ type funnelStep struct {
 
 type funnelPath struct {
 	Key, Title, Question string
-	Steps                []funnelStep
-	Window               time.Duration // 从进入（第 1 步）时刻起算，后续每一步都必须落在窗内
+	// Lane：这条路径在管理端「路线总览」里属于哪条路线——从哪个面进入（funnelLaneWeb / funnelLaneApp）。
+	Lane string
+	// Hop：路径中途跨面（网站 ↔ App）时，跨过去的那一步靠什么接上、接不上的是谁。不跨面为空。
+	// 管理端原样显示在跨面的那一步旁边，所以必须写清「确定性 / 推断」与已知的漏算。
+	Hop    string
+	Steps  []funnelStep
+	Window time.Duration // 从进入（第 1 步）时刻起算，后续每一步都必须落在窗内
+}
+
+const (
+	funnelLaneWeb = "web"
+	funnelLaneApp = "app"
+)
+
+// 每一步发生在哪里（管理端据此标出跨面的那一跳）。
+const (
+	funnelWhereWeb   = "web"   // 只在网站上
+	funnelWhereApp   = "app"   // 只在 App 里
+	funnelWhereAny   = "any"   // 网站或 App 都算
+	funnelWhereFacts = "facts" // 服务端事实（注册 / 付款），与在哪个面发生无关
+)
+
+// where 由步骤的面过滤与事件的可上报面推出，不手写：改了事件注册表，标注跟着变。
+func (s funnelStep) where() string {
+	if s.Surface != "" {
+		return s.Surface
+	}
+	web, app, facts := false, false, false
+	for _, e := range s.Events {
+		d, _ := funnelEventDefByName(e)
+		if d.Kind == FunnelKindFact {
+			facts = true
+		}
+		web = web || slices.Contains(d.Surfaces, FunnelSurfaceWeb)
+		app = app || slices.Contains(d.Surfaces, FunnelSurfaceApp)
+	}
+	switch {
+	case web && app:
+		return funnelWhereAny
+	case web:
+		return funnelWhereWeb
+	case app:
+		return funnelWhereApp
+	case facts:
+		return funnelWhereFacts
+	}
+	return funnelWhereAny
 }
 
 const funnelDay = 24 * time.Hour
+
+// funnelUtmSourceApp：App 打开自家官网时链接上带的 utm_source（webapp utils/site-link.ts 的 APP_UTM_SOURCE）。
+const funnelUtmSourceApp = "app"
 
 // funnelViewsWeb 返回事件注册表里所有 web 面的 view 事件（注册表顺序）。
 func funnelViewsWeb() []string {
@@ -50,6 +98,7 @@ var funnelPaidFacts = []string{funnelFactPurchase, funnelFactRenewal}
 var funnelPathRegistry = []funnelPath{
 	{
 		Key: "web_purchase", Title: "网站购买", Question: "访问网站的人里，有多少最终付款？卡在哪一步？",
+		Lane:   funnelLaneWeb,
 		Window: 14 * funnelDay,
 		Steps: []funnelStep{
 			{Label: "访问", Events: funnelViewsWeb(), Surface: FunnelSurfaceWeb},
@@ -60,6 +109,7 @@ var funnelPathRegistry = []funnelPath{
 	},
 	{
 		Key: "web_checkout_auth", Title: "网站结账登录", Question: "在购买页内联登录（发验证码 → 登录）的人里，有多少走到了发起支付？只量购买页上的内联登录，不含站内其它登录入口。",
+		Lane:   funnelLaneWeb,
 		Window: 24 * time.Hour,
 		Steps: []funnelStep{
 			{Label: "发验证码", Events: []string{"auth_code_sent"}, Surface: FunnelSurfaceWeb},
@@ -70,6 +120,7 @@ var funnelPathRegistry = []funnelPath{
 	},
 	{
 		Key: "web_install", Title: "网站下载", Question: "访问网站的人里，有多少走到了点击下载？",
+		Lane:   funnelLaneWeb,
 		Window: 7 * funnelDay,
 		Steps: []funnelStep{
 			{Label: "访问", Events: funnelViewsWeb(), Surface: FunnelSurfaceWeb},
@@ -81,6 +132,7 @@ var funnelPathRegistry = []funnelPath{
 		// 网页 → App：第 2 步起是 App 侧身份（did），与网页 sid 之间没有确定性关联，
 		// 所以不带 ?inferred=1 时第 2 步基本为 0；带上后由推断归因（ip_os_v1）接上，结果需标注「推断」。
 		Key: "web_to_app", Title: "网站下载到应用", Question: "在网站点了下载的人里，有多少打开了应用、注册 / 登录并最终付款？（依赖推断归因）",
+		Lane: funnelLaneWeb, Hop: "网站 → App：网页访客（sid）与 App 设备（did）之间没有确定性关联。不开「含推断归因」时，只有在网站和 App 都登录过同一账号的人才接得上；开了之后再按「同出口 + 同平台、24 小时内」推断（仅开途；Overleap 官网不记 IP，不做推断）。",
 		Window: 14 * funnelDay,
 		Steps: []funnelStep{
 			{Label: "点下载", Events: []string{"install_click"}, Surface: FunnelSurfaceWeb},
@@ -96,6 +148,7 @@ var funnelPathRegistry = []funnelPath{
 		// 局限：读完去下载 App、在 App 里注册 / 付款的人，App 侧身份（did）与网页 sid 没有确定性关联，
 		// 默认算作流失；?inferred=1 时由推断归因（ip_os_v1）接上一部分。
 		Key: "guide_conversion", Title: "指南转化", Question: "读过指南的人里，有多少注册 / 登录并最终付款？按落地页分组看每篇指南。",
+		Lane: funnelLaneWeb, Hop: "读完指南去 App 里注册 / 登录的人，只有网页上也登录过才接得上，否则算作流失；开「含推断归因」可再接上在网站点过下载的一部分（仅开途）。",
 		Window: 14 * funnelDay,
 		Steps: []funnelStep{
 			{Label: "读指南", Events: []string{"page_view"}, Surface: FunnelSurfaceWeb, PathPrefix: "/guides/"},
@@ -105,6 +158,7 @@ var funnelPathRegistry = []funnelPath{
 	},
 	{
 		Key: "app_activation", Title: "应用激活", Question: "装好应用的人里，有多少真正连上了？",
+		Lane:   funnelLaneApp,
 		Window: 7 * funnelDay,
 		Steps: []funnelStep{
 			{Label: "首次打开", Events: []string{"app_first_open"}},
@@ -115,6 +169,7 @@ var funnelPathRegistry = []funnelPath{
 	},
 	{
 		Key: "app_purchase", Title: "应用内购买", Question: "看到付费墙的人里，有多少最终付款？",
+		Lane: funnelLaneApp, Hop: "非 iOS 平台在 App 内点「支付」后跳到外部浏览器的支付页付款（开途 NextPay，Overleap Stripe），iOS 走 Apple 内购不离开 App；付款事实按登录账号归属，与在哪个面付的无关，是确定性的。",
 		Window: 7 * funnelDay,
 		Steps: []funnelStep{
 			{Label: "付费墙", Events: []string{"paywall_view"}},
@@ -123,7 +178,21 @@ var funnelPathRegistry = []funnelPath{
 		},
 	},
 	{
+		// App 里打开自家官网的链接都带 utm_source=app（webapp utils/site-link.ts），进入记录就是那次带标记的访问。
+		// 只量从 App 跳到网站之后在网站上走完的部分；在 App 里点了多少次链接不在这里（App 侧不发事件）。
+		Key: "app_to_web", Title: "应用跳到网站", Question: "从 App 里点链接打开官网的人里，有多少看了定价、发起支付并付款？",
+		Lane: funnelLaneApp, Hop: "App → 网站：靠链接上的 utm_source=app 标记识别，是确定性的；只覆盖带标记的新版 App（旧版打开的官网算作直接访问）。网页上登录后，付款按账号归属。",
+		Window: 14 * funnelDay,
+		Steps: []funnelStep{
+			{Label: "从 App 打开官网", Events: funnelViewsWeb(), Surface: FunnelSurfaceWeb, UtmSource: funnelUtmSourceApp},
+			{Label: "看定价", Events: []string{"pricing_view"}},
+			{Label: "发起支付", Events: []string{"checkout_start"}},
+			{Label: "付款", Events: funnelPaidFacts},
+		},
+	},
+	{
 		Key: "post_purchase_activation", Title: "付款后激活", Question: "付了款的人里，有多少在一周内连上了？",
+		Lane:   funnelLaneApp,
 		Window: 7 * funnelDay,
 		Steps: []funnelStep{
 			{Label: "付款", Events: []string{funnelFactPurchase}},

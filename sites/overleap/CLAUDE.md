@@ -37,7 +37,7 @@ src/contexts/AuthContext profile-as-session: signed in ⇔ GET /api/user/info su
 src/middleware.ts        locale negotiation, X-K2-Brand on /api/*, 404 on /app/*
 src/app/[locale]/        pages: home, install, pricing, purchase (Stripe checkout), support, login, account, legal
 src/components/marketing/ landing sections shared by home / pricing / support (FAQ is native <details>: answers stay in the server HTML)
-src/lib/funnel.ts        cookieless funnel pixel (page_view / pricing_view / checkout_start / auth_done)
+src/lib/funnel.ts        cookieless funnel pixel (page_view / pricing_view / install_view / install_click / checkout_start / auth_done)
 src/lib/guides.ts        content/guides/*.md (English only, draft = dev-only); FAQ section → FAQPage JSON-LD
 src/lib/pricing.ts       display currency + formatting; PRICING (lib/site.ts) must equal scripts/stripe-setup-overleap.sh (tests/pricing-source.test.ts)
 ```
