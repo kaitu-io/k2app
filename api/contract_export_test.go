@@ -47,16 +47,17 @@ var contractRelPath = filepath.Join("..", "contracts", "api-contract.json")
 // 改这里 = 改三层契约，不要顺手重命名。
 
 type contractBrand struct {
-	ID                 string   `json:"id"`
-	DisplayName        string   `json:"displayName"`
-	Hosts              []string `json:"hosts"`
-	WebOrigins         []string `json:"webOrigins"`
-	RedirectRootDomain string   `json:"redirectRootDomain"`
-	BaseURL            string   `json:"baseURL"`
-	SupportEmail       string   `json:"supportEmail"`
-	EDMFromName        string   `json:"edmFromName"`
-	PaymentChannels    []string `json:"paymentChannels"`
-	Wallet             bool     `json:"wallet"`
+	ID                 string          `json:"id"`
+	DisplayName        string          `json:"displayName"`
+	Hosts              []string        `json:"hosts"`
+	WebOrigins         []string        `json:"webOrigins"`
+	RedirectRootDomain string          `json:"redirectRootDomain"`
+	BaseURL            string          `json:"baseURL"`
+	SupportEmail       string          `json:"supportEmail"`
+	EDMFromName        string          `json:"edmFromName"`
+	PaymentChannels    []string        `json:"paymentChannels"`
+	Wallet             bool            `json:"wallet"`
+	Social             SocialClientIDs `json:"social"`
 }
 
 type contractCORSGroup struct {
@@ -110,6 +111,7 @@ func exportBrands(t *testing.T) map[string]contractBrand {
 			EDMFromName:        cfg.EDMFromName,
 			PaymentChannels:    cfg.PaymentChannels,
 			Wallet:             cfg.Wallet,
+			Social:             cfg.Social,
 		}
 	}
 	return out
