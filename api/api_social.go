@@ -51,9 +51,9 @@ func api_social_login(c *gin.Context) {
 		return
 	}
 
-	cfg, cl, userID, err := authenticateSocial(c, req.Provider, req.IDToken, req.Nonce, req.Language)
+	cfg, cl, userID, err := authenticateSocial(c, req.Provider, req.IDToken, req.Nonce, req.Language, req.AuthorizationCode, req.RedirectURI)
 	if err != nil {
-		Error(c, socialErrorCode(err), "social sign-in failed")
+		respondSocialAuthErr(c, err, "social sign-in failed")
 		return
 	}
 	log.Infof(c, "social login: user %d, udid: %s", userID, req.UDID)
@@ -91,9 +91,9 @@ func api_social_web_login(c *gin.Context) {
 		return
 	}
 
-	cfg, cl, userID, err := authenticateSocial(c, req.Provider, req.IDToken, req.Nonce, req.Language)
+	cfg, cl, userID, err := authenticateSocial(c, req.Provider, req.IDToken, req.Nonce, req.Language, req.AuthorizationCode, req.RedirectURI)
 	if err != nil {
-		Error(c, socialErrorCode(err), "social sign-in failed")
+		respondSocialAuthErr(c, err, "social sign-in failed")
 		return
 	}
 
@@ -127,7 +127,7 @@ func api_social_web_login(c *gin.Context) {
 // authenticateSocial 验 idToken 并把第三方身份解析为本品牌用户（可能新建）。
 // 按现有规则记日志（哨兵错误 Warn，其余 Error）；返回的错误交给 socialErrorCode 映射。
 // rawNonce 是客户端原始 nonce（来自请求）。
-func authenticateSocial(c *gin.Context, provider, idToken, rawNonce, language string) (cfg socialAuthConfig, cl *socialClaims, userID uint64, err error) {
+func authenticateSocial(c *gin.Context, provider, idToken, rawNonce, language, authorizationCode, redirectURI string) (cfg socialAuthConfig, cl *socialClaims, userID uint64, err error) {
 	brand := ReqBrand(c)
 	cfg = configSocialAuth(brand)
 
@@ -135,6 +135,12 @@ func authenticateSocial(c *gin.Context, provider, idToken, rawNonce, language st
 	if err != nil {
 		log.Warnf(c, "social sign-in: %s token rejected (brand %s): %v", provider, brand, err)
 		return cfg, nil, 0, err
+	}
+
+	// 在任何用户 / 身份写入之前拒掉缺 redirectURI 的网页 Apple 授权码。
+	if _, err = appleCodeRedirectURI(cfg.Brand, cl, provider, authorizationCode, redirectURI); err != nil {
+		log.Warnf(c, "social sign-in: %v", err)
+		return cfg, cl, 0, err
 	}
 
 	userID, created, err := resolveSocialUser(c, brand, cl, language, c.GetHeader("Accept-Language"))
@@ -163,10 +169,44 @@ func validAppleRedirectURI(brand Brand, provider, authorizationCode, redirectURI
 	return slices.Contains(cfg.Social.AppleReturnURLs, redirectURI)
 }
 
+var errAppleRedirectRequired = errors.New("redirectURI required for web Apple authorization code")
+
+// respondSocialAuthErr 把 authenticateSocial / 校验错误映射成响应；缺 redirectURI 是 400 参数错误。
+func respondSocialAuthErr(c *gin.Context, err error, msg string) {
+	if errors.Is(err, errAppleRedirectRequired) {
+		Error(c, ErrorInvalidArgument, errAppleRedirectRequired.Error())
+		return
+	}
+	Error(c, socialErrorCode(err), msg)
+}
+
+// appleCodeRedirectURI 返回换 Apple 授权码时应发给 Apple 的 redirect_uri（三个入口共用）。
+// aud 是品牌 Services ID（网页流）：必须带 redirectURI，缺则 errAppleRedirectRequired；
+// 其它 aud（原生 iOS bundle ID）：忽略客户端传的 redirectURI，返回 ""。
+// 非 Apple 或无授权码：返回 ""，无错误。
+func appleCodeRedirectURI(brand Brand, cl *socialClaims, provider, authorizationCode, redirectURI string) (string, error) {
+	if provider != SocialProviderApple || authorizationCode == "" {
+		return "", nil
+	}
+	cfg, ok := brandRegistry[brand]
+	if !ok || cl.Audience != cfg.Social.AppleServicesID {
+		return "", nil
+	}
+	if redirectURI == "" {
+		return "", errAppleRedirectRequired
+	}
+	return redirectURI, nil
+}
+
 // saveAppleRefreshBestEffort Apple：用授权码换 refresh token 留作注销时撤销；
 // 非 Apple 或无授权码为 no-op，失败只 Warn，不影响登录。
 func saveAppleRefreshBestEffort(c *gin.Context, cfg socialAuthConfig, cl *socialClaims, provider, authorizationCode, redirectURI string, userID uint64) {
 	if provider != SocialProviderApple || authorizationCode == "" {
+		return
+	}
+	redirectURI, err := appleCodeRedirectURI(cfg.Brand, cl, provider, authorizationCode, redirectURI)
+	if err != nil {
+		log.Warnf(c, "social sign-in: apple code exchange skipped for user %d: %v", userID, err)
 		return
 	}
 	rt, err := appleExchangeCode(c, cfg, cl.Audience, authorizationCode, redirectURI)
@@ -226,6 +266,12 @@ func api_user_social_bind(c *gin.Context) {
 	if err != nil {
 		log.Warnf(c, "social bind: %s token rejected for user %d (brand %s): %v", req.Provider, userID, brand, err)
 		Error(c, socialErrorCode(err), "social bind failed")
+		return
+	}
+
+	if _, err := appleCodeRedirectURI(brand, cl, req.Provider, req.AuthorizationCode, req.RedirectURI); err != nil {
+		log.Warnf(c, "social bind: user %d: %v", userID, err)
+		respondSocialAuthErr(c, err, "social bind failed")
 		return
 	}
 

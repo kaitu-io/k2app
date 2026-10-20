@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	db "github.com/wordgate/qtoolkit/db"
+	"gorm.io/gorm"
 )
 
 // POST /api/auth/social/login 集成测试：经 SetupTestRouter() 打真实路由、真库（0 SKIP）。
@@ -217,7 +218,8 @@ func TestSocialLogin_AppleStoresRefreshToken(t *testing.T) {
 	require.Equal(t, 0, resp.Code)
 	assert.Equal(t, aud, gotClientID)
 	assert.Equal(t, "code-"+sfx, gotCode)
-	assert.Equal(t, "https://overleap.io/auth/social/apple", gotRedirect)
+	// 原生 iOS（bundle ID aud）码不带 redirect_uri：客户端传了也忽略
+	assert.Equal(t, "", gotRedirect)
 
 	row, err := findSocialIdentity(context.Background(), db.Get(), BrandOverleap, SocialProviderApple, sub)
 	require.NoError(t, err)
@@ -311,6 +313,10 @@ func TestSocialLogin_AppleUnregisteredRedirectURIRejected(t *testing.T) {
 	key := newTestRSAKey(t)
 	installTestSocialKeys(t, key)
 	enableTestSocialAuth(t, BrandKaitu)
+	tr := newSocialTrack(t)
+	sfx := socialTestSuffix()
+	sub := tr.sub(SocialProviderApple, "rej-"+sfx)
+	email := tr.email("rej-" + sfx + "@privaterelay.appleid.com")
 
 	called := false
 	stubAppleExchangeCode(t, func(context.Context, socialAuthConfig, string, string, string) (string, error) {
@@ -318,6 +324,7 @@ func TestSocialLogin_AppleUnregisteredRedirectURIRejected(t *testing.T) {
 		return "rt", nil
 	})
 	cl := appleTestClaims(BrandKaitu.Config().Social.AppleServicesID)
+	cl["sub"], cl["email"] = sub, email
 	// 另一品牌的已登记地址对本品牌也无效
 	for _, bad := range []string{"https://evil.example/cb", "https://overleap.io/auth/social/apple"} {
 		resp := postSocialLogin(t, BrandKaitu, map[string]string{
@@ -331,6 +338,156 @@ func TestSocialLogin_AppleUnregisteredRedirectURIRejected(t *testing.T) {
 		assert.Equal(t, int(ErrorInvalidArgument), resp.Code, bad)
 	}
 	assert.False(t, called)
+	assertNoAppleRows(t, BrandKaitu, sub, email)
+}
+
+// assertNoAppleRows 断言该 Apple sub 与 claims 邮箱没有留下任何 LoginIdentify 行（即未建号 / 未绑定）。
+func assertNoAppleRows(t *testing.T, brand Brand, sub, email string) {
+	t.Helper()
+	_, err := findSocialIdentity(context.Background(), db.Get(), brand, SocialProviderApple, sub)
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound, "apple identity row must not exist")
+	var n int64
+	require.NoError(t, db.Get().Model(&LoginIdentify{}).
+		Where("index_id = ?", secretHashIt(context.Background(), []byte(email))).Count(&n).Error)
+	assert.Zero(t, n, "no identity/user for claims email")
+}
+
+// 网页（Services ID aud）授权码缺 redirectURI：400，且在任何写入之前拒绝。
+func TestSocialLogin_AppleWebCodeMissingRedirectURIRejected(t *testing.T) {
+	skipIfNoConfig(t)
+	key := newTestRSAKey(t)
+	installTestSocialKeys(t, key)
+	enableTestSocialAuth(t, BrandKaitu)
+	tr := newSocialTrack(t)
+	sfx := socialTestSuffix()
+	sub := tr.sub(SocialProviderApple, "nr-"+sfx)
+	email := tr.email("nr-" + sfx + "@privaterelay.appleid.com")
+	called := false
+	stubAppleExchangeCode(t, func(context.Context, socialAuthConfig, string, string, string) (string, error) {
+		called = true
+		return "rt", nil
+	})
+	cl := appleTestClaims(BrandKaitu.Config().Social.AppleServicesID)
+	cl["sub"], cl["email"] = sub, email
+	resp := postSocialLogin(t, BrandKaitu, map[string]string{
+		"provider":          SocialProviderApple,
+		"idToken":           signTestIDToken(t, key, cl),
+		"nonce":             testSocialRawNonce,
+		"authorizationCode": "code-x",
+		"udid":              "udid-sl-redir-missing",
+	})
+	assert.Equal(t, int(ErrorInvalidArgument), resp.Code)
+	assert.False(t, called)
+	assertNoAppleRows(t, BrandKaitu, sub, email)
+	var devices int64
+	db.Get().Model(&Device{}).Where("udid = ?", "udid-sl-redir-missing").Count(&devices)
+	assert.Zero(t, devices)
+}
+
+func TestSocialWebLogin_AppleRedirectURIRules(t *testing.T) {
+	skipIfNoConfig(t)
+	key := newTestRSAKey(t)
+	installTestSocialKeys(t, key)
+	enableTestSocialAuth(t, BrandKaitu)
+	tr := newSocialTrack(t)
+	stubAppleExchangeCode(t, func(context.Context, socialAuthConfig, string, string, string) (string, error) {
+		t.Error("exchange must not be called")
+		return "rt", nil
+	})
+	for i, redirect := range []string{"https://evil.example/cb", "https://overleap.io/auth/social/apple", ""} {
+		sfx := socialTestSuffix()
+		sub := tr.sub(SocialProviderApple, "wl-"+sfx)
+		email := tr.email("wl-" + sfx + "@privaterelay.appleid.com")
+		cl := appleTestClaims(BrandKaitu.Config().Social.AppleServicesID)
+		cl["sub"], cl["email"] = sub, email
+		body := map[string]string{
+			"provider":          SocialProviderApple,
+			"idToken":           signTestIDToken(t, key, cl),
+			"nonce":             testSocialRawNonce,
+			"authorizationCode": "code-x",
+		}
+		if redirect != "" {
+			body["redirectURI"] = redirect
+		}
+		w, resp := postSocialWebLogin(t, "", BrandKaitu, body)
+		assert.Equal(t, int(ErrorInvalidArgument), resp.Code, "case %d body=%s", i, w.Body.String())
+		assertNoAppleRows(t, BrandKaitu, sub, email)
+	}
+}
+
+func TestUserSocial_AppleBindRedirectURIRules(t *testing.T) {
+	e := newUserSocialEnv(t)
+	stubAppleExchangeCode(t, func(context.Context, socialAuthConfig, string, string, string) (string, error) {
+		t.Error("exchange must not be called")
+		return "rt", nil
+	})
+	for i, redirect := range []string{"https://evil.example/cb", "https://overleap.io/auth/social/apple", ""} {
+		sub := e.tr.sub(SocialProviderApple, "bd-"+e.sfx+string(rune('a'+i)))
+		email := e.tr.email("bd-" + e.sfx + string(rune('a'+i)) + "@privaterelay.appleid.com")
+		cl := appleTestClaims(BrandKaitu.Config().Social.AppleServicesID)
+		cl["sub"], cl["email"] = sub, email
+		body := map[string]string{
+			"provider":          SocialProviderApple,
+			"idToken":           signTestIDToken(t, e.key, cl),
+			"nonce":             testSocialRawNonce,
+			"authorizationCode": "code-x",
+		}
+		if redirect != "" {
+			body["redirectURI"] = redirect
+		}
+		resp := e.do("POST", "/api/user/social/bind", body)
+		assert.Equal(t, int(ErrorInvalidArgument), resp.Code, "case %d", i)
+		assertNoAppleRows(t, BrandKaitu, sub, email)
+	}
+}
+
+// 原生 iOS（bundle ID aud）授权码：客户端传了已登记的 redirectURI 也不发给 Apple。
+func TestSocialLogin_AppleNativeCodeIgnoresRedirectURI(t *testing.T) {
+	skipIfNoConfig(t)
+	key := newTestRSAKey(t)
+	installTestSocialKeys(t, key)
+	enableTestSocialAuth(t, BrandKaitu)
+	tr := newSocialTrack(t)
+	sfx := socialTestSuffix()
+	sub := tr.sub(SocialProviderApple, "nat-"+sfx)
+	email := tr.email("nat-" + sfx + "@privaterelay.appleid.com")
+	udid := trackSocialLoginDevice(t, "udid-sl-nat-"+sfx)
+
+	calls := 0
+	gotRedirect := "unset"
+	stubAppleExchangeCode(t, func(_ context.Context, _ socialAuthConfig, _, _, redirectURI string) (string, error) {
+		calls++
+		gotRedirect = redirectURI
+		return "rt", nil
+	})
+	cl := appleTestClaims(BrandKaitu.Config().Social.AppleBundleID)
+	cl["sub"], cl["email"] = sub, email
+	resp := postSocialLogin(t, BrandKaitu, map[string]string{
+		"provider":          SocialProviderApple,
+		"idToken":           signTestIDToken(t, key, cl),
+		"nonce":             testSocialRawNonce,
+		"authorizationCode": "code-" + sfx,
+		"redirectURI":       "https://kaitu.io/auth/social/apple",
+		"udid":              udid,
+	})
+	require.Equal(t, 0, resp.Code)
+	assert.Equal(t, 1, calls)
+	assert.Equal(t, "", gotRedirect)
+}
+
+// 守卫：每个品牌的 Apple 回调地址必须是 https、host 属于该品牌、路径固定。
+func TestBrandAppleReturnURLsWellFormed(t *testing.T) {
+	for id, cfg := range brandRegistry {
+		require.NotEmpty(t, cfg.Social.AppleReturnURLs, "brand %s", id)
+		for _, raw := range cfg.Social.AppleReturnURLs {
+			u, err := url.Parse(raw)
+			require.NoError(t, err, raw)
+			assert.Equal(t, "https", u.Scheme, raw)
+			assert.Contains(t, cfg.Hosts, u.Host, "%s host not in brand %s Hosts", raw, id)
+			assert.Equal(t, "/auth/social/apple", u.Path, raw)
+			assert.Empty(t, u.RawQuery+u.Fragment, raw)
+		}
+	}
 }
 
 func TestValidAppleRedirectURI(t *testing.T) {
