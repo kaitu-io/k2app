@@ -207,11 +207,20 @@ export interface OrderStatisticsResponse {
 
 // ==================== Funnel Analytics types ====================
 
+/** 一步发生在哪：只在网站 / 只在 App / 两边都算 / 服务端事实（注册、付款）。 */
+export type FunnelStepWhere = 'web' | 'app' | 'any' | 'facts';
+
 export interface FunnelPathInfo {
   key: string;
   title: string;
   question: string;
   steps: string[];
+  /** 与 steps 一一对应。 */
+  stepWhere: FunnelStepWhere[];
+  /** 路线：从哪个面进入（转化路线页按它分两列）。 */
+  lane: 'web' | 'app';
+  /** 中途跨面时，那一跳靠什么接上；不跨面时没有。 */
+  hop?: string;
   windowHours: number;
 }
 
@@ -235,7 +244,7 @@ export interface FunnelInferredSummary {
   applied: number;
   confirmed: number;
   conflicts: number;
-  outcomes: Record<string, number>; // matched / ambiguous / none / late / noip
+  outcomes: Record<string, number>; // matched / ambiguous / none / late / noip / node
 }
 
 export interface FunnelResult {

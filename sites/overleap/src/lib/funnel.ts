@@ -13,7 +13,7 @@
  *
  * Reporting must never affect a product path: every failure is swallowed.
  */
-export const FUNNEL_EVENTS = ['page_view', 'pricing_view', 'checkout_start', 'auth_done'] as const;
+export const FUNNEL_EVENTS = ['page_view', 'pricing_view', 'install_view', 'install_click', 'checkout_start', 'auth_done'] as const;
 export type FunnelEvent = (typeof FUNNEL_EVENTS)[number];
 
 let visitorId: string | null = null;

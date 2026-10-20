@@ -75,6 +75,8 @@ web/
 │   │   │       ├── retailers/ # Retailer CRM (notes, todos, levels)
 │   │   │       ├── tickets/   # Support ticket management
 │   │   │       ├── usages/    # Usage statistics
+│   │   │       ├── funnel-routes/ # 转化路线：按品牌 × App/网站两列一屏看全部漏斗路径，标出跨面那一跳（卡片链到 funnels?path=）
+│   │   │       ├── funnels/   # 转化漏斗明细（按天、分组）+ 留存；`?path=<key>` 直达某条路径
 │   │   │       ├── withdraws/ # Withdraw approval
 │   │   │       ├── plans/     # Subscription plan config
 │   │   │       ├── announcements/ # 公告管理

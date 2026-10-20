@@ -112,11 +112,14 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
   const prevAuthRef = useRef(isAuthenticated);
   const prevServiceConnectedRef = useRef(serviceConnected);
 
-  // Sort tunnels alphabetically by country code. Probe-backed ranking was
-  // removed with the dashboard auto-probe; a future UI can re-introduce a
-  // quality-weighted sort by consuming probe-service / probe.store directly.
+  // Sort by country code, then by recommendScore (highest first) within a
+  // country. The server returns DB-id order, and the first row of a country
+  // drew far more traffic than its siblings; recommendScore falls as a node's
+  // usage grows, so leading with it spreads that first-row pull. Equal scores
+  // keep server order (Array.prototype.sort is stable).
   const sortedTunnels = useMemo(
-    () => [...tunnels].sort((a, b) => a.node.country.localeCompare(b.node.country)),
+    () => [...tunnels].sort((a, b) =>
+      a.node.country.localeCompare(b.node.country) || b.recommendScore - a.recommendScore),
     [tunnels]
   );
 

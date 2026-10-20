@@ -16,6 +16,7 @@ import type { StatusResponseData } from './vpn-types';
 import { transformStatus } from './status-transform';
 import { getDeviceUdid } from './device-udid';
 import { tauriNativeStorage } from './tauri-storage';
+import { withAppAttribution } from '../utils/site-link';
 
 interface ServiceResponse {
   code: number;
@@ -186,7 +187,7 @@ export async function injectTauriGlobals(): Promise<void> {
     storage: tauriNativeStorage,
 
     openExternal: async (url: string): Promise<void> => {
-      await openUrl(url);
+      await openUrl(withAppAttribution(url));
     },
 
     writeClipboard: async (text: string): Promise<void> => {

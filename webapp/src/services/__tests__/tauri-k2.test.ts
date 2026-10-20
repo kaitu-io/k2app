@@ -181,6 +181,13 @@ describe('tauri-k2', () => {
       expect(mockOpenUrl).toHaveBeenCalledWith('https://example.com');
     });
 
+    it('_platform.openExternal tags own-site links as coming from the app', async () => {
+      const { brandConfig } = await import('../../brands');
+      await window._platform.openExternal(`${brandConfig.baseURL}/install`);
+      const opened = new URL(mockOpenUrl.mock.calls.at(-1)![0] as string);
+      expect(opened.searchParams.get('utm_source')).toBe('app');
+    });
+
     it('_platform.writeClipboard calls clipboard-manager plugin', async () => {
       await window._platform.writeClipboard('hello');
       expect(mockWriteText).toHaveBeenCalledWith('hello');
