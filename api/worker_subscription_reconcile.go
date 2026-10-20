@@ -139,6 +139,7 @@ func reconcileAppleSubscription(ctx context.Context, sub *Subscription, now int6
 			// 试用链上别的账号的付费交易：只有它的 token 主人 verify 能入账（改绑）。本轮整条跳过——
 			// 不报错（不进告警/重试循环），也不落续订状态 / Expired（那是 B 的链了）。
 			log.Warnf(ctx, "[SUB-RECONCILE] sub %s skipped: %v", sub.ProviderSubscriptionID, err)
+			maybeAlertAppleAwaitingRebind(ctx, sub.ProviderSubscriptionID, st.txn.TransactionId, sub.UserID, time.Unix(now, 0))
 			return false, nil
 		}
 		if errors.Is(err, errAppleTxnUpgraded) {

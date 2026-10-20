@@ -297,7 +297,8 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 
 	if rebindFromUserID != 0 {
 		// 原账号的试用早已结束（spec §3.3）：只清它的试用线路隔离标志，权益不动。
-		if err := tx.Model(&User{}).Where("id = ?", rebindFromUserID).Update("in_trial", false).Error; err != nil {
+		// 原账号若还有别的试用链在用，标志归那条链（clearUserInTrialUnlessOtherTrialLive 判）。
+		if err := clearUserInTrialUnlessOtherTrialLive(tx, rebindFromUserID, sub.ID); err != nil {
 			return fmt.Errorf("clear in_trial of previous owner %d: %w", rebindFromUserID, err)
 		}
 	}

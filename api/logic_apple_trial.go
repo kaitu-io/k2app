@@ -1,8 +1,11 @@
 package center
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/wordgate/qtoolkit/appstore"
 	"gorm.io/gorm"
@@ -55,8 +58,54 @@ func clearInTrialIfTrialChain(tx *gorm.DB, sub *Subscription) error {
 	if !sub.IsTrial {
 		return nil
 	}
-	if err := tx.Model(&User{}).Where("id = ?", sub.UserID).Update("in_trial", false).Error; err != nil {
-		return fmt.Errorf("clear in_trial of user %d (trial sub %d): %w", sub.UserID, sub.ID, err)
+	return clearUserInTrialUnlessOtherTrialLive(tx, sub.UserID, sub.ID)
+}
+
+// clearUserInTrialUnlessOtherTrialLive 是清 users.in_trial 的唯一入口（试用链终结、试用链改绑走原账号）。
+// 同一用户可能有多条 Apple 试用链（换 Apple ID 各开一次试用）：只要还有别的链 is_trial 且试用期未结束，
+// 标志就还属于那条链，不清。exceptSubID 是正在终结 / 已改绑走的那条链。
+func clearUserInTrialUnlessOtherTrialLive(tx *gorm.DB, userID, exceptSubID uint64) error {
+	var live int64
+	if err := tx.Model(&Subscription{}).
+		Where("user_id = ? AND provider = ? AND id <> ? AND is_trial = ? AND trial_ends_at > ?",
+			userID, SubscriptionProviderApple, exceptSubID, true, time.Now().Unix()).
+		Count(&live).Error; err != nil {
+		return fmt.Errorf("check other live trial chains of user %d: %w", userID, err)
+	}
+	if live > 0 {
+		return nil
+	}
+	if err := tx.Model(&User{}).Where("id = ?", userID).Update("in_trial", false).Error; err != nil {
+		return fmt.Errorf("clear in_trial of user %d (trial sub %d): %w", userID, exceptSubID, err)
 	}
 	return nil
+}
+
+// ---------- 对账遇到等改绑的交易：告警 ----------
+
+// appleAwaitingRebindAlertWindow 同一 otx「等改绑」告警的最短间隔。对账每天 / 每周都会重扫到它，
+// 不去重就是每天一条。
+const appleAwaitingRebindAlertWindow = 24 * time.Hour
+
+// appleAwaitingRebindAlerts 进程内按 otx 去重（多实例各自至多每天一条，可接受）。
+var appleAwaitingRebindAlerts = struct {
+	mu   sync.Mutex
+	last map[string]time.Time
+}{last: map[string]time.Time{}}
+
+// maybeAlertAppleAwaitingRebind 对账 worker 跳过一笔等改绑的付费交易时调用：Apple 已经收了钱，
+// 而 token 主人一直没来 verify，权益就一直挂着——需要人看。返回是否发出，供测试断言。
+func maybeAlertAppleAwaitingRebind(ctx context.Context, otx, txnID string, boundUserID uint64, now time.Time) bool {
+	appleAwaitingRebindAlerts.mu.Lock()
+	if last, ok := appleAwaitingRebindAlerts.last[otx]; ok && now.Sub(last) < appleAwaitingRebindAlertWindow {
+		appleAwaitingRebindAlerts.mu.Unlock()
+		return false
+	}
+	appleAwaitingRebindAlerts.last[otx] = now
+	appleAwaitingRebindAlerts.mu.Unlock()
+	alertPaymentAnomaly(ctx, "APPLE-AWAITING-REBIND",
+		"试用链 otx=%s 上的付费交易 %s 带着另一个账号的 appAccountToken，等那个账号的客户端 verify 改绑；链当前绑定用户 %d。"+
+			"Apple 已扣款但尚未入账给任何人——若持续出现，查 token 主人是否还在用 app",
+		otx, txnID, boundUserID)
+	return true
 }
