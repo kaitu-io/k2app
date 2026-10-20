@@ -50,6 +50,10 @@ const (
 	ErrorDeviceClassMismatch ErrorCode = 403002 // 设备身份与历史注册类型不符
 	ErrorBrandMismatch       ErrorCode = 403003 // 账号品牌与请求品牌不符
 
+	// 设备账号（零登录身份用户，2026-10-20）
+	ErrorDeviceAccountDisabled      ErrorCode = 403004 // 当前品牌/版本不支持设备账号
+	ErrorDeviceAccountLoginRequired ErrorCode = 403005 // 该设备已绑定账号，需登录
+
 	// Tier system error codes (added 2026-04-20)
 	ErrorTierMismatch            ErrorCode = 422001 // Plan tier 与 user tier 不匹配（续费场景）
 	ErrorProxyPurchaseDeprecated ErrorCode = 422002 // 代付款功能已下线
@@ -60,6 +64,8 @@ const (
 
 	// 409xxx: 资源冲突（同品牌内唯一性被占用）
 	ErrorEmailAlreadyInUse ErrorCode = 409001 // 邮箱已被同品牌下的其他账号绑定
+	// 409002/409003 由社交登录分支占用
+	ErrorAppleSubscriptionOwnedElsewhere ErrorCode = 409004 // Apple 订阅属于另一台设备的账号
 )
 
 type DataAny struct{}

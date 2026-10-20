@@ -93,11 +93,15 @@ export const ERROR_CODES = {
   ROUTER_DEVICE_LIMIT: 403001,
   DEVICE_CLASS_MISMATCH: 403002,
   BRAND_MISMATCH: 403003,
+  DEVICE_ACCOUNT_DISABLED: 403004,
+  DEVICE_ACCOUNT_LOGIN_REQUIRED: 403005,
   INVALID_CLIENT_CLASS: 422003,
   PAYMENT_CHANNEL_UNAVAILABLE: 405001,
 
   // Resource conflict — uniqueness already taken within the brand (added 2026-07-29)
   EMAIL_ALREADY_IN_USE: 409001,
+  // 409002/409003 由社交登录分支占用
+  APPLE_SUBSCRIPTION_OWNED_ELSEWHERE: 409004,
 
   // === Frontend-only codes (NOT from backend API) ===
 
@@ -245,6 +249,8 @@ export const API_ERROR_CATALOG: Readonly<Record<number, ErrorEntry>> = {
   // user never receives an email. The copy must say so — the old generic 422
   // ("参数错误") read as a transient glitch and users retried for hours.
   [ERROR_CODES.EMAIL_ALREADY_IN_USE]: { key: 'auth:updateEmail.emailAlreadyInUse', defaultValue: 'This email is already used by another account' },
+  // 409004: the Apple subscription is owned by another device's account.
+  [ERROR_CODES.APPLE_SUBSCRIPTION_OWNED_ELSEWHERE]: { key: 'auth:auth.appleSubscriptionOwnedElsewhere', defaultValue: "This subscription belongs to another device's account. On that device, set an email under \"Me → Sign in on other devices\", then sign in here." },
 
   // Backend custom codes (400000+ range)
   [ERROR_CODES.INVALID_CAMPAIGN_CODE]: { key: 'purchase:purchase.invalidCampaignCode', defaultValue: 'Invalid promo code' },
@@ -280,6 +286,9 @@ export const API_ERROR_CATALOG: Readonly<Record<number, ErrorEntry>> = {
   // 403003: account was born on the other brand — baked-brand clients should
   // never see this except with restored/stale token storage.
   [ERROR_CODES.BRAND_MISMATCH]: { key: 'auth:auth.brandMismatch', defaultValue: 'This account belongs to a different app' },
+  // 403004/403005: device accounts (login-free). Disabled for this brand/version, or the device already has an account.
+  [ERROR_CODES.DEVICE_ACCOUNT_DISABLED]: { key: 'auth:auth.deviceAccountDisabled', defaultValue: "Using the app without signing in isn't supported in this version. Please sign in." },
+  [ERROR_CODES.DEVICE_ACCOUNT_LOGIN_REQUIRED]: { key: 'auth:auth.deviceAccountLoginRequired', defaultValue: 'This device is already linked to an account. Please sign in.' },
   // 405001: payment channel not allowed for this brand (e.g. WordGate on an
   // overleap account). User-actionable: buy on the brand website.
   [ERROR_CODES.PAYMENT_CHANNEL_UNAVAILABLE]: { key: 'purchase:purchase.paymentChannelUnavailable', defaultValue: 'This payment method is unavailable for your account' },

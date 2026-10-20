@@ -21,7 +21,8 @@
         "wordgate",
         "apple_iap"
       ],
-      "wallet": true
+      "wallet": true,
+      "deviceAccount": true
     },
     "overleap": {
       "id": "overleap",
@@ -42,7 +43,8 @@
         "stripe",
         "apple_iap"
       ],
-      "wallet": false
+      "wallet": false,
+      "deviceAccount": false
     }
   },
   "cors": {
@@ -196,12 +198,24 @@
       "code": 403003
     },
     {
+      "name": "ErrorDeviceAccountDisabled",
+      "code": 403004
+    },
+    {
+      "name": "ErrorDeviceAccountLoginRequired",
+      "code": 403005
+    },
+    {
       "name": "ErrorPaymentChannelUnavailable",
       "code": 405001
     },
     {
       "name": "ErrorEmailAlreadyInUse",
       "code": 409001
+    },
+    {
+      "name": "ErrorAppleSubscriptionOwnedElsewhere",
+      "code": 409004
     },
     {
       "name": "ErrorTierMismatch",

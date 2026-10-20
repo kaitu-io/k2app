@@ -42,6 +42,7 @@ type DataAppConfig struct {
 	MinClientVersion string             `json:"minClientVersion,omitempty"` // 最低客户端版本要求，低于此版本强制升级
 	Announcement     *DataAnnouncement  `json:"announcement,omitempty"`     // 向后兼容：最高优先级公告
 	Announcements    []DataAnnouncement `json:"announcements,omitempty"`    // 全部活跃公告（按 priority DESC 排序）
+	DeviceAccount    bool               `json:"deviceAccount"`              // 当前品牌是否启用设备账号（免登录）
 }
 
 // api_get_app_config 获取应用配置
@@ -119,6 +120,7 @@ func api_get_app_config(c *gin.Context) {
 		MinClientVersion: minClientVersion,
 		Announcement:     singleAnnouncement,
 		Announcements:    announcements,
+		DeviceAccount:    b.Config().DeviceAccount,
 	}
 
 	log.Infof(c, "successfully retrieved app config: %+v", data)
