@@ -45,6 +45,11 @@ func api_apple_iap_verify(c *gin.Context) {
 			Error(c, ErrorInvalidOperation, "this purchase has been refunded")
 			return
 		}
+		if errors.Is(err, errAppleSubOwnedElsewhere) {
+			log.Warnf(c, "[AppleIAP] verify user=%d txn=%s: owned by another account: %v", userID, req.TransactionID, err)
+			Error(c, ErrorAppleSubscriptionOwnedElsewhere, "subscription belongs to another account")
+			return
+		}
 		log.Errorf(c, "[AppleIAP] verify failed user=%d txn=%s: %v", userID, req.TransactionID, err)
 		Error(c, ErrorInvalidOperation, "verification failed")
 		return

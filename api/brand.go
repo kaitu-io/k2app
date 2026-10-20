@@ -90,6 +90,9 @@ type BrandConfig struct {
 	// Stripe 撤回执行器原路退回 / Apple 自己退款；钱包入口与提现在后端按此位拒绝。
 	// 导出进跨层契约，webapp features.wallet 必须与之一致。
 	Wallet bool
+	// DeviceAccount 设备账号：允许零登录身份的用户（按设备建号，免登录试用/订阅）。
+	// 仅开途开启；overleap 关闭。经 /api/app/config 下发 deviceAccount，并导出进跨层契约。
+	DeviceAccount bool
 	// AI 作答用的知识库：配置 openai.filesearch.stores.<ChatAIStore>。每个品牌一个独立的 vector store，
 	// 源文件在 docs/customer-service/<brand>/，用 scripts/sync-kb.sh 同步。
 	ChatAIStore string
@@ -128,6 +131,7 @@ var brandRegistry = map[Brand]*BrandConfig{
 		GeoDefaultCountry: "cn",
 		ChatAI:            true,
 		Wallet:            true,
+		DeviceAccount:     true,
 		ChatAIStore:       "crm",
 		Social: SocialClientIDs{
 			GoogleWebClientID: "125062807005-fqpjkq2pjjqdueen84q1kpp3rlkvq5sg.apps.googleusercontent.com",
@@ -152,6 +156,7 @@ var brandRegistry = map[Brand]*BrandConfig{
 		GeoDefaultCountry: "gb",
 		ChatAI:            true,
 		Wallet:            false,
+		DeviceAccount:     false,
 		ChatAIStore:       "overleap",
 		FunnelCookieless:  true,
 		Social: SocialClientIDs{

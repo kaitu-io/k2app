@@ -158,6 +158,12 @@ func api_update_login_email(c *gin.Context) {
 		}
 	} else if util.DbIsNotFoundErr(err) {
 		log.Infof(c, "creating new login identify for user %d", userID)
+		hadIdentity, err := userHasIdentity(db.Get(), userID)
+		if err != nil {
+			log.Errorf(c, "failed to check login identity for user %d: %v", userID, err)
+			Error(c, ErrorSystemError, "failed to bind email")
+			return
+		}
 		identify = LoginIdentify{
 			UserID:         userID,
 			Type:           "email",
@@ -169,6 +175,9 @@ func api_update_login_email(c *gin.Context) {
 			log.Errorf(c, "failed to bind email for user %d: %v", userID, err)
 			Error(c, ErrorSystemError, "failed to bind email")
 			return
+		}
+		if !hadIdentity {
+			recordIdentityBound(c, &User{ID: userID, Brand: string(ReqBrand(c))})
 		}
 	} else {
 		log.Errorf(c, "failed to find login identify for user %d: %v", userID, err)

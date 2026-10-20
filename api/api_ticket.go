@@ -43,13 +43,34 @@ func api_create_ticket(c *gin.Context) {
 	// Resolve email: logged-in user from DB, anonymous user from request
 	var userEmail string
 	if userID > 0 {
-		email, err := getUserEmail(ctx, userID)
-		if err != nil {
-			log.Errorf(ctx, "api_create_ticket: failed to get user email: %v", err)
+		// 没有 email 身份（零身份设备账号、只绑了第三方的用户）：用表单里的联系邮箱回复，
+		// 不绑定为登录身份（spec §4.6.1）。
+		var emailRows int64
+		if err := db.Get().Model(&LoginIdentify{}).Where("user_id = ? AND type = ?", userID, "email").
+			Count(&emailRows).Error; err != nil {
+			log.Errorf(ctx, "api_create_ticket: failed to check email identity for user %d: %v", userID, err)
 			Error(c, ErrorSystemError, "failed to get user email")
 			return
 		}
-		userEmail = email
+		if emailRows > 0 {
+			email, err := getUserEmail(ctx, userID)
+			if err != nil {
+				log.Errorf(ctx, "api_create_ticket: failed to get user email: %v", err)
+				Error(c, ErrorSystemError, "failed to get user email")
+				return
+			}
+			userEmail = email
+		} else {
+			if req.Email == "" {
+				Error(c, ErrorInvalidArgument, "email is required: account has no email")
+				return
+			}
+			if !isValidEmail(req.Email) {
+				Error(c, ErrorInvalidArgument, "invalid email address")
+				return
+			}
+			userEmail = req.Email
+		}
 		log.Infof(ctx, "api_create_ticket: user %d creating ticket, os=%s version=%s channel=%s",
 			userID, req.OS, req.AppVersion, req.Channel)
 	} else {

@@ -261,8 +261,14 @@ func emailToUserSingleBrand[T any](ctx context.Context, userID int64, tmpl Email
 	return emailTo(ctx, b, email, tmpl, meta)
 }
 
+// mailTargetHook 测试接缝：每次给用户发信（emailToUser / emailToUserSingleBrand）都先经过这里。生产恒为 nil。
+var mailTargetHook func(userID int64)
+
 // resolveUserMailTarget 解出用户的收件地址与品牌，是上面两个入口唯一的取数处。
 func resolveUserMailTarget(ctx context.Context, userID int64) (Brand, string, error) {
+	if mailTargetHook != nil {
+		mailTargetHook(userID)
+	}
 	// 从 identify 获取用户邮箱
 	identify, err := GetEmailIdentifyByUserID(ctx, userID)
 	if util.DbIsNotFoundErr(err) || identify == nil || identify.EncryptedValue == "" {
@@ -372,10 +378,16 @@ func MailSendWith(ctx context.Context, sender *mail.Sender, msg *mail.Message) e
 	return mail.Send(msg)
 }
 
+// systemMailToHook 测试接缝：sendSystemEmailAs 入口回报收件地址。生产恒为 nil。
+var systemMailToHook func(to string)
+
 // sendSystemEmailAs 发送系统纯文本邮件（验证码、通知等），发件身份按品牌选择：
 // kaitu 走全局 mail.* 前缀（行为与历史 sendSystemEmail 完全一致），overleap 走
 // mail_overleap.* 前缀，未配置时回落全局并一次性告警。
 func sendSystemEmailAs(ctx context.Context, b Brand, to, subject, body string) error {
+	if systemMailToHook != nil {
+		systemMailToHook(to)
+	}
 	log.Debugf(ctx, "sending plain text system email to %s as brand %s", hideEmail(to), b)
 
 	sender := systemSenderForBrand(b)
