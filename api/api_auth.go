@@ -408,142 +408,19 @@ func api_web_auth(c *gin.Context) {
 		}
 	}
 
-	var authResult *DataAuthResult
-	var err error
-	var userIsAdmin bool     // 用于响应中返回用户信息
-	var userRoles uint64     // 用于 JWT 中的角色
-	var userHasPassword bool // 用于响应中告知前端 /account/security 应显示「修改」还是「设置」
-
-	// 使用事务处理用户信息更新和邀请码设置
-	err = db.Get().Transaction(func(tx *gorm.DB) error {
-		// 获取用户信息
-		var user User
-		if err := tx.First(&user, identify.UserID).Error; err != nil {
-			log.Errorf(c, "failed to get user %d: %v", identify.UserID, err)
-			return err
-		}
-
-		if isUserBlocked(&user) {
-			log.Warnf(c, "web login rejected: user %d is blocked", identify.UserID)
-			return e(ErrorForbidden, "account blocked")
-		}
-		// 保存用户信息用于响应和 JWT
-		userIsAdmin = user.IsAdmin != nil && *user.IsAdmin
-		userRoles = user.Roles
-		userHasPassword = HasPasswordSet(&user)
-
-		// 追踪是否需要保存用户信息
-		needSave := false
-
-		// 如果提供了语言偏好，更新用户语言设置
-		if req.Language != "" {
-			acceptLanguage := c.GetHeader("Accept-Language")
-			detectedLanguage := detectUserLanguage(c, req.Language, req.Email, acceptLanguage)
-			if detectedLanguage != user.Language {
-				user.Language = detectedLanguage
-				needSave = true
-				log.Infof(c, "will update user %d language to: %s", identify.UserID, detectedLanguage)
-			}
-		}
-
-		// 处理邀请码逻辑（仅未激活用户可以设置邀请码）
-		if req.InviteCode != "" {
-			if user.IsActivated == nil || !*user.IsActivated {
-				log.Infof(c, "user %d is not activated, processing invite code: %s", identify.UserID, req.InviteCode)
-				inviteCodeID := InviteCodeID(req.InviteCode)
-				var inviteCode InviteCode
-				if err := tx.First(&inviteCode, inviteCodeID).Error; err != nil {
-					if util.DbIsNotFoundErr(err) {
-						log.Warnf(c, "invalid invite code %s for user %d", req.InviteCode, identify.UserID)
-						return e(ErrorInvalidInviteCode, "invalid invite code")
-					}
-					log.Errorf(c, "failed to check invite code %s: %v", req.InviteCode, err)
-					return err
-				}
-
-				// 检查自邀请
-				if inviteCode.UserID == identify.UserID {
-					log.Warnf(c, "self-invitation detected for user %d with code %s", identify.UserID, req.InviteCode)
-					return e(ErrorSelfInvitation, "cannot use your own invite code")
-				}
-
-				// 设置邀请码
-				user.InvitedByCodeID = inviteCodeID
-				needSave = true
-				log.Infof(c, "will set invite code %s for user %d", req.InviteCode, identify.UserID)
-
-				// 异步处理邀请奖励
-				go handleInviteDownloadReward(c, identify.UserID)
-			} else {
-				log.Infof(c, "user %d is already activated, ignoring invite code", identify.UserID)
-			}
-		}
-
-		// 如果未激活用户没有提供邀请码，也需要激活账号
-		if user.IsActivated == nil || !*user.IsActivated {
-			user.IsActivated = BoolPtr(true)
-			user.ActivatedAt = time.Now().Unix()
-			needSave = true
-			log.Infof(c, "will activate user %d (web login without invite code) at %d", identify.UserID, user.ActivatedAt)
-		}
-
-		// 保存用户信息
-		if needSave {
-			if err := tx.Save(&user).Error; err != nil {
-				log.Errorf(c, "failed to save user %d: %v", identify.UserID, err)
-				return err
-			}
-			log.Infof(c, "successfully saved user %d updates", identify.UserID)
-		}
-
-		return nil
+	resp, err := completeWebLogin(c, identify.UserID, webLoginParams{
+		Language:   req.Language,
+		Email:      req.Email,
+		InviteCode: req.InviteCode,
 	})
-
 	if err != nil {
-		log.Errorf(c, "failed to update user info for web login: %v", err)
 		ErrorE(c, err)
 		return
 	}
 
-	// 生成 Web Cookie 专用 token（2个月有效期，无 refresh token）
-	authResult, _, err = generateWebCookieToken(c, identify.UserID, userRoles)
-	if err != nil {
-		log.Errorf(c, "failed to generate web cookie token for user %d: %v", identify.UserID, err)
-		Error(c, ErrorSystemError, "failed to generate tokens")
-		return
-	}
-
-	// 设置 HttpOnly Cookie（Web 端安全认证，sliding expiration）
-	setAuthCookies(c, authResult)
-	// 漏斗：把匿名 sid 关联到该用户（只读不种；非阻塞，失败不影响登录）。
-	if sid, optedOut := readFunnelSid(c); !optedOut && !funnelGPC(c) && sid != "" {
-		linkFunnelIdentity(c, "sid", sid, identify.UserID, ReqBrand(c))
-	}
-
-	// 发送 Web 登录邮件通知
-	meta := WebLoginMeta{
-		LoginTime: time.Now().Format("2006-01-02 15:04:05"),
-		ClientIP:  c.ClientIP(),
-	}
-	if err := emailToUser(c, int64(identify.UserID), brandedWebLoginTemplate, meta); err != nil {
-		log.Errorf(c, "failed to send web login email to user %d: %v", identify.UserID, err)
-		// 不影响登录流程，仅记录错误
-	}
-
-	log.Infof(c, "user %d successfully logged in via web", identify.UserID)
-
 	// Tokens 通过 HttpOnly Cookie 设置，AccessToken 也在 body 里返回供
 	// fallback 使用（iOS 微信 WKWebView 等不持久化 Set-Cookie 的环境）。
-	Success(c, &DataWebLoginResponse{
-		User: DataWebLoginUser{
-			ID:          identify.UserID,
-			Email:       req.Email,
-			IsAdmin:     userIsAdmin,
-			Roles:       userRoles,
-			HasPassword: userHasPassword,
-		},
-		AccessToken: authResult.AccessToken,
-	})
+	Success(c, resp)
 }
 
 type AuthWithDeviceRequest struct {
