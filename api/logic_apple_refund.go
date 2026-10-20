@@ -48,6 +48,13 @@ func applyAppleRefund(ctx context.Context, otx string, txn *appstore.Transaction
 	if txn == nil || txn.TransactionId == "" {
 		return nil, errors.New("apple refund without transaction")
 	}
+	// 同组升级被取代的交易（spec 2026-10-19 §3.9）：Apple 可能给它带 revocationDate，但用户没有退款，
+	// 只是换到了更高等级的商品。不收回、不置 revoked、不记 AppleRefund、不告警。
+	if txn.IsUpgraded {
+		log.Infof(ctx, "[AppleRefund] txn %s (otx %s) was superseded by a same-group upgrade, not a refund — ignored (source %s)",
+			txn.TransactionId, otx, ev.Source)
+		return &appleRefundOutcome{}, nil
+	}
 	var out *appleRefundOutcome
 	var alerts []string
 	err := withDeadlockRetry(ctx, 3, func(tx *gorm.DB) error {

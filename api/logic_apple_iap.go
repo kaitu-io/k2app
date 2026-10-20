@@ -105,6 +105,11 @@ var errAppleTxnRevoked = errors.New("apple transaction has been refunded")
 // Apple 重投（verify 改绑后重投命中去重）；对账 worker 记日志跳过。返回它时什么都没写。
 var errAppleTxnAwaitingRebind = errors.New("apple txn awaits trial-chain rebind by its token owner")
 
+// errAppleTxnUpgraded 同组升级被取代的交易（isUpgraded=true，spec 2026-10-19 §3.9）：取代它的新交易
+// 已经（或即将）按自己的周期入账，这笔永不入账、也不改写订阅行。它可能同时带 revocationDate，但**不是
+// 退款**——不收回、不置 revoked、不记 AppleRefund。verify / webhook / 对账都视为已处理。
+var errAppleTxnUpgraded = errors.New("apple transaction was superseded by a same-group upgrade")
+
 // lastActiveAppleRefundAt 这条订阅链上仍生效、且曾把订阅置为 revoked 的退款里最晚的
 // revocationDate（毫秒）；无则 0。复活判据：新付款的 purchaseDate 必须严格晚于它。
 func lastActiveAppleRefundAt(tx *gorm.DB, otx string) (int64, error) {
@@ -129,6 +134,15 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	// 不消耗首单、不推进 paid_through。试用链上第一笔付费才是首购。
 	class := classifyAppleTxn(info)
 	isTrialTxn := class == appleTxnFreeTrial
+
+	// 同组升级被取代的交易（spec 2026-10-19 §3.9）：取代它的新交易按自己的周期入账，这笔什么都不写——
+	// 不入账，也不刷新订阅行（否则重放会把 product_id / latest_ref 改回被取代的商品）。它带的
+	// revocationDate 是升级造成的，不是退款：返回可区分的哨兵，绝不落到下面的退款门。
+	if info.IsUpgraded {
+		log.Infof(ctx, "[creditAppleTransaction] txn %s (otx %s, product %s) superseded by same-group upgrade — not crediting (user %d)",
+			info.TransactionId, info.OriginalTransactionId, info.ProductId, userID)
+		return errAppleTxnUpgraded
+	}
 
 	// Load-or-create the subscription row (binding key = OriginalTransactionId).
 	var sub Subscription

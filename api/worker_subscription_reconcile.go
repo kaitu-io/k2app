@@ -111,6 +111,13 @@ func reconcileAppleSubscription(ctx context.Context, sub *Subscription, now int6
 				sub.ProviderSubscriptionID)
 			return false, nil
 		}
+		if st.txn.IsUpgraded {
+			// 同组升级被取代的交易不是退款（spec 2026-10-19 §3.9）：整条跳过，取代它的新交易由
+			// verify / webhook / 下一轮对账入账。
+			log.Infof(ctx, "[SUB-RECONCILE] sub %s reported revoked with upgraded txn %s — superseded by upgrade, not a refund, skipped",
+				sub.ProviderSubscriptionID, st.txn.TransactionId)
+			return false, nil
+		}
 		out, err := applyAppleRefund(ctx, sub.ProviderSubscriptionID, st.txn,
 			appleRefundEvidence{SignedAt: st.txn.RevocationDate, Source: "reconcile"})
 		if err != nil {
@@ -134,7 +141,10 @@ func reconcileAppleSubscription(ctx context.Context, sub *Subscription, now int6
 			log.Warnf(ctx, "[SUB-RECONCILE] sub %s skipped: %v", sub.ProviderSubscriptionID, err)
 			return false, nil
 		}
-		if err != nil && !errors.Is(err, errAppleTxnRevoked) {
+		if errors.Is(err, errAppleTxnUpgraded) {
+			// 同组升级被取代的交易：什么都没写，视为已处理（不是退款，不是失败）。
+			log.Infof(ctx, "[SUB-RECONCILE] sub %s latest txn %s superseded by upgrade, not credited", sub.ProviderSubscriptionID, st.txn.TransactionId)
+		} else if err != nil && !errors.Is(err, errAppleTxnRevoked) {
 			return false, err
 		}
 		if err := db.Get().First(sub, sub.ID).Error; err != nil {
