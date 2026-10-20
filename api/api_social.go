@@ -20,6 +20,8 @@ func socialErrorCode(err error) ErrorCode {
 		return ErrorSocialIdentityTaken
 	case errors.Is(err, errSocialProviderAlreadyBound):
 		return ErrorSocialProviderAlreadyBound
+	case errors.Is(err, errSocialHandoffExpired):
+		return ErrorSocialHandoffExpired
 	}
 	return ErrorSystemError
 }
