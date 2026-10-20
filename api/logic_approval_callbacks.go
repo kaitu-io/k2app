@@ -188,6 +188,13 @@ func executeApprovalUserHardDelete(ctx context.Context, params json.RawMessage) 
 		userIDs[i] = user.ID
 	}
 
+	// Apple 要求注销账号时撤销令牌：须在身份行被删之前读出（失败只记日志，不阻塞删除）。
+	revs, err := loadAppleRevocations(ctx, userIDs)
+	if err != nil {
+		log.Errorf(ctx, "load apple revocations failed: %v", err)
+		revs = nil
+	}
+
 	tx := db.Get().Begin()
 	if tx.Error != nil {
 		return fmt.Errorf("begin transaction: %w", tx.Error)
@@ -312,6 +319,8 @@ func executeApprovalUserHardDelete(ctx context.Context, params json.RawMessage) 
 	if err := tx.Commit().Error; err != nil {
 		return fmt.Errorf("commit transaction: %w", err)
 	}
+
+	revokeAppleTokensAsync(revs)
 
 	return nil
 }

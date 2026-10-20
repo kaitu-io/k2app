@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 )
 
@@ -119,6 +120,30 @@ type appleRevocation struct {
 	Brand        Brand
 	ClientID     string
 	RefreshToken string
+}
+
+// loadAppleRevocations 读取并解密这些用户名下全部 Apple refresh token（须在删除身份行之前调用）。
+// 无 refresh token 的行跳过；解密失败的行只记日志（不含 token）并跳过，不影响注销。
+func loadAppleRevocations(ctx context.Context, userIDs []uint64) ([]appleRevocation, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+	var rows []LoginIdentify
+	if err := db.Get().WithContext(ctx).
+		Where("user_id IN ? AND type = ? AND provider_refresh_token <> ?", userIDs, SocialProviderApple, "").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("query apple identities: %w", err)
+	}
+	revs := make([]appleRevocation, 0, len(rows))
+	for _, row := range rows {
+		plain, err := secretDecryptString(ctx, row.ProviderRefreshToken)
+		if err != nil {
+			log.Errorf(ctx, "decrypt apple refresh token failed (identity %d, user %d): %v", row.ID, row.UserID, err)
+			continue
+		}
+		revs = append(revs, appleRevocation{Brand: Brand(row.Brand), ClientID: row.ProviderClientID, RefreshToken: plain})
+	}
+	return revs, nil
 }
 
 // appleRevokeAsyncTimeout 后台撤销整体超时。

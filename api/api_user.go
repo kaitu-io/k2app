@@ -276,6 +276,12 @@ func api_delete_user_account(c *gin.Context) {
 	// 同邮箱重新注册，因为 (type,index_id) 唯一索引仍被占用）。
 	// LoginIdentify / Device 均无 DeletedAt，Delete 即硬删，释放唯一索引；
 	// 订单 / 钱包 / 历史保留在软删用户名下以备审计。
+	// Apple 要求注销账号时撤销令牌：必须在身份行被删之前读出（失败只记日志，不阻塞注销）。
+	revs, err := loadAppleRevocations(c, []uint64{uint64(userID)})
+	if err != nil {
+		log.Errorf(c, "load apple revocations for user %d failed: %v", userID, err)
+		revs = nil
+	}
 	if err := db.Get().Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&LoginIdentify{}).Error; err != nil {
 			return err
@@ -300,6 +306,7 @@ func api_delete_user_account(c *gin.Context) {
 		return
 	}
 
+	revokeAppleTokensAsync(revs)
 	log.Infof(c, "successfully deleted user account %d (freed email, removed devices)", userID)
 	SuccessEmpty(c)
 }
