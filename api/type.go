@@ -275,6 +275,16 @@ type DataSocialLoginRequest struct {
 	Language          string `json:"language"`
 }
 
+// DataSocialWebLoginRequest 官网第三方（Google / Apple）登录请求，无设备绑定。
+// Nonce 是客户端生成的原始值；交给提供方的是 sha256hex(Nonce)。
+type DataSocialWebLoginRequest struct {
+	Provider          string `json:"provider" binding:"required,oneof=google apple"`
+	IDToken           string `json:"idToken" binding:"required"`
+	Nonce             string `json:"nonce" binding:"required"`
+	AuthorizationCode string `json:"authorizationCode"` // 仅 Apple：换取 refresh token 供注销时撤销
+	Language          string `json:"language"`
+}
+
 // DataWebLoginRequest Web登录请求数据结构（无设备信息）
 type DataWebLoginRequest struct {
 	Email            string `json:"email" binding:"required,email"`      // 邮箱

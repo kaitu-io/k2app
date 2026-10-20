@@ -87,3 +87,58 @@ func api_social_login(c *gin.Context) {
 	log.Infof(c, "user %d logged in via %s with device %s", userID, req.Provider, req.UDID)
 	Success(c, authResult)
 }
+
+// api_social_web_login 官网第三方（Google / Apple）登录：无设备绑定，写 HttpOnly Cookie，返回 DataWebLoginResponse。
+func api_social_web_login(c *gin.Context) {
+	var req DataSocialWebLoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Warnf(c, "invalid social web login request: %v", err)
+		Error(c, ErrorInvalidArgument, err.Error())
+		return
+	}
+
+	brand := ReqBrand(c)
+	cfg := configSocialAuth(brand)
+
+	cl, err := verifySocialIDToken(c, cfg, req.Provider, req.IDToken, req.Nonce)
+	if err != nil {
+		log.Warnf(c, "social web login: %s token rejected (brand %s): %v", req.Provider, brand, err)
+		Error(c, socialErrorCode(err), "social sign-in failed")
+		return
+	}
+
+	userID, created, err := resolveSocialUser(c, brand, cl, req.Language, c.GetHeader("Accept-Language"))
+	if err != nil {
+		code := socialErrorCode(err)
+		if code == ErrorSystemError {
+			log.Errorf(c, "social web login: resolve %s user failed (email %s): %v", req.Provider, hideEmail(cl.Email), err)
+		} else {
+			log.Warnf(c, "social web login: resolve %s user rejected (email %s): %v", req.Provider, hideEmail(cl.Email), err)
+		}
+		Error(c, code, "social sign-in failed")
+		return
+	}
+	log.Infof(c, "social web login: %s identity resolved to user %d (created=%v)", req.Provider, userID, created)
+
+	resp, err := completeWebLogin(c, userID, webLoginParams{
+		Language: req.Language,
+		Email:    cl.Email,
+	})
+	if err != nil {
+		log.Errorf(c, "social web login transaction failed for user %d: %v", userID, err)
+		ErrorE(c, err)
+		return
+	}
+
+	// Apple：用授权码换 refresh token 留作注销时撤销；失败不影响登录。
+	if req.Provider == SocialProviderApple && req.AuthorizationCode != "" {
+		if rt, err := appleExchangeCode(c, cfg, cl.Audience, req.AuthorizationCode); err != nil {
+			log.Warnf(c, "social web login: apple code exchange failed for user %d: %v", userID, err)
+		} else if err := saveAppleRefreshToken(c, brand, cl.Sub, cl.Audience, rt); err != nil {
+			log.Warnf(c, "social web login: save apple refresh token failed for user %d: %v", userID, err)
+		}
+	}
+
+	log.Infof(c, "user %d logged in via %s on web", userID, req.Provider)
+	Success(c, resp)
+}
