@@ -64,7 +64,7 @@
 
 ### 5.1 令牌校验
 - 客户端只把 **ID token（JWT）** 交给服务端；服务端用 Google（`https://www.googleapis.com/oauth2/v3/certs`）/ Apple（`https://appleid.apple.com/auth/keys`）的 JWKS 验签，缓存公钥。
-- 校验：`iss`、`aud ∈ 该品牌允许的 client ID 列表`、`exp`、`nonce`（客户端发起时生成随机 nonce，原值随请求一起送来，服务端比对 token 里的 nonce / Apple 的 `sha256(nonce)`）。
+- 校验：`iss`、`aud ∈ 该品牌允许的 client ID 列表`、`exp`、`nonce`（客户端发起时生成随机 nonce，原值随请求一起送来，交给 Google/Apple 的是 `sha256(nonce)`，服务端比对 token 里的 nonce == `sha256(原值)`）。
 - `aud` 列表按品牌配置：每品牌有多个 client ID（Google：Web / iOS / Android 各一个；Apple：iOS bundle ID + Web 用的 Services ID）。**`aud` 不在本品牌列表 = 拒绝**，这也是品牌隔离的第二道锁。
 - 库：builder 自选（`coreos/go-oidc/v3` 或 `golang-jwt` + JWKS 缓存），不手搓 RSA。
 
@@ -149,12 +149,10 @@ Apple 的 `team_id/key_id/private_key` 用于生成 client secret，去换 refre
 ### 6.3 浏览器 handoff（桌面 / Linux / 安卓 Apple）
 不做 deep link（Linux 没有壳，Windows/macOS 的 URL scheme 注册各有坑），统一用"开浏览器 + App 轮询"：
 
-1. App 生成 `nonce`，调 `POST /handoff {provider, intent: login|bind}`（bind 时带登录态）→ `{sessionId, pollSecret, confirmCode, url}`。会话存 Redis，TTL 5 分钟。
-2. App 用系统浏览器打开 `url` = 本品牌官网 `/auth/social?session=<id>&provider=...`（Apple 回调路径 `/auth/social/apple`，已在 Services ID 登记），App 内显示"请在浏览器中完成登录"和 4 位 `confirmCode`，开始每 2 秒轮询。
-3. 官网页提示"正在登录 <品牌> 桌面客户端，请输入 App 里显示的 4 位代码"，用户**手动输入**代码后才出现 Apple / Google 按钮；拿到 idToken 后连同代码调 `/handoff/complete`，服务端核对代码（每会话最多 5 次错误，超过即作废）。页面提示"已完成，可以回到 App"。
+1. App 调 `POST /handoff {provider, intent: login|bind}`（bind 时带登录态）→ `{sessionId, pollSecret, url}`。服务端生成 nonce 存进会话；会话存 Redis，TTL 5 分钟。
+2. App 用系统浏览器打开 `url` = 本品牌官网 `/auth/social?session=<id>&provider=...&nonce=<sha256(nonce)>`（Apple 回调路径 `/auth/social/apple`，已在 Services ID 登记），App 内显示"请在浏览器中完成登录"，开始每 2 秒轮询。
+3. 官网页直接显示对应的 Apple / Google 按钮；拿到 idToken 后调 `/handoff/complete {sessionId, idToken}`。页面提示"已完成，可以回到 App"。
 4. 服务端在 complete 时就完成令牌校验与 §4 匹配，结果（userId 或错误）记入会话；App 的下一次 `poll` 带上 `pollSecret + udid + remark`，服务端走与 `/social/login` 相同的设备登录事务签发令牌，会话作废。
-
-**为什么必须手输 confirmCode**：会话由 App 创建，链接若被攻击者发给受害者，受害者登录后令牌会落到攻击者的 App；`intent: bind` 更糟——受害者的 Google/Apple 会被绑到攻击者账号上，之后每次第三方登录都进攻击者账号。只"显示"代码挡不住（受害者面前没有 App 可对照），必须让用户输入只有自己 App 上才看得到的代码。（我的判断，接受多一步输入。）
 
 `sessionId` 与 `pollSecret` 分离：URL 里只有 sessionId，领令牌必须有只在 App 内存里的 pollSecret。
 
@@ -166,7 +164,7 @@ Apple 的 `team_id/key_id/private_key` 用于生成 client secret，去换 refre
 ### 6.5 webapp UI
 - `LoginDialog.tsx` 与 `EmailLoginForm.tsx`（两个都要，后者被购买页和 iOS 订阅面板使用）的验证码表单下方加"或"分隔 + "通过 Apple 继续" / "通过 Google 继续"。按钮可见性 = 品牌开关 × 平台能力（原生可用性 / handoff 永远可用）。
 - 文案中文用户面不出现 "Kaitu" 裸词；全部语言补齐。
-- 账号页（`pages/Account.tsx`）新增"登录方式"区：显示已绑定项，可绑定 / 解绑。解绑不需要额外确认的门槛——验证码登录始终可用（用 MUI Dialog 确认，不用 `window.confirm`）。
+- 账号页（`pages/Account.tsx`）新增"登录方式"区：显示已绑定项，可绑定 / 解绑。解绑直接生效，不弹确认（随时可以重新绑定）。
 - client ID 放各品牌 `index.ts`（与 Go 注册表由契约锁定，见 §5.2）；开关来自服务端下发，不在客户端写死。改品牌数据后重生成 `contracts/api-contract.json`。
 - **路由器（k2r，`platformType === 'gateway'`）不显示第三方登录按钮**（我的判断：路由器管理页没有"回到 App"的场景，设备上限也另算），需有测试锁住。
 
