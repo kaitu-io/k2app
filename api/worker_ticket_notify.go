@@ -53,16 +53,24 @@ func handleTicketNotify(ctx context.Context, payload []byte) error {
 		return fmt.Errorf("failed to get ticket: %w", err)
 	}
 
-	// Get user email
-	var userEmail string
+	// Get recipient: users with an email identity get that address; zero-identity
+	// users (device accounts) and anonymous tickets use the contact email stored
+	// on the ticket.
+	userEmail := ticket.Email
 	if ticket.UserID != nil {
-		email, err := getUserEmail(ctx, *ticket.UserID)
-		if err != nil {
-			return fmt.Errorf("failed to get user email: %w", err)
+		var emailIdentities int64
+		if err := db.Get().Model(&LoginIdentify{}).
+			Where("user_id = ? AND type = ?", *ticket.UserID, "email").
+			Limit(1).Count(&emailIdentities).Error; err != nil {
+			return fmt.Errorf("failed to check user email identity: %w", err)
 		}
-		userEmail = email
-	} else {
-		userEmail = ticket.Email
+		if emailIdentities > 0 {
+			email, err := getUserEmail(ctx, *ticket.UserID)
+			if err != nil {
+				return fmt.Errorf("failed to get user email: %w", err)
+			}
+			userEmail = email
+		}
 	}
 
 	if userEmail == "" {

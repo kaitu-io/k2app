@@ -57,6 +57,7 @@ type contractBrand struct {
 	EDMFromName        string          `json:"edmFromName"`
 	PaymentChannels    []string        `json:"paymentChannels"`
 	Wallet             bool            `json:"wallet"`
+	DeviceAccount      bool            `json:"deviceAccount"`
 	Social             SocialClientIDs `json:"social"`
 }
 
@@ -111,6 +112,7 @@ func exportBrands(t *testing.T) map[string]contractBrand {
 			EDMFromName:        cfg.EDMFromName,
 			PaymentChannels:    cfg.PaymentChannels,
 			Wallet:             cfg.Wallet,
+			DeviceAccount:      cfg.DeviceAccount,
 			Social:             cfg.Social,
 		}
 	}

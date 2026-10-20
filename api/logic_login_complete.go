@@ -34,16 +34,8 @@ func completeDeviceLogin(c *gin.Context, userID uint64, p deviceLoginParams) (*D
 				log.Warnf(c, "device transfer detected: udid=%s, from user %d to user %d, old_remark=%s",
 					p.UDID, oldDevice.UserID, userID, oldDevice.Remark)
 
-				// 发送邮件通知原所有者
-				transferMeta := DeviceTransferMeta{
-					TransferTime: time.Now().Format("2006-01-02 15:04:05"),
-					DeviceRemark: oldDevice.Remark,
-				}
-				// 收件人是设备原所有者（oldDevice.UserID），与本次登录用户不同——
-				// emailToUser 按收件人自己的 User 行解析品牌，不是当前请求品牌。
-				if err := emailToUser(c, int64(oldDevice.UserID), brandedDeviceTransferTemplate, transferMeta); err != nil {
-					log.Errorf(c, "failed to send device transfer email to user %d: %v", oldDevice.UserID, err)
-					// 不阻止登录流程，仅记录错误
+				if err := notifyDeviceTransfer(c, tx, &oldDevice); err != nil {
+					return err
 				}
 			}
 		} else if !util.DbIsNotFoundErr(oldDeviceErr) {
@@ -316,4 +308,29 @@ func completeWebLogin(c *gin.Context, userID uint64, p webLoginParams) (*DataWeb
 		},
 		AccessToken: authResult.AccessToken,
 	}, nil
+}
+
+// notifyDeviceTransfer 给被转走设备的原所有者发设备转移邮件（邮件失败不阻止登录）。
+// 原所有者零身份（设备账号）= 没有邮箱，显式跳过，不记错误（spec §4.4）。
+// 返回的错误只来自身份查询（DB 故障），调用方应中止事务。
+func notifyDeviceTransfer(c *gin.Context, tx *gorm.DB, oldDevice *Device) error {
+	has, err := userHasIdentity(tx, oldDevice.UserID)
+	if err != nil {
+		log.Errorf(c, "failed to check login identity for user %d: %v", oldDevice.UserID, err)
+		return err
+	}
+	if !has {
+		log.Infof(c, "device transfer from zero-identity user %d: no mail address, skip transfer email", oldDevice.UserID)
+		return nil
+	}
+	transferMeta := DeviceTransferMeta{
+		TransferTime: time.Now().Format("2006-01-02 15:04:05"),
+		DeviceRemark: oldDevice.Remark,
+	}
+	// 收件人是设备原所有者（oldDevice.UserID），与本次登录用户不同——
+	// emailToUser 按收件人自己的 User 行解析品牌，不是当前请求品牌。
+	if err := emailToUser(c, int64(oldDevice.UserID), brandedDeviceTransferTemplate, transferMeta); err != nil {
+		log.Errorf(c, "failed to send device transfer email to user %d: %v", oldDevice.UserID, err)
+	}
+	return nil
 }

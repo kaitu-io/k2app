@@ -137,7 +137,7 @@ func resolveSocialUserOnce(ctx context.Context, brand Brand, cl *socialClaims, l
 // 该用户已有另一个同 provider 身份 → 不覆盖，直接返回该用户；
 // 身份行唯一键冲突 → 重查第 1 步，返回真正持有该身份的用户。
 func attachSocialIdentityToMatchedUser(ctx context.Context, brand Brand, userID uint64, cl *socialClaims) (uint64, error) {
-	err := writeSocialIdentity(ctx, brand, userID, cl)
+	_, err := writeSocialIdentity(ctx, brand, userID, cl)
 	switch {
 	case err == nil, errors.Is(err, errSocialProviderAlreadyBound):
 		return userID, nil
@@ -167,7 +167,12 @@ func bindSocialIdentity(ctx context.Context, brand Brand, userID uint64, cl *soc
 	}
 	var err error
 	for attempt := 0; attempt < socialMaxAttempts; attempt++ {
-		err = writeSocialIdentity(ctx, brand, userID, cl)
+		var first bool
+		first, err = writeSocialIdentity(ctx, brand, userID, cl)
+		if err == nil && first {
+			// 零身份（设备账号）补上第一个身份：事务已提交（spec §4.7）。
+			recordIdentityBound(ctx, &User{ID: userID, Brand: string(brand)})
+		}
 		if err == nil || !isDuplicateKeyErr(err) {
 			return err
 		}
@@ -178,7 +183,8 @@ func bindSocialIdentity(ctx context.Context, brand Brand, userID uint64, cl *soc
 
 // writeSocialIdentity 在一个事务里（锁住 users 行）为 userID 写第三方身份行，
 // 必要时一并写 email 身份行。冲突以哨兵错误返回；唯一键冲突原样返回（err 满足 isDuplicateKeyErr）。
-func writeSocialIdentity(ctx context.Context, brand Brand, userID uint64, cl *socialClaims) error {
+// first = 写入前该用户零身份（这是它的第一个登录身份），仅在 err == nil 时有意义。
+func writeSocialIdentity(ctx context.Context, brand Brand, userID uint64, cl *socialClaims) (first bool, _ error) {
 	email := normalizeSocialEmail(cl.Email)
 	trusted := cl.EmailTrusted && email != ""
 	indexID := socialIdentityIndexID(ctx, cl.Provider, cl.Sub)
@@ -187,11 +193,11 @@ func writeSocialIdentity(ctx context.Context, brand Brand, userID uint64, cl *so
 	if email != "" {
 		var err error
 		if encEmail, err = secretEncryptString(ctx, email); err != nil {
-			return fmt.Errorf("encrypt social email: %w", err)
+			return false, fmt.Errorf("encrypt social email: %w", err)
 		}
 	}
 
-	return db.Get().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := db.Get().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 锁用户行：同一用户的身份写入串行化（"每种 provider 最多一个" 无唯一索引兜底）。
 		var user User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -220,6 +226,13 @@ func writeSocialIdentity(ctx context.Context, brand Brand, userID uint64, cl *so
 		if n > 0 {
 			return errSocialProviderAlreadyBound
 		}
+
+		// 用户行已锁：此刻的零身份判定与下面的写入同序。
+		has, err := userHasIdentity(tx, userID)
+		if err != nil {
+			return err
+		}
+		first = !has
 
 		// ② 无 email 身份的用户 + 可信邮箱：绑定会写 email 行 → 邮箱属别人则拒绝，无主则一并写入。
 		// 已有 email 身份的用户不写 email 行，邮箱归属无关紧要。
@@ -259,6 +272,7 @@ func writeSocialIdentity(ctx context.Context, brand Brand, userID uint64, cl *so
 			Brand:          string(brand),
 		}).Error
 	})
+	return first && err == nil, err
 }
 
 // unbindSocialIdentity 物理删除本用户在本品牌的 provider 身份行并返回被删行（Apple 撤销用）。

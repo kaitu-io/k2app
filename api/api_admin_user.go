@@ -749,6 +749,12 @@ func api_admin_update_user_email(c *gin.Context) {
 		}
 	} else if errors.Is(err, gorm.ErrRecordNotFound) {
 		// 创建新记录（用户之前没有邮箱）
+		hadIdentity, err := userHasIdentity(db.Get(), user.ID)
+		if err != nil {
+			log.Errorf(c, "查询登录身份失败: %v", err)
+			Error(c, ErrorSystemError, "query login identity failed")
+			return
+		}
 		identify = LoginIdentify{
 			UserID:         user.ID,
 			Type:           "email",
@@ -760,6 +766,9 @@ func api_admin_update_user_email(c *gin.Context) {
 			log.Errorf(c, "创建邮箱登录标识失败: %v", err)
 			Error(c, ErrorSystemError, "create email identity failed")
 			return
+		}
+		if !hadIdentity { // 零身份设备账号补上首个身份（spec §4.7）
+			recordIdentityBound(c, &User{ID: user.ID, Brand: string(userBrand)})
 		}
 	} else {
 		log.Errorf(c, "查询邮箱登录标识失败: %v", err)

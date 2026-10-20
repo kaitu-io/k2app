@@ -110,6 +110,11 @@ var errAppleTxnAwaitingRebind = errors.New("apple txn awaits trial-chain rebind 
 // 退款**——不收回、不置 revoked、不记 AppleRefund。verify / webhook / 对账都视为已处理。
 var errAppleTxnUpgraded = errors.New("apple transaction was superseded by a same-group upgrade")
 
+// errAppleSubOwnedElsewhere 交易所在订阅链（或它的 appAccountToken）属于另一个账号——典型是另一台设备上
+// 未绑定身份的设备账号（spec 2026-10-20 §4.3）。verify 端点映射成 409004，客户端据此提示去那台设备设邮箱；
+// webhook / 对账照旧当普通错误处理。
+var errAppleSubOwnedElsewhere = errors.New("apple subscription owned by another account")
+
 // lastActiveAppleRefundAt 这条订阅链上仍生效、且曾把订阅置为 revoked 的退款里最晚的
 // revocationDate（毫秒）；无则 0。复活判据：新付款的 purchaseDate 必须严格晚于它。
 func lastActiveAppleRefundAt(tx *gorm.DB, otx string) (int64, error) {
@@ -177,7 +182,7 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 			return err
 		}
 		if !ok {
-			return fmt.Errorf("subscription %s already bound to user %d", info.OriginalTransactionId, sub.UserID)
+			return fmt.Errorf("%w: subscription %s already bound to user %d", errAppleSubOwnedElsewhere, info.OriginalTransactionId, sub.UserID)
 		}
 		rebindFromUserID = sub.UserID
 		log.Warnf(ctx, "[creditAppleTransaction] rebinding never-paid trial chain %s from user %d to user %d (txn=%s)",
@@ -214,7 +219,7 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 			return fmt.Errorf("missing appAccountToken: refusing to bind subscription")
 		}
 		if want := deriveAppleAccountToken(user.UUID); !strings.EqualFold(info.AppAccountToken, want) {
-			return fmt.Errorf("appAccountToken mismatch: transaction bound to a different account")
+			return fmt.Errorf("%w: appAccountToken mismatch: transaction bound to a different account", errAppleSubOwnedElsewhere)
 		}
 	}
 

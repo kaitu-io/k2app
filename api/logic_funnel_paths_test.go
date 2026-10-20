@@ -81,7 +81,7 @@ func TestFunnelPaths_RegistryContent(t *testing.T) {
 			{"注册 / 登录", "", []string{"signup", "auth_done"}}, {"付款", "", []string{"purchase", "renewal"}},
 		}},
 		{"app_activation", 7 * day, []step{
-			{"首次打开", "", []string{"app_first_open"}}, {"登录", "app", []string{"auth_done"}},
+			{"首次打开", "", []string{"app_first_open"}}, {"建号或登录", "app", []string{"auth_done", "device_account_created"}},
 			{"尝试连接", "", []string{"first_connect_attempt"}}, {"连上", "", []string{"first_connect_ok"}},
 		}},
 		{"app_purchase", 7 * day, []step{
@@ -219,8 +219,9 @@ var funnelStepEmitSites = map[string][][]string{
 		nil, // 事实
 	},
 	"app_activation": {
-		{"webapp/src/main.tsx"},                   // 启动即发（每设备一次）
-		{"webapp/src/components/LoginDialog.tsx"}, // 登录成功
+		{"webapp/src/main.tsx"}, // 启动即发（每设备一次）
+		// 登录成功；开途 iOS 新壳免登录建号由服务端在 /api/auth/device-account 成功时写（事件名常量在 logic_device_account.go）。
+		{"webapp/src/components/LoginDialog.tsx", "api/logic_device_account.go"},
 		{"webapp/src/stores/connection.store.ts"}, // 首次点连接
 		{"webapp/src/stores/index.ts"},            // 首次连上
 	},

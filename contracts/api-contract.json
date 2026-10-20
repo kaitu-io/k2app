@@ -22,6 +22,7 @@
         "apple_iap"
       ],
       "wallet": true,
+      "deviceAccount": true,
       "social": {
         "googleWebClientId": "125062807005-fqpjkq2pjjqdueen84q1kpp3rlkvq5sg.apps.googleusercontent.com",
         "googleIosClientId": "125062807005-r08pi88vadprilgo5mr1oqndpinnkb0l.apps.googleusercontent.com",
@@ -53,6 +54,7 @@
         "apple_iap"
       ],
       "wallet": false,
+      "deviceAccount": false,
       "social": {
         "googleWebClientId": "808676014960-fvo8an88b4c79f1ua9n0pctr40ta09fm.apps.googleusercontent.com",
         "googleIosClientId": "808676014960-ug0b6ahv3lm2s1fboj0dinmtp5p0t6qu.apps.googleusercontent.com",
@@ -224,6 +226,14 @@
       "code": 403003
     },
     {
+      "name": "ErrorDeviceAccountDisabled",
+      "code": 403004
+    },
+    {
+      "name": "ErrorDeviceAccountLoginRequired",
+      "code": 403005
+    },
+    {
       "name": "ErrorPaymentChannelUnavailable",
       "code": 405001
     },
@@ -242,6 +252,10 @@
     {
       "name": "ErrorSocialProviderAlreadyBound",
       "code": 409003
+    },
+    {
+      "name": "ErrorAppleSubscriptionOwnedElsewhere",
+      "code": 409004
     },
     {
       "name": "ErrorTierMismatch",
@@ -389,6 +403,20 @@
       "name": "auth_done",
       "surfaces": [
         "web",
+        "app"
+      ],
+      "kind": "action"
+    },
+    {
+      "name": "device_account_created",
+      "surfaces": [
+        "app"
+      ],
+      "kind": "action"
+    },
+    {
+      "name": "identity_bound",
+      "surfaces": [
         "app"
       ],
       "kind": "action"

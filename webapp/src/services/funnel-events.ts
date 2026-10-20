@@ -14,6 +14,8 @@ export const APP_FUNNEL_EVENTS = [
   'plan_select',
   'auth_code_sent',
   'auth_done',
+  'device_account_created',
+  'identity_bound',
   'checkout_start',
 ] as const;
 export type AppFunnelEvent = typeof APP_FUNNEL_EVENTS[number];
