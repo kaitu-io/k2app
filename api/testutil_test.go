@@ -119,6 +119,7 @@ func SetupTestRouter() *gin.Engine {
 		auth.POST("/login", api_login)
 		auth.POST("/web-login", api_web_auth)
 		auth.POST("/refresh", api_refresh_token)
+		auth.POST("/social/login", api_social_login)
 	}
 
 	// 用户路由（需要认证）

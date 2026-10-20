@@ -263,6 +263,18 @@ type DataLoginRequest struct {
 	InviteCode       string `json:"inviteCode"`                          // 邀请码（可选，仅未激活用户可设置）
 }
 
+// DataSocialLoginRequest App 内第三方（Google / Apple）原生登录请求。
+// Nonce 是客户端生成的原始值；交给提供方的是 sha256hex(Nonce)。
+type DataSocialLoginRequest struct {
+	Provider          string `json:"provider" binding:"required,oneof=google apple"`
+	IDToken           string `json:"idToken" binding:"required"`
+	Nonce             string `json:"nonce" binding:"required"`
+	AuthorizationCode string `json:"authorizationCode"` // 仅 Apple：换取 refresh token 供注销时撤销
+	UDID              string `json:"udid" binding:"required"`
+	Remark            string `json:"remark"`
+	Language          string `json:"language"`
+}
+
 // DataWebLoginRequest Web登录请求数据结构（无设备信息）
 type DataWebLoginRequest struct {
 	Email            string `json:"email" binding:"required,email"`      // 邮箱

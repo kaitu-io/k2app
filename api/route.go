@@ -63,6 +63,7 @@ func SetupRouter() *gin.Engine {
 			auth.POST("/register-code", api_send_auth_code) // 废弃：请使用 /code
 			// 用户登录
 			auth.POST("/login", api_login)
+			auth.POST("/social/login", api_social_login)
 			// Password login (with device binding)
 			auth.POST("/login/password", api_password_login)
 			// Web用户登录（无设备绑定）
