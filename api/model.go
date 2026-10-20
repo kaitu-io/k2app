@@ -156,6 +156,12 @@ type LoginIdentify struct {
 	// idx_type_index_global（原 (type, index_id)，现 (type, index_id, brand)）。
 	// default 保证存量行零迁移——旧行全部 brand='kaitu'，(type,index_id) 唯一性不受影响。
 	Brand string `gorm:"type:varchar(20);not null;default:'kaitu';uniqueIndex:idx_type_index_global" json:"brand"`
+
+	// 第三方身份（Type = google / apple）专用；email 行恒为空串。
+	// Apple 注销 / 解绑时撤销令牌要用：ProviderClientID = 换取 refresh token 时的 client_id（aud），
+	// ProviderRefreshToken = secretEncryptString 后的 refresh token。
+	ProviderClientID     string `gorm:"type:varchar(255);not null;default:''" json:"-"`
+	ProviderRefreshToken string `gorm:"type:varchar(2000);not null;default:''" json:"-"`
 }
 
 // Device 设备模型
