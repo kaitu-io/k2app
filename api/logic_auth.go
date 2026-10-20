@@ -541,7 +541,19 @@ func checkDeviceLimitOrKick(c context.Context, tx *gorm.DB, user *User, isGatewa
 		log.Errorf(c, "failed to count app devices for user %d: %v", user.ID, err)
 		return err
 	}
-	if appDeviceCount >= int64(quota.MaxDevice) {
+	maxDevice := int64(quota.MaxDevice)
+	// 零身份（设备账号）上限 1，优先于套餐（spec §4.3）。只在可能触顶时才查身份。
+	if appDeviceCount >= 1 && appDeviceCount < maxDevice {
+		has, err := userHasIdentity(tx, user.ID)
+		if err != nil {
+			log.Errorf(c, "failed to check login identity for user %d: %v", user.ID, err)
+			return err
+		}
+		if !has {
+			maxDevice = 1
+		}
+	}
+	if appDeviceCount >= maxDevice {
 		log.Warnf(c, "app device limit reached for user %d, will remove oldest app device", user.ID)
 		var oldestDevice Device
 		if err := tx.Where("user_id = ? AND is_gateway = false", user.ID).Order("token_last_used_at ASC").First(&oldestDevice).Error; err != nil {

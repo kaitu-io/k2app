@@ -48,6 +48,8 @@ var funnelEventRegistry = []funnelEventDef{
 	{"plan_select", funnelWebApp, FunnelKindAction},
 	{"auth_code_sent", funnelWebApp, FunnelKindAction},
 	{"auth_done", funnelWebApp, FunnelKindAction},
+	{"device_account_created", funnelWebApp, FunnelKindAction},
+	{"identity_bound", funnelWebApp, FunnelKindAction},
 	{"checkout_start", funnelWebApp, FunnelKindAction},
 	{"signup", funnelNoSurfs, FunnelKindFact},
 	{"purchase", funnelNoSurfs, FunnelKindFact},
