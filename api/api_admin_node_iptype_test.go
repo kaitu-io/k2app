@@ -100,3 +100,75 @@ func TestAdminUpdateNodeIPType(t *testing.T) {
 	adminUpdateNodeForTest(t, r, ipv4, AdminUpdateNodeRequest{Name: strptr("renamed-node")})
 	require.Equal(t, "unknown", reloadNode(t, ipv4).IPType)
 }
+
+// TestAdminNodeUpdate_SetsPool —— 后台可把节点划进 / 移出体验线路（spec §3.7）；
+// 非法取值拒绝且不改库；不带 pool 的更新不动 pool；列表回显 pool。后台值只撑到下次注册
+// （节点声明的 K2_NODE_POOL 为准）。Needs dev MySQL.
+func TestAdminNodeUpdate_SetsPool(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+
+	uniq := fmt.Sprintf("%d", time.Now().UnixNano())
+	ipv4 := fmt.Sprintf("10.92.%s.1", uniq[len(uniq)-3:])
+
+	r := adminNodeTestRouter()
+	r.GET("/app/nodes", api_admin_list_nodes)
+	upsertNodeForTest(t, r, ipv4, SlaveNodeUpsertRequest{
+		Country:     "US",
+		Name:        "pool-admin-test-" + uniq,
+		SecretToken: "tok-pool-" + uniq,
+	})
+	require.Equal(t, "", reloadNode(t, ipv4).Pool, "new node defaults to regular pool")
+
+	adminUpdateNodeForTest(t, r, ipv4, AdminUpdateNodeRequest{Pool: strptr(NodePoolTrial)})
+	require.Equal(t, NodePoolTrial, reloadNode(t, ipv4).Pool)
+
+	// Unrelated update must not touch pool.
+	adminUpdateNodeForTest(t, r, ipv4, AdminUpdateNodeRequest{Name: strptr("pool-renamed-" + uniq)})
+	require.Equal(t, NodePoolTrial, reloadNode(t, ipv4).Pool)
+
+	// Node re-registration (every k2s restart) re-declares pool from K2_NODE_POOL —
+	// the node-declared value is the source of truth (final-review ruling, mirrors
+	// K2_NODE_BRANDS). A node that declares trial stays trial; one that declares
+	// nothing is reset (TestUpsert_PoolIsNodeDeclared covers the reset + hard-delete path).
+	upsertNodeForTest(t, r, ipv4, SlaveNodeUpsertRequest{
+		Country:     "US",
+		Name:        "pool-admin-test-" + uniq,
+		SecretToken: "tok-pool-" + uniq,
+		Pool:        NodePoolTrial,
+	})
+	require.Equal(t, NodePoolTrial, reloadNode(t, ipv4).Pool, "re-register with K2_NODE_POOL=trial keeps trial")
+
+	// List echoes pool so ops can see which nodes are trial lines.
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/app/nodes?pageSize=5000", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	items, err := ParseResponseData[struct {
+		Items []AdminNodeItem `json:"items"`
+	}](w)
+	require.NoError(t, err)
+	found := false
+	for _, it := range items.Items {
+		if it.Ipv4 == ipv4 {
+			found = true
+			require.Equal(t, NodePoolTrial, it.Pool)
+		}
+	}
+	require.True(t, found, "node must appear in admin list")
+
+	// Invalid value is rejected and leaves the column alone.
+	body, _ := json.Marshal(AdminUpdateNodeRequest{Pool: strptr("vip")})
+	req := httptest.NewRequest(http.MethodPut, "/app/nodes/"+ipv4, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	var env map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &env))
+	code, _ := env["code"].(float64)
+	require.NotEqual(t, float64(0), code, "invalid pool must be rejected, body=%s", w.Body.String())
+	require.Equal(t, NodePoolTrial, reloadNode(t, ipv4).Pool)
+
+	// Back to regular pool.
+	adminUpdateNodeForTest(t, r, ipv4, AdminUpdateNodeRequest{Pool: strptr("")})
+	require.Equal(t, "", reloadNode(t, ipv4).Pool)
+}

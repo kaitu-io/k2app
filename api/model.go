@@ -51,11 +51,12 @@ type User struct {
 	UpdatedAt        time.Time
 	UUID             string           `gorm:"type:varchar(255);uniqueIndex;not null"`
 	DeletedAt        gorm.DeletedAt   `gorm:"index"`
-	ExpiredAt        int64            `gorm:"not null;index"`           // 过期时间戳（范围查询，索引有效）
-	IsFirstOrderDone *bool            `gorm:"default:false"`            // 是否完成首单（bool索引选择性低，通过复合索引优化）
-	IsActivated      *bool            `gorm:"default:false"`            // 账号是否已激活（bool索引选择性低，通过复合索引优化）
-	ActivatedAt      int64            `gorm:"not null;default:0;index"` // 账号激活时间戳（Unix秒，0表示未激活）
-	InvitedByCodeID  uint64           `gorm:"type:bigint;index"`        // 邀请来源码
+	ExpiredAt        int64            `gorm:"not null;index"`                                        // 过期时间戳（范围查询，索引有效）
+	InTrial          bool             `gorm:"column:in_trial;not null;default:false" json:"inTrial"` // 是否处于 Apple 免费试用期（试用线路隔离用）
+	IsFirstOrderDone *bool            `gorm:"default:false"`                                         // 是否完成首单（bool索引选择性低，通过复合索引优化）
+	IsActivated      *bool            `gorm:"default:false"`                                         // 账号是否已激活（bool索引选择性低，通过复合索引优化）
+	ActivatedAt      int64            `gorm:"not null;default:0;index"`                              // 账号激活时间戳（Unix秒，0表示未激活）
+	InvitedByCodeID  uint64           `gorm:"type:bigint;index"`                                     // 邀请来源码
 	InvitedByCode    *InviteCode      `gorm:"foreignKey:InvitedByCodeID"`
 	LoginIdentifies  []LoginIdentify  `gorm:"foreignKey:UserID"`
 	Devices          []Device         `gorm:"foreignKey:UserID"`
@@ -563,6 +564,9 @@ const (
 	NodeClassPrivate = "private" // 专属节点（单一主人）
 )
 
+// NodePoolTrial 是 SlaveNode.Pool 的试用池取值。
+const NodePoolTrial = "trial"
+
 // SlaveNode 物理节点模型
 // Note: Only active nodes exist in the database. When a node goes offline,
 // it should be deleted along with its associated tunnels.
@@ -600,6 +604,9 @@ type SlaveNode struct {
 	// docs/superpowers/specs/2026-07-14-brand-split-design.md §7），而那是节点
 	// 自身的配置事实，Center 无从判断。
 	Brands string `gorm:"type:varchar(64);not null;default:''" json:"brands"`
+
+	// Pool 节点池：'' = 普通池；NodePoolTrial = 仅服务免费试用用户的体验线路。
+	Pool string `gorm:"column:pool;type:varchar(16);not null;default:''" json:"pool"`
 
 	// 品牌上架开关（运营侧），语义是**下架用的 kill switch**，不是上架用的许可。
 	// 默认 true = 未下架；只有在能力上限之内才有意义（见 VisibleTo）。
@@ -931,6 +938,9 @@ type Subscription struct {
 	// 一切扣减都以它为上限，不用 CurrentPeriodEnd——对账会把 CurrentPeriodEnd 推到未付的
 	// 下一期，按它扣会把赠送时长当付费时长扣掉；两条路径先后扣时也靠它避免重复扣。
 	PaidThrough int64 `gorm:"column:paid_through;not null;default:0" json:"-"`
+	// IsTrial 当前处于 Apple 免费试用期；TrialEndsAt 试用结束时刻（unix 秒）。
+	IsTrial     bool  `gorm:"column:is_trial;not null;default:false" json:"isTrial"`
+	TrialEndsAt int64 `gorm:"column:trial_ends_at" json:"trialEndsAt"`
 }
 
 // Subscription.Provider / SubscriptionCredit.Provider 的取值域。二者共用同一套字面量——
@@ -954,7 +964,8 @@ type SubscriptionCredit struct {
 	TransactionID         string    `gorm:"column:transaction_id;type:varchar(64);not null;uniqueIndex:uniq_provider_txn" json:"transactionId"`
 	OriginalTransactionID string    `gorm:"column:original_transaction_id;type:varchar(64);not null;index" json:"originalTransactionId"`
 	CreditedSeconds       int64     `gorm:"column:credited_seconds;not null" json:"creditedSeconds"`
-	Kind                  string    `gorm:"column:kind;type:varchar(16);not null" json:"kind"` // purchase|renewal|grace
+	Kind                  string    `gorm:"column:kind;type:varchar(16);not null" json:"kind"`   // purchase|renewal|grace
+	Storefront            string    `gorm:"column:storefront;type:varchar(8)" json:"storefront"` // Apple storefront（如 CHN），审计用
 }
 
 // AppleRefund 一笔 Apple 交易的退款状态（每笔交易一行，spec 2026-10-08 §3.1）。
@@ -1029,7 +1040,7 @@ type StatutoryRefund struct {
 	ActiveInvoiceID        *string `gorm:"type:varchar(64);uniqueIndex" json:"-"`
 	PaymentIntentID        string  `gorm:"type:varchar(64);index" json:"paymentIntentId"`
 	Kind                   string  `gorm:"type:varchar(16);not null" json:"kind"` // primary | post_notice
-	Amount                 int64   `gorm:"not null" json:"amount"`               // 计划退款额（最小货币单位）
+	Amount                 int64   `gorm:"not null" json:"amount"`                // 计划退款额（最小货币单位）
 	RefundedAmount         int64   `gorm:"not null;default:0" json:"refundedAmount"`
 	Currency               string  `gorm:"type:varchar(8)" json:"currency"`
 	UsedDays               int     `json:"usedDays"`
@@ -1079,7 +1090,7 @@ type EmailMarketingTemplate struct {
 	DeletedAt gorm.DeletedAt `gorm:"index"`
 
 	// 基础信息
-	Name        string `gorm:"type:varchar(255);not null" json:"name"`    // 模板名称
+	Name string `gorm:"type:varchar(255);not null" json:"name"` // 模板名称
 	// Slug 可读标识（仅源模板），**品牌内**唯一：复合唯一索引 (slug, brand)。worker 用固定 slug
 	// （renewal-7d 等）给两品牌用户发信、按收件人品牌选模板，所以两品牌必须能各有一份同名 slug。
 	Slug        string `gorm:"type:varchar(100);uniqueIndex:idx_emt_slug_brand,priority:1" json:"slug"`

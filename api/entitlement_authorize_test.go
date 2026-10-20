@@ -73,3 +73,22 @@ func TestPrivateNodeSubscription_IsServiceable(t *testing.T) {
 		assert.Equal(t, tc.want, tc.sub.IsServiceable(now), tc.name)
 	}
 }
+
+// TestAuthorizeNodeAccess_TrialUser —— 节点鉴权是体验线路隔离真正的门（spec §3.7）：
+// 客户端缓存里的会员节点地址只能靠这里挡。
+func TestAuthorizeNodeAccess_TrialUser(t *testing.T) {
+	now := int64(1_000_000)
+	trialUser := &User{ID: 7, ExpiredAt: now + 3600, InTrial: true}
+	regular := &SlaveNode{Class: NodeClassShared}
+	trialPool := &SlaveNode{Class: NodeClassShared, Pool: NodePoolTrial}
+
+	assert.False(t, AuthorizeNodeAccess(trialUser, regular, nil, now), "试用用户不能连会员节点")
+	assert.True(t, AuthorizeNodeAccess(trialUser, trialPool, nil, now), "试用用户能连体验线路")
+
+	expiredTrial := &User{ID: 7, ExpiredAt: now - 1, InTrial: true}
+	assert.False(t, AuthorizeNodeAccess(expiredTrial, trialPool, nil, now), "过期试用用户连体验线路也拒绝")
+
+	paid := &User{ID: 8, ExpiredAt: now + 3600, IsFirstOrderDone: BoolPtr(true)}
+	assert.True(t, AuthorizeNodeAccess(paid, regular, nil, now), "付费用户能连会员节点")
+	assert.True(t, AuthorizeNodeAccess(paid, trialPool, nil, now), "付费用户也能连体验线路（容量不浪费）")
+}

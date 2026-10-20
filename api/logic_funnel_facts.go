@@ -45,6 +45,7 @@ const (
 	funnelFactPurchase = "purchase"
 	funnelFactRenewal  = "renewal"
 	funnelFactRefund   = "refund"
+	funnelFactTrial    = "trial_start"
 
 	funnelAnonKindSid = "sid"
 	funnelAnonKindDid = "did"
@@ -171,7 +172,7 @@ func countFunnelEvents(ctx context.Context, brand Brand, hasBrand bool, from, to
 }
 
 // loadFunnelFacts 投影 [from, to) 内的事实，按时间升序。只产出 facts 里列出的名字；
-// 本期实现 signup / purchase / renewal / refund，其余名字不产出任何行。
+// 本期实现 signup / trial_start / purchase / renewal / refund，其余名字不产出任何行。
 func loadFunnelFacts(ctx context.Context, brand Brand, hasBrand bool, from, to time.Time, facts []string) ([]funnelRecord, error) {
 	want := make(map[string]bool, len(facts))
 	for _, f := range facts {
@@ -226,6 +227,23 @@ func loadFunnelFacts(ctx context.Context, brand Brand, hasBrand bool, from, to t
 				continue
 			}
 			recs = append(recs, funnelRecord{At: p.At, Event: event, UserID: p.UserID, Plan: p.Plan, Channel: p.Channel})
+		}
+	}
+
+	if want[funnelFactTrial] {
+		// 试用入账行（kind=trial）天然不在 funnelPaymentCreditKinds 内，不会进付费 / 留存。
+		var credits []SubscriptionCredit
+		if err := db.Get().WithContext(ctx).Model(&SubscriptionCredit{}).
+			Select("id", "user_id", "created_at").
+			Where("kind = ? AND created_at >= ? AND created_at < ?", "trial", from, to).
+			Scopes(funnelUserBrandScope(ctx, brand, hasBrand, "user_id")).
+			Find(&credits).Error; err != nil {
+			return nil, err
+		}
+		for i := range credits {
+			recs = append(recs, funnelRecord{
+				At: credits[i].CreatedAt, Event: funnelFactTrial, UserID: credits[i].UserID, Channel: funnelChannelApple,
+			})
 		}
 	}
 

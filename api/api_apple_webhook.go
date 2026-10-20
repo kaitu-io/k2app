@@ -106,12 +106,19 @@ func api_apple_webhook(c *gin.Context) {
 		appstore.NotificationType_SUBSCRIBED,
 		appstore.NotificationType_OFFER_REDEEMED:
 		// 复核当前交易并入账（绝对 expiresDate，幂等抬升）。
-		if err := verifyAndGrantTransaction(c, sub.UserID, asn.TransactionInfo.TransactionId); errors.Is(err, errAppleTxnRevoked) {
-			// 被退款的交易永不入账；视为已处理，不让 Apple 重投。
-			log.Infof(c, "[AppleWebhook] txn %s already refunded, not crediting otx=%s", asn.TransactionInfo.TransactionId, otx)
-		} else if err != nil {
-			log.Errorf(c, "[AppleWebhook] grant failed otx=%s: %v", otx, err)
-			c.AbortWithStatus(500)
+		if !appleWebhookGrant(c, &sub, asn.TransactionInfo.TransactionId) {
+			return
+		}
+
+	case appstore.NotificationType_DID_CHANGE_RENEWAL_PREF:
+		// 只有 UPGRADE 立即生效（spec 2026-10-19 §3.9 立即转正）：Apple 当场扣费并附带新商品的交易，
+		// 必须入账（客户端 verify 是主路径，这里兜底）。DOWNGRADE / 无 subtype 只是下个周期的续订偏好，
+		// 到期时由 DID_RENEW 入账，这里不动。
+		if asn.Payload.Subtype != appstore.Subtype_UPGRADE {
+			log.Infof(c, "[AppleWebhook] renewal pref changed (subtype=%s) otx=%s, no credit", asn.Payload.Subtype, otx)
+			break
+		}
+		if !appleWebhookGrant(c, &sub, asn.TransactionInfo.TransactionId) {
 			return
 		}
 
@@ -162,8 +169,7 @@ func api_apple_webhook(c *gin.Context) {
 		log.Infof(c, "[AppleWebhook] %s otx=%s txn=%s (no action)", nType, otx, asn.TransactionInfo.TransactionId)
 
 	case appstore.NotificationType_EXPIRED, appstore.NotificationType_GRACE_PERIOD_EXPIRED:
-		// 到期：expired_at 已等于 Apple expiresDate，自然过期，仅标记状态。
-		if err := setSubStatus(c, sub.ID, "expired"); err != nil {
+		if err := applyAppleExpired(c, &sub); err != nil {
 			log.Errorf(c, "[AppleWebhook] mark expired failed otx=%s: %v", otx, err)
 			c.AbortWithStatus(500)
 			return
@@ -179,10 +185,45 @@ func api_apple_webhook(c *gin.Context) {
 	c.Status(200)
 }
 
+// appleWebhookGrant 复核并入账通知附带的交易，把入账哨兵映射成 S2S 重试语义。返回 false 表示已写出
+// 错误状态码，调用方必须直接 return（不记 LastEventID，Apple 的重投不会被 UUID 去重门挡掉）。
+func appleWebhookGrant(c *gin.Context, sub *Subscription, txnID string) bool {
+	otx := sub.ProviderSubscriptionID
+	if err := verifyAndGrantTransaction(c, sub.UserID, txnID); errors.Is(err, errAppleTxnRevoked) {
+		// 被退款的交易永不入账；视为已处理，不让 Apple 重投。
+		log.Infof(c, "[AppleWebhook] txn %s already refunded, not crediting otx=%s", txnID, otx)
+	} else if errors.Is(err, errAppleTxnUpgraded) {
+		// 同组升级被取代的交易：不是退款，取代它的新交易另行入账；视为已处理。
+		log.Infof(c, "[AppleWebhook] txn %s superseded by same-group upgrade, not crediting otx=%s", txnID, otx)
+	} else if errors.Is(err, errAppleTxnAwaitingRebind) {
+		// 试用链上别的账号的付费交易：等那个账号的 verify 改绑。5xx 让 Apple 重投——改绑之后的重投
+		// 命中去重；不记 LastEventID（调用方 return 跳过），重投不会被 UUID 去重门挡掉。
+		log.Warnf(c, "[AppleWebhook] txn %s awaits trial-chain rebind, asking Apple to retry otx=%s: %v",
+			txnID, otx, err)
+		c.AbortWithStatus(503)
+		return false
+	} else if err != nil {
+		log.Errorf(c, "[AppleWebhook] grant failed otx=%s: %v", otx, err)
+		c.AbortWithStatus(500)
+		return false
+	}
+	return true
+}
+
 // setSubStatus 不覆盖 revoked：Apple 在退款后照常发 EXPIRED，把 revoked 改成 expired 会丢失
 // 复活判据（spec 2026-10-08 §3.4）。
 func setSubStatus(ctx context.Context, id uint64, status string) error {
 	return db.Get().Model(&Subscription{}).Where("id = ? AND status <> ?", id, "revoked").Update("status", status).Error
+}
+
+// applyAppleExpired 落地 EXPIRED / GRACE_PERIOD_EXPIRED：expired_at 已等于 Apple expiresDate，
+// 自然过期，只标记状态；试用链顺带清 in_trial（不动 expired_at，叠加的赠送照常保留）。
+// 两步都幂等，失败由 webhook 500 → Apple 重投整体重来。
+func applyAppleExpired(ctx context.Context, sub *Subscription) error {
+	if err := setSubStatus(ctx, sub.ID, "expired"); err != nil {
+		return err
+	}
+	return clearInTrialIfTrialChain(db.Get(), sub)
 }
 
 func recordSubEventID(ctx context.Context, id uint64, eventID string) error {

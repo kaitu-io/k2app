@@ -50,6 +50,9 @@ services:
       # 本节点自我声明可服务的品牌，逗号分隔（如 kaitu,overleap）。留空 = 仅 kaitu。
       # SNI 伪装成 www.<省份>.people.cn 的节点不要声明 overleap（暴露中国属性）。
       - K2_NODE_BRANDS=${K2_NODE_BRANDS:-}
+      # 节点池：留空 = 会员节点；trial = 体验线路（免费试用用户只能拿到/连这个池）。
+      # 每次注册重发，是 slave_nodes.pool 的真相源（后台改的值下次注册即被覆盖）。
+      - K2_NODE_POOL=${K2_NODE_POOL:-}
       - K2_IP_TYPE=${K2_IP_TYPE:-unknown}
       - K2_LOG_LEVEL=${K2_LOG_LEVEL:-info}
       - REPORT_INTERVAL=${REPORT_INTERVAL:-120s}

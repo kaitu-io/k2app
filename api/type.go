@@ -108,6 +108,8 @@ type DataSubscription struct {
 	CurrentPeriodEnd int64         `json:"currentPeriodEnd"` // unix 秒
 	AutoRenew        bool          `json:"autoRenew"`
 	Manage           ManageSurface `json:"manage"`
+	IsTrial          bool          `json:"isTrial"`     // Apple 免费试用链且尚未转付费（Stripe / 非试用恒 false）
+	TrialEndsAt      int64         `json:"trialEndsAt"` // 试用结束 unix 秒；非试用为 0
 }
 
 // DataStripeRedirect Stripe 跳转载体（Checkout Session / Billing Portal 共用）。

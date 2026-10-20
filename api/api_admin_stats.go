@@ -16,6 +16,7 @@ type UserStatisticsResponse struct {
 	TotalUsers int64 `json:"totalUsers"` // Total registered users
 	PaidUsers  int64 `json:"paidUsers"`  // Users who have completed at least one order
 	FreeUsers  int64 `json:"freeUsers"`  // Users who have not paid
+	InTrial    int64 `json:"inTrial"`    // Users currently in an Apple free trial (users.in_trial)
 
 	// Active subscription counts
 	ActivePro   int64 `json:"activePro"`   // Users with valid pro subscription (expired_at > now)
@@ -115,6 +116,13 @@ func api_admin_get_user_statistics(c *gin.Context) {
 	}
 	q.Count(&result.PaidUsers)
 	result.FreeUsers = result.TotalUsers - result.PaidUsers
+
+	// Users currently in an Apple free trial
+	q = db.Get().Model(&User{}).Where("in_trial = ?", true)
+	if hasBrand {
+		q = q.Where("brand = ?", string(brandFilter))
+	}
+	q.Count(&result.InTrial)
 
 	// Get active pro users (expired_at > now)
 	nowUnix := now.Unix()

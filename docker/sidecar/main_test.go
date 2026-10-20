@@ -115,3 +115,11 @@ func TestEnforceAuthFromEnv(t *testing.T) {
 		assert.Equal(t, tc.want, enforceAuthFromEnv(), "K2_ENFORCE_AUTH=%q", tc.val)
 	}
 }
+
+func TestParseNodePool(t *testing.T) {
+	for in, want := range map[string]string{"": "", "  ": "", "trial": "trial", " Trial ": "trial", "trail": "trail"} {
+		if got := parseNodePool(in); got != want {
+			t.Errorf("parseNodePool(%q)=%q want %q", in, got, want)
+		}
+	}
+}

@@ -340,8 +340,15 @@ func TestFacts_OnlyRequestedFacts(t *testing.T) {
 	require.Len(t, got, 1)
 	assert.Equal(t, "renewal", got[0].Event)
 
-	// 本期未实现的事实名与空列表 → 空
+	// trial_start 对有 kind=trial 入账行的用户产出 1 条；email_sent 仍未实现 → 空
+	factsCredit(t, u.ID, SubscriptionProviderApple, "trial", generateId("ff-sub"), from.Add(3*time.Hour))
 	recs, err = loadFunnelFacts(context.Background(), BrandKaitu, false, from, to, []string{"trial_start", "email_sent"})
+	require.NoError(t, err)
+	got = factsOf(recs, u.ID)
+	require.Len(t, got, 1)
+	assert.Equal(t, "trial_start", got[0].Event)
+	assert.Equal(t, "apple", got[0].Channel)
+	recs, err = loadFunnelFacts(context.Background(), BrandKaitu, false, from, to, []string{"email_sent"})
 	require.NoError(t, err)
 	assert.Empty(t, recs)
 	recs, err = loadFunnelFacts(context.Background(), BrandKaitu, false, from, to, nil)
@@ -652,4 +659,28 @@ func TestLoadPayments_AmbiguousAppleProductLeavesPlanEmpty(t *testing.T) {
 	assert.Equal(t, "purchase", got[0].Event)
 	assert.Equal(t, "apple", got[0].Channel)
 	assert.Empty(t, got[0].Plan)
+}
+
+func TestFunnelFacts_TrialNotCountedAsPurchase(t *testing.T) {
+	skipIfNoConfig(t)
+	from, to := factsWindow(t)
+	u := factsUser(t, BrandKaitu, from)
+	orig := generateId("ff-sub")
+	factsCredit(t, u.ID, SubscriptionProviderApple, "trial", orig, from.Add(time.Hour))
+	paidAt := from.Add(8 * time.Hour)
+	factsCredit(t, u.ID, SubscriptionProviderApple, "purchase", orig, paidAt)
+
+	recs, err := loadFunnelFacts(context.Background(), BrandKaitu, true, from, to,
+		[]string{"trial_start", "purchase", "renewal"})
+	require.NoError(t, err)
+	got := factsOf(recs, u.ID)
+	require.Len(t, got, 2)
+	assert.Equal(t, "trial_start", got[0].Event)
+	assert.Equal(t, "purchase", got[1].Event)
+	assert.True(t, got[1].At.Equal(paidAt), "purchase 时间 = 付费那笔")
+
+	// 品牌 scope：另一品牌过滤下看不到
+	recs, err = loadFunnelFacts(context.Background(), BrandOverleap, true, from, to, []string{"trial_start"})
+	require.NoError(t, err)
+	assert.Empty(t, factsOf(recs, u.ID))
 }

@@ -35,7 +35,11 @@ func api_apple_iap_verify(c *gin.Context) {
 		return
 	}
 
-	if err := verifyAndGrantTransaction(c, userID, req.TransactionID); err != nil {
+	if err := verifyAndGrantTransaction(c, userID, req.TransactionID); errors.Is(err, errAppleTxnUpgraded) {
+		// 同组升级被取代的旧交易（StoreKit 更新 / restore 会把它再报上来）：取代它的新交易才入账，
+		// 这笔没有可做的事，按成功返回刷新后的用户信息——不是"已退款"，也不是校验失败。
+		log.Infof(c, "[AppleIAP] verify user=%d txn=%s: superseded by same-group upgrade, nothing to credit", userID, req.TransactionID)
+	} else if err != nil {
 		if errors.Is(err, errAppleTxnRevoked) {
 			log.Warnf(c, "[AppleIAP] verify user=%d txn=%s: transaction was refunded", userID, req.TransactionID)
 			Error(c, ErrorInvalidOperation, "this purchase has been refunded")

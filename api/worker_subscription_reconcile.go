@@ -111,6 +111,13 @@ func reconcileAppleSubscription(ctx context.Context, sub *Subscription, now int6
 				sub.ProviderSubscriptionID)
 			return false, nil
 		}
+		if st.txn.IsUpgraded {
+			// 同组升级被取代的交易不是退款（spec 2026-10-19 §3.9）：整条跳过，取代它的新交易由
+			// verify / webhook / 下一轮对账入账。
+			log.Infof(ctx, "[SUB-RECONCILE] sub %s reported revoked with upgraded txn %s — superseded by upgrade, not a refund, skipped",
+				sub.ProviderSubscriptionID, st.txn.TransactionId)
+			return false, nil
+		}
 		out, err := applyAppleRefund(ctx, sub.ProviderSubscriptionID, st.txn,
 			appleRefundEvidence{SignedAt: st.txn.RevocationDate, Source: "reconcile"})
 		if err != nil {
@@ -125,9 +132,20 @@ func reconcileAppleSubscription(ctx context.Context, sub *Subscription, now int6
 	// 新付款在这里复活。被退交易不入账(errAppleTxnRevoked),视为非致命。
 	if st.txn != nil {
 		before, beforeStatus := sub.CurrentPeriodEnd, sub.Status
-		if err := withDeadlockRetry(ctx, 3, func(tx *gorm.DB) error {
+		err := withDeadlockRetry(ctx, 3, func(tx *gorm.DB) error {
 			return creditAppleTransaction(ctx, tx, sub.UserID, st.txn)
-		}); err != nil && !errors.Is(err, errAppleTxnRevoked) {
+		})
+		if errors.Is(err, errAppleTxnAwaitingRebind) {
+			// 试用链上别的账号的付费交易：只有它的 token 主人 verify 能入账（改绑）。本轮整条跳过——
+			// 不报错（不进告警/重试循环），也不落续订状态 / Expired（那是 B 的链了）。
+			log.Warnf(ctx, "[SUB-RECONCILE] sub %s skipped: %v", sub.ProviderSubscriptionID, err)
+			maybeAlertAppleAwaitingRebind(ctx, sub.ProviderSubscriptionID, st.txn.TransactionId, sub.UserID, time.Unix(now, 0))
+			return false, nil
+		}
+		if errors.Is(err, errAppleTxnUpgraded) {
+			// 同组升级被取代的交易：什么都没写，视为已处理（不是退款，不是失败）。
+			log.Infof(ctx, "[SUB-RECONCILE] sub %s latest txn %s superseded by upgrade, not credited", sub.ProviderSubscriptionID, st.txn.TransactionId)
+		} else if err != nil && !errors.Is(err, errAppleTxnRevoked) {
 			return false, err
 		}
 		if err := db.Get().First(sub, sub.ID).Error; err != nil {
@@ -159,18 +177,29 @@ func reconcileAppleSubscription(ctx context.Context, sub *Subscription, now int6
 		// (fix round 1)。守卫拦下交错场景:reconcile 拉到 Expired 后、写库前,用户重订阅/
 		// 迟到 DID_RENEW 把 status 改回 active 且 period 推到未来,此时该行不再满足守卫,
 		// UPDATE 影响 0 行,不误标 expired。
-		if st.status == appstore.SubscriptionStatus_Expired && sub.Status != "expired" {
-			res := db.Get().Model(&Subscription{}).
-				Where("id = ? AND status = ? AND current_period_end < ?", sub.ID, sub.Status, now).
-				Update("status", "expired")
-			if res.Error != nil {
-				return changed, res.Error
+		if st.status == appstore.SubscriptionStatus_Expired {
+			expiredNow := sub.Status == "expired"
+			if !expiredNow {
+				res := db.Get().Model(&Subscription{}).
+					Where("id = ? AND status = ? AND current_period_end < ?", sub.ID, sub.Status, now).
+					Update("status", "expired")
+				if res.Error != nil {
+					return changed, res.Error
+				}
+				if res.RowsAffected > 0 {
+					log.Infof(ctx, "[SUB-RECONCILE] sub %s marked expired (was %s)", sub.ProviderSubscriptionID, sub.Status)
+					changed, expiredNow = true, true
+				} else {
+					log.Debugf(ctx, "[SUB-RECONCILE] sub %s expired write guarded off (status/period changed under us)", sub.ProviderSubscriptionID)
+				}
 			}
-			if res.RowsAffected > 0 {
-				log.Infof(ctx, "[SUB-RECONCILE] sub %s marked expired (was %s)", sub.ProviderSubscriptionID, sub.Status)
-				changed = true
-			} else {
-				log.Debugf(ctx, "[SUB-RECONCILE] sub %s expired write guarded off (status/period changed under us)", sub.ProviderSubscriptionID)
+			// 与 webhook EXPIRED 同语义：漏收通知时由对账兜底清试用标志。不能只挂在上面的状态迁移上——
+			// 上面重放最新交易时 creditAppleTransaction 已按过去的周期末把 status 写成 expired，
+			// 迁移分支就不会再走（试用到期后第一次对账的常态）。幂等。
+			if expiredNow {
+				if err := clearInTrialIfTrialChain(db.Get(), sub); err != nil {
+					return changed, err
+				}
 			}
 		}
 	}

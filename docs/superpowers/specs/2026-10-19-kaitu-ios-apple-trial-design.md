@@ -18,6 +18,8 @@
 | 3 | 安卓 / 桌面 / 网页这次**不做**试用（它们是 NextPay 一次性付款，没有自动续费，做不了绑卡试用） |
 | 4 | 三步严格按顺序：① 服务器 → ② iOS 原生版 + 付费墙 → ③ ASC 打开试用。①未部署前**禁止**在 ASC 打开试用 |
 | 5 | 服务器入账时记录交易来自哪个国家的 App Store（storefront），用来看国区 / 美区占比 |
+| 6 | （2026-10-20 追加）试用中可**一键立即转正**：结束试用、马上开始收费、立刻看到会员节点。实现方式见 §3.9 |
+| 7 | （2026-10-20 追加）试用只认当前这台设备，不要求邮箱；要用其他设备时再引导绑定邮箱 / Apple 登录，绑定后才能用满 5 台。属于独立设计 `2026-10-20-ios-device-account-design.md`，不在本 spec 范围 |
 
 已核实的前提：
 - 开途在中国区 App Store 也上架（iTunes lookup `country=cn` 有结果）。国区 Apple ID 可绑支付宝 / 微信。
@@ -77,7 +79,7 @@
 - **已有问题，本次不修**：付过费的老用户中断一段时间后再订阅，同样会多给空档天数（只有退款恢复走了按周期计算，`logic_apple_iap.go:194-202,256-277`）。记录在案，单独处理。
 - **宽限期（我的决定）**：从没付过费的订阅链收到 `DID_FAIL_TO_RENEW`（试用转付费扣款失败）时，**不做宽限期延长**（`computeRenewalState` / `applyRenewalInfo` 的 grace cover-through 只对有过付费的链生效），会员在试用结束时到期。`is_trial` 在试用结束或首笔付费入账时清掉。国区支付宝 / 微信扣款失败可能较多，不能变成免费延长。
 - **换账号重新订阅（我的决定）**：现在订阅链会绑定到第一个账号，另一个账号来认领会被拒（`logic_apple_iap.go:134-137`），结果是 Apple 收了钱、我们什么都没给。试用会让很多 Apple ID 先绑到一个没付过钱的账号上。规则：**从没有过付费交易的链**，在第一笔付费交易入账时允许改绑到当前登录的账号，原账号不受影响（它的试用早已结束）。有过付费的链仍然拒绝。
-- 试用用户的设备上限：沿用首购会设的套餐 Tier（basic），不额外限制。
+- 试用用户的设备上限：沿用首购会设的套餐 Tier（basic）。**例外**：用户是零身份设备账号时上限恒为 1（设备账号 spec §4.3，优先于 Tier）。
 - 订阅行需要能表达「当前在试用」：给 `Subscription` 加字段（如 `is_trial` / `trial_ends_at`），首笔付费入账时清掉。**不新增 `status` 枚举值**——新增状态必须审计所有读取点（见记忆 feedback_new_state_audit_all_readers），加独立字段风险更小。builder 若坚持加状态值，必须列出并修改所有读 `status` 的地方。
 - `DataSubscription`（`api/type.go:105-111`）加 `isTrial`、`trialEndsAt`，给客户端显示「试用中」。
 - 记录 storefront：`subscription_credits` 加 `storefront` 列（交易里的 `storefront`，ISO 3 位国家码）。**只记以后入账的交易**（包括老订阅以后的续费），不回填历史（回填要对每笔老交易调一次 Apple API，不值得）。
@@ -113,7 +115,7 @@
 - 首笔付费入账、或该试用订阅 `EXPIRED` / `REVOKE` 时置 false。
 - 放在 User 上而不是每次查 Subscription：节点鉴权是热路径，`AuthorizeNodeAccess` 手里已经有 user。
 
-**节点**：`slave_nodes` 加 `pool` 列（varchar，默认 `""` = 会员节点，`"trial"` = 体验线路）。后台节点编辑（`api_admin_node.go:129-173`）与 MCP `update_node` 能设置它。
+**节点**：`slave_nodes` 加 `pool` 列（varchar，默认 `""` = 会员节点，`"trial"` = 体验线路）。后台节点编辑（`api_admin_node.go:129-173`）与 MCP `update_node` 能设置它。**真相源是节点 `.env` 的 `K2_NODE_POOL`**（2026-10-20 终审改：与 `K2_NODE_BRANDS` 同机制，sidecar 每次注册上报；sidecar 关机 Unregister 会硬删节点行，Center 侧设的值扛不过重启）。后台/MCP 改的值只撑到该节点下次注册。
 - 试用用户：只看到、只能连 `pool="trial"` 的节点。
 - 付费用户：看到全部节点（含体验线路，容量不浪费）。
 - 体验线路同样要按品牌可见（`VisibleTo`），否则另一个品牌的试用用户列表为空。
@@ -128,6 +130,25 @@
 **体验线路选哪几台**：上线第 ③ 步前从现有共享节点里指定 2–3 台（不同地区，负载低的），不新开机器；试用量起来后再按负载加。具体选哪台在 ③ 步按节点数据定。
 
 **测试**：判定函数的表驱动测试（试用 / 付费 / 付过费又开试用 / 试用过期后有赠送天数）；五个列表接口各一个「试用用户拿不到会员节点」的测试；`AuthorizeNodeAccess` 试用用户连会员节点被拒、连体验线路通过。
+
+### 3.9 立即转正（2026-10-20 David 追加）
+
+**Apple 的约束**：StoreKit 没有"提前结束试用"的接口。唯一能让试用当场结束并立即扣费的是**同一订阅组内的升级**——换到等级更高的商品立即生效，原订阅同时终止。
+
+**商品**（ASC 配置，见 §5）：同一订阅组放两个年付商品——
+- A = `io.kaitu.sub.basic.1y`（现有，挂 7 天免费试用）
+- B = `io.kaitu.sub.member.1y`（新建，**等级高于 A**，价格与 A 相同，**不挂任何首次优惠**——Apple 论坛有报告称两个商品都带试用时升级会保留剩余试用期，那就不会立即扣费）
+
+试用中点「立即开通正式会员」= 购买 B。不点的人 7 天后由 A 正常扣费。两条路结果都是付费会员。第 ③ 步开试用前必须在沙盒实测"A 试用中买 B → 立即扣费、A 终止"。
+
+**服务端**：
+1. **B 要有套餐行**：`planByAppleProductID` 按商品 ID 找套餐，B 需要一条（可隐藏的）开途套餐，`AppleProductID = io.kaitu.sub.member.1y`，价格同 A。这是后台数据，部署后建，不进代码。
+2. **B 交易按"试用链首笔付费"入账**：升级后 B 交易沿用同一 `originalTransactionId`，现有 `trialChainFirstPaid` 分支即正确（建单、返佣、首购、清 `in_trial`）。剩余试用天数会叠在年费之后（≤7 天）——**我的判断：接受**，付费页可写"剩余试用天数保留"，比精确扣掉更好卖。
+3. **升级 webhook 必须入账**：立即升级时 Apple 发 `DID_CHANGE_RENEWAL_PREF` + subtype `UPGRADE`，附带 B 的交易。现在 webhook 只在 `DID_RENEW / SUBSCRIBED / OFFER_REDEEMED` 时入账——要把 `DID_CHANGE_RENEWAL_PREF`+`UPGRADE` 加进入账分支（`DOWNGRADE` 与无 subtype 照旧只更新续订偏好）。客户端 verify 是主路径，webhook 是兜底，两路都必须对。
+4. **被升级掉的 A 交易不是退款**：Apple 会在 A 的交易上置 `isUpgraded=true`（可能同时带 `revocationDate`）。任何把 `revocationDate>0` 当退款的路径（入账门 `errAppleTxnRevoked`、对账 `Revoked` 分支、退款收回）遇到 `IsUpgraded=true` 的交易都**不得**收回时长、不得置 `revoked`、不得记 `AppleRefund`。入账门可照旧拒绝入账这笔 A（它已被 B 取代），但要返回可区分的结果、不告警为退款。
+5. **商品 B 白名单**：任何按商品 ID 判断开途年付的地方（若有）同步认 B。
+
+**测试**：A 试用 → B 升级（verify 先到 / webhook 先到两种顺序）：建单一次、`in_trial=false`、到期 = 试用到期 + B 一期；A 交易带 `isUpgraded+revocationDate` 重放 / 对账：不收回、不 revoked、无 AppleRefund 行；`DID_CHANGE_RENEWAL_PREF` 无 subtype / `DOWNGRADE`：不入账。
 
 ### 3.8 上线
 
@@ -148,6 +169,8 @@
   - **无资格或字段不存在**（旧壳）：保持现在的「立即订阅」。
   - 删掉对所有非会员都显示的 `purchase.currentlyInTrial`（zh-CN 现为「目前您正在试用，完成首次充值后即可使用云端节点服务。」，`zh-CN/purchase.json:48-49`）和不再准确的 `completeFirstPurchase` 表述，换成中性的「订阅后即可使用云端节点」。
   - `autoRenewalDisclosure`（`purchase.json:6`）补试用条款。
+- 试用中的会员页与付费页加主按钮「立即开通正式会员」= 购买商品 B（§3.9），下方写「立即按 {B.displayPrice}/年 扣费，剩余试用天数保留」。
+  - B 的套餐是隐藏的（`is_active=false`）：服务端入账能命中隐藏套餐（Task 7 已测），但 iOS 付费面板只列出上架套餐——客户端需按商品 ID 单独取 B（或由服务端在试用用户的套餐接口里附带 B），第 ② 步计划里定。
 - 节点列表（`CloudTunnelList.tsx`）：试用用户在体验线路下方显示「会员私密线路」区块（按 `lockedSummary` 列国家和数量，不可选，点击进付费页）。
 - 付费页整体优化（David：「在引导付费的 UI/UX 上花大功夫」）：先讲稳定（晚高峰、丢包），再给可信证据（2023 年起持续运营），再讲「体验线路 vs 会员私密线路」，最后讲清取消方式。具体设计在第 ② 步单独出稿给 David 看。
 - `IosMembershipPanel`：`isTrial` 时显示「免费试用中 · {trialEndsAt} 到期后自动续订」，并保留「管理订阅」入口。
@@ -161,14 +184,15 @@
 
 ## 5. 第 ③ 步：App Store Connect
 
-- 前置：第 ① 步已部署并核对；体验线路节点已在后台标记 `pool=trial` 并确认试用测试账号只能看到它们；第 ② 步的版本**已提交审核**（审核员需要在沙盒里看到试用按钮能用）。
+- 前置：第 ① 步已部署并核对；体验线路节点已在 `.env` 写 `K2_NODE_POOL=trial` 并重启（重注册后 `slave_nodes.pool=trial`） 并确认试用测试账号只能看到它们；第 ② 步的版本**已提交审核**（审核员需要在沙盒里看到试用按钮能用）。
 - 在 `io.kaitu.sub.basic.1y` 的订阅价格 → Introductory Offers：Free，1 week，全部已上架地区。
+- 同组新建 `io.kaitu.sub.member.1y`（§3.9）：等级高于 A、价格同 A、**无首次优惠**；Center 后台建对应开途套餐（可隐藏）。沙盒实测 A 试用中买 B → 立即扣费。
 - 打开后，旧版 App 的用户点「立即订阅」时，Apple 支付表单会自己显示「1 周免费，之后 $X/年」——可接受（Apple 表单本身有披露），只是我们的旧付费墙文案没写试用。
 - 打开后第一周：每天看 Slack 告警、`trial_start` / `purchase` 漏斗、storefront 分布、有无试用产生的订单或返佣（应为 0）。
 
 ## 6. 衡量
 
-- 主指标：App 激活漏斗「登录 → 连上」（基线 iOS 0.4.12：391 → 20，约 5%）。
+- 主指标：App 激活漏斗「登录 → 连上」（设备账号上线后，开途 iOS 新壳的「登录」一步改为「建号或登录」，见设备账号 spec §4.7）（基线 iOS 0.4.12：391 → 20，约 5%）。
 - 试用开始率：付费墙 → 试用开始；试用转付费率（7 天后 `trial_start` → `purchase`）；按 storefront 拆。
 - 对照基线：付费墙 597 → 付款 8（10-09 ~ 10-19）。
 
