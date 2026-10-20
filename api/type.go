@@ -302,40 +302,6 @@ type DataSocialBindRequest struct {
 	AuthorizationCode string `json:"authorizationCode"` // 仅 Apple：换取 refresh token 供解绑 / 注销时撤销
 }
 
-// DataSocialHandoffRequest 发起浏览器 handoff 登录会话（spec §6.3，只用于登录）。
-type DataSocialHandoffRequest struct {
-	Provider string `json:"provider" binding:"required,oneof=google apple"`
-}
-
-// DataSocialHandoffResponse handoff 会话：url 在系统浏览器打开，pollSecret 只留在 App 内存。
-type DataSocialHandoffResponse struct {
-	SessionID  string `json:"sessionId"`
-	PollSecret string `json:"pollSecret"`
-	URL        string `json:"url"`
-}
-
-// DataSocialHandoffCompleteRequest 官网 handoff 页把提供方的 idToken 交回会话。
-type DataSocialHandoffCompleteRequest struct {
-	SessionID         string `json:"sessionId" binding:"required"`
-	IDToken           string `json:"idToken" binding:"required"`
-	AuthorizationCode string `json:"authorizationCode"` // 仅 Apple：换取 refresh token 供注销时撤销
-}
-
-// DataSocialHandoffPollRequest App 凭 pollSecret 轮询 handoff 结果，done 时按设备登录签发令牌。
-type DataSocialHandoffPollRequest struct {
-	SessionID  string `json:"sessionId" binding:"required"`
-	PollSecret string `json:"pollSecret" binding:"required"`
-	UDID       string `json:"udid" binding:"required"`
-	Remark     string `json:"remark"`
-	Language   string `json:"language"`
-}
-
-// DataSocialHandoffPoll handoff 轮询结果。
-type DataSocialHandoffPoll struct {
-	Status string          `json:"status"`         // "pending" | "done"
-	Auth   *DataAuthResult `json:"auth,omitempty"` // done 时
-}
-
 // DataWebLoginRequest Web登录请求数据结构（无设备信息）
 type DataWebLoginRequest struct {
 	Email            string `json:"email" binding:"required,email"`      // 邮箱

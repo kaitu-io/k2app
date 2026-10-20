@@ -200,10 +200,6 @@
       "code": 400015
     },
     {
-      "name": "ErrorSocialHandoffExpired",
-      "code": 400017
-    },
-    {
       "name": "ErrorPlanNoRouter",
       "code": 402001
     },

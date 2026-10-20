@@ -24,8 +24,6 @@ func socialErrorCode(err error) ErrorCode {
 		return ErrorEmailAlreadyInUse
 	case errors.Is(err, errSocialProviderAlreadyBound):
 		return ErrorSocialProviderAlreadyBound
-	case errors.Is(err, errSocialHandoffExpired):
-		return ErrorSocialHandoffExpired
 	}
 	return ErrorSystemError
 }
@@ -115,7 +113,7 @@ func api_social_web_login(c *gin.Context) {
 
 // authenticateSocial 验 idToken 并把第三方身份解析为本品牌用户（可能新建）。
 // 按现有规则记日志（哨兵错误 Warn，其余 Error）；返回的错误交给 socialErrorCode 映射。
-// rawNonce 是客户端原始 nonce（App/官网来自请求，handoff 来自会话）。
+// rawNonce 是客户端原始 nonce（来自请求）。
 func authenticateSocial(c *gin.Context, provider, idToken, rawNonce, language string) (cfg socialAuthConfig, cl *socialClaims, userID uint64, err error) {
 	brand := ReqBrand(c)
 	cfg = configSocialAuth(brand)
