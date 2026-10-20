@@ -170,6 +170,7 @@
   - 删掉对所有非会员都显示的 `purchase.currentlyInTrial`（zh-CN 现为「目前您正在试用，完成首次充值后即可使用云端节点服务。」，`zh-CN/purchase.json:48-49`）和不再准确的 `completeFirstPurchase` 表述，换成中性的「订阅后即可使用云端节点」。
   - `autoRenewalDisclosure`（`purchase.json:6`）补试用条款。
 - 试用中的会员页与付费页加主按钮「立即开通正式会员」= 购买商品 B（§3.9），下方写「立即按 {B.displayPrice}/年 扣费，剩余试用天数保留」。
+  - B 的套餐是隐藏的（`is_active=false`）：服务端入账能命中隐藏套餐（Task 7 已测），但 iOS 付费面板只列出上架套餐——客户端需按商品 ID 单独取 B（或由服务端在试用用户的套餐接口里附带 B），第 ② 步计划里定。
 - 节点列表（`CloudTunnelList.tsx`）：试用用户在体验线路下方显示「会员私密线路」区块（按 `lockedSummary` 列国家和数量，不可选，点击进付费页）。
 - 付费页整体优化（David：「在引导付费的 UI/UX 上花大功夫」）：先讲稳定（晚高峰、丢包），再给可信证据（2023 年起持续运营），再讲「体验线路 vs 会员私密线路」，最后讲清取消方式。具体设计在第 ② 步单独出稿给 David 看。
 - `IosMembershipPanel`：`isTrial` 时显示「免费试用中 · {trialEndsAt} 到期后自动续订」，并保留「管理订阅」入口。
