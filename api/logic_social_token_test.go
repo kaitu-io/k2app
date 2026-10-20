@@ -4,8 +4,14 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/base64"
 	"errors"
+	"fmt"
+	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -272,6 +278,19 @@ func TestVerifySocialIDToken_CrossBrandAud(t *testing.T) {
 	_, err = verifySocialIDToken(context.Background(), kaitu, SocialProviderGoogle, tok, testSocialRawNonce)
 	assertSocialInvalid(t, err)
 
+	// 多 aud：只要混入任何一个不受信任的 aud 就拒绝（OIDC Core §3.1.3.7(3)）
+	for _, auds := range [][]string{
+		{overleap.IDs.GoogleWebClientID, kaitu.IDs.GoogleWebClientID},
+		{"x", kaitu.IDs.GoogleWebClientID},
+		{kaitu.IDs.GoogleWebClientID, "attacker-client"},
+		{},
+	} {
+		cl := googleTestClaims("")
+		cl["aud"] = auds
+		_, err = verifySocialIDToken(context.Background(), kaitu, SocialProviderGoogle, signTestIDToken(t, key, cl), testSocialRawNonce)
+		assertSocialInvalid(t, err)
+	}
+
 	// 缺 aud
 	cl := googleTestClaims("")
 	delete(cl, "aud")
@@ -377,4 +396,40 @@ func TestVerifySocialIDToken_Garbage(t *testing.T) {
 		_, err := verifySocialIDToken(context.Background(), cfg, SocialProviderGoogle, s, testSocialRawNonce)
 		assertSocialInvalid(t, err)
 	}
+}
+
+// 走真实的生产构造（socialNewJWKS → keyfunc），本地 httptest 充当 JWKS 端点：
+// 首次拉取 500 → 必须返回错误且不缓存；下次调用重新初始化并成功验签。
+func TestSocialJWKSKeyfunc_ProductionConstructionRetriesAfterFirstFetchFailure(t *testing.T) {
+	key := newTestRSAKey(t)
+	jwks := fmt.Sprintf(`{"keys":[{"kty":"RSA","use":"sig","alg":"RS256","kid":"test-kid","n":%q,"e":%q}]}`,
+		base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes()),
+		base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.PublicKey.E)).Bytes()))
+
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hits.Add(1) == 1 {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(jwks))
+	}))
+	t.Cleanup(srv.Close)
+
+	orig := socialKeyfunc
+	socialKeyfunc = map[string]jwt.Keyfunc{SocialProviderGoogle: newLazySocialJWKS(srv.URL)}
+	t.Cleanup(func() { socialKeyfunc = orig })
+
+	cfg := readySocialConfig(BrandKaitu)
+	tok := signTestIDToken(t, key, googleTestClaims(cfg.IDs.GoogleWebClientID))
+
+	_, err := verifySocialIDToken(context.Background(), cfg, SocialProviderGoogle, tok, testSocialRawNonce)
+	assertSocialInvalid(t, err)
+	require.Equal(t, int32(1), hits.Load())
+
+	c, err := verifySocialIDToken(context.Background(), cfg, SocialProviderGoogle, tok, testSocialRawNonce)
+	require.NoError(t, err, "首次拉取失败不能被缓存")
+	assert.Equal(t, "google-sub-123", c.Sub)
+	assert.Equal(t, int32(2), hits.Load())
 }

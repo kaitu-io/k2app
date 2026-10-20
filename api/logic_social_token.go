@@ -26,7 +26,10 @@ var (
 	errSocialProviderDisabled = errors.New("social provider disabled")
 )
 
-const socialTokenLeeway = 60 * time.Second
+const (
+	socialTokenLeeway     = 60 * time.Second
+	socialJWKSHTTPTimeout = 10 * time.Second
+)
 
 const (
 	socialGoogleJWKSURL = "https://www.googleapis.com/oauth2/v3/certs"
@@ -55,11 +58,22 @@ var socialKeyfunc = map[string]jwt.Keyfunc{
 
 // socialNewJWKS 构造远端 JWKS keyfunc（会起后台刷新 goroutine，故用进程级 ctx 而非请求 ctx）。
 // 包级可替换，测试不打外网。
+//
+// 首次拉取失败必须返回错误（keyfunc 默认 NoErrorReturnFirstHTTPReq=true 会吞掉失败、
+// 交回一个空密钥集，懒加载就会把失败缓存住），HTTP 超时压短以免长时间持锁。
 var socialNewJWKS = func(ctx context.Context, url string) (jwt.Keyfunc, error) {
-	kf, err := keyfunc.NewDefaultCtx(ctx, []string{url})
+	// 失败时取消 ctx，停掉 jwkset 在首次拉取前就已启动的后台刷新 goroutine。
+	ctx, cancel := context.WithCancel(ctx)
+	noErrorOnFirstFailure := false
+	kf, err := keyfunc.NewDefaultOverrideCtx(ctx, []string{url}, keyfunc.Override{
+		HTTPTimeout:               socialJWKSHTTPTimeout,
+		NoErrorReturnFirstHTTPReq: &noErrorOnFirstFailure,
+	})
 	if err != nil {
+		cancel()
 		return nil, err
 	}
+	_ = cancel // 成功：刷新 goroutine 随进程存活
 	return kf.Keyfunc, nil
 }
 
@@ -122,17 +136,11 @@ func verifySocialIDToken(ctx context.Context, cfg socialAuthConfig, provider, id
 		return nil, fmt.Errorf("%w: unexpected iss %q", errSocialTokenInvalid, c.Issuer)
 	}
 
-	allowed := cfg.IDs.Audiences(provider)
-	matched := ""
-	for _, a := range c.Audience {
-		if slices.Contains(allowed, a) {
-			matched = a
-			break
-		}
-	}
-	if matched == "" {
+	// OIDC Core §3.1.3.7(3)：带有不受信任的额外 aud 必须拒绝 → 只接受恰好一个且在本品牌白名单内。
+	if len(c.Audience) != 1 || !slices.Contains(cfg.IDs.Audiences(provider), c.Audience[0]) {
 		return nil, fmt.Errorf("%w: aud %v not allowed for brand %s", errSocialTokenInvalid, []string(c.Audience), cfg.Brand)
 	}
+	matched := c.Audience[0]
 
 	// 比对的是 hash（永不为空），缺 nonce 的 token 不可能通过
 	if c.Nonce != socialNonceHash(rawNonce) {
