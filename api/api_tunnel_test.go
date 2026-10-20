@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -348,4 +349,20 @@ func TestDataSlaveTunnel_RecommendScoreJSONTag(t *testing.T) {
 	// And Instance is omitted (omitempty on nil pointer).
 	_, hasInstance := decoded["instance"]
 	assert.False(t, hasInstance, "non-cloud tunnel must omit instance")
+}
+
+// TestApiK2Tunnels_TrialUserSeesOnlyTrialPool —— /api/tunnels/k2v5（含 MCP 路径）：
+// 试用用户只拿到 pool=trial 节点，付费用户拿到全部。Needs dev MySQL.
+func TestApiK2Tunnels_TrialUserSeesOnlyTrialPool(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	_, regular, trial := seedPoolFixture(t)
+	params := gin.Params{{Key: "protocol", Value: "k2v5"}}
+
+	body := callHandlerAs(t, api_k2_tunnels, poolTrialUser(), "/api/tunnels/k2v5", params)
+	assert.Equal(t, 0, countPresent(body, regular...), "trial user must not receive regular-pool tunnels")
+	assert.Equal(t, 1, countPresent(body, trial), "trial user must receive the trial-pool tunnel")
+
+	body = callHandlerAs(t, api_k2_tunnels, poolPaidUser(), "/api/tunnels/k2v5", params)
+	assert.Equal(t, 3, countPresent(body, append(regular, trial)...), "paid user sees all pools")
 }

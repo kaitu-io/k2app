@@ -100,6 +100,16 @@ func deriveActiveOrExpired(periodEnd, now int64) string {
 // 错误；webhook 与对账视为已处理。
 var errAppleTxnRevoked = errors.New("apple transaction has been refunded")
 
+// errAppleTxnAwaitingRebind 从没付过费的试用链上来了一笔付费交易，它的 appAccountToken 属于另一个
+// 账号（spec 2026-10-19 §3.3 改绑）：只有那个账号的 verify 能入账（改绑）。webhook 映射成 5xx 让
+// Apple 重投（verify 改绑后重投命中去重）；对账 worker 记日志跳过。返回它时什么都没写。
+var errAppleTxnAwaitingRebind = errors.New("apple txn awaits trial-chain rebind by its token owner")
+
+// errAppleTxnUpgraded 同组升级被取代的交易（isUpgraded=true，spec 2026-10-19 §3.9）：取代它的新交易
+// 已经（或即将）按自己的周期入账，这笔永不入账、也不改写订阅行。它可能同时带 revocationDate，但**不是
+// 退款**——不收回、不置 revoked、不记 AppleRefund。verify / webhook / 对账都视为已处理。
+var errAppleTxnUpgraded = errors.New("apple transaction was superseded by a same-group upgrade")
+
 // lastActiveAppleRefundAt 这条订阅链上仍生效、且曾把订阅置为 revoked 的退款里最晚的
 // revocationDate（毫秒）；无则 0。复活判据：新付款的 purchaseDate 必须严格晚于它。
 func lastActiveAppleRefundAt(tx *gorm.DB, otx string) (int64, error) {
@@ -120,6 +130,19 @@ func lastActiveAppleRefundAt(tx *gorm.DB, otx string) (int64, error) {
 func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, info *appstore.TransactionInfo) error {
 	const provider = SubscriptionProviderApple
 	newPeriodEnd := info.ExpiresDate / 1000
+	// 交易分类（spec 2026-10-19 §3.2-3.3）：免费试用不是一次购买——不建单、不返佣、不发邀请奖励、
+	// 不消耗首单、不推进 paid_through。试用链上第一笔付费才是首购。
+	class := classifyAppleTxn(info)
+	isTrialTxn := class == appleTxnFreeTrial
+
+	// 同组升级被取代的交易（spec 2026-10-19 §3.9）：取代它的新交易按自己的周期入账，这笔什么都不写——
+	// 不入账，也不刷新订阅行（否则重放会把 product_id / latest_ref 改回被取代的商品）。它带的
+	// revocationDate 是升级造成的，不是退款：返回可区分的哨兵，绝不落到下面的退款门。
+	if info.IsUpgraded {
+		log.Infof(ctx, "[creditAppleTransaction] txn %s (otx %s, product %s) superseded by same-group upgrade — not crediting (user %d)",
+			info.TransactionId, info.OriginalTransactionId, info.ProductId, userID)
+		return errAppleTxnUpgraded
+	}
 
 	// Load-or-create the subscription row (binding key = OriginalTransactionId).
 	var sub Subscription
@@ -130,9 +153,35 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	if err != nil && !isFirst {
 		return err
 	}
+	// 试用链首笔付费：订阅链从没付过费（is_trial 仍为真），这笔不是试用 → 按首购处理。
+	trialChainFirstPaid := !isFirst && sub.IsTrial && !isTrialTxn
+	// 改绑竞态门（spec §3.3）：B 在 A 从没付过费的试用链上重订阅时，webhook / 对账 worker 永远以
+	// sub.UserID（A）入账。这笔付费交易的 token 若不是 A 的，它是在等 B 的客户端 verify 来改绑——
+	// 现在以 A 入账会让 A 白拿首购、B 的 verify 再被 INV9 拒掉。什么都不写，交给调用方重试/跳过。
+	if !isFirst && sub.IsTrial && !isTrialTxn && info.AppAccountToken != "" && sub.UserID == userID {
+		var owner User
+		if err := tx.Select("id", "uuid").First(&owner, userID).Error; err != nil {
+			return fmt.Errorf("load user %d for trial-chain token check: %w", userID, err)
+		}
+		if !strings.EqualFold(info.AppAccountToken, deriveAppleAccountToken(owner.UUID)) {
+			return fmt.Errorf("%w: chain %s owned by user %d, txn %s carries another account's token",
+				errAppleTxnAwaitingRebind, info.OriginalTransactionId, userID, info.TransactionId)
+		}
+	}
+	var rebindFromUserID uint64
 	if !isFirst && sub.UserID != userID {
-		// INV9: never re-bind an existing subscription to a different user.
-		return fmt.Errorf("subscription %s already bound to user %d", info.OriginalTransactionId, sub.UserID)
+		// INV9: never re-bind an existing subscription to a different user —— 唯一例外（spec §3.3）：
+		// 从没付过费的试用链，第一笔付费交易带着当前账号的 appAccountToken 时改绑到当前账号。
+		ok, err := canRebindTrialChain(tx, &sub, class, info, userID)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("subscription %s already bound to user %d", info.OriginalTransactionId, sub.UserID)
+		}
+		rebindFromUserID = sub.UserID
+		log.Warnf(ctx, "[creditAppleTransaction] rebinding never-paid trial chain %s from user %d to user %d (txn=%s)",
+			info.OriginalTransactionId, sub.UserID, userID, info.TransactionId)
 	}
 
 	// Lock the crediting user (needed for the additive credit and, on first bind, the
@@ -201,6 +250,19 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		revival = info.PurchaseDate > lastRefundAt
 	}
 
+	// 试用标志只属于从没付过费的链（首笔绑定，或仍在 is_trial）。已转付费链上迟到/重放的试用交易
+	// 绝不把标志翻回来。
+	chainNeverPaid := isFirst || sub.IsTrial
+	if isTrialTxn && chainNeverPaid {
+		sub.IsTrial = true
+		if newPeriodEnd > sub.TrialEndsAt {
+			sub.TrialEndsAt = newPeriodEnd
+		}
+	}
+	if trialChainFirstPaid && !alreadyCredited {
+		sub.IsTrial = false
+	}
+
 	// Upsert plan-state on the subscription row (status derived, never hardcoded).
 	sub.UserID = userID
 	sub.Provider = provider
@@ -225,11 +287,27 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		return nil // idempotent: plan-state refreshed, no double credit
 	}
 
+	if class == appleTxnOtherOffer {
+		// 我们不发这类优惠：出现即说明 ASC 里有人配了东西。按现状入账，但必须响亮。
+		// 放在去重早退之后：每笔交易只告警一次，Apple 重投 / 对账补投不刷屏。
+		alertPaymentAnomaly(ctx, "APPLE-UNSUPPORTED-OFFER",
+			"unsupported apple offer: offerType=%d price=%d offerId=%q txn=%s otx=%s user=%d — credited as a normal paid transaction",
+			info.OfferType, info.Price, info.OfferIdentifier, info.TransactionId, info.OriginalTransactionId, userID)
+	}
+
+	if rebindFromUserID != 0 {
+		// 原账号的试用早已结束（spec §3.3）：只清它的试用线路隔离标志，权益不动。
+		// 原账号若还有别的试用链在用，标志归那条链（clearUserInTrialUnlessOtherTrialLive 判）。
+		if err := clearUserInTrialUnlessOtherTrialLive(tx, rebindFromUserID, sub.ID); err != nil {
+			return fmt.Errorf("clear in_trial of previous owner %d: %w", rebindFromUserID, err)
+		}
+	}
+
 	// 邀请购买奖励：Apple IAP 与 wordgate 订单同一规则（首单 + 套餐月数达门槛），
 	// 复用 grantInvitePurchaseRewardInTx。必须在下方 IsFirstOrderDone 置位之前执行；
 	// SAVEPOINT 保证奖励失败不阻断入账（支付到账优先）。奖励会更新买家 user 行，
 	// 之后必须重载本函数持有的 user 快照，否则后续 Save 会用旧值覆盖奖励天数。
-	if isFirst {
+	if (isFirst && !isTrialTxn) || trialChainFirstPaid {
 		if plan, perr := planByAppleProductID(ctx, tx, info.ProductId, Brand(user.Brand)); perr == nil && plan != nil {
 			if err := tx.SavePoint("iap_invite_reward").Error; err == nil {
 				trigger := inviteTrigger{Kind: InviteTriggerAppleTxn, Ref: info.TransactionId,
@@ -252,7 +330,7 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	// Compute the additive credit.
 	var creditSeconds int64
 	var kind string
-	if isFirst || revival {
+	if isFirst || revival || trialChainFirstPaid {
 		// First transaction: credit the period this transaction covers, from-now-if-expired.
 		// Front-line first purchases have purchaseDate≈now, so this ≈ one period. (Late
 		// reconciliation of an OLD missed first transaction could over-credit beyond Apple's
@@ -265,7 +343,9 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 			log.Warnf(ctx, "[creditAppleTransaction] txn %s is %dd old at first-bind; credited %ds forward from now — may exceed Apple's remaining coverage, Phase 2 reconciliation will cap",
 				info.TransactionId, (now-info.PurchaseDate/1000)/86400, creditSeconds)
 		}
-		if revival {
+		if revival || trialChainFirstPaid {
+			// 试用链首笔付费同此公式（spec §3.3 例外）：试用失效几周后再订，Apple 沿用同一 otx，
+			// 走续订 delta 会给"一年 + 整个空档"。
 			// 复活只发 Apple 还剩下的覆盖期：这笔付款若很久之后才被入账（漏通知、对账补入），按整期
 			// 从 now 起叠会超过 Apple 实际覆盖。正常复活购买时刻≈now，等于整期。
 			creditSeconds = max(newPeriodEnd-max(info.PurchaseDate/1000, now), 0)
@@ -274,6 +354,9 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		creditSeconds = max(newExpiry-max(user.ExpiredAt, now), 0) // audited net add (Go 1.21+ builtin max)
 		user.ExpiredAt = newExpiry
 		kind = "purchase"
+		if isTrialTxn {
+			kind = "trial"
+		}
 	} else {
 		newExpiry := applyRenewalCredit(user.ExpiredAt, priorPeriodEnd, newPeriodEnd, now)
 		// Audited net add, measured from the base the credit was actually stacked on
@@ -284,6 +367,9 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		creditSeconds = max(newExpiry-max(user.ExpiredAt, priorPeriodEnd, now), 0)
 		user.ExpiredAt = newExpiry
 		kind = "renewal"
+		if isTrialTxn {
+			kind = "trial" // 已付费链上迟到的试用交易：时长按续订 delta（通常为 0），只改标签
+		}
 	}
 
 	// Cover-through 收敛不变式(spec 2026-08-22):无论 delta 怎么算,入账后权益至少
@@ -306,9 +392,17 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		if plan, _ := planByAppleProductID(ctx, tx, info.ProductId, Brand(user.Brand)); plan != nil && plan.Tier != "" {
 			user.Tier = plan.Tier
 		}
-		if !isSandbox {
+		// 试用同样设 Tier（设备上限要生效），但不消耗首单资格。
+		if !isSandbox && !isTrialTxn {
 			user.IsFirstOrderDone = BoolPtr(true)
 		}
+	}
+	// in_trial（试用线路隔离）：只给从没付过费的人；付过费的老用户换 Apple ID 开试用不受限（Review Focus 3）。
+	if isTrialTxn && chainNeverPaid && (user.IsFirstOrderDone == nil || !*user.IsFirstOrderDone) {
+		user.InTrial = true
+	}
+	if trialChainFirstPaid {
+		user.InTrial = false
 	}
 	if err := tx.Save(&user).Error; err != nil {
 		return fmt.Errorf("save user %d: %w", userID, err)
@@ -318,7 +412,7 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	// 与 Stripe 同口径。sub 行已在上面 Save 过，这里单独更新。已接受的偏差：宽限期后续订成功时
 	// granted 从 graceEnd 起算，PaidThrough 比真实付费段少一个宽限窗（≤16 天）；赠送在购买之前
 	// 叠加时按"先消耗付费段"计数，晚退款时用户保留 min(赠送, 已用) 天——都是向用户倾斜的偏差。
-	if granted := max(user.ExpiredAt-paidBase, 0); granted > 0 {
+	if granted := max(user.ExpiredAt-paidBase, 0); granted > 0 && !isTrialTxn {
 		if err := tx.Model(&Subscription{}).Where("id = ?", sub.ID).
 			Update("paid_through", max(sub.PaidThrough, now)+granted).Error; err != nil {
 			return fmt.Errorf("update paid_through for sub %d: %w", sub.ID, err)
@@ -336,6 +430,7 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 		OriginalTransactionID: info.OriginalTransactionId,
 		CreditedSeconds:       creditSeconds,
 		Kind:                  kind,
+		Storefront:            info.StoreFront,
 	}
 	if err := tx.Create(creditRow).Error; err != nil {
 		return err
@@ -354,6 +449,13 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	log.Infof(ctx, "[creditAppleTransaction] user %d credited +%dd (%s) txn=%s expiry→%s",
 		userID, int(creditSeconds/86400), kind, info.TransactionId,
 		time.Unix(user.ExpiredAt, 0).Format("2006-01-02"))
+
+	// 免费试用到此为止：用户实付 0，不是财务事件——不建单、不返佣（spec §3.3）。
+	if isTrialTxn {
+		log.Infof(ctx, "[creditAppleTransaction] free-trial txn %s credited to user %d, order+cashback intentionally skipped",
+			info.TransactionId, userID)
+		return nil
+	}
 
 	// 沙盒交易到此为止：权益照发（iOS 用沙盒账号做内购端到端测试时必须能看到 Pro 生效），
 	// 但**绝不建订单**。订单是财务实体——它的 PayAmount 取 plan 标价，直接充当分销返现基数、
@@ -665,7 +767,10 @@ func applyRenewalInfo(ctx context.Context, sub *Subscription, ri *appstore.Renew
 	// 周期末,delta 会把宽限补时误当"礼物"叠加,双算整段宽限窗(review finding 1)。两处写
 	// 都是条件式原子 UPDATE(单调守卫进 SQL),不先读后写,避免与并发 credit 事务的
 	// lost-update（review finding 2）；RowsAffected 判断是否真的改了再打日志,错误一律上抛。
-	if status == "grace" && ri != nil && ri.GracePeriodExpiresDate > 0 {
+	//
+	// 试用链（sub.IsTrial：从没付过费）不享宽限延长——宽限是给"扣费失败的付费用户"的，试用到期
+	// 扣不到款就该按 expiresDate 停（spec 2026-10-19 §3.5）。状态/auto_renew 照常落地。
+	if status == "grace" && ri != nil && ri.GracePeriodExpiresDate > 0 && !sub.IsTrial {
 		graceEnd := ri.GracePeriodExpiresDate / 1000
 
 		// 订阅已被退款置 revoked 时不做宽限延长（与上面的状态守卫同一理由）。
@@ -756,12 +861,20 @@ func GetActiveSubscriptions(userID uint64) []DataSubscription {
 			}
 			manage = ManageSurface{Kind: "stripe_portal"} // 客户端调 POST /api/user/stripe/portal 换 URL
 		}
+		// 试用只存在于 Apple 链；Stripe / 非试用恒为 false / 0。
+		isTrial := s.Provider == SubscriptionProviderApple && s.IsTrial
+		var trialEndsAt int64
+		if isTrial {
+			trialEndsAt = s.TrialEndsAt
+		}
 		out = append(out, DataSubscription{
 			Provider:         s.Provider,
 			Tier:             tier,
 			CurrentPeriodEnd: s.CurrentPeriodEnd,
 			AutoRenew:        s.AutoRenew,
 			Manage:           manage,
+			IsTrial:          isTrial,
+			TrialEndsAt:      trialEndsAt,
 		})
 	}
 	return out

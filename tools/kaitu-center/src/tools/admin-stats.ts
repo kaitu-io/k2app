@@ -34,7 +34,7 @@ export const statsTools: ToolRegistration[] = [
 
   defineApiTool({
     name: 'user_statistics',
-    description: 'Get aggregate user statistics (total, paid, trial, churned).',
+    description: 'Get aggregate user statistics (total, paid, free, inTrial = currently in an Apple free trial, active/expired pro, new users).',
     group: 'stats',
     params: { brand: brandFilter },
     path: '/app/users/statistics',

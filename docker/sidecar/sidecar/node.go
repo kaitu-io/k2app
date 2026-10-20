@@ -90,6 +90,9 @@ type NodeUpsertRequest struct {
 	// Brands 节点自我声明可服务的品牌。omitempty: 未配置的节点发出的请求体与改动前
 	// 逐字节一致，Center 侧按"缺省 = 仅 kaitu"解释。
 	Brands      []string               `json:"brands,omitempty"`
+	// Pool 节点自我声明的节点池（K2_NODE_POOL）："" = 会员节点，"trial" = 体验线路。
+	// omitempty: 未配置的节点请求体与改动前逐字节一致。
+	Pool        string                 `json:"pool,omitempty"`
 	SecretToken string                 `json:"secretToken,omitempty"`
 	Tunnels     []TunnelConfig         `json:"tunnels,omitempty"` // Batch tunnel configuration
 	Meta        map[string]interface{} `json:"meta,omitempty"`    // Node metadata (e.g., architecture type)
@@ -211,6 +214,9 @@ type Node struct {
 	// 每次注册都重新上报，所以它扛得住重启——Center 侧不需要任何"保全"逻辑。
 	Brands []string
 
+	// Pool 是本节点自我声明的节点池（K2_NODE_POOL）。空 = 会员节点。每次注册重发。
+	Pool string
+
 	// PrivateClaim 专属节点认领令牌（K2_PRIVATE_CLAIM，cloud-init 注入）。
 	// Echoed back to Center on registration; empty for shared-pool nodes.
 	PrivateClaim string
@@ -226,6 +232,7 @@ func (n *Node) buildNodeUpsertRequest(tunnels []TunnelConfig) NodeUpsertRequest 
 		Name:         n.Name,
 		IPType:       n.IPType,
 		Brands:       n.Brands,
+		Pool:         n.Pool,
 		SecretToken:  n.Secret,
 		Tunnels:      tunnels,
 		Meta:         buildNodeMeta(),

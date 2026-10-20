@@ -61,6 +61,19 @@ func handleRenewalReminderTask(ctx context.Context, _ []byte) error {
 // 续费提醒（到期前）
 // =====================================================================
 
+// lifecycleEmailCandidates 续费提醒 / 过期召回共用的候选查询：expired_at 落在 [from, to) 且
+// 付过费（is_first_order_done）。从没付过费的用户——包括 Apple 试用到期未转付费的——
+// 不在其中：给他们发"续费"语义错误（spec 2026-10-19 §3.5，TestRenewalReminder_ExcludesNeverPaid 守着）。
+func lifecycleEmailCandidates(from, to time.Time) ([]User, error) {
+	var users []User
+	err := db.Get().Model(&User{}).
+		Preload("LoginIdentifies").
+		Where("expired_at >= ? AND expired_at < ?", from.Unix(), to.Unix()).
+		Where("is_first_order_done = ?", true).
+		Find(&users).Error
+	return users, err
+}
+
 // processRenewalReminders 处理指定天数的续费提醒
 func processRenewalReminders(ctx context.Context, daysBefore int) (sent, skipped, failed int) {
 	log.Infof(ctx, "[RENEWAL] Processing %d-day reminders", daysBefore)
@@ -80,12 +93,7 @@ func processRenewalReminders(ctx context.Context, daysBefore int) (sent, skipped
 		return 0, 0, 0
 	}
 
-	var users []User
-	err := db.Get().Model(&User{}).
-		Preload("LoginIdentifies").
-		Where("expired_at >= ? AND expired_at < ?", targetDate.Unix(), targetDateEnd.Unix()).
-		Where("is_first_order_done = ?", true).
-		Find(&users).Error
+	users, err := lifecycleEmailCandidates(targetDate, targetDateEnd)
 
 	if err != nil {
 		log.Errorf(ctx, "[RENEWAL] Failed to query users: %v", err)
@@ -244,12 +252,7 @@ func processWinback(ctx context.Context, daysAfter int) (sent, skipped, failed i
 		return 0, 0, 0
 	}
 
-	var users []User
-	err := db.Get().Model(&User{}).
-		Preload("LoginIdentifies").
-		Where("expired_at >= ? AND expired_at < ?", targetDate.Unix(), targetDateEnd.Unix()).
-		Where("is_first_order_done = ?", true).
-		Find(&users).Error
+	users, err := lifecycleEmailCandidates(targetDate, targetDateEnd)
 
 	if err != nil {
 		log.Errorf(ctx, "[WINBACK] Failed to query users: %v", err)

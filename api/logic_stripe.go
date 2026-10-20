@@ -285,6 +285,7 @@ func creditStripeInvoice(ctx context.Context, tx *gorm.DB, f *stripeInvoiceFacts
 		}
 		user.IsFirstOrderDone = BoolPtr(true)
 	}
+	user.InTrial = false // 非 Apple 渠道付费：退出试用线路隔离（spec 2026-10-19 §3.5）
 	if err := tx.Save(&user).Error; err != nil {
 		return fmt.Errorf("save user %d: %w", userID, err)
 	}

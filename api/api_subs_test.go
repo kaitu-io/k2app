@@ -909,3 +909,47 @@ func TestSubs_GatewayNoBindings_FieldOmitted(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
 	require.NotContains(t, w.Body.String(), "slot_bindings") // omitempty:消费版响应无此字段
 }
+
+// TestApiSubs_TrialUserSeesOnlyTrialPool —— 桌面 k2subs 的 /api/subs 同样受池限制。
+// /api/subs 从库里读用户，所以试用标志要真落库。Needs dev MySQL.
+func TestApiSubs_TrialUserSeesOnlyTrialPool(t *testing.T) {
+	testInitConfig()
+	skipIfNoConfig(t)
+	gin.SetMode(gin.TestMode)
+	uniq, regular, trial := seedPoolFixture(t)
+	now := time.Now().Unix()
+
+	subsAs := func(role string, user User) string {
+		t.Helper()
+		user.UUID = "usr-pool-" + role + "-" + uniq
+		user.Brand = string(BrandKaitu)
+		user.ExpiredAt = now + 86400
+		require.NoError(t, db.Get().Create(&user).Error)
+		t.Cleanup(func() { db.Get().Unscoped().Delete(&user) })
+
+		udid := "udid-pool-" + role + "-" + uniq
+		device := Device{UDID: udid, UserID: user.ID, Remark: "pool-test", IsGateway: false, TokenIssueAt: now}
+		require.NoError(t, db.Get().Create(&device).Error)
+		t.Cleanup(func() { db.Get().Unscoped().Delete(&device) })
+
+		token := GenerateTestToken(user.ID, udid, time.Hour)
+		require.NoError(t, db.Get().Model(&Device{}).Where("id = ?", device.ID).
+			Update("token_issue_at", tokenIssueAtOf(t, token)).Error)
+
+		r := gin.New()
+		r.GET("/api/subs", api_subs)
+		req, _ := http.NewRequest("GET", "/api/subs", nil)
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(udid+":"+token)))
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+		return w.Body.String()
+	}
+
+	body := subsAs("trial", User{InTrial: true})
+	assert.Equal(t, 0, countPresent(body, regular...), "trial user must not receive regular-pool subs URLs")
+	assert.Equal(t, 1, countPresent(body, trial), "trial user must receive the trial-pool subs URL")
+
+	body = subsAs("paid", User{IsFirstOrderDone: BoolPtr(true)})
+	assert.Equal(t, 3, countPresent(body, append(regular, trial)...), "paid user sees all pools")
+}

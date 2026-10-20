@@ -137,6 +137,11 @@ func api_k2_tunnels(c *gin.Context) {
 		if !isAdmin && user != nil && !tunnel.Node.VisibleTo(Brand(user.Brand)) {
 			continue
 		}
+		// Trial-pool isolation (spec §3.7): free-trial users only get pool=trial
+		// nodes. Same admin bypass as the brand filter above.
+		if !isAdmin && !nodeAllowedForUser(tunnel.Node, user) {
+			continue
+		}
 
 		// Get load details from batch query result
 		details := NodeLoadDetails{Load: 100} // Default full load
