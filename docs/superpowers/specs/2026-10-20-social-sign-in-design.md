@@ -94,11 +94,11 @@ Apple 的 `team_id/key_id/private_key` 用于生成 client secret，去换 refre
 |---|---|---|---|
 | POST | `/api/auth/social/login` | 无 | App 内原生登录（设备绑定），body：`provider, idToken, nonce, authorizationCode?, udid, remark, language` → `DataAuthResult` |
 | POST | `/api/auth/social/web-login` | 无 | 官网登录（cookie），→ `DataWebLoginResponse` |
-| POST | `/api/auth/social/handoff` | 可选 | 桌面/Linux/安卓 Apple 发起浏览器登录会话（§6.3） |
+| POST | `/api/auth/social/handoff` | 无 | 桌面/Linux/安卓 Apple 发起浏览器登录会话（§6.3，只用于登录） |
 | POST | `/api/auth/social/handoff/complete` | 无 | 浏览器页把 idToken 交回会话 |
 | POST | `/api/auth/social/handoff/poll` | 无 | App 凭 pollSecret + udid 领取结果 |
 | GET | `/api/user/social` | AuthRequired | 列出已绑定的 provider（provider + 脱敏邮箱） |
-| POST | `/api/user/social/bind` | AuthRequired | 绑定到当前账号，body 同 login 的令牌部分 |
+| POST | `/api/user/social/bind` | AuthRequired | 绑定到当前账号，body 同 login 的令牌部分；App（iOS/Android 原生）与官网账号页（cookie）调用 |
 | DELETE | `/api/user/social/:provider` | AuthRequired | 解绑（Apple 解绑时同时撤销令牌） |
 
 新路径加入 webapp `cloud-api.ts` 的 `AUTH_TOKEN_PATHS`，否则令牌不会被保存。
@@ -149,22 +149,24 @@ Apple 的 `team_id/key_id/private_key` 用于生成 client secret，去换 refre
 ### 6.3 浏览器 handoff（桌面 / Linux / 安卓 Apple）
 不做 deep link（Linux 没有壳，Windows/macOS 的 URL scheme 注册各有坑），统一用"开浏览器 + App 轮询"：
 
-1. App 调 `POST /handoff {provider, intent: login|bind}`（bind 时带登录态）→ `{sessionId, pollSecret, url}`。服务端生成 nonce 存进会话；会话存 Redis，TTL 5 分钟。
+1. App 调 `POST /handoff {provider}` → `{sessionId, pollSecret, url}`。服务端生成 nonce 存进会话；会话存 Redis，TTL 5 分钟。
 2. App 用系统浏览器打开 `url` = 本品牌官网 `/auth/social?session=<id>&provider=...&nonce=<sha256(nonce)>`（Apple 回调路径 `/auth/social/apple`，已在 Services ID 登记），App 内显示"请在浏览器中完成登录"，开始每 2 秒轮询。
 3. 官网页直接显示对应的 Apple / Google 按钮；拿到 idToken 后调 `/handoff/complete {sessionId, idToken}`。页面提示"已完成，可以回到 App"。
 4. 服务端在 complete 时就完成令牌校验与 §4 匹配，结果（userId 或错误）记入会话；App 的下一次 `poll` 带上 `pollSecret + udid + remark`，服务端走与 `/social/login` 相同的设备登录事务签发令牌，会话作废。
 
 `sessionId` 与 `pollSecret` 分离：URL 里只有 sessionId，领令牌必须有只在 App 内存里的 pollSecret。
 
+**handoff 只做登录，不做绑定**（David 2026-10-20 定）：绑定若走 handoff，别人发来的链接能把你的 Google/Apple 永久绑到他的账号上。需要浏览器才能绑定的端（桌面、Linux、安卓 Apple）改为打开官网账号页，在官网登录态下绑定（§6.4）。
+
 ### 6.4 官网
-- kaitu.io（`web/src/app/[locale]/login/page.tsx`）与 overleap.io（`sites/overleap/.../LoginForm.tsx`）登录页加两个按钮，调 `/api/auth/social/web-login`；同时新增 §6.3 的 `/auth/social` handoff 页。两站不共享代码（按 overleap 站拆分惯例各写一份，靠契约一致）。
+- kaitu.io（`web/src/app/[locale]/login/page.tsx`）与 overleap.io（`sites/overleap/.../LoginForm.tsx`）登录页加两个按钮，调 `/api/auth/social/web-login`；同时新增 §6.3 的 `/auth/social` handoff 页。两站账号页加"登录方式"区：列出、绑定（Apple JS / Google Identity Services 拿 idToken 后调 `/api/user/social/bind`）、解绑。两站不共享代码（按 overleap 站拆分惯例各写一份，靠契约一致）。
 - Google 脚本加载失败（国内）→ 不显示 Google 按钮。Apple JS 在国内可达。
 - Apple 网页登录需每品牌一个 Services ID，登记域名与 return URL（见 §7.1）；Google Web client 登记 JS origin。
 
 ### 6.5 webapp UI
 - `LoginDialog.tsx` 与 `EmailLoginForm.tsx`（两个都要，后者被购买页和 iOS 订阅面板使用）的验证码表单下方加"或"分隔 + "通过 Apple 继续" / "通过 Google 继续"。按钮可见性 = 品牌开关 × 平台能力（原生可用性 / handoff 永远可用）。
 - 文案中文用户面不出现 "Kaitu" 裸词；全部语言补齐。
-- 账号页（`pages/Account.tsx`）新增"登录方式"区：显示已绑定项，可绑定 / 解绑。解绑直接生效，不弹确认（随时可以重新绑定）。
+- 账号页（`pages/Account.tsx`）新增"登录方式"区：显示已绑定项，可绑定 / 解绑。iOS / Android(Google) 原生直接绑定；桌面、Linux、Android(Apple) 的"绑定"按钮打开本品牌官网账号页（用户在官网登录后绑定），返回 App 后刷新列表。解绑直接生效，不弹确认（随时可以重新绑定）。
 - client ID 放各品牌 `index.ts`（与 Go 注册表由契约锁定，见 §5.2）；开关来自服务端下发，不在客户端写死。改品牌数据后重生成 `contracts/api-contract.json`。
 - **路由器（k2r，`platformType === 'gateway'`）不显示第三方登录按钮**（我的判断：路由器管理页没有"回到 App"的场景，设备上限也另算），需有测试锁住。
 
@@ -198,7 +200,7 @@ Apple 的 `team_id/key_id/private_key` 用于生成 client secret，去换 refre
 
 ## 8. 测试
 
-- API：令牌校验（伪造签名、错 aud、跨品牌 aud、过期、nonce 不符）、§4 三步匹配各分支、绑定冲突、handoff 会话（过期、重复领取、错 pollSecret、bind intent）、注销触发 revoke。DB 测试必须真跑（0 SKIP）。JWKS 用测试密钥对注入，不打外网。
+- API：令牌校验（伪造签名、错 aud、跨品牌 aud、过期、nonce 不符）、§4 三步匹配各分支、绑定冲突、handoff 会话（过期、重复领取、错 pollSecret）、注销触发 revoke。DB 测试必须真跑（0 SKIP）。JWKS 用测试密钥对注入，不打外网。
 - webapp：按钮可见性矩阵（品牌 × 平台能力）、老 bridge 无能力时不显示、令牌保存路径。
 - 真机 smoke：iOS 两品牌 Apple + Google；Android 有/无 GMS；macOS / Windows / Linux handoff；两个官网。按项目信心框架，没有真机 smoke 不宣布完成。
 
