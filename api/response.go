@@ -43,6 +43,10 @@ const (
 	ErrorLicenseKeyAlreadyRedeemed ErrorCode = 400011 // 用户已使用过授权码
 	ErrorProxyMembersDeprecated    ErrorCode = 400012 // 代付成员管理已下线
 	ErrorVerificationCodeExpired   ErrorCode = 400013 // 验证码已过期或未发送
+	ErrorSocialTokenInvalid        ErrorCode = 400014 // 联合登录凭证无效/过期/aud 或 nonce 不符
+	ErrorSocialEmailUnverified     ErrorCode = 400015 // 第三方账号邮箱未验证，不可据此建号/绑定
+	// 400016 刻意留空
+	ErrorSocialHandoffExpired ErrorCode = 400017 // 浏览器 handoff 会话不存在或已过期
 
 	// Router class system error codes (added 2026-05-22)
 	ErrorPlanNoRouter        ErrorCode = 402001 // 套餐不支持路由器
@@ -57,9 +61,12 @@ const (
 
 	// 405xxx: 渠道/操作不可用
 	ErrorPaymentChannelUnavailable ErrorCode = 405001 // 当前品牌不支持该支付渠道
+	ErrorSocialProviderDisabled    ErrorCode = 405002 // 当前品牌未启用该联合登录提供方
 
 	// 409xxx: 资源冲突（同品牌内唯一性被占用）
 	ErrorEmailAlreadyInUse ErrorCode = 409001 // 邮箱已被同品牌下的其他账号绑定
+	ErrorSocialIdentityTaken        ErrorCode = 409002 // 该第三方账号已绑定其他用户
+	ErrorSocialProviderAlreadyBound ErrorCode = 409003 // 本账号已绑定了另一个同类第三方账号
 )
 
 type DataAny struct{}

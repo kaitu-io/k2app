@@ -192,6 +192,18 @@
       "code": 400013
     },
     {
+      "name": "ErrorSocialTokenInvalid",
+      "code": 400014
+    },
+    {
+      "name": "ErrorSocialEmailUnverified",
+      "code": 400015
+    },
+    {
+      "name": "ErrorSocialHandoffExpired",
+      "code": 400017
+    },
+    {
       "name": "ErrorPlanNoRouter",
       "code": 402001
     },
@@ -212,8 +224,20 @@
       "code": 405001
     },
     {
+      "name": "ErrorSocialProviderDisabled",
+      "code": 405002
+    },
+    {
       "name": "ErrorEmailAlreadyInUse",
       "code": 409001
+    },
+    {
+      "name": "ErrorSocialIdentityTaken",
+      "code": 409002
+    },
+    {
+      "name": "ErrorSocialProviderAlreadyBound",
+      "code": 409003
     },
     {
       "name": "ErrorTierMismatch",

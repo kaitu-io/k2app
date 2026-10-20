@@ -83,6 +83,10 @@ export const ERROR_CODES = {
   LICENSE_KEY_ALREADY_REDEEMED: 400011,
   PROXY_MEMBERS_DEPRECATED: 400012,
   VERIFICATION_CODE_EXPIRED: 400013,
+  // Social sign-in (Google / Apple); 400016 intentionally unused
+  SOCIAL_TOKEN_INVALID: 400014,
+  SOCIAL_EMAIL_UNVERIFIED: 400015,
+  SOCIAL_HANDOFF_EXPIRED: 400017,
 
   // Tier system error codes (added 2026-04-20)
   TIER_MISMATCH: 422001,
@@ -95,9 +99,12 @@ export const ERROR_CODES = {
   BRAND_MISMATCH: 403003,
   INVALID_CLIENT_CLASS: 422003,
   PAYMENT_CHANNEL_UNAVAILABLE: 405001,
+  SOCIAL_PROVIDER_DISABLED: 405002,
 
   // Resource conflict — uniqueness already taken within the brand (added 2026-07-29)
   EMAIL_ALREADY_IN_USE: 409001,
+  SOCIAL_IDENTITY_TAKEN: 409002,
+  SOCIAL_PROVIDER_ALREADY_BOUND: 409003,
 
   // === Frontend-only codes (NOT from backend API) ===
 
@@ -283,6 +290,14 @@ export const API_ERROR_CATALOG: Readonly<Record<number, ErrorEntry>> = {
   // 405001: payment channel not allowed for this brand (e.g. WordGate on an
   // overleap account). User-actionable: buy on the brand website.
   [ERROR_CODES.PAYMENT_CHANNEL_UNAVAILABLE]: { key: 'purchase:purchase.paymentChannelUnavailable', defaultValue: 'This payment method is unavailable for your account' },
+
+  // Social sign-in (Google / Apple)
+  [ERROR_CODES.SOCIAL_TOKEN_INVALID]: { key: 'auth:auth.socialTokenInvalid', defaultValue: 'Sign-in credential is invalid or expired. Please try again.' },
+  [ERROR_CODES.SOCIAL_EMAIL_UNVERIFIED]: { key: 'auth:auth.socialEmailUnverified', defaultValue: 'The email on this account is not verified. Please sign in with an email code instead.' },
+  [ERROR_CODES.SOCIAL_HANDOFF_EXPIRED]: { key: 'auth:auth.socialHandoffExpired', defaultValue: 'The sign-in request expired. Please start again from the app.' },
+  [ERROR_CODES.SOCIAL_PROVIDER_DISABLED]: { key: 'auth:auth.socialProviderDisabled', defaultValue: 'This sign-in method is not available yet.' },
+  [ERROR_CODES.SOCIAL_IDENTITY_TAKEN]: { key: 'auth:auth.socialIdentityTaken', defaultValue: 'This account is already linked to another user.' },
+  [ERROR_CODES.SOCIAL_PROVIDER_ALREADY_BOUND]: { key: 'auth:auth.socialProviderAlreadyBound', defaultValue: 'Your account is already linked to a different account of this type.' },
 
   // 网络错误 (100-109)
   [ERROR_CODES.NETWORK_TIMEOUT]: { key: 'common:errors.network.timeout', defaultValue: 'Network request timed out' },

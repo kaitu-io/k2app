@@ -34,6 +34,12 @@ type DataAnnouncement struct {
 	ExpiresAt  int64  `json:"expiresAt,omitempty" example:"1704067200"`                      // 可选：公告过期时间戳（Unix秒），为0表示不过期
 }
 
+// DataSocialSignIn 各联合登录提供方在当前品牌是否已上线（客户端据此显示按钮）
+type DataSocialSignIn struct {
+	Apple  bool `json:"apple"`
+	Google bool `json:"google"`
+}
+
 // DataAppConfig 应用配置响应数据结构
 //
 type DataAppConfig struct {
@@ -42,6 +48,7 @@ type DataAppConfig struct {
 	MinClientVersion string             `json:"minClientVersion,omitempty"` // 最低客户端版本要求，低于此版本强制升级
 	Announcement     *DataAnnouncement  `json:"announcement,omitempty"`     // 向后兼容：最高优先级公告
 	Announcements    []DataAnnouncement `json:"announcements,omitempty"`    // 全部活跃公告（按 priority DESC 排序）
+	SocialSignIn     DataSocialSignIn   `json:"socialSignIn"`              // 联合登录开关（老客户端忽略）
 }
 
 // api_get_app_config 获取应用配置
@@ -113,12 +120,17 @@ func api_get_app_config(c *gin.Context) {
 		singleAnnouncement = &announcements[0]
 	}
 
+	social := configSocialAuth(b)
 	data := DataAppConfig{
 		AppLinks:         appLinks,
 		InviteReward:     inviteReward,
 		MinClientVersion: minClientVersion,
 		Announcement:     singleAnnouncement,
 		Announcements:    announcements,
+		SocialSignIn: DataSocialSignIn{
+			Apple:  social.Ready(SocialProviderApple),
+			Google: social.Ready(SocialProviderGoogle),
+		},
 	}
 
 	log.Infof(c, "successfully retrieved app config: %+v", data)
