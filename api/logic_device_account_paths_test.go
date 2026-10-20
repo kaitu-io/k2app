@@ -372,8 +372,79 @@ func TestFunnelPaths_AppLoginStepIncludesDeviceAccount(t *testing.T) {
 	assert.Equal(t, "建号或登录", login.Label)
 	assert.ElementsMatch(t, []string{"auth_done", "device_account_created"}, login.Events)
 	assert.Equal(t, FunnelSurfaceApp, login.Surface)
-	last := p.Steps[len(p.Steps)-1]
-	assert.Equal(t, "绑定身份", last.Label)
-	assert.Equal(t, []string{"identity_bound"}, last.Events)
-	assert.Equal(t, FunnelSurfaceApp, last.Surface)
+	// identity_bound 只是注册事件，不是路线步骤：安卓 / 桌面 / 邮箱用户永远不发，当步骤会改写「走完」的含义。
+	for i, st := range p.Steps {
+		assert.NotContains(t, st.Events, "identity_bound", "step %d", i)
+	}
+	assert.Equal(t, "连上", p.Steps[len(p.Steps)-1].Label)
+	assert.True(t, funnelEventAllowed("identity_bound", FunnelSurfaceApp), "事件仍注册")
+}
+
+// 只有第三方身份（无 email 身份）的用户提工单：同样用 req.Email；不带 → 400。
+func TestTicket_SocialOnlyUsesContactEmail(t *testing.T) {
+	dapDB(t)
+	dapMailSpy(t)
+	u := dapUser(t, "", "")
+	require.NoError(t, db.Get().Create(&LoginIdentify{UserID: u.ID, Type: SocialProviderGoogle,
+		IndexID: fmt.Sprintf("dap-g-%d", time.Now().UnixNano()), Brand: string(BrandKaitu)}).Error)
+	r := gin.New()
+	r.POST("/ticket", dapAs(&u, ""), api_create_ticket)
+
+	contact := dapEmail("social-contact")
+	fid := fmt.Sprintf("dap-fb-s-%d", time.Now().UnixNano())
+	t.Cleanup(func() { db.Get().Where("feedback_id = ?", fid).Delete(&FeedbackTicket{}) })
+	require.Equal(t, 0, dapPost(t, r, "/ticket", map[string]any{
+		"content": "连不上", "email": contact, "feedbackId": fid, "auto_generated": true}))
+	var tk FeedbackTicket
+	require.NoError(t, db.Get().Where("feedback_id = ?", fid).First(&tk).Error)
+	assert.Equal(t, contact, tk.Email)
+	var n int64
+	require.NoError(t, db.Get().Model(&LoginIdentify{}).Where("user_id = ? AND type = ?", u.ID, "email").Count(&n).Error)
+	assert.Zero(t, n, "联系邮箱不绑定为登录身份")
+
+	assert.Equal(t, int(ErrorInvalidArgument), dapPost(t, r, "/ticket", map[string]any{"content": "连不上"}))
+}
+
+// 有 email 身份的用户提工单：照旧用账号邮箱，忽略 req.Email。
+func TestTicket_EmailUserIgnoresContactEmail(t *testing.T) {
+	dapDB(t)
+	dapMailSpy(t)
+	own := dapEmail("own")
+	u := dapUser(t, own, "")
+	r := gin.New()
+	r.POST("/ticket", dapAs(&u, ""), api_create_ticket)
+	fid := fmt.Sprintf("dap-fb-e-%d", time.Now().UnixNano())
+	t.Cleanup(func() { db.Get().Where("feedback_id = ?", fid).Delete(&FeedbackTicket{}) })
+	require.Equal(t, 0, dapPost(t, r, "/ticket", map[string]any{
+		"content": "连不上", "email": dapEmail("other"), "feedbackId": fid, "auto_generated": true}))
+	var tk FeedbackTicket
+	require.NoError(t, db.Get().Where("feedback_id = ?", fid).First(&tk).Error)
+	assert.Equal(t, own, tk.Email)
+}
+
+// 管理员给零身份用户设邮箱 = 首个身份 → identity_bound 一次；已有身份（第三方 / 邮箱）的用户 → 不发。
+func TestAdminSetEmail_ZeroIdentityEmitsIdentityBound(t *testing.T) {
+	dapDB(t)
+	events := dapFunnelSpy(t)
+	set := func(u User) {
+		t.Helper()
+		resp, w := adminJSON(t, http.MethodPut, "/app/users/:uuid/email", "/app/users/"+u.UUID+"/email",
+			api_admin_update_user_email, gin.H{"email": dapEmail("admin")})
+		require.Equal(t, 0, resp.Code, w.Body.String())
+	}
+
+	zero := dapUser(t, "", "")
+	set(zero)
+	got := events("identity_bound")
+	require.Len(t, got, 1)
+	assert.Equal(t, zero.ID, got[0].UserID)
+	assert.Equal(t, string(BrandKaitu), got[0].Brand)
+	assert.Equal(t, FunnelSurfaceApp, got[0].Surface)
+
+	social := dapUser(t, "", "")
+	require.NoError(t, db.Get().Create(&LoginIdentify{UserID: social.ID, Type: SocialProviderGoogle,
+		IndexID: fmt.Sprintf("dap-g-adm-%d", time.Now().UnixNano()), Brand: string(BrandKaitu)}).Error)
+	set(social)
+	set(dapUser(t, dapEmail("has"), ""))
+	assert.Len(t, events("identity_bound"), 1, "已有身份的用户不发")
 }

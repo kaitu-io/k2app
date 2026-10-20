@@ -83,7 +83,6 @@ func TestFunnelPaths_RegistryContent(t *testing.T) {
 		{"app_activation", 7 * day, []step{
 			{"首次打开", "", []string{"app_first_open"}}, {"建号或登录", "app", []string{"auth_done", "device_account_created"}},
 			{"尝试连接", "", []string{"first_connect_attempt"}}, {"连上", "", []string{"first_connect_ok"}},
-			{"绑定身份", "app", []string{"identity_bound"}},
 		}},
 		{"app_purchase", 7 * day, []step{
 			{"付费墙", "", []string{"paywall_view"}},
@@ -225,8 +224,6 @@ var funnelStepEmitSites = map[string][][]string{
 		{"webapp/src/components/LoginDialog.tsx", "api/logic_device_account.go"},
 		{"webapp/src/stores/connection.store.ts"}, // 首次点连接
 		{"webapp/src/stores/index.ts"},            // 首次连上
-		// 后置观察：服务端在零身份用户补上第一个身份时写（绑邮箱 / 绑第三方，经 recordIdentityBound）。
-		{"api/logic_device_account.go"},
 	},
 	"app_purchase": {
 		{"webapp/src/pages/Purchase.tsx"}, // 购买页挂载即发

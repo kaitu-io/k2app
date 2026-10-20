@@ -166,8 +166,8 @@ var funnelPathRegistry = []funnelPath{
 			{Label: "建号或登录", Events: []string{"auth_done", funnelEventDeviceAccountCreated}, Surface: FunnelSurfaceApp},
 			{Label: "尝试连接", Events: []string{"first_connect_attempt"}},
 			{Label: "连上", Events: []string{"first_connect_ok"}},
-			// 后置观察：设备账号补上第一个登录身份（服务端写）。放在末尾，不影响前面各步的转化。
-			{Label: "绑定身份", Events: []string{funnelEventIdentityBound}, Surface: FunnelSurfaceApp},
+			// identity_bound（设备账号补上首个身份）只注册、照常记录，不当步骤：安卓 / 桌面 / 邮箱用户永远不发，
+			// 放进来会改写「走完」的含义。
 		},
 	},
 	{

@@ -106,7 +106,7 @@
 
 ### 4.7 漏斗
 
-- 新事件 `device_account_created`、`identity_bound` 由**服务端**在建号 / 首次补身份成功时写入（`funnelEnqueue`）。现有 `signup` 事实按 `users.created_at` 推导，设备账号建号时自动计入，不用改；App 路线中「登录」一步对开途 iOS 新壳改为「建号或登录」（`device_account_created ∪ auth_done`），另加「绑定身份」一步（`identity_bound`）作为后置观察。
+- 新事件 `device_account_created`、`identity_bound` 由**服务端**在建号 / 首次补身份成功时写入（`funnelEnqueue`）。现有 `signup` 事实按 `users.created_at` 推导，设备账号建号时自动计入，不用改；App 路线中「登录」一步对开途 iOS 新壳改为「建号或登录」（`device_account_created ∪ auth_done`）。`identity_bound` 不放进激活路线（放在末尾会改变路线「完成」人数的含义——安卓/桌面/邮箱登录的人永远不会触发它），单独按事件看绑定率。
 - `auth_done` 语义不变（真实身份登录）。
 
 ### 4.8 品牌开关
