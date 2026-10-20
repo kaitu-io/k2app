@@ -40,28 +40,12 @@ func api_social_login(c *gin.Context) {
 		return
 	}
 
-	brand := ReqBrand(c)
-	cfg := configSocialAuth(brand)
-
-	cl, err := verifySocialIDToken(c, cfg, req.Provider, req.IDToken, req.Nonce)
+	cfg, cl, userID, err := authenticateSocial(c, req.Provider, req.IDToken, req.Nonce, req.Language)
 	if err != nil {
-		log.Warnf(c, "social login: %s token rejected (brand %s): %v", req.Provider, brand, err)
 		Error(c, socialErrorCode(err), "social sign-in failed")
 		return
 	}
-
-	userID, created, err := resolveSocialUser(c, brand, cl, req.Language, c.GetHeader("Accept-Language"))
-	if err != nil {
-		code := socialErrorCode(err)
-		if code == ErrorSystemError {
-			log.Errorf(c, "social login: resolve %s user failed (email %s): %v", req.Provider, hideEmail(cl.Email), err)
-		} else {
-			log.Warnf(c, "social login: resolve %s user rejected (email %s): %v", req.Provider, hideEmail(cl.Email), err)
-		}
-		Error(c, code, "social sign-in failed")
-		return
-	}
-	log.Infof(c, "social login: %s identity resolved to user %d (created=%v), udid: %s", req.Provider, userID, created, req.UDID)
+	log.Infof(c, "social login: user %d, udid: %s", userID, req.UDID)
 
 	authResult, err := completeDeviceLogin(c, userID, deviceLoginParams{
 		UDID:     req.UDID,
@@ -75,14 +59,7 @@ func api_social_login(c *gin.Context) {
 		return
 	}
 
-	// Apple：用授权码换 refresh token 留作注销时撤销；失败不影响登录。
-	if req.Provider == SocialProviderApple && req.AuthorizationCode != "" {
-		if rt, err := appleExchangeCode(c, cfg, cl.Audience, req.AuthorizationCode); err != nil {
-			log.Warnf(c, "social login: apple code exchange failed for user %d: %v", userID, err)
-		} else if err := saveAppleRefreshToken(c, brand, cl.Sub, cl.Audience, rt); err != nil {
-			log.Warnf(c, "social login: save apple refresh token failed for user %d: %v", userID, err)
-		}
-	}
+	saveAppleRefreshBestEffort(c, cfg, cl, req.Provider, req.AuthorizationCode, userID)
 
 	log.Infof(c, "user %d logged in via %s with device %s", userID, req.Provider, req.UDID)
 	Success(c, authResult)
@@ -97,28 +74,11 @@ func api_social_web_login(c *gin.Context) {
 		return
 	}
 
-	brand := ReqBrand(c)
-	cfg := configSocialAuth(brand)
-
-	cl, err := verifySocialIDToken(c, cfg, req.Provider, req.IDToken, req.Nonce)
+	cfg, cl, userID, err := authenticateSocial(c, req.Provider, req.IDToken, req.Nonce, req.Language)
 	if err != nil {
-		log.Warnf(c, "social web login: %s token rejected (brand %s): %v", req.Provider, brand, err)
 		Error(c, socialErrorCode(err), "social sign-in failed")
 		return
 	}
-
-	userID, created, err := resolveSocialUser(c, brand, cl, req.Language, c.GetHeader("Accept-Language"))
-	if err != nil {
-		code := socialErrorCode(err)
-		if code == ErrorSystemError {
-			log.Errorf(c, "social web login: resolve %s user failed (email %s): %v", req.Provider, hideEmail(cl.Email), err)
-		} else {
-			log.Warnf(c, "social web login: resolve %s user rejected (email %s): %v", req.Provider, hideEmail(cl.Email), err)
-		}
-		Error(c, code, "social sign-in failed")
-		return
-	}
-	log.Infof(c, "social web login: %s identity resolved to user %d (created=%v)", req.Provider, userID, created)
 
 	resp, err := completeWebLogin(c, userID, webLoginParams{
 		Language: req.Language,
@@ -130,15 +90,50 @@ func api_social_web_login(c *gin.Context) {
 		return
 	}
 
-	// Apple：用授权码换 refresh token 留作注销时撤销；失败不影响登录。
-	if req.Provider == SocialProviderApple && req.AuthorizationCode != "" {
-		if rt, err := appleExchangeCode(c, cfg, cl.Audience, req.AuthorizationCode); err != nil {
-			log.Warnf(c, "social web login: apple code exchange failed for user %d: %v", userID, err)
-		} else if err := saveAppleRefreshToken(c, brand, cl.Sub, cl.Audience, rt); err != nil {
-			log.Warnf(c, "social web login: save apple refresh token failed for user %d: %v", userID, err)
-		}
-	}
+	saveAppleRefreshBestEffort(c, cfg, cl, req.Provider, req.AuthorizationCode, userID)
 
 	log.Infof(c, "user %d logged in via %s on web", userID, req.Provider)
 	Success(c, resp)
+}
+
+// authenticateSocial 验 idToken 并把第三方身份解析为本品牌用户（可能新建）。
+// 按现有规则记日志（哨兵错误 Warn，其余 Error）；返回的错误交给 socialErrorCode 映射。
+// rawNonce 是客户端原始 nonce（App/官网来自请求，handoff 来自会话）。
+func authenticateSocial(c *gin.Context, provider, idToken, rawNonce, language string) (cfg socialAuthConfig, cl *socialClaims, userID uint64, err error) {
+	brand := ReqBrand(c)
+	cfg = configSocialAuth(brand)
+
+	cl, err = verifySocialIDToken(c, cfg, provider, idToken, rawNonce)
+	if err != nil {
+		log.Warnf(c, "social sign-in: %s token rejected (brand %s): %v", provider, brand, err)
+		return cfg, nil, 0, err
+	}
+
+	userID, created, err := resolveSocialUser(c, brand, cl, language, c.GetHeader("Accept-Language"))
+	if err != nil {
+		if socialErrorCode(err) == ErrorSystemError {
+			log.Errorf(c, "social sign-in: resolve %s user failed (email %s): %v", provider, hideEmail(cl.Email), err)
+		} else {
+			log.Warnf(c, "social sign-in: resolve %s user rejected (email %s): %v", provider, hideEmail(cl.Email), err)
+		}
+		return cfg, cl, 0, err
+	}
+	log.Infof(c, "social sign-in: %s identity resolved to user %d (created=%v)", provider, userID, created)
+	return cfg, cl, userID, nil
+}
+
+// saveAppleRefreshBestEffort Apple：用授权码换 refresh token 留作注销时撤销；
+// 非 Apple 或无授权码为 no-op，失败只 Warn，不影响登录。
+func saveAppleRefreshBestEffort(c *gin.Context, cfg socialAuthConfig, cl *socialClaims, provider, authorizationCode string, userID uint64) {
+	if provider != SocialProviderApple || authorizationCode == "" {
+		return
+	}
+	rt, err := appleExchangeCode(c, cfg, cl.Audience, authorizationCode)
+	if err != nil {
+		log.Warnf(c, "social sign-in: apple code exchange failed for user %d: %v", userID, err)
+		return
+	}
+	if err := saveAppleRefreshToken(c, cfg.Brand, cl.Sub, cl.Audience, rt); err != nil {
+		log.Warnf(c, "social sign-in: save apple refresh token failed for user %d: %v", userID, err)
+	}
 }
