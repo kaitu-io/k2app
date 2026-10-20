@@ -14,7 +14,9 @@ func TestSocialClientIDs_Audiences(t *testing.T) {
 	assert.Equal(t, []string{
 		"125062807005-fqpjkq2pjjqdueen84q1kpp3rlkvq5sg.apps.googleusercontent.com",
 		"125062807005-r08pi88vadprilgo5mr1oqndpinnkb0l.apps.googleusercontent.com",
+		"125062807005-9vlr5ea2hp42hn5r2sc5prn8m82nnrv7.apps.googleusercontent.com",
 	}, kaitu.Audiences(SocialProviderGoogle))
+	assert.Contains(t, overleap.Audiences(SocialProviderGoogle), "808676014960-kb76trvs3q7q89a5qb914kjv5gfhu841.apps.googleusercontent.com")
 	assert.Equal(t, []string{"com.allnationconnect.anc.wgios", "io.kaitu.signin"}, kaitu.Audiences(SocialProviderApple))
 	assert.Contains(t, overleap.Audiences(SocialProviderApple), "io.overleap.signin")
 	assert.Contains(t, overleap.Audiences(SocialProviderApple), "io.overleap")
