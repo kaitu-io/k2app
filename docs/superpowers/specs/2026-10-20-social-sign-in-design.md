@@ -95,8 +95,8 @@ Apple 的 `team_id/key_id/private_key` 用于生成 client secret，去换 refre
 | POST | `/api/auth/social/login` | 无 | App 内原生登录（设备绑定），body：`provider, idToken, nonce, authorizationCode?, udid, remark, language` → `DataAuthResult` |
 | POST | `/api/auth/social/web-login` | 无 | 官网登录（cookie），→ `DataWebLoginResponse` |
 | POST | `/api/auth/social/handoff` | 无 | 桌面/Linux/安卓 Apple 发起浏览器登录会话（§6.3，只用于登录） |
-| POST | `/api/auth/social/handoff/complete` | 无 | 浏览器页把 idToken 交回会话 |
-| POST | `/api/auth/social/handoff/poll` | 无 | App 凭 pollSecret + udid 领取结果 |
+| POST | `/api/auth/social/handoff/complete` | 无 | 浏览器页把 idToken 交回会话，成功返回跳往本机回环地址的 `redirect` |
+| POST | `/api/auth/social/handoff/poll` | 无 | App 凭 pollSecret + returnCode + udid 领取结果（不带 returnCode 只能看状态） |
 | GET | `/api/user/social` | AuthRequired | 列出已绑定的 provider（provider + 脱敏邮箱） |
 | POST | `/api/user/social/bind` | AuthRequired | 绑定到当前账号，body 同 login 的令牌部分；App（iOS/Android 原生）与官网账号页（cookie）调用 |
 | DELETE | `/api/user/social/:provider` | AuthRequired | 解绑（Apple 解绑时同时撤销令牌） |
@@ -147,16 +147,23 @@ Apple 的 `team_id/key_id/private_key` 用于生成 client secret，去换 refre
 - Android：Credential Manager 用本品牌 **Web client ID** 作 `serverClientId`；Google Cloud 里按 flavor 包名 + 签名证书 SHA-1 注册 Android client（Play 签名证书和自签分发证书都要登记）。
 
 ### 6.3 浏览器 handoff（桌面 / Linux / 安卓 Apple）
-不做 deep link（Linux 没有壳，Windows/macOS 的 URL scheme 注册各有坑），统一用"开浏览器 + App 轮询"：
+"开浏览器登录 + 结果经本机回环地址交回 App"。iOS 两种登录都是原生，不走 handoff。
 
-1. App 调 `POST /handoff {provider}` → `{sessionId, pollSecret, url}`。服务端生成 nonce 存进会话；会话存 Redis，TTL 5 分钟。
-2. App 用系统浏览器打开 `url` = 本品牌官网 `/auth/social?session=<id>&provider=...&nonce=<sha256(nonce)>`（Apple 回调路径 `/auth/social/apple`，已在 Services ID 登记），App 内显示"请在浏览器中完成登录"，开始每 2 秒轮询。
-3. 官网页直接显示对应的 Apple / Google 按钮；拿到 idToken 后调 `/handoff/complete {sessionId, idToken}`。页面提示"已完成，可以回到 App"。
-4. 服务端在 complete 时就完成令牌校验与 §4 匹配，结果（userId 或错误）记入会话；App 的下一次 `poll` 带上 `pollSecret + udid + remark`，服务端走与 `/social/login` 相同的设备登录事务签发令牌，会话作废。
+1. App 先在本机起一个只监听 `127.0.0.1` 的回传入口，调 `POST /handoff {provider, returnURL}` → `{sessionId, pollSecret, url}`。`returnURL` 必须是 `http://127.0.0.1:<端口>/...`（服务端只认这个形态，其他一律 400，杜绝开放跳转）。服务端生成 nonce 存进会话；会话存 Redis，TTL 5 分钟。
+2. App 用系统浏览器打开 `url` = 本品牌官网 `/auth/social?session=<id>&provider=...&nonce=<sha256(nonce)>`（Apple 回调路径 `/auth/social/apple`，已在 Services ID 登记），App 内显示"请在浏览器中完成登录"。
+3. 官网页直接显示对应的 Apple / Google 按钮；拿到 idToken 后调 `/handoff/complete {sessionId, idToken}`。服务端完成令牌校验与 §4 匹配，成功时生成一次性 `returnCode`（会话里只存其 hash），返回 `{redirect: returnURL 加 code=<returnCode>}`；官网页立即跳转过去。失败则官网页直接显示错误，并把错误记进会话。
+4. App 的回传入口收到 `code`（本机页面显示"登录成功，可以回到 App"），随即调 `poll {sessionId, pollSecret, returnCode, udid, remark}`，服务端走与 `/social/login` 相同的设备登录事务签发令牌，会话作废。**领取令牌必须同时有 pollSecret 和 returnCode**；不带 returnCode 的 poll 只能看到 pending / 失败状态（用于给 App 显示错误），永远拿不到令牌。
 
-`sessionId` 与 `pollSecret` 分离：URL 里只有 sessionId，领令牌必须有只在 App 内存里的 pollSecret。
+**为什么要回环**（David 2026-10-20 定，取代先前删掉的 4 位确认码）：没有它时，攻击者把自己 App 发起的 handoff 链接发给受害者，受害者在真官网登录后令牌会落到攻击者的 App——完整长期登录，还能再绑定攻击者自己的 Google 实现永久接管。回环把凭证交给"点开链接的那台机器"：受害者的浏览器只能跳到受害者自己的 127.0.0.1，攻击者那台收不到 returnCode。用户无感知、无额外输入。
 
-**handoff 只做登录，不做绑定**（David 2026-10-20 定）：绑定若走 handoff，别人发来的链接能把你的 Google/Apple 永久绑到他的账号上。需要浏览器才能绑定的端（桌面、Linux、安卓 Apple）改为打开官网账号页，在官网登录态下绑定（§6.4）。
+各端回传入口（实现属客户端计划）：
+- macOS / Windows（Tauri）：Rust 侧临时绑定 `127.0.0.1:0` 随机端口，收到 code 后事件交给 webview，结束即关闭。
+- Linux：webui 本身就在 `http://127.0.0.1:1777`，`returnURL` 指向 webapp 自己的路由；pollSecret 存同源 storage，新标签页读到 code 后完成领取。
+- 安卓（仅 Apple）：App 进程在 Custom Tab 打开期间仍存活，用线程临时监听 `127.0.0.1` 随机端口（必要时短时前台服务）。**需真机验证** Chrome 从 https 页顶层跳转到 `http://127.0.0.1` 不被 Local Network Access / 明文策略拦截；若被拦，安卓改用本品牌域名的 App Link（https，已验证域名）作为回传入口，服务端相应放行该固定 URL。
+
+`sessionId`、`pollSecret`、`returnCode` 三者分离：URL 里只有 sessionId；pollSecret 只在 App 内存；returnCode 只出现在完成登录的那台机器的回环跳转里。
+
+**handoff 只做登录，不做绑定**（David 2026-10-20 定）：需要浏览器才能绑定的端（桌面、Linux、安卓 Apple）改为打开官网账号页，在官网登录态下绑定（§6.4）。
 
 ### 6.4 官网
 - kaitu.io（`web/src/app/[locale]/login/page.tsx`）与 overleap.io（`sites/overleap/.../LoginForm.tsx`）登录页加两个按钮，调 `/api/auth/social/web-login`；同时新增 §6.3 的 `/auth/social` handoff 页。两站账号页加"登录方式"区：列出、绑定（Apple JS / Google Identity Services 拿 idToken 后调 `/api/user/social/bind`）、解绑。两站不共享代码（按 overleap 站拆分惯例各写一份，靠契约一致）。
@@ -200,7 +207,7 @@ Apple 的 `team_id/key_id/private_key` 用于生成 client secret，去换 refre
 
 ## 8. 测试
 
-- API：令牌校验（伪造签名、错 aud、跨品牌 aud、过期、nonce 不符）、§4 三步匹配各分支、绑定冲突、handoff 会话（过期、重复领取、错 pollSecret）、注销触发 revoke。DB 测试必须真跑（0 SKIP）。JWKS 用测试密钥对注入，不打外网。
+- API：令牌校验（伪造签名、错 aud、跨品牌 aud、过期、nonce 不符）、§4 三步匹配各分支、绑定冲突、handoff 会话（过期、重复领取、错 pollSecret、缺/错 returnCode 拿不到令牌、非 127.0.0.1 的 returnURL 被拒）、注销触发 revoke。DB 测试必须真跑（0 SKIP）。JWKS 用测试密钥对注入，不打外网。
 - webapp：按钮可见性矩阵（品牌 × 平台能力）、老 bridge 无能力时不显示、令牌保存路径。
 - 真机 smoke：iOS 两品牌 Apple + Google；Android 有/无 GMS；macOS / Windows / Linux handoff；两个官网。按项目信心框架，没有真机 smoke 不宣布完成。
 
@@ -208,5 +215,5 @@ Apple 的 `team_id/key_id/private_key` 用于生成 client secret，去换 refre
 
 - JWKS / OIDC 库选型；Apple refresh token 存放位置（新列 vs 小表）；新错误码具体数值。
 - 共享登录事务函数的抽取方式。
-- handoff 轮询间隔与 App 内等待 UI 细节。
+- App 内等待 UI 细节、回环本机页的文案。
 - iOS Google SDK 引入方式（SPM / CocoaPods，跟随现有工程）。
