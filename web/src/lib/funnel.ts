@@ -9,8 +9,7 @@
 export const WEB_FUNNEL_EVENTS = [
   'page_view', 'pricing_view', 'checkout_view', 'install_view', 'welcome_view',
   'install_click', 'checkout_cancelled', 'refund_click', 'cancel_click',
-  'plan_select', 'auth_code_sent', 'auth_done', 'device_account_created', 'identity_bound',
-  'checkout_start',
+  'plan_select', 'auth_code_sent', 'auth_done', 'checkout_start',
 ] as const;
 
 export type WebFunnelEvent = (typeof WEB_FUNNEL_EVENTS)[number];

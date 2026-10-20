@@ -370,7 +370,6 @@
     {
       "name": "device_account_created",
       "surfaces": [
-        "web",
         "app"
       ],
       "kind": "action"
@@ -378,7 +377,6 @@
     {
       "name": "identity_bound",
       "surfaces": [
-        "web",
         "app"
       ],
       "kind": "action"

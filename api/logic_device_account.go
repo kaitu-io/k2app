@@ -22,6 +22,9 @@ func userHasIdentity(tx *gorm.DB, userID uint64) (bool, error) {
 
 const funnelEventDeviceAccountCreated = "device_account_created"
 
+// deviceAccountBeforeReissueWrite 测试接缝：重签校验事务提交后、写 token 前调用。生产恒为 nil。
+var deviceAccountBeforeReissueWrite func()
+
 type deviceAccountResult struct {
 	Auth    *DataAuthResult
 	UserID  uint64
@@ -122,8 +125,25 @@ func deviceAccountSignIn(c *gin.Context, brand Brand, req DataDeviceAccountReque
 			updates["os_version"] = info.OSVersion
 			updates["device_model"] = info.DeviceModel
 		}
-		if err := db.Get().Model(&Device{}).Where("id = ?", reissueDeviceID).Updates(updates).Error; err != nil {
-			return nil, err
+		if deviceAccountBeforeReissueWrite != nil {
+			deviceAccountBeforeReissueWrite()
+		}
+		// 带 user_id 条件：校验后设备若已被并发登录转给别人，不得覆盖新主人的 token 锚点。
+		upd := db.Get().Model(&Device{}).Where("id = ? AND user_id = ?", reissueDeviceID, res.UserID).Updates(updates)
+		if upd.Error != nil {
+			return nil, upd.Error
+		}
+		if upd.RowsAffected == 0 {
+			// MySQL 对"值没变"的行也报 0 行（如同一时刻的并发重签），所以 0 行不等于易主：再确认归属。
+			var owned int64
+			if err := db.Get().Model(&Device{}).Where("id = ? AND user_id = ?", reissueDeviceID, res.UserID).Count(&owned).Error; err != nil {
+				return nil, err
+			}
+			if owned > 0 {
+				return res, nil
+			}
+			log.Warnf(c, "device-account reissue: device %d no longer owned by user %d", reissueDeviceID, res.UserID)
+			return nil, e(ErrorDeviceAccountLoginRequired, "device belongs to an account, login required")
 		}
 	}
 	return res, nil

@@ -37,6 +37,12 @@ func api_device_account(c *gin.Context) {
 		Error(c, ErrorInvalidClientClass, "invalid client class token")
 		return
 	}
+	// 设备账号只给终端 App；路由器（网关）不能免登录建号。
+	if parseClientHeader(c.GetHeader("X-K2-Client")).IsGateway() {
+		log.Warnf(c, "device-account rejected: gateway client remote=%s", c.ClientIP())
+		Error(c, ErrorInvalidClientClass, "device account not available for router clients")
+		return
+	}
 	brand := ReqBrand(c)
 	if !brand.Config().DeviceAccount {
 		Error(c, ErrorDeviceAccountDisabled, "device account not supported")
@@ -55,18 +61,28 @@ func api_device_account(c *gin.Context) {
 		return
 	}
 
+	// 建号与重装找回都记一次（Source 区分）。app 面的 device_hash 就是 udid
+	// （webapp services/stats.ts getDeviceHash），据此把建号前的匿名事件并到该用户。
+	ev := FunnelEvent{
+		Brand:   string(brand),
+		Surface: FunnelSurfaceApp,
+		Event:   funnelEventDeviceAccountCreated,
+		UserID:  res.UserID,
+		Source:  "reissue",
+	}
 	if res.Created {
-		ev := FunnelEvent{
-			Brand:   string(brand),
-			Surface: FunnelSurfaceApp,
-			Event:   funnelEventDeviceAccountCreated,
-			UserID:  res.UserID,
-		}
-		if info := parseClientHeader(c.GetHeader("X-K2-Client")); info != nil {
-			ev.OS = normalizeFunnelOS(info.Platform)
-			ev.AppVersion = funnelTruncate(info.Version, 32)
-		}
-		funnelEnqueue(ev)
+		ev.Source = "create"
+	}
+	if validFunnelDeviceHash(req.UDID) {
+		ev.AnonID = req.UDID
+	}
+	if info := parseClientHeader(c.GetHeader("X-K2-Client")); info != nil {
+		ev.OS = normalizeFunnelOS(info.Platform)
+		ev.AppVersion = funnelTruncate(info.Version, 32)
+	}
+	funnelEnqueue(ev)
+	if ev.AnonID != "" {
+		linkFunnelIdentity(c, "did", req.UDID, res.UserID, brand)
 	}
 	log.Infof(c, "device-account ok: user %d udid %s created=%v", res.UserID, req.UDID, res.Created)
 	Success(c, res.Auth)

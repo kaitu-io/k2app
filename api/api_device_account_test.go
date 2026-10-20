@@ -40,7 +40,17 @@ func devAcctRouter(t *testing.T) *gin.Engine {
 
 func devAcctUDID(t *testing.T) string {
 	t.Helper()
-	udid := fmt.Sprintf("devacct-%s-%d", strings.ReplaceAll(t.Name(), "/", "-"), time.Now().UnixNano())
+	return devAcctCleanupUDID(t, fmt.Sprintf("devacct-%s-%d", strings.ReplaceAll(t.Name(), "/", "-"), time.Now().UnixNano()))
+}
+
+// devAcctHexUDID 形如真实 iOS udid 的 hex 串（漏斗 device_hash 校验要求 32-64 位 hex）。
+func devAcctHexUDID(t *testing.T) string {
+	t.Helper()
+	return devAcctCleanupUDID(t, fmt.Sprintf("%032x", time.Now().UnixNano()))
+}
+
+func devAcctCleanupUDID(t *testing.T, udid string) string {
+	t.Helper()
 	t.Cleanup(func() {
 		var devs []Device
 		db.Get().Where("udid = ?", udid).Find(&devs)
@@ -267,24 +277,121 @@ func TestDeviceAccount_FunnelEvent(t *testing.T) {
 	funnelQ = q
 	t.Cleanup(func() { funnelQ = orig })
 
+	udid := devAcctHexUDID(t)
+	drain := func() []FunnelEvent {
+		var got []FunnelEvent
+		for len(q.ch) > 0 {
+			got = append(got, <-q.ch)
+		}
+		return got
+	}
+	check := func(source string) {
+		t.Helper()
+		got := drain()
+		require.Len(t, got, 1)
+		ev := got[0]
+		d := devAcctDevice(t, udid)
+		require.Equal(t, "device_account_created", ev.Event)
+		require.Equal(t, FunnelSurfaceApp, ev.Surface)
+		require.Equal(t, string(BrandKaitu), ev.Brand)
+		require.Equal(t, d.UserID, ev.UserID)
+		require.Equal(t, udid, ev.AnonID, "app 的 device_hash 就是 udid")
+		require.Equal(t, source, ev.Source)
+	}
+
+	require.Equal(t, 0, postDeviceAccount(t, r, "www.kaitu.io", udid).Code)
+	check("create")
+	// 重装回来也记一次，Source 区分
+	require.Equal(t, 0, postDeviceAccount(t, r, "www.kaitu.io", udid).Code)
+	check("reissue")
+}
+
+// TestDeviceAccount_FunnelJoinsAnonFirstOpen 建号前的匿名 app_first_open（device_hash=udid）
+// 与服务端写的建号事件归到同一个人。
+func TestDeviceAccount_FunnelJoinsAnonFirstOpen(t *testing.T) {
+	r := devAcctRouter(t)
+	udid := devAcctHexUDID(t)
+	t.Cleanup(func() {
+		db.Get().Where("anon_id = ?", udid).Delete(&FunnelEvent{})
+		db.Get().Where("anon_id = ?", udid).Delete(&FunnelIdentity{})
+	})
+	from := time.Now().Add(-time.Minute)
+	anon := FunnelEvent{OccurredAt: time.Now(), Brand: string(BrandKaitu), Surface: FunnelSurfaceApp,
+		Event: "app_first_open", AnonID: udid, OS: "ios", AppVersion: "0.5.0"}
+	require.NoError(t, db.Get().Create(&anon).Error)
+
+	require.Equal(t, 0, postDeviceAccount(t, r, "www.kaitu.io", udid).Code)
+	funnelFlushForTest()
+	uid := devAcctDevice(t, udid).UserID
+
+	recs, err := loadFunnelEvents(context.Background(), BrandKaitu, true, from, time.Now().Add(time.Minute),
+		[]string{"app_first_open", "device_account_created"})
+	require.NoError(t, err)
+	var mine []funnelRecord
+	for _, rc := range recs {
+		if rc.AnonID == udid {
+			mine = append(mine, rc)
+		}
+	}
+	require.Len(t, mine, 2)
+	ids, err := loadFunnelIdentities(context.Background(), mine)
+	require.NoError(t, err)
+	want := fmt.Sprintf("u:%d", uid)
+	for _, rc := range mine {
+		k, ok := funnelPersonKey(&rc, ids)
+		require.True(t, ok)
+		require.Equal(t, want, k, rc.Event)
+	}
+}
+
+// TestDeviceAccount_GatewayClientRejected 路由器不能建设备账号。
+func TestDeviceAccount_GatewayClientRejected(t *testing.T) {
+	r := devAcctRouter(t)
+	udid := devAcctUDID(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/device-account", strings.NewReader(`{"udid":"`+udid+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-K2-Client", "kaitu-router/0.4.5 (linux; arm64; OpenWrt 23.05; mt7620)")
+	req.Host = "www.kaitu.io"
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	var resp devAcctResp
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Equal(t, int(ErrorInvalidClientClass), resp.Code)
+	var n int64
+	require.NoError(t, db.Get().Model(&Device{}).Where("udid = ?", udid).Count(&n).Error)
+	require.Equal(t, int64(0), n)
+}
+
+// TestDeviceAccount_ReissueRaceDeviceMoved 校验后、写 token 前设备被 api_login 转给有身份用户：
+// 不得覆盖新主人的 token_issue_at，返回 403005。
+func TestDeviceAccount_ReissueRaceDeviceMoved(t *testing.T) {
+	r := devAcctRouter(t)
 	udid := devAcctUDID(t)
 	require.Equal(t, 0, postDeviceAccount(t, r, "www.kaitu.io", udid).Code)
-	d := devAcctDevice(t, udid)
+	devAcctUser := devAcctDevice(t, udid).UserID
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&User{}, devAcctUser) })
 
-	var got []FunnelEvent
-	for len(q.ch) > 0 {
-		got = append(got, <-q.ch)
+	owner := User{UUID: generateId("user"), Brand: string(BrandKaitu), IsActivated: BoolPtr(true)}
+	require.NoError(t, db.Get().Create(&owner).Error)
+	t.Cleanup(func() {
+		db.Get().Where("user_id = ?", owner.ID).Delete(&LoginIdentify{})
+		db.Get().Unscoped().Delete(&User{}, owner.ID)
+	})
+	require.NoError(t, db.Get().Create(&LoginIdentify{UserID: owner.ID, Type: "email",
+		IndexID: "devacct-race-" + udid, EncryptedValue: "x", Brand: string(BrandKaitu)}).Error)
+
+	deviceAccountBeforeReissueWrite = func() {
+		require.NoError(t, db.Get().Model(&Device{}).Where("udid = ?", udid).
+			Updates(map[string]any{"user_id": owner.ID, "token_issue_at": 7}).Error)
 	}
-	require.Len(t, got, 1)
-	ev := got[0]
-	require.Equal(t, "device_account_created", ev.Event)
-	require.Equal(t, FunnelSurfaceApp, ev.Surface)
-	require.Equal(t, string(BrandKaitu), ev.Brand)
-	require.Equal(t, d.UserID, ev.UserID)
+	t.Cleanup(func() { deviceAccountBeforeReissueWrite = nil })
 
-	// 重装回来不再记建号事件
-	require.Equal(t, 0, postDeviceAccount(t, r, "www.kaitu.io", udid).Code)
-	require.Equal(t, 0, len(q.ch))
+	resp := postDeviceAccount(t, r, "www.kaitu.io", udid)
+	require.Equal(t, int(ErrorDeviceAccountLoginRequired), resp.Code)
+	require.Empty(t, resp.Data.AccessToken)
+	d := devAcctDevice(t, udid)
+	require.Equal(t, owner.ID, d.UserID)
+	require.Equal(t, int64(7), d.TokenIssueAt, "新主人的 token 锚点不被覆盖")
 }
 
 func TestDeviceLimit_ZeroIdentityIsOne(t *testing.T) {
