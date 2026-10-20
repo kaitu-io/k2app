@@ -272,6 +272,7 @@ type DataSocialLoginRequest struct {
 	IDToken           string `json:"idToken" binding:"required"`
 	Nonce             string `json:"nonce" binding:"required"`
 	AuthorizationCode string `json:"authorizationCode"` // 仅 Apple：换取 refresh token 供注销时撤销
+	RedirectURI       string `json:"redirectURI"`       // 仅 Apple 网页授权码：与授权时一致的 redirect_uri，须为品牌已登记回调地址
 	UDID              string `json:"udid" binding:"required"`
 	Remark            string `json:"remark"`
 	Language          string `json:"language"`
@@ -284,6 +285,7 @@ type DataSocialWebLoginRequest struct {
 	IDToken           string `json:"idToken" binding:"required"`
 	Nonce             string `json:"nonce" binding:"required"`
 	AuthorizationCode string `json:"authorizationCode"` // 仅 Apple：换取 refresh token 供注销时撤销
+	RedirectURI       string `json:"redirectURI"`       // 仅 Apple 网页授权码：与授权时一致的 redirect_uri，须为品牌已登记回调地址
 	Language          string `json:"language"`
 }
 
@@ -300,6 +302,7 @@ type DataSocialBindRequest struct {
 	IDToken           string `json:"idToken" binding:"required"`
 	Nonce             string `json:"nonce" binding:"required"`
 	AuthorizationCode string `json:"authorizationCode"` // 仅 Apple：换取 refresh token 供解绑 / 注销时撤销
+	RedirectURI       string `json:"redirectURI"`       // 仅 Apple 网页授权码：与授权时一致的 redirect_uri，须为品牌已登记回调地址
 }
 
 // DataWebLoginRequest Web登录请求数据结构（无设备信息）

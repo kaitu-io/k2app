@@ -2,6 +2,7 @@ package center
 
 import (
 	"errors"
+	"slices"
 
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
@@ -44,6 +45,12 @@ func api_social_login(c *gin.Context) {
 		return
 	}
 
+	if !validAppleRedirectURI(ReqBrand(c), req.Provider, req.AuthorizationCode, req.RedirectURI) {
+		log.Warnf(c, "social sign-in: unregistered apple redirectURI %q", req.RedirectURI)
+		Error(c, ErrorInvalidArgument, "invalid redirectURI")
+		return
+	}
+
 	cfg, cl, userID, err := authenticateSocial(c, req.Provider, req.IDToken, req.Nonce, req.Language)
 	if err != nil {
 		Error(c, socialErrorCode(err), "social sign-in failed")
@@ -63,7 +70,7 @@ func api_social_login(c *gin.Context) {
 		return
 	}
 
-	saveAppleRefreshBestEffort(c, cfg, cl, req.Provider, req.AuthorizationCode, userID)
+	saveAppleRefreshBestEffort(c, cfg, cl, req.Provider, req.AuthorizationCode, req.RedirectURI, userID)
 
 	log.Infof(c, "user %d logged in via %s with device %s", userID, req.Provider, req.UDID)
 	Success(c, authResult)
@@ -75,6 +82,12 @@ func api_social_web_login(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Warnf(c, "invalid social web login request: %v", err)
 		Error(c, ErrorInvalidArgument, err.Error())
+		return
+	}
+
+	if !validAppleRedirectURI(ReqBrand(c), req.Provider, req.AuthorizationCode, req.RedirectURI) {
+		log.Warnf(c, "social sign-in: unregistered apple redirectURI %q", req.RedirectURI)
+		Error(c, ErrorInvalidArgument, "invalid redirectURI")
 		return
 	}
 
@@ -105,7 +118,7 @@ func api_social_web_login(c *gin.Context) {
 		return
 	}
 
-	saveAppleRefreshBestEffort(c, cfg, cl, req.Provider, req.AuthorizationCode, userID)
+	saveAppleRefreshBestEffort(c, cfg, cl, req.Provider, req.AuthorizationCode, req.RedirectURI, userID)
 
 	log.Infof(c, "user %d logged in via %s on web", userID, req.Provider)
 	Success(c, resp)
@@ -137,13 +150,26 @@ func authenticateSocial(c *gin.Context, provider, idToken, rawNonce, language st
 	return cfg, cl, userID, nil
 }
 
+// validAppleRedirectURI Apple 授权码带 redirectURI 时，它必须是本品牌已登记的回调地址。
+// 非 Apple、无授权码或无 redirectURI 一律放行（原生 iOS 码不用 redirect_uri）。
+func validAppleRedirectURI(brand Brand, provider, authorizationCode, redirectURI string) bool {
+	if provider != SocialProviderApple || authorizationCode == "" || redirectURI == "" {
+		return true
+	}
+	cfg, ok := brandRegistry[brand]
+	if !ok {
+		return false
+	}
+	return slices.Contains(cfg.Social.AppleReturnURLs, redirectURI)
+}
+
 // saveAppleRefreshBestEffort Apple：用授权码换 refresh token 留作注销时撤销；
 // 非 Apple 或无授权码为 no-op，失败只 Warn，不影响登录。
-func saveAppleRefreshBestEffort(c *gin.Context, cfg socialAuthConfig, cl *socialClaims, provider, authorizationCode string, userID uint64) {
+func saveAppleRefreshBestEffort(c *gin.Context, cfg socialAuthConfig, cl *socialClaims, provider, authorizationCode, redirectURI string, userID uint64) {
 	if provider != SocialProviderApple || authorizationCode == "" {
 		return
 	}
-	rt, err := appleExchangeCode(c, cfg, cl.Audience, authorizationCode)
+	rt, err := appleExchangeCode(c, cfg, cl.Audience, authorizationCode, redirectURI)
 	if err != nil {
 		log.Warnf(c, "social sign-in: apple code exchange failed for user %d: %v", userID, err)
 		return
@@ -189,6 +215,11 @@ func api_user_social_bind(c *gin.Context) {
 	}
 	brand := ReqBrand(c)
 	userID := ReqUserID(c)
+	if !validAppleRedirectURI(brand, req.Provider, req.AuthorizationCode, req.RedirectURI) {
+		log.Warnf(c, "social bind: unregistered apple redirectURI %q", req.RedirectURI)
+		Error(c, ErrorInvalidArgument, "invalid redirectURI")
+		return
+	}
 	cfg := configSocialAuth(brand)
 
 	cl, err := verifySocialIDToken(c, cfg, req.Provider, req.IDToken, req.Nonce)
@@ -213,7 +244,7 @@ func api_user_social_bind(c *gin.Context) {
 		return
 	}
 
-	saveAppleRefreshBestEffort(c, cfg, cl, req.Provider, req.AuthorizationCode, userID)
+	saveAppleRefreshBestEffort(c, cfg, cl, req.Provider, req.AuthorizationCode, req.RedirectURI, userID)
 	log.Infof(c, "user %d bound %s identity", userID, req.Provider)
 	SuccessEmpty(c)
 }

@@ -26,7 +26,11 @@
         "googleWebClientId": "125062807005-fqpjkq2pjjqdueen84q1kpp3rlkvq5sg.apps.googleusercontent.com",
         "googleIosClientId": "125062807005-r08pi88vadprilgo5mr1oqndpinnkb0l.apps.googleusercontent.com",
         "appleBundleId": "com.allnationconnect.anc.wgios",
-        "appleServicesId": "io.kaitu.signin"
+        "appleServicesId": "io.kaitu.signin",
+        "appleReturnUrls": [
+          "https://www.kaitu.io/auth/social/apple",
+          "https://kaitu.io/auth/social/apple"
+        ]
       }
     },
     "overleap": {
@@ -53,7 +57,11 @@
         "googleWebClientId": "808676014960-fvo8an88b4c79f1ua9n0pctr40ta09fm.apps.googleusercontent.com",
         "googleIosClientId": "808676014960-ug0b6ahv3lm2s1fboj0dinmtp5p0t6qu.apps.googleusercontent.com",
         "appleBundleId": "io.overleap",
-        "appleServicesId": "io.overleap.signin"
+        "appleServicesId": "io.overleap.signin",
+        "appleReturnUrls": [
+          "https://overleap.io/auth/social/apple",
+          "https://www.overleap.io/auth/social/apple"
+        ]
       }
     }
   },

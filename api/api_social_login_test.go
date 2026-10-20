@@ -12,6 +12,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -68,7 +69,7 @@ func newTestAppleKey(t *testing.T) (string, *ecdsa.PrivateKey) {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})), k
 }
 
-func stubAppleExchangeCode(t *testing.T, fn func(ctx context.Context, cfg socialAuthConfig, clientID, code string) (string, error)) {
+func stubAppleExchangeCode(t *testing.T, fn func(ctx context.Context, cfg socialAuthConfig, clientID, code, redirectURI string) (string, error)) {
 	t.Helper()
 	orig := appleExchangeCode
 	appleExchangeCode = fn
@@ -195,10 +196,10 @@ func TestSocialLogin_AppleStoresRefreshToken(t *testing.T) {
 	udid := trackSocialLoginDevice(t, "udid-sl-a-"+sfx)
 	aud := BrandOverleap.Config().Social.AppleBundleID
 
-	var gotClientID, gotCode string
-	stubAppleExchangeCode(t, func(_ context.Context, cfg socialAuthConfig, clientID, code string) (string, error) {
+	var gotClientID, gotCode, gotRedirect string
+	stubAppleExchangeCode(t, func(_ context.Context, cfg socialAuthConfig, clientID, code, redirectURI string) (string, error) {
 		assert.Equal(t, BrandOverleap, cfg.Brand)
-		gotClientID, gotCode = clientID, code
+		gotClientID, gotCode, gotRedirect = clientID, code, redirectURI
 		return "apple-rt-" + sfx, nil
 	})
 
@@ -210,11 +211,13 @@ func TestSocialLogin_AppleStoresRefreshToken(t *testing.T) {
 		"idToken":           signTestIDToken(t, key, cl),
 		"nonce":             testSocialRawNonce,
 		"authorizationCode": "code-" + sfx,
+		"redirectURI":       "https://overleap.io/auth/social/apple",
 		"udid":              udid,
 	})
 	require.Equal(t, 0, resp.Code)
 	assert.Equal(t, aud, gotClientID)
 	assert.Equal(t, "code-"+sfx, gotCode)
+	assert.Equal(t, "https://overleap.io/auth/social/apple", gotRedirect)
 
 	row, err := findSocialIdentity(context.Background(), db.Get(), BrandOverleap, SocialProviderApple, sub)
 	require.NoError(t, err)
@@ -236,7 +239,7 @@ func TestSocialLogin_AppleCodeExchangeFailureDoesNotBlock(t *testing.T) {
 	email := tr.email("sl-af-" + sfx + "@privaterelay.appleid.com")
 	udid := trackSocialLoginDevice(t, "udid-sl-af-"+sfx)
 
-	stubAppleExchangeCode(t, func(context.Context, socialAuthConfig, string, string) (string, error) {
+	stubAppleExchangeCode(t, func(context.Context, socialAuthConfig, string, string, string) (string, error) {
 		return "", errors.New("apple down")
 	})
 
@@ -301,4 +304,72 @@ func TestSocialErrorCode(t *testing.T) {
 		assert.Equal(t, want, socialErrorCode(err), "%v", err)
 		assert.Equal(t, want, socialErrorCode(errors.Join(errors.New("ctx"), err)), "wrapped %v", err)
 	}
+}
+
+func TestSocialLogin_AppleUnregisteredRedirectURIRejected(t *testing.T) {
+	skipIfNoConfig(t)
+	key := newTestRSAKey(t)
+	installTestSocialKeys(t, key)
+	enableTestSocialAuth(t, BrandKaitu)
+
+	called := false
+	stubAppleExchangeCode(t, func(context.Context, socialAuthConfig, string, string, string) (string, error) {
+		called = true
+		return "rt", nil
+	})
+	cl := appleTestClaims(BrandKaitu.Config().Social.AppleServicesID)
+	// 另一品牌的已登记地址对本品牌也无效
+	for _, bad := range []string{"https://evil.example/cb", "https://overleap.io/auth/social/apple"} {
+		resp := postSocialLogin(t, BrandKaitu, map[string]string{
+			"provider":          SocialProviderApple,
+			"idToken":           signTestIDToken(t, key, cl),
+			"nonce":             testSocialRawNonce,
+			"authorizationCode": "code-x",
+			"redirectURI":       bad,
+			"udid":              "udid-sl-redir-reject",
+		})
+		assert.Equal(t, int(ErrorInvalidArgument), resp.Code, bad)
+	}
+	assert.False(t, called)
+}
+
+func TestValidAppleRedirectURI(t *testing.T) {
+	assert.True(t, validAppleRedirectURI(BrandKaitu, SocialProviderApple, "c", ""))
+	assert.True(t, validAppleRedirectURI(BrandKaitu, SocialProviderApple, "c", "https://kaitu.io/auth/social/apple"))
+	assert.True(t, validAppleRedirectURI(BrandKaitu, SocialProviderApple, "c", "https://www.kaitu.io/auth/social/apple"))
+	assert.False(t, validAppleRedirectURI(BrandKaitu, SocialProviderApple, "c", "https://overleap.io/auth/social/apple"))
+	assert.True(t, validAppleRedirectURI(BrandOverleap, SocialProviderApple, "c", "https://www.overleap.io/auth/social/apple"))
+	assert.False(t, validAppleRedirectURI(BrandOverleap, SocialProviderApple, "c", "http://overleap.io/auth/social/apple"))
+	// 无授权码 / 非 Apple 不检查
+	assert.True(t, validAppleRedirectURI(BrandKaitu, SocialProviderApple, "", "https://evil.example"))
+	assert.True(t, validAppleRedirectURI(BrandKaitu, SocialProviderGoogle, "c", "https://evil.example"))
+}
+
+func TestAppleExchangeCode_RedirectURI(t *testing.T) {
+	pemKey, _ := newTestAppleKey(t)
+	cfg := socialAuthConfig{Brand: BrandKaitu}
+	cfg.Apple.PrivateKeyPEM = pemKey
+	cfg.Apple.TeamID, cfg.Apple.KeyID = "TEAM", "KEY"
+
+	var got url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, r.ParseForm())
+		got = r.PostForm
+		_, _ = w.Write([]byte(`{"refresh_token":"rt"}`))
+	}))
+	defer srv.Close()
+	orig := appleTokenURL
+	appleTokenURL = srv.URL
+	t.Cleanup(func() { appleTokenURL = orig })
+
+	rt, err := appleExchangeCode(context.Background(), cfg, "io.kaitu.signin", "code1", "https://kaitu.io/auth/social/apple")
+	require.NoError(t, err)
+	assert.Equal(t, "rt", rt)
+	assert.Equal(t, "https://kaitu.io/auth/social/apple", got.Get("redirect_uri"))
+	assert.Equal(t, "code1", got.Get("code"))
+
+	_, err = appleExchangeCode(context.Background(), cfg, "com.x.ios", "code2", "")
+	require.NoError(t, err)
+	_, has := got["redirect_uri"]
+	assert.False(t, has)
 }

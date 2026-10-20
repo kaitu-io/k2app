@@ -45,6 +45,9 @@ type SocialClientIDs struct {
 	GoogleIOSClientID string `json:"googleIosClientId"`
 	AppleBundleID     string `json:"appleBundleId"`   // 原生 iOS
 	AppleServicesID   string `json:"appleServicesId"` // 网页 / Android
+	// AppleReturnURLs 已在 Apple Services ID 登记的网页授权回调地址。Apple 网页授权码换 token
+	// 必须带与授权时一致的 redirect_uri；服务端只接受此列表内的值。
+	AppleReturnURLs []string `json:"appleReturnUrls"`
 }
 
 // Audiences 返回某提供方允许的 aud 列表，空串剔除；未知提供方返回 nil。
@@ -134,6 +137,7 @@ var brandRegistry = map[Brand]*BrandConfig{
 			GoogleIOSClientID: "125062807005-r08pi88vadprilgo5mr1oqndpinnkb0l.apps.googleusercontent.com",
 			AppleBundleID:     "com.allnationconnect.anc.wgios",
 			AppleServicesID:   "io.kaitu.signin",
+			AppleReturnURLs:   []string{"https://www.kaitu.io/auth/social/apple", "https://kaitu.io/auth/social/apple"},
 		},
 	},
 	BrandOverleap: {
@@ -159,6 +163,7 @@ var brandRegistry = map[Brand]*BrandConfig{
 			GoogleIOSClientID: "808676014960-ug0b6ahv3lm2s1fboj0dinmtp5p0t6qu.apps.googleusercontent.com",
 			AppleBundleID:     "io.overleap",
 			AppleServicesID:   "io.overleap.signin",
+			AppleReturnURLs:   []string{"https://overleap.io/auth/social/apple", "https://www.overleap.io/auth/social/apple"},
 		},
 	},
 }
