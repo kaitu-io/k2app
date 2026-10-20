@@ -543,13 +543,21 @@ func checkDeviceLimitOrKick(c context.Context, tx *gorm.DB, user *User, isGatewa
 	}
 	maxDevice := int64(quota.MaxDevice)
 	// 零身份（设备账号）上限 1，优先于套餐（spec §4.3）。只在可能触顶时才查身份。
-	if appDeviceCount >= 1 && appDeviceCount < maxDevice {
+	identityChecked, hasIdentity := false, false
+	checkIdentity := func() error {
 		has, err := userHasIdentity(tx, user.ID)
 		if err != nil {
 			log.Errorf(c, "failed to check login identity for user %d: %v", user.ID, err)
 			return err
 		}
-		if !has {
+		identityChecked, hasIdentity = true, has
+		return nil
+	}
+	if appDeviceCount >= 1 && appDeviceCount < maxDevice {
+		if err := checkIdentity(); err != nil {
+			return err
+		}
+		if !hasIdentity {
 			maxDevice = 1
 		}
 	}
@@ -566,6 +574,16 @@ func checkDeviceLimitOrKick(c context.Context, tx *gorm.DB, user *User, isGatewa
 		}
 		log.Infof(c, "deleted oldest app device %s for user %d", oldestDevice.UDID, user.ID)
 
+		// 零身份用户没有邮箱：跳过踢设备邮件（不记错误）。
+		if !identityChecked {
+			if err := checkIdentity(); err != nil {
+				return err
+			}
+		}
+		if !hasIdentity {
+			log.Infof(c, "user %d has no login identity, skip device kick email", user.ID)
+			return nil
+		}
 		meta := DeviceKickMeta{
 			KickTime: time.Now().Format("2006-01-02 15:04:05"),
 			Remark:   oldestDevice.Remark,

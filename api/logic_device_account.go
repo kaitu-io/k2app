@@ -1,6 +1,7 @@
 package center
 
 import (
+	"context"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -20,7 +21,26 @@ func userHasIdentity(tx *gorm.DB, userID uint64) (bool, error) {
 	return n > 0, nil
 }
 
-const funnelEventDeviceAccountCreated = "device_account_created"
+const (
+	funnelEventDeviceAccountCreated = "device_account_created"
+	funnelEventIdentityBound        = "identity_bound"
+)
+
+// recordIdentityBound 零身份用户补上第一个登录身份后记 identity_bound（spec §4.7 后置观察）。
+// 「是不是第一个」由调用方在写身份行前用 userHasIdentity 判定（写完之后已无从区分）；
+// 只在那次判定为零身份、且写入已提交后调用。user 只需 ID 与 Brand。
+func recordIdentityBound(ctx context.Context, user *User) {
+	if user == nil || user.ID == 0 {
+		return
+	}
+	funnelEnqueue(FunnelEvent{
+		Brand:   user.Brand,
+		Surface: FunnelSurfaceApp,
+		Event:   funnelEventIdentityBound,
+		UserID:  user.ID,
+	})
+	log.Infof(ctx, "identity bound: user %d got first login identity", user.ID)
+}
 
 // deviceAccountBeforeReissueWrite 测试接缝：重签校验事务提交后、写 token 前调用。生产恒为 nil。
 var deviceAccountBeforeReissueWrite func()

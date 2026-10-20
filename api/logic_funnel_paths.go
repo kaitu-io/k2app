@@ -162,9 +162,12 @@ var funnelPathRegistry = []funnelPath{
 		Window: 7 * funnelDay,
 		Steps: []funnelStep{
 			{Label: "首次打开", Events: []string{"app_first_open"}},
-			{Label: "登录", Events: []string{"auth_done"}, Surface: FunnelSurfaceApp},
+			// 开途 iOS 新壳免登录建号（device_account_created，服务端写）与真实身份登录并列（spec §4.7）。
+			{Label: "建号或登录", Events: []string{"auth_done", funnelEventDeviceAccountCreated}, Surface: FunnelSurfaceApp},
 			{Label: "尝试连接", Events: []string{"first_connect_attempt"}},
 			{Label: "连上", Events: []string{"first_connect_ok"}},
+			// 后置观察：设备账号补上第一个登录身份（服务端写）。放在末尾，不影响前面各步的转化。
+			{Label: "绑定身份", Events: []string{funnelEventIdentityBound}, Surface: FunnelSurfaceApp},
 		},
 	},
 	{

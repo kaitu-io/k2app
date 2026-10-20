@@ -342,8 +342,20 @@ func api_logout(c *gin.Context) {
 	// 清除认证 Cookie（Web 端）
 	clearAuthCookies(c)
 
-	// 如果是设备认证，删除设备记录
+	// 如果是设备认证，删除设备记录。零身份（设备账号）保留设备行：udid 是找回账号的唯一凭据，
+	// 删了重装即丢会员（spec §4.4）。
 	if udid != "" {
+		has, err := userHasIdentity(db.Get(), userID)
+		if err != nil {
+			log.Errorf(c, "failed to check login identity for user %d on logout: %v", userID, err)
+			Error(c, ErrorSystemError, "failed to logout")
+			return
+		}
+		if !has {
+			log.Infof(c, "user %d has no login identity, keeping device %s on logout", userID, udid)
+			SuccessEmpty(c)
+			return
+		}
 		if err := db.Get().Where("udid = ? AND user_id = ?", udid, userID).Delete(&Device{}).Error; err != nil {
 			log.Errorf(c, "failed to delete device %s from database for user %d: %v", udid, userID, err)
 			Error(c, ErrorSystemError, "failed to logout")
@@ -598,14 +610,8 @@ func api_password_login(c *gin.Context) {
 		if oldDeviceErr == nil && oldDevice.UserID != identify.UserID {
 			log.Warnf(c, "device transfer detected: udid=%s, from user %d to user %d",
 				req.UDID, oldDevice.UserID, identify.UserID)
-			transferMeta := DeviceTransferMeta{
-				TransferTime: time.Now().Format("2006-01-02 15:04:05"),
-				DeviceRemark: oldDevice.Remark,
-			}
-			// 收件人是设备原所有者（oldDevice.UserID），与本次登录用户不同——
-			// emailToUser 按收件人自己的 User 行解析品牌，不是当前请求品牌。
-			if err := emailToUser(c, int64(oldDevice.UserID), brandedDeviceTransferTemplate, transferMeta); err != nil {
-				log.Errorf(c, "failed to send device transfer email: %v", err)
+			if err := notifyDeviceTransfer(c, tx, &oldDevice); err != nil {
+				return err
 			}
 		}
 

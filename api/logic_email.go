@@ -261,8 +261,14 @@ func emailToUserSingleBrand[T any](ctx context.Context, userID int64, tmpl Email
 	return emailTo(ctx, b, email, tmpl, meta)
 }
 
+// mailTargetHook 测试接缝：每次给用户发信（emailToUser / emailToUserSingleBrand）都先经过这里。生产恒为 nil。
+var mailTargetHook func(userID int64)
+
 // resolveUserMailTarget 解出用户的收件地址与品牌，是上面两个入口唯一的取数处。
 func resolveUserMailTarget(ctx context.Context, userID int64) (Brand, string, error) {
+	if mailTargetHook != nil {
+		mailTargetHook(userID)
+	}
 	// 从 identify 获取用户邮箱
 	identify, err := GetEmailIdentifyByUserID(ctx, userID)
 	if util.DbIsNotFoundErr(err) || identify == nil || identify.EncryptedValue == "" {

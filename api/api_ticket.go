@@ -43,13 +43,32 @@ func api_create_ticket(c *gin.Context) {
 	// Resolve email: logged-in user from DB, anonymous user from request
 	var userEmail string
 	if userID > 0 {
-		email, err := getUserEmail(ctx, userID)
+		// 零身份（设备账号）没有邮箱：用表单里的联系邮箱回复，不绑定为登录身份（spec §4.6.1）。
+		hasIdentity, err := userHasIdentity(db.Get(), userID)
 		if err != nil {
-			log.Errorf(ctx, "api_create_ticket: failed to get user email: %v", err)
+			log.Errorf(ctx, "api_create_ticket: failed to check login identity for user %d: %v", userID, err)
 			Error(c, ErrorSystemError, "failed to get user email")
 			return
 		}
-		userEmail = email
+		if hasIdentity {
+			email, err := getUserEmail(ctx, userID)
+			if err != nil {
+				log.Errorf(ctx, "api_create_ticket: failed to get user email: %v", err)
+				Error(c, ErrorSystemError, "failed to get user email")
+				return
+			}
+			userEmail = email
+		} else {
+			if req.Email == "" {
+				Error(c, ErrorInvalidArgument, "email is required for device account")
+				return
+			}
+			if !isValidEmail(req.Email) {
+				Error(c, ErrorInvalidArgument, "invalid email address")
+				return
+			}
+			userEmail = req.Email
+		}
 		log.Infof(ctx, "api_create_ticket: user %d creating ticket, os=%s version=%s channel=%s",
 			userID, req.OS, req.AppVersion, req.Channel)
 	} else {
