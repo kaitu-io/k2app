@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/wordgate/qtoolkit/log"
 )
 
 // Apple Sign in with Apple 的服务端调用：授权码换 refresh token、撤销 refresh token。
@@ -111,4 +112,32 @@ func applePostForm(ctx context.Context, endpoint string, form url.Values) ([]byt
 		return nil, fmt.Errorf("apple %s: status %d: %s", endpoint, resp.StatusCode, snippet)
 	}
 	return body, nil
+}
+
+// appleRevocation 待撤销的 Apple refresh token（RefreshToken 已解密）。
+type appleRevocation struct {
+	Brand        Brand
+	ClientID     string
+	RefreshToken string
+}
+
+// appleRevokeAsyncTimeout 后台撤销整体超时。
+const appleRevokeAsyncTimeout = 10 * time.Second
+
+// revokeAppleTokensAsync 在后台逐个撤销 Apple refresh token（解绑 / 注销提交后调用）。
+// 失败只记日志（不含 token），不影响主流程。
+func revokeAppleTokensAsync(revs []appleRevocation) {
+	if len(revs) == 0 {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), appleRevokeAsyncTimeout)
+		defer cancel()
+		for _, rev := range revs {
+			cfg := configSocialAuth(rev.Brand)
+			if err := appleRevokeToken(ctx, cfg, rev.ClientID, rev.RefreshToken); err != nil {
+				log.Errorf(ctx, "apple revoke refresh token failed (brand %s, client %s): %v", rev.Brand, rev.ClientID, err)
+			}
+		}
+	}()
 }

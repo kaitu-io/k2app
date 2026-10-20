@@ -285,6 +285,21 @@ type DataSocialWebLoginRequest struct {
 	Language          string `json:"language"`
 }
 
+// DataSocialIdentity 账号已绑定的第三方登录（列表项）。Email 已脱敏，无邮箱为空串。
+type DataSocialIdentity struct {
+	Provider string `json:"provider"` // google | apple
+	Email    string `json:"email"`    // hideEmail 后
+}
+
+// DataSocialBindRequest 已登录用户绑定第三方登录。
+// Nonce 是客户端生成的原始值；交给提供方的是 sha256hex(Nonce)。
+type DataSocialBindRequest struct {
+	Provider          string `json:"provider" binding:"required,oneof=google apple"`
+	IDToken           string `json:"idToken" binding:"required"`
+	Nonce             string `json:"nonce" binding:"required"`
+	AuthorizationCode string `json:"authorizationCode"` // 仅 Apple：换取 refresh token 供解绑 / 注销时撤销
+}
+
 // DataSocialHandoffRequest 发起浏览器 handoff 登录会话（spec §6.3，只用于登录）。
 type DataSocialHandoffRequest struct {
 	Provider string `json:"provider" binding:"required,oneof=google apple"`

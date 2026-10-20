@@ -146,6 +146,10 @@ func SetupRouter() *gin.Engine {
 			// 获取用户信息
 			user.GET("", AuthRequired(), EnforceDeviceClass(), api_get_user_info)
 			user.GET("/info", AuthRequired(), EnforceDeviceClass(), api_get_user_info)
+			// 第三方登录（Google / Apple）：列表 / 绑定 / 解绑
+			user.GET("/social", AuthRequired(), EnforceDeviceClass(), api_user_social_list)
+			user.POST("/social/bind", AuthRequired(), EnforceDeviceClass(), api_user_social_bind)
+			user.DELETE("/social/:provider", AuthRequired(), EnforceDeviceClass(), api_user_social_unbind)
 			// 删除设备
 			user.DELETE("/devices/:uuid", AuthRequired(), EnforceDeviceClass(), api_delete_device)
 			// 更新设备备注

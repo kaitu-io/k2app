@@ -4,7 +4,9 @@ import (
 	"errors"
 
 	"github.com/gin-gonic/gin"
+	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
+	"gorm.io/gorm"
 )
 
 // socialErrorCode 把联合登录哨兵错误映射到对外错误码；未知错误 → ErrorSystemError。
@@ -138,4 +140,102 @@ func saveAppleRefreshBestEffort(c *gin.Context, cfg socialAuthConfig, cl *social
 	if err := saveAppleRefreshToken(c, cfg.Brand, cl.Sub, cl.Audience, rt); err != nil {
 		log.Warnf(c, "social sign-in: save apple refresh token failed for user %d: %v", userID, err)
 	}
+}
+
+// api_user_social_list 列出本账号已绑定的第三方登录（只含 google / apple，邮箱脱敏）。
+func api_user_social_list(c *gin.Context) {
+	var rows []LoginIdentify
+	if err := db.Get().WithContext(c).
+		Where("user_id = ? AND brand = ? AND type IN ?", ReqUserID(c), string(ReqBrand(c)), []string{SocialProviderGoogle, SocialProviderApple}).
+		Order("type ASC").Find(&rows).Error; err != nil {
+		log.Errorf(c, "list social identities for user %d failed: %v", ReqUserID(c), err)
+		Error(c, ErrorSystemError, "failed to list social identities")
+		return
+	}
+	items := make([]DataSocialIdentity, 0, len(rows))
+	for _, row := range rows {
+		email := ""
+		if row.EncryptedValue != "" {
+			plain, err := secretDecryptString(c, row.EncryptedValue)
+			if err != nil {
+				log.Warnf(c, "decrypt %s identity email for user %d failed: %v", row.Type, row.UserID, err)
+			} else {
+				email = hideEmail(plain)
+			}
+		}
+		items = append(items, DataSocialIdentity{Provider: row.Type, Email: email})
+	}
+	ItemsAll(c, items)
+}
+
+// api_user_social_bind 已登录用户绑定 Google / Apple。不解析 / 不创建用户，只给当前用户加身份。
+func api_user_social_bind(c *gin.Context) {
+	var req DataSocialBindRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Warnf(c, "invalid social bind request: %v", err)
+		Error(c, ErrorInvalidArgument, err.Error())
+		return
+	}
+	brand := ReqBrand(c)
+	userID := ReqUserID(c)
+	cfg := configSocialAuth(brand)
+
+	cl, err := verifySocialIDToken(c, cfg, req.Provider, req.IDToken, req.Nonce)
+	if err != nil {
+		log.Warnf(c, "social bind: %s token rejected for user %d (brand %s): %v", req.Provider, userID, brand, err)
+		Error(c, socialErrorCode(err), "social bind failed")
+		return
+	}
+
+	if err := bindSocialIdentity(c, brand, userID, cl); err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			log.Warnf(c, "social bind: user %d not found in brand %s", userID, brand)
+			Error(c, ErrorNotFound, "user not found")
+		case socialErrorCode(err) != ErrorSystemError:
+			log.Warnf(c, "social bind: %s rejected for user %d (email %s): %v", req.Provider, userID, hideEmail(cl.Email), err)
+			Error(c, socialErrorCode(err), "social bind failed")
+		default:
+			log.Errorf(c, "social bind: %s failed for user %d: %v", req.Provider, userID, err)
+			Error(c, ErrorSystemError, "social bind failed")
+		}
+		return
+	}
+
+	saveAppleRefreshBestEffort(c, cfg, cl, req.Provider, req.AuthorizationCode, userID)
+	log.Infof(c, "user %d bound %s identity", userID, req.Provider)
+	SuccessEmpty(c)
+}
+
+// api_user_social_unbind 解绑本账号的 Google / Apple。Apple 行有 refresh token 则提交后后台撤销。
+func api_user_social_unbind(c *gin.Context) {
+	provider := c.Param("provider")
+	if provider != SocialProviderGoogle && provider != SocialProviderApple {
+		Error(c, ErrorInvalidArgument, "unknown provider")
+		return
+	}
+	brand := ReqBrand(c)
+	userID := ReqUserID(c)
+
+	row, err := unbindSocialIdentity(c, brand, userID, provider)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			Error(c, ErrorNotFound, "social identity not bound")
+			return
+		}
+		log.Errorf(c, "social unbind: %s failed for user %d: %v", provider, userID, err)
+		Error(c, ErrorSystemError, "social unbind failed")
+		return
+	}
+
+	if provider == SocialProviderApple && row.ProviderRefreshToken != "" {
+		plain, err := secretDecryptString(c, row.ProviderRefreshToken)
+		if err != nil {
+			log.Errorf(c, "social unbind: decrypt apple refresh token for user %d failed: %v", userID, err)
+		} else {
+			revokeAppleTokensAsync([]appleRevocation{{Brand: brand, ClientID: row.ProviderClientID, RefreshToken: plain}})
+		}
+	}
+	log.Infof(c, "user %d unbound %s identity", userID, provider)
+	SuccessEmpty(c)
 }
