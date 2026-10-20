@@ -119,6 +119,11 @@ func SetupTestRouter() *gin.Engine {
 		auth.POST("/login", api_login)
 		auth.POST("/web-login", api_web_auth)
 		auth.POST("/refresh", api_refresh_token)
+		auth.POST("/social/login", api_social_login)
+		auth.POST("/social/web-login", api_social_web_login)
+		auth.POST("/social/handoff", api_social_handoff)
+		auth.POST("/social/handoff/complete", api_social_handoff_complete)
+		auth.POST("/social/handoff/poll", api_social_handoff_poll)
 	}
 
 	// 用户路由（需要认证）
@@ -126,6 +131,9 @@ func SetupTestRouter() *gin.Engine {
 	{
 		user.GET("/info", api_get_user_info)
 		user.GET("/devices", api_get_devices)
+		user.GET("/social", EnforceDeviceClass(), api_user_social_list)
+		user.POST("/social/bind", EnforceDeviceClass(), api_user_social_bind)
+		user.DELETE("/social/:provider", EnforceDeviceClass(), api_user_social_unbind)
 		user.POST("/test-post", func(c *gin.Context) {
 			// 用于测试 CSRF
 			c.JSON(200, gin.H{"code": 0, "message": "ok", "data": gin.H{}})

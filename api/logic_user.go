@@ -217,8 +217,15 @@ func findUserByEmailInBrand(ctx context.Context, brand Brand, email string) (*Us
 // （非 *gin.Context 静默回退 kaitu），异步任务 / c.Request.Context() 调用点因此给
 // overleap 邮箱造出过 kaitu 幽灵账号。
 func FindOrCreateUserByEmail(c context.Context, brand Brand, email string, langParams ...string) (*User, error) {
+	user, _, err := findOrCreateUserByEmail(c, brand, email, langParams...)
+	return user, err
+}
+
+// findOrCreateUserByEmail 同 FindOrCreateUserByEmail，另返回 created：仅当本次调用的事务
+// 新建了用户时为 true（第三方登录据此区分新注册）。
+func findOrCreateUserByEmail(c context.Context, brand Brand, email string, langParams ...string) (*User, bool, error) {
 	if !brand.Valid() {
-		return nil, fmt.Errorf("invalid brand %q", brand)
+		return nil, false, fmt.Errorf("invalid brand %q", brand)
 	}
 	var requestLang, acceptLanguageHeader string
 	if len(langParams) > 0 {
@@ -237,13 +244,13 @@ func FindOrCreateUserByEmail(c context.Context, brand Brand, email string, langP
 		Preload("User").
 		First(&existingIdentify).Error; err == nil {
 		// 用户已存在，直接返回
-		return existingIdentify.User, nil
+		return existingIdentify.User, false, nil
 	}
 
 	// 用户不存在，创建新用户
 	encEmail, err := secretEncryptString(c, email)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encrypt email: %v", err)
+		return nil, false, fmt.Errorf("failed to encrypt email: %v", err)
 	}
 
 	var newUser User
@@ -286,9 +293,9 @@ func FindOrCreateUserByEmail(c context.Context, brand Brand, email string, langP
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	return &newUser, nil
+	return &newUser, true, nil
 }
 

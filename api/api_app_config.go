@@ -7,7 +7,6 @@ import (
 )
 
 // DataAppLinks 应用链接配置
-//
 type DataAppLinks struct {
 	BaseURL           string `json:"baseURL" example:"https://www.kaitu.io"`      // Base URL
 	InstallPath       string `json:"installPath" example:"/install"`              // Install page path
@@ -20,12 +19,11 @@ type DataAppLinks struct {
 }
 
 // DataAnnouncement 公告信息
-//
 type DataAnnouncement struct {
-	ID        string `json:"id" example:"announcement-2024-01"`                             // 公告唯一ID，用于客户端跟踪关闭状态
-	Message   string `json:"message" example:"系统维护公告：1月1日凌晨进行系统升级"`                         // 公告文字内容
-	LinkURL   string `json:"linkUrl,omitempty" example:"https://kaitu.io/news/maintenance"` // 可选：点击跳转链接
-	LinkText  string `json:"linkText,omitempty" example:"查看详情"`                             // 可选：链接文字
+	ID         string `json:"id" example:"announcement-2024-01"`                             // 公告唯一ID，用于客户端跟踪关闭状态
+	Message    string `json:"message" example:"系统维护公告：1月1日凌晨进行系统升级"`                         // 公告文字内容
+	LinkURL    string `json:"linkUrl,omitempty" example:"https://kaitu.io/news/maintenance"` // 可选：点击跳转链接
+	LinkText   string `json:"linkText,omitempty" example:"查看详情"`                             // 可选：链接文字
 	OpenMode   string `json:"openMode,omitempty" example:"external"`                         // 可选：external（默认）或 webview
 	AuthMode   string `json:"authMode,omitempty" example:"none"`                             // 可选：none（默认）或 ott（自动登录）
 	Priority   int    `json:"priority"`                                                      // 优先级，数字越大越优先
@@ -34,19 +32,24 @@ type DataAnnouncement struct {
 	ExpiresAt  int64  `json:"expiresAt,omitempty" example:"1704067200"`                      // 可选：公告过期时间戳（Unix秒），为0表示不过期
 }
 
+// DataSocialSignIn 各联合登录提供方在当前品牌是否已上线（客户端据此显示按钮）
+type DataSocialSignIn struct {
+	Apple  bool `json:"apple"`
+	Google bool `json:"google"`
+}
+
 // DataAppConfig 应用配置响应数据结构
-//
 type DataAppConfig struct {
-	AppLinks         DataAppLinks      `json:"appLinks"`                   // 应用相关链接
-	InviteReward     InviteConfig      `json:"inviteReward"`               // 邀请奖励配置
+	AppLinks         DataAppLinks       `json:"appLinks"`                   // 应用相关链接
+	InviteReward     InviteConfig       `json:"inviteReward"`               // 邀请奖励配置
 	MinClientVersion string             `json:"minClientVersion,omitempty"` // 最低客户端版本要求，低于此版本强制升级
 	Announcement     *DataAnnouncement  `json:"announcement,omitempty"`     // 向后兼容：最高优先级公告
 	Announcements    []DataAnnouncement `json:"announcements,omitempty"`    // 全部活跃公告（按 priority DESC 排序）
 	DeviceAccount    bool               `json:"deviceAccount"`              // 当前品牌是否启用设备账号（免登录）
+	SocialSignIn     DataSocialSignIn   `json:"socialSignIn"`               // 联合登录开关（老客户端忽略）
 }
 
 // api_get_app_config 获取应用配置
-//
 func api_get_app_config(c *gin.Context) {
 	log.Infof(c, "requesting app config")
 
@@ -114,6 +117,7 @@ func api_get_app_config(c *gin.Context) {
 		singleAnnouncement = &announcements[0]
 	}
 
+	social := configSocialAuth(b)
 	data := DataAppConfig{
 		AppLinks:         appLinks,
 		InviteReward:     inviteReward,
@@ -121,6 +125,10 @@ func api_get_app_config(c *gin.Context) {
 		Announcement:     singleAnnouncement,
 		Announcements:    announcements,
 		DeviceAccount:    b.Config().DeviceAccount,
+		SocialSignIn: DataSocialSignIn{
+			Apple:  social.Ready(SocialProviderApple),
+			Google: social.Ready(SocialProviderGoogle),
+		},
 	}
 
 	log.Infof(c, "successfully retrieved app config: %+v", data)

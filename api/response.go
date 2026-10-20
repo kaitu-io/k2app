@@ -30,19 +30,23 @@ const (
 	ErrorServiceUnavailable ErrorCode = 503 // 服务不可用
 
 	// 自定义的错误码从400 + 001开始
-	ErrorInvalidCampaignCode     ErrorCode = 400001 // 无效活动码
-	ErrorInvalidClientClock      ErrorCode = 400002 // 客户端时间戳无效
-	ErrorInvalidVerificationCode ErrorCode = 400003 // 验证码错误
-	ErrorInvalidInviteCode       ErrorCode = 400004 // 邀请码无效
-	ErrorSelfInvitation          ErrorCode = 400005 // 不能使用自己的邀请码
-	ErrorInvalidCredentials      ErrorCode = 400006 // 无效的登录凭证
-	ErrorLicenseKeyNotFound      ErrorCode = 400007 // 授权码不存在
-	ErrorLicenseKeyUsed          ErrorCode = 400008 // 授权码已被使用
-	ErrorLicenseKeyExpired       ErrorCode = 400009 // 授权码已过期
-	ErrorLicenseKeyNotMatch      ErrorCode = 400010 // 不符合使用条件
+	ErrorInvalidCampaignCode       ErrorCode = 400001 // 无效活动码
+	ErrorInvalidClientClock        ErrorCode = 400002 // 客户端时间戳无效
+	ErrorInvalidVerificationCode   ErrorCode = 400003 // 验证码错误
+	ErrorInvalidInviteCode         ErrorCode = 400004 // 邀请码无效
+	ErrorSelfInvitation            ErrorCode = 400005 // 不能使用自己的邀请码
+	ErrorInvalidCredentials        ErrorCode = 400006 // 无效的登录凭证
+	ErrorLicenseKeyNotFound        ErrorCode = 400007 // 授权码不存在
+	ErrorLicenseKeyUsed            ErrorCode = 400008 // 授权码已被使用
+	ErrorLicenseKeyExpired         ErrorCode = 400009 // 授权码已过期
+	ErrorLicenseKeyNotMatch        ErrorCode = 400010 // 不符合使用条件
 	ErrorLicenseKeyAlreadyRedeemed ErrorCode = 400011 // 用户已使用过授权码
 	ErrorProxyMembersDeprecated    ErrorCode = 400012 // 代付成员管理已下线
 	ErrorVerificationCodeExpired   ErrorCode = 400013 // 验证码已过期或未发送
+	ErrorSocialTokenInvalid        ErrorCode = 400014 // 联合登录凭证无效/过期/aud 或 nonce 不符
+	ErrorSocialEmailUnverified     ErrorCode = 400015 // 第三方账号邮箱未验证，不可据此建号/绑定
+	// 400016 刻意留空
+	ErrorSocialHandoffExpired ErrorCode = 400017 // 浏览器 handoff 会话不存在或已过期
 
 	// Router class system error codes (added 2026-05-22)
 	ErrorPlanNoRouter        ErrorCode = 402001 // 套餐不支持路由器
@@ -61,11 +65,13 @@ const (
 
 	// 405xxx: 渠道/操作不可用
 	ErrorPaymentChannelUnavailable ErrorCode = 405001 // 当前品牌不支持该支付渠道
+	ErrorSocialProviderDisabled    ErrorCode = 405002 // 当前品牌未启用该联合登录提供方
 
 	// 409xxx: 资源冲突（同品牌内唯一性被占用）
-	ErrorEmailAlreadyInUse ErrorCode = 409001 // 邮箱已被同品牌下的其他账号绑定
-	// 409002/409003 由社交登录分支占用
+	ErrorEmailAlreadyInUse               ErrorCode = 409001 // 邮箱已被同品牌下的其他账号绑定
 	ErrorAppleSubscriptionOwnedElsewhere ErrorCode = 409004 // Apple 订阅属于另一台设备的账号
+	ErrorSocialIdentityTaken             ErrorCode = 409002 // 该第三方账号已绑定其他用户
+	ErrorSocialProviderAlreadyBound      ErrorCode = 409003 // 本账号已绑定了另一个同类第三方账号
 )
 
 type DataAny struct{}
@@ -200,9 +206,9 @@ func e(code ErrorCode, message string) rerr {
 
 // LicenseKey sentinel errors
 var (
-	ErrLicenseKeyNotFound = errors.New("license key not found")
-	ErrLicenseKeyUsed     = errors.New("license key already used")
-	ErrLicenseKeyExpired  = errors.New("license key expired")
+	ErrLicenseKeyNotFound        = errors.New("license key not found")
+	ErrLicenseKeyUsed            = errors.New("license key already used")
+	ErrLicenseKeyExpired         = errors.New("license key expired")
 	ErrLicenseKeyNotMatch        = errors.New("license key recipient mismatch")
 	ErrLicenseKeyAlreadyRedeemed = errors.New("user already redeemed a license key")
 )

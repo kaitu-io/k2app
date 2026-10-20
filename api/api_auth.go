@@ -247,164 +247,20 @@ func api_login(c *gin.Context) {
 		}
 	}
 
-	var device Device
-	var authResult *DataAuthResult
-	var err error
-
-	err = db.Get().Transaction(func(tx *gorm.DB) error {
-		// 第1步：查询是否存在旧设备记录（用于检测设备转移）
-		var oldDevice Device
-		oldDeviceErr := tx.Where("udid = ?", req.UDID).First(&oldDevice).Error
-		if oldDeviceErr == nil {
-			// 检查是否发生设备转移
-			if oldDevice.UserID != identify.UserID {
-				log.Warnf(c, "device transfer detected: udid=%s, from user %d to user %d, old_remark=%s",
-					req.UDID, oldDevice.UserID, identify.UserID, oldDevice.Remark)
-
-				// 发送邮件通知原所有者
-				transferMeta := DeviceTransferMeta{
-					TransferTime: time.Now().Format("2006-01-02 15:04:05"),
-					DeviceRemark: oldDevice.Remark,
-				}
-				// 收件人是设备原所有者（oldDevice.UserID），与本次登录用户不同——
-				// emailToUser 按收件人自己的 User 行解析品牌，不是当前请求品牌。
-				if err := emailToUser(c, int64(oldDevice.UserID), brandedDeviceTransferTemplate, transferMeta); err != nil {
-					log.Errorf(c, "failed to send device transfer email to user %d: %v", oldDevice.UserID, err)
-					// 不阻止登录流程，仅记录错误
-				}
-			}
-		} else if !util.DbIsNotFoundErr(oldDeviceErr) {
-			log.Errorf(c, "failed to check existing device: %v", oldDeviceErr)
-			return oldDeviceErr
-		}
-
-		// 第2步：删除旧设备记录
-		if err := tx.Where("udid = ?", req.UDID).Delete(&Device{}).Error; err != nil {
-			log.Errorf(c, "failed to delete existing device with udid %s in transaction: %v", req.UDID, err)
-			return err
-		}
-
-		// 获取用户信息以获取最大设备数限制
-		var user User
-		if err := tx.First(&user, identify.UserID).Error; err != nil {
-			log.Errorf(c, "failed to get user %d: %v", identify.UserID, err)
-			return err
-		}
-
-		if isUserBlocked(&user) {
-			log.Warnf(c, "login rejected: user %d is blocked", identify.UserID)
-			return e(ErrorForbidden, "account blocked")
-		}
-
-		// 追踪是否需要保存用户信息
-		needSave := false
-
-		// 如果提供了语言偏好，更新用户语言设置
-		if req.Language != "" {
-			acceptLanguage := c.GetHeader("Accept-Language")
-			detectedLanguage := detectUserLanguage(c, req.Language, req.Email, acceptLanguage)
-			if detectedLanguage != user.Language {
-				user.Language = detectedLanguage
-				needSave = true
-				log.Infof(c, "will update user %d language to: %s", identify.UserID, detectedLanguage)
-			}
-		}
-
-		// 处理邀请码逻辑（仅未激活用户可以设置邀请码）
-		if req.InviteCode != "" {
-			if user.IsActivated == nil || !*user.IsActivated {
-				log.Infof(c, "user %d is not activated, processing invite code: %s", identify.UserID, req.InviteCode)
-				inviteCodeID := InviteCodeID(req.InviteCode)
-				var inviteCode InviteCode
-				if err := tx.First(&inviteCode, inviteCodeID).Error; err != nil {
-					if util.DbIsNotFoundErr(err) {
-						log.Warnf(c, "invalid invite code %s for user %d", req.InviteCode, identify.UserID)
-						return e(ErrorInvalidInviteCode, "invalid invite code")
-					}
-					log.Errorf(c, "failed to check invite code %s: %v", req.InviteCode, err)
-					return err
-				}
-
-				// 检查自邀请
-				if inviteCode.UserID == identify.UserID {
-					log.Warnf(c, "self-invitation detected for user %d with code %s", identify.UserID, req.InviteCode)
-					return e(ErrorSelfInvitation, "cannot use your own invite code")
-				}
-
-				// 设置邀请码
-				user.InvitedByCodeID = inviteCodeID
-				needSave = true
-				log.Infof(c, "will set invite code %s for user %d", req.InviteCode, identify.UserID)
-
-				// 异步处理邀请奖励
-				go handleInviteDownloadReward(c, identify.UserID)
-			} else {
-				log.Infof(c, "user %d is already activated, ignoring invite code", identify.UserID)
-			}
-		}
-
-		// 设置用户为已激活状态
-		if user.IsActivated == nil || !*user.IsActivated {
-			user.IsActivated = BoolPtr(true)
-			user.ActivatedAt = time.Now().Unix()
-			needSave = true
-			log.Infof(c, "will set user %d as activated at %d", identify.UserID, user.ActivatedAt)
-		}
-
-		// 统一保存所有用户信息修改
-		if needSave {
-			if err := tx.Save(&user).Error; err != nil {
-				log.Errorf(c, "failed to save user %d updates: %v", identify.UserID, err)
-				return err
-			}
-			log.Infof(c, "successfully saved user %d updates (language: %s, activated: %v, invite code ID: %d)",
-				identify.UserID, user.Language, user.IsActivated, user.InvitedByCodeID)
-		}
-
-		// Check device limit by type (app vs router)
-		if err := checkDeviceLimitOrKick(c, tx, &user, isGatewayRequest(c)); err != nil {
-			return err
-		}
-
-		var tokenIssueTime time.Time
-		authResult, tokenIssueTime, err = generateTokens(c, identify.UserID, req.UDID, user.Roles)
-		if err != nil {
-			log.Errorf(c, "failed to generate tokens during login for user %d: %v", identify.UserID, err)
-			return err
-		}
-
-		device = Device{
-			UDID:            req.UDID,
-			Remark:          req.Remark,
-			UserID:          identify.UserID,
-			TokenIssueAt:    tokenIssueTime.Unix(),
-			TokenLastUsedAt: time.Now().Unix(),
-		}
-		createDeviceWithAppInfo(c, &device)
-		if err := tx.Create(&device).Error; err != nil {
-			log.Errorf(c, "failed to create new device in transaction for user %d: %v", identify.UserID, err)
-			return err
-		}
-		log.Debugf(c, "created new device %s for user %d", device.UDID, device.UserID)
-
-		meta := NewDeviceLoginMeta{
-			LoginTime: time.Now().Format("2006-01-02 15:04:05"),
-			Remark:    device.Remark,
-		}
-		if err := emailToUser(c, int64(identify.UserID), brandedNewDeviceLoginTemplate, meta); err != nil {
-			log.Errorf(c, "failed to send new device login email to user %d: %v", identify.UserID, err)
-		}
-
-		return nil
+	authResult, err := completeDeviceLogin(c, identify.UserID, deviceLoginParams{
+		UDID:       req.UDID,
+		Remark:     req.Remark,
+		Language:   req.Language,
+		Email:      req.Email,
+		InviteCode: req.InviteCode,
 	})
-
 	if err != nil {
 		log.Errorf(c, "login transaction failed for email %s: %v", req.Email, err)
 		ErrorE(c, err)
 		return
 	}
 
-	log.Infof(c, "user %d logged in successfully with device %s", identify.UserID, device.UDID)
+	log.Infof(c, "user %d logged in successfully with device %s", identify.UserID, req.UDID)
 	Success(c, authResult)
 }
 
@@ -552,142 +408,19 @@ func api_web_auth(c *gin.Context) {
 		}
 	}
 
-	var authResult *DataAuthResult
-	var err error
-	var userIsAdmin bool     // 用于响应中返回用户信息
-	var userRoles uint64     // 用于 JWT 中的角色
-	var userHasPassword bool // 用于响应中告知前端 /account/security 应显示「修改」还是「设置」
-
-	// 使用事务处理用户信息更新和邀请码设置
-	err = db.Get().Transaction(func(tx *gorm.DB) error {
-		// 获取用户信息
-		var user User
-		if err := tx.First(&user, identify.UserID).Error; err != nil {
-			log.Errorf(c, "failed to get user %d: %v", identify.UserID, err)
-			return err
-		}
-
-		if isUserBlocked(&user) {
-			log.Warnf(c, "web login rejected: user %d is blocked", identify.UserID)
-			return e(ErrorForbidden, "account blocked")
-		}
-		// 保存用户信息用于响应和 JWT
-		userIsAdmin = user.IsAdmin != nil && *user.IsAdmin
-		userRoles = user.Roles
-		userHasPassword = HasPasswordSet(&user)
-
-		// 追踪是否需要保存用户信息
-		needSave := false
-
-		// 如果提供了语言偏好，更新用户语言设置
-		if req.Language != "" {
-			acceptLanguage := c.GetHeader("Accept-Language")
-			detectedLanguage := detectUserLanguage(c, req.Language, req.Email, acceptLanguage)
-			if detectedLanguage != user.Language {
-				user.Language = detectedLanguage
-				needSave = true
-				log.Infof(c, "will update user %d language to: %s", identify.UserID, detectedLanguage)
-			}
-		}
-
-		// 处理邀请码逻辑（仅未激活用户可以设置邀请码）
-		if req.InviteCode != "" {
-			if user.IsActivated == nil || !*user.IsActivated {
-				log.Infof(c, "user %d is not activated, processing invite code: %s", identify.UserID, req.InviteCode)
-				inviteCodeID := InviteCodeID(req.InviteCode)
-				var inviteCode InviteCode
-				if err := tx.First(&inviteCode, inviteCodeID).Error; err != nil {
-					if util.DbIsNotFoundErr(err) {
-						log.Warnf(c, "invalid invite code %s for user %d", req.InviteCode, identify.UserID)
-						return e(ErrorInvalidInviteCode, "invalid invite code")
-					}
-					log.Errorf(c, "failed to check invite code %s: %v", req.InviteCode, err)
-					return err
-				}
-
-				// 检查自邀请
-				if inviteCode.UserID == identify.UserID {
-					log.Warnf(c, "self-invitation detected for user %d with code %s", identify.UserID, req.InviteCode)
-					return e(ErrorSelfInvitation, "cannot use your own invite code")
-				}
-
-				// 设置邀请码
-				user.InvitedByCodeID = inviteCodeID
-				needSave = true
-				log.Infof(c, "will set invite code %s for user %d", req.InviteCode, identify.UserID)
-
-				// 异步处理邀请奖励
-				go handleInviteDownloadReward(c, identify.UserID)
-			} else {
-				log.Infof(c, "user %d is already activated, ignoring invite code", identify.UserID)
-			}
-		}
-
-		// 如果未激活用户没有提供邀请码，也需要激活账号
-		if user.IsActivated == nil || !*user.IsActivated {
-			user.IsActivated = BoolPtr(true)
-			user.ActivatedAt = time.Now().Unix()
-			needSave = true
-			log.Infof(c, "will activate user %d (web login without invite code) at %d", identify.UserID, user.ActivatedAt)
-		}
-
-		// 保存用户信息
-		if needSave {
-			if err := tx.Save(&user).Error; err != nil {
-				log.Errorf(c, "failed to save user %d: %v", identify.UserID, err)
-				return err
-			}
-			log.Infof(c, "successfully saved user %d updates", identify.UserID)
-		}
-
-		return nil
+	resp, err := completeWebLogin(c, identify.UserID, webLoginParams{
+		Language:   req.Language,
+		Email:      req.Email,
+		InviteCode: req.InviteCode,
 	})
-
 	if err != nil {
-		log.Errorf(c, "failed to update user info for web login: %v", err)
 		ErrorE(c, err)
 		return
 	}
 
-	// 生成 Web Cookie 专用 token（2个月有效期，无 refresh token）
-	authResult, _, err = generateWebCookieToken(c, identify.UserID, userRoles)
-	if err != nil {
-		log.Errorf(c, "failed to generate web cookie token for user %d: %v", identify.UserID, err)
-		Error(c, ErrorSystemError, "failed to generate tokens")
-		return
-	}
-
-	// 设置 HttpOnly Cookie（Web 端安全认证，sliding expiration）
-	setAuthCookies(c, authResult)
-	// 漏斗：把匿名 sid 关联到该用户（只读不种；非阻塞，失败不影响登录）。
-	if sid, optedOut := readFunnelSid(c); !optedOut && !funnelGPC(c) && sid != "" {
-		linkFunnelIdentity(c, "sid", sid, identify.UserID, ReqBrand(c))
-	}
-
-	// 发送 Web 登录邮件通知
-	meta := WebLoginMeta{
-		LoginTime: time.Now().Format("2006-01-02 15:04:05"),
-		ClientIP:  c.ClientIP(),
-	}
-	if err := emailToUser(c, int64(identify.UserID), brandedWebLoginTemplate, meta); err != nil {
-		log.Errorf(c, "failed to send web login email to user %d: %v", identify.UserID, err)
-		// 不影响登录流程，仅记录错误
-	}
-
-	log.Infof(c, "user %d successfully logged in via web", identify.UserID)
-
 	// Tokens 通过 HttpOnly Cookie 设置，AccessToken 也在 body 里返回供
 	// fallback 使用（iOS 微信 WKWebView 等不持久化 Set-Cookie 的环境）。
-	Success(c, &DataWebLoginResponse{
-		User: DataWebLoginUser{
-			ID:          identify.UserID,
-			Email:       req.Email,
-			IsAdmin:     userIsAdmin,
-			Roles:       userRoles,
-			HasPassword: userHasPassword,
-		},
-		AccessToken: authResult.AccessToken,
-	})
+	Success(c, resp)
 }
 
 type AuthWithDeviceRequest struct {

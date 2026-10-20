@@ -31,6 +31,42 @@ const (
 	PayChannelGooglePlay = "google_play"
 )
 
+// 联合登录提供方标识（与 LoginIdentify.Type 同值）。
+const (
+	SocialProviderGoogle = "google"
+	SocialProviderApple  = "apple"
+)
+
+// SocialClientIDs 品牌的联合登录 client ID（公开值，非秘密）。
+// id_token 的 aud 必须落在本品牌的允许列表内——这是品牌隔离的第二道锁。
+// 导出进跨层契约（brands.<id>.social）。
+type SocialClientIDs struct {
+	GoogleWebClientID string `json:"googleWebClientId"` // Web 与 Android Credential Manager 的 token aud
+	GoogleIOSClientID string `json:"googleIosClientId"`
+	AppleBundleID     string `json:"appleBundleId"`   // 原生 iOS
+	AppleServicesID   string `json:"appleServicesId"` // 网页 / Android
+}
+
+// Audiences 返回某提供方允许的 aud 列表，空串剔除；未知提供方返回 nil。
+func (s SocialClientIDs) Audiences(provider string) []string {
+	var raw []string
+	switch provider {
+	case SocialProviderGoogle:
+		raw = []string{s.GoogleWebClientID, s.GoogleIOSClientID}
+	case SocialProviderApple:
+		raw = []string{s.AppleBundleID, s.AppleServicesID}
+	default:
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	for _, a := range raw {
+		if a != "" {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 type BrandConfig struct {
 	ID          Brand
 	DisplayName string   // 用户可见品牌名（邮件签名等）
@@ -64,6 +100,8 @@ type BrandConfig struct {
 	// cookie，访客标识只取页面内存里生成、随像素 a= 参数带上的随机 id（整页刷新即换）；也不参与推断归因
 	// （那会在 Redis 落出口 IP 的哈希）。为 false：沿用 sid cookie（开途）。
 	FunnelCookieless bool
+	// Social 联合登录 client ID（Google / Apple），见 SocialClientIDs。
+	Social SocialClientIDs
 }
 
 func (bc *BrandConfig) AllowsPayment(channel string) bool {
@@ -95,6 +133,12 @@ var brandRegistry = map[Brand]*BrandConfig{
 		Wallet:            true,
 		DeviceAccount:     true,
 		ChatAIStore:       "crm",
+		Social: SocialClientIDs{
+			GoogleWebClientID: "125062807005-fqpjkq2pjjqdueen84q1kpp3rlkvq5sg.apps.googleusercontent.com",
+			GoogleIOSClientID: "125062807005-r08pi88vadprilgo5mr1oqndpinnkb0l.apps.googleusercontent.com",
+			AppleBundleID:     "com.allnationconnect.anc.wgios",
+			AppleServicesID:   "io.kaitu.signin",
+		},
 	},
 	BrandOverleap: {
 		ID:                 BrandOverleap,
@@ -115,6 +159,12 @@ var brandRegistry = map[Brand]*BrandConfig{
 		DeviceAccount:     false,
 		ChatAIStore:       "overleap",
 		FunnelCookieless:  true,
+		Social: SocialClientIDs{
+			GoogleWebClientID: "808676014960-fvo8an88b4c79f1ua9n0pctr40ta09fm.apps.googleusercontent.com",
+			GoogleIOSClientID: "808676014960-ug0b6ahv3lm2s1fboj0dinmtp5p0t6qu.apps.googleusercontent.com",
+			AppleBundleID:     "io.overleap",
+			AppleServicesID:   "io.overleap.signin",
+		},
 	},
 }
 
