@@ -150,7 +150,7 @@ Apple 的 `team_id/key_id/private_key` 用于生成 client secret，去换 refre
 不做 deep link（Linux 没有壳，Windows/macOS 的 URL scheme 注册各有坑），统一用"开浏览器 + App 轮询"：
 
 1. App 生成 `nonce`，调 `POST /handoff {provider, intent: login|bind}`（bind 时带登录态）→ `{sessionId, pollSecret, confirmCode, url}`。会话存 Redis，TTL 5 分钟。
-2. App 用系统浏览器打开 `url` = 本品牌官网 `/auth/social?session=<id>&provider=...`，App 内显示"请在浏览器中完成登录"和 4 位 `confirmCode`，开始每 2 秒轮询。
+2. App 用系统浏览器打开 `url` = 本品牌官网 `/auth/social?session=<id>&provider=...`（Apple 回调路径 `/auth/social/apple`，已在 Services ID 登记），App 内显示"请在浏览器中完成登录"和 4 位 `confirmCode`，开始每 2 秒轮询。
 3. 官网页提示"正在登录 <品牌> 桌面客户端，请输入 App 里显示的 4 位代码"，用户**手动输入**代码后才出现 Apple / Google 按钮；拿到 idToken 后连同代码调 `/handoff/complete`，服务端核对代码（每会话最多 5 次错误，超过即作废）。页面提示"已完成，可以回到 App"。
 4. 服务端在 complete 时就完成令牌校验与 §4 匹配，结果（userId 或错误）记入会话；App 的下一次 `poll` 带上 `pollSecret + udid + remark`，服务端走与 `/social/login` 相同的设备登录事务签发令牌，会话作废。
 
@@ -161,7 +161,7 @@ Apple 的 `team_id/key_id/private_key` 用于生成 client secret，去换 refre
 ### 6.4 官网
 - kaitu.io（`web/src/app/[locale]/login/page.tsx`）与 overleap.io（`sites/overleap/.../LoginForm.tsx`）登录页加两个按钮，调 `/api/auth/social/web-login`；同时新增 §6.3 的 `/auth/social` handoff 页。两站不共享代码（按 overleap 站拆分惯例各写一份，靠契约一致）。
 - Google 脚本加载失败（国内）→ 不显示 Google 按钮。Apple JS 在国内可达。
-- Apple 网页登录需每品牌一个 Services ID，登记域名 `www.kaitu.io` / `www.overleap.io` 与 return URL；Google Web client 登记 JS origin。
+- Apple 网页登录需每品牌一个 Services ID，登记域名与 return URL（见 §7.1）；Google Web client 登记 JS origin。
 
 ### 6.5 webapp UI
 - `LoginDialog.tsx` 与 `EmailLoginForm.tsx`（两个都要，后者被购买页和 iOS 订阅面板使用）的验证码表单下方加"或"分隔 + "通过 Apple 继续" / "通过 Google 继续"。按钮可见性 = 品牌开关 × 平台能力（原生可用性 / handoff 永远可用）。
@@ -175,6 +175,27 @@ Apple 的 `team_id/key_id/private_key` 用于生成 client secret，去换 refre
 - **Apple Developer**：两个 iOS App ID 开启 Sign in with Apple；每品牌建一个 Services ID（网页 + handoff 用）并登记域名/return URL；建 Sign in with Apple Key（.p8）放进 Center 配置；在 "Sign in with Apple for Email Communication" 登记发信域名/地址，否则发往 relay 邮箱的邮件（续费、收据、验证码）会被丢弃。
 - **Google Cloud**：每品牌一个 OAuth consent screen + Web / iOS / Android client（Android 登记包名 + 所有签名证书 SHA-1）。Overleap 的 consent screen 署名 Wordgate LLC，开途侧沿用现有署名；两品牌不互相提及。
 - Center 两台机器配置 `social_auth`，`make deploy-api`。
+
+### 7.1 已完成的后台配置（2026-10-20）
+
+客户端 ID 不是秘密，可直接进代码；私钥除外。
+
+| | 开途 | Overleap |
+|---|---|---|
+| 官网域名（规范 host） | `www.kaitu.io`（另登记 `kaitu.io`） | `overleap.io`（`www.` 301 到裸域；两者都登记） |
+| Google Cloud 项目 | `kaitu-sign-in`，授权页名「开途」，已发布正式版 | `overleap-sign-in`，授权页名「Overleap」，已发布正式版 |
+| Google Web client（也是 Android `serverClientId`） | `125062807005-fqpjkq2pjjqdueen84q1kpp3rlkvq5sg.apps.googleusercontent.com` | `808676014960-fvo8an88b4c79f1ua9n0pctr40ta09fm.apps.googleusercontent.com` |
+| Google iOS client | `125062807005-r08pi88vadprilgo5mr1oqndpinnkb0l.apps.googleusercontent.com` | `808676014960-ug0b6ahv3lm2s1fboj0dinmtp5p0t6qu.apps.googleusercontent.com` |
+| Google Android client | `125062807005-jtpkj6bmt48jrk0bjk80afb0gdh7cqlj`（`io.kaitu`，SHA-1 `95:3C:D4:…:F8:DB`，取自 CDN 0.4.13 APK） | 3 个（Play 当前签名 / 之前签名 / 上传密钥）：`808676014960-pr6d5hsab78ela9mo2h0h7bl8ns8r208`、`…-eu9c9sghcmdq0n795n2vu850mcj4b290`、`…-ignp65u1nvrt12kaar5v8g6hs1dt10u6` |
+| Apple App ID（已开 Sign in with Apple，primary） | `com.allnationconnect.anc.wgios` | `io.overleap` |
+| Apple Services ID（网页 / handoff 的 `aud`） | `io.kaitu.signin`（描述 "KaiTu VPN"） | `io.overleap.signin`（描述 "Overleap"） |
+| Apple return URL | `https://www.kaitu.io/auth/social/apple`、`https://kaitu.io/auth/social/apple` | `https://overleap.io/auth/social/apple`、`https://www.overleap.io/auth/social/apple` |
+| Sign in with Apple Key ID | `Y47F4Y5BSL` | `8MSCS26D9J` |
+
+- Apple Team ID `NJT954Q3RH`。两个 .p8 私钥暂存 David 本机 `~/.config/kaitu-secrets/`（0600），部署时写进 Center `config.yml`（与现有 `appstore.iap.key` 同样内联），**不进 git**。
+- Apple 私密邮件转发已登记发信源 `mail.allnationconnect.com` / `joshua@mail.allnationconnect.com`（SPF 通过）。线上两个品牌目前都由该地址发信（`mail_overleap.send_from` 未配置）；将来换发信域名必须同步在 Apple 登记，否则发往 relay 邮箱的邮件被丢弃。
+- Google 授权页的用户支持邮箱只能是 `anc.info7@gmail.com`（Google 限制本账号或群组）；未上传 logo（上传即需 Google 审核）。
+- 两个 App ID 开能力使旧描述文件失效；iOS 是自动签名 + `-allowProvisioningUpdates`，下次构建自动重建。
 - 发布顺序：API 先上（未配置 = 关闭，安全）→ 官网（含 handoff 页）→ 桌面/移动发版 + `webapp/*` OTA。handoff 依赖官网页先上线。
 
 ## 8. 测试
