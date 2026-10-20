@@ -352,7 +352,15 @@ func api_logout(c *gin.Context) {
 			return
 		}
 		if !has {
-			log.Infof(c, "user %d has no login identity, keeping device %s on logout", userID, udid)
+			// 保留设备行（找回凭据），但作废已签发的 token：单调推进 token_issue_at
+			// （同一秒内登录后立刻登出也必须与旧值不同）。/device-account 找回会重新签发。
+			if err := db.Get().Model(&Device{}).Where("udid = ? AND user_id = ?", udid, userID).
+				Update("token_issue_at", gorm.Expr("GREATEST(?, token_issue_at + 1)", time.Now().Unix())).Error; err != nil {
+				log.Errorf(c, "failed to revoke tokens of device %s for user %d on logout: %v", udid, userID, err)
+				Error(c, ErrorSystemError, "failed to logout")
+				return
+			}
+			log.Infof(c, "user %d has no login identity, keeping device %s but revoking its tokens on logout", userID, udid)
 			SuccessEmpty(c)
 			return
 		}

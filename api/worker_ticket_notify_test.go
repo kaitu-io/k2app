@@ -83,3 +83,31 @@ func TestHandleTicketNotify_PerBrand(t *testing.T) {
 		})
 	}
 }
+
+// 零身份用户（设备账号）没有邮箱身份：回复通知必须发到工单上的联系邮箱，而不是永远报错重试。
+func TestHandleTicketNotify_ZeroIdentityUsesTicketEmail(t *testing.T) {
+	skipIfNoConfig(t)
+	require.NoError(t, Migrate())
+
+	origDev := viper.GetBool("mail.dev_mode")
+	viper.Set("mail.dev_mode", true)
+	t.Cleanup(func() { viper.Set("mail.dev_mode", origDev) })
+	var sentTo []string
+	systemMailToHook = func(to string) { sentTo = append(sentTo, to) }
+	t.Cleanup(func() { systemMailToHook = nil })
+
+	ticket, reply := ticketNotifyFixture(t, BrandKaitu)
+	// 抹掉邮箱身份 → 零身份；联系邮箱存在工单上。
+	require.NoError(t, db.Get().Where("user_id = ?", *ticket.UserID).Delete(&LoginIdentify{}).Error)
+	contact := fmt.Sprintf("contact-%d@example.com", time.Now().UnixNano())
+	require.NoError(t, db.Get().Model(&FeedbackTicket{}).Where("id = ?", ticket.ID).Update("email", contact).Error)
+
+	payload, err := json.Marshal(TicketNotifyPayload{TicketID: ticket.ID})
+	require.NoError(t, err)
+	require.NoError(t, handleTicketNotify(context.Background(), payload))
+	assert.Equal(t, []string{contact}, sentTo)
+
+	var got TicketReply
+	require.NoError(t, db.Get().First(&got, reply.ID).Error)
+	assert.NotNil(t, got.NotifiedAt)
+}

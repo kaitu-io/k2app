@@ -162,6 +162,8 @@ func TestLogout_ZeroIdentityKeepsDevice(t *testing.T) {
 	r.POST("/zero/logout", dapAs(&zero, udid), api_logout)
 	require.Equal(t, 0, dapPost(t, r, "/zero/logout", map[string]any{}))
 	require.Equal(t, int64(1), dapDeviceCount(t, udid), "零身份登出保留设备行")
+	require.NotEqual(t, d.TokenIssueAt, devAcctDevice(t, udid).TokenIssueAt,
+		"零身份登出必须推进 token_issue_at，使已签发 token 被 TokenIssueAt 校验拒绝")
 
 	again := postDeviceAccount(t, r, "www.kaitu.io", udid)
 	require.Equal(t, 0, again.Code)
