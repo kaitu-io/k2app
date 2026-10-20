@@ -22,6 +22,7 @@ import (
 var (
 	errSocialEmailUnverified      = errors.New("social email unverified")
 	errSocialIdentityTaken        = errors.New("social identity taken")
+	errSocialEmailInUse           = errors.New("social email already in use by another user")
 	errSocialProviderAlreadyBound = errors.New("social provider already bound")
 )
 
@@ -154,8 +155,9 @@ func attachSocialIdentityToMatchedUser(ctx context.Context, brand Brand, userID 
 // bindSocialIdentity 已登录用户绑定第三方身份。已绑同一身份 → nil（幂等）。
 //   - 身份已属他人 → errSocialIdentityTaken
 //   - 本用户已绑另一个同 provider 身份 → errSocialProviderAlreadyBound
-//   - 邮箱可信且在本品牌已是别的用户的 email 身份 → errSocialIdentityTaken（不合并账号）
-//   - 本用户还没有 email 身份且邮箱可信、未被占用 → 同一事务写入 email 身份行
+//   - 仅当本用户还没有 email 身份（绑定要写 email 行）时：邮箱可信且已是本品牌别的用户的
+//     email 身份 → errSocialEmailInUse（→409001，不合并账号）；未被占用 → 同一事务写入 email 身份行
+//   - 本用户已有 email 身份 → 不检查邮箱，只写第三方身份行
 func bindSocialIdentity(ctx context.Context, brand Brand, userID uint64, cl *socialClaims) error {
 	if cl == nil {
 		return fmt.Errorf("nil social claims")
@@ -219,22 +221,21 @@ func writeSocialIdentity(ctx context.Context, brand Brand, userID uint64, cl *so
 			return errSocialProviderAlreadyBound
 		}
 
-		// ② / ③ 可信邮箱：属别人 → 拒绝；无主且本用户没有 email 身份 → 一并写入
+		// ② 无 email 身份的用户 + 可信邮箱：绑定会写 email 行 → 邮箱属别人则拒绝，无主则一并写入。
+		// 已有 email 身份的用户不写 email 行，邮箱归属无关紧要。
 		if trusted {
-			emailRow, err := findEmailIdentity(ctx, tx, brand, email)
-			switch {
-			case err == nil && emailRow.UserID != userID:
-				return errSocialIdentityTaken
-			case err == nil:
-				// 本用户自己的邮箱，无需写
-			case errors.Is(err, gorm.ErrRecordNotFound):
-				var emailCount int64
-				if err := tx.Model(&LoginIdentify{}).
-					Where("user_id = ? AND type = ? AND brand = ?", userID, "email", string(brand)).
-					Count(&emailCount).Error; err != nil {
-					return err
-				}
-				if emailCount == 0 {
+			var emailCount int64
+			if err := tx.Model(&LoginIdentify{}).
+				Where("user_id = ? AND type = ? AND brand = ?", userID, "email", string(brand)).
+				Count(&emailCount).Error; err != nil {
+				return err
+			}
+			if emailCount == 0 {
+				_, err := findEmailIdentity(ctx, tx, brand, email)
+				switch {
+				case err == nil:
+					return errSocialEmailInUse
+				case errors.Is(err, gorm.ErrRecordNotFound):
 					if err := tx.Create(&LoginIdentify{
 						UserID:         userID,
 						Type:           "email",
@@ -244,9 +245,9 @@ func writeSocialIdentity(ctx context.Context, brand Brand, userID uint64, cl *so
 					}).Error; err != nil {
 						return err
 					}
+				default:
+					return err
 				}
-			default:
-				return err
 			}
 		}
 
@@ -283,7 +284,7 @@ func unbindSocialIdentity(ctx context.Context, brand Brand, userID uint64, provi
 	return &row, nil
 }
 
-// saveAppleRefreshToken 把换得的 Apple refresh token（加密）与 client_id 存到
+// saveAppleRefreshToken 把换得的 Apple refresh token（经 secretEncryptString；目前该函数是直通，库中为明文，无 .p8 私钥不可用）与 client_id 存到
 // (apple, hash("apple:"+sub), brand) 身份行上。行不存在 → gorm.ErrRecordNotFound。
 func saveAppleRefreshToken(ctx context.Context, brand Brand, sub, clientID, refreshToken string) error {
 	if err := validateSocialArgs(brand, SocialProviderApple, sub); err != nil {

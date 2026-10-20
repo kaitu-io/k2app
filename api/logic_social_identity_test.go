@@ -361,10 +361,19 @@ func TestBindSocialIdentity_EmailOwnedByOtherUser(t *testing.T) {
 	owner := tr.seedUser(BrandKaitu, email)
 	u := tr.seedUser(BrandKaitu, "")
 
+	// 无 email 身份的用户：绑定要写 email 行，邮箱属别人 -> errSocialEmailInUse（409001）
 	cl := &socialClaims{Provider: SocialProviderGoogle, Sub: tr.sub(SocialProviderGoogle, "g-"+sfx), Email: email, EmailTrusted: true}
 	err := bindSocialIdentity(ctx, BrandKaitu, u.ID, cl)
-	require.ErrorIs(t, err, errSocialIdentityTaken)
+	require.ErrorIs(t, err, errSocialEmailInUse)
+	assert.Equal(t, ErrorEmailAlreadyInUse, socialErrorCode(err))
 	assert.Empty(t, identitiesOfUser(t, u.ID))
+	assert.Equal(t, map[string]int{"email": 1}, identitiesOfUser(t, owner.ID))
+
+	// 已有 email 身份的用户：不检查邮箱归属，直接写第三方身份行
+	has := tr.seedUser(BrandKaitu, "has-"+sfx+"@example.com")
+	cl2 := &socialClaims{Provider: SocialProviderGoogle, Sub: tr.sub(SocialProviderGoogle, "g2-"+sfx), Email: email, EmailTrusted: true}
+	require.NoError(t, bindSocialIdentity(ctx, BrandKaitu, has.ID, cl2))
+	assert.Equal(t, map[string]int{"email": 1, "google": 1}, identitiesOfUser(t, has.ID))
 	assert.Equal(t, map[string]int{"email": 1}, identitiesOfUser(t, owner.ID))
 }
 

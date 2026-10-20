@@ -70,6 +70,33 @@ func TestSocialWebLogin_SetsCookies(t *testing.T) {
 	assert.NotEmpty(t, cookies[CookieCSRFToken], "csrf_token cookie")
 }
 
+// 返回的邮箱是账号自己的 email 身份，不是 provider token 里的邮箱。
+func TestSocialWebLogin_ReturnsAccountEmail(t *testing.T) {
+	skipIfNoConfig(t)
+	key := newTestRSAKey(t)
+	installTestSocialKeys(t, key)
+	enableTestSocialAuth(t, BrandKaitu)
+	tr := newSocialTrack(t)
+	sfx := socialTestSuffix()
+
+	acct := "swl-acct-" + sfx + "@example.com"
+	u := tr.seedUser(BrandKaitu, acct)
+	sub := tr.sub(SocialProviderGoogle, "swl-acct-"+sfx)
+	tr.seedIdentity(BrandKaitu, u.ID, SocialProviderGoogle, sub)
+
+	cl := googleTestClaims(BrandKaitu.Config().Social.GoogleWebClientID)
+	cl["sub"] = sub
+	cl["email"] = "provider-" + sfx + "@example.com"
+	w, resp := postSocialWebLogin(t, "", BrandKaitu, map[string]string{
+		"provider": SocialProviderGoogle,
+		"idToken":  signTestIDToken(t, key, cl),
+		"nonce":    testSocialRawNonce,
+	})
+	require.Equal(t, 0, resp.Code, "body=%s", w.Body.String())
+	assert.Equal(t, u.ID, resp.Data.User.ID)
+	assert.Equal(t, acct, resp.Data.User.Email)
+}
+
 func TestSocialWebLogin_CrossBrandHost(t *testing.T) {
 	skipIfNoConfig(t)
 	key := newTestRSAKey(t)

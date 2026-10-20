@@ -159,7 +159,7 @@ type LoginIdentify struct {
 
 	// 第三方身份（Type = google / apple）专用；email 行恒为空串。
 	// Apple 注销 / 解绑时撤销令牌要用：ProviderClientID = 换取 refresh token 时的 client_id（aud），
-	// ProviderRefreshToken = secretEncryptString 后的 refresh token。
+	// ProviderRefreshToken = 经 secretEncryptString 的 refresh token（该函数目前直通，库中为明文；无 .p8 私钥不可用）。
 	ProviderClientID     string `gorm:"type:varchar(255);not null;default:''" json:"-"`
 	ProviderRefreshToken string `gorm:"type:varchar(2000);not null;default:''" json:"-"`
 }

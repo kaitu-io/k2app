@@ -351,7 +351,7 @@ Still open before overleap Play Billing / campaign sends:
 
 ## Social Sign-In (Google / Apple)
 
-- **Spec**: `docs/superpowers/specs/2026-10-20-social-sign-in-design.md`。文件：`api_social*.go` / `logic_social_*.go`（config / apple / handoff）/ `logic_login_complete.go`（与密码、验证码登录共用的设备登录事务）。
+- **Spec**: `docs/superpowers/specs/2026-10-20-social-sign-in-design.md`。文件：`api_social*.go` / `logic_social_*.go`（config / apple / handoff）/ `logic_login_complete.go`（验证码登录与社交登录 / handoff 共用的登录事务，不含密码登录）。
 - **端点**（`route.go`；HTTP 永远 200，错误看 code）:
 
 | Method Path | Auth | 用途 |
@@ -367,7 +367,7 @@ Still open before overleap Play Billing / campaign sends:
 
 - **nonce**：客户端生成 `rawNonce`，给提供方 `sha256hex(rawNonce)`、给我方 `rawNonce`；服务端要求 `token.nonce == sha256hex(rawNonce)`。handoff 的 nonce 由服务端生成存会话，`sha256hex` 后随 URL 交给浏览器页。
 - **aud**：token 必须**恰好一个** `aud` 且在 `BrandConfig.Social.Audiences(provider)`（`brand.go` `SocialClientIDs`）内——品牌隔离的第二道锁（第一道是 `users.brand`）。client ID 是公开值、进跨层契约（`brands.<id>.social`），改动后按根 CLAUDE.md 重生成 `contracts/api-contract.json`。所有身份查找限定 `ReqBrand(c)`。
-- **匹配顺序**：provider `sub`（`LoginIdentify`，Apple 键 `hash("apple:"+sub)`）→ 已验证邮箱命中同品牌用户 → 建号。**Google 邮箱未验证（`email_verified=false`）永不匹配、不建号**（400015）。绑定冲突：该第三方账号已绑他人 409002；本账号已绑同类另一个 409003。
+- **匹配顺序**：provider `sub`（`LoginIdentify`，Apple 键 `hash("apple:"+sub)`）→ 已验证邮箱命中同品牌用户 → 建号。**任何不可信 / 缺失的邮箱（Google 未验证、Apple 无邮箱）永不按邮箱匹配、不建号**（400015）。身份键 = `hash(provider+":"+sub)`（Google / Apple 同形）。绑定冲突：该第三方账号已绑他人 409002；本账号已绑同类另一个 409003；**仅当本账号尚无 email 身份（绑定会写 email 行）时**，可信邮箱已属本品牌别的用户 → 409001（不合并账号）；已有 email 身份则不查邮箱。
 - **handoff 只做登录，不做绑定**：桌面 / Linux / Android-Apple 的绑定一律走官网账号页（原生 token 才走 `/user/social/bind`）。`sessionId` 在 URL 里，`pollSecret` 只在 App 内存（会话存其 sha256）。Redis `social:handoff:<id>`，TTL 5 分钟；状态变更用 `SetXX ... KEEPTTL`（**Redis ≥ 6**）；领取靠先 `DEL`，删除成功者唯一胜出（单次领取）。不存在 / 过期 / 品牌或 pollSecret 不符一律 400017。
 - **Config**（viper；缺省 = 功能关；`logic_social_config.go`）:
 
@@ -378,15 +378,15 @@ social_auth:
     google: { enabled: true }          # Google 无秘密，靠显式开关上线
     apple:
       key_id: "XXXXXXXXXX"
-      private_key: |                   # 内联 .p8 PEM，写法同 appstore.iap.key
+      private_key: |                   # 内联 .p8 PEM 字符串
         -----BEGIN PRIVATE KEY-----
         <placeholder>
         -----END PRIVATE KEY-----
   overleap: { google: { enabled: true }, apple: { key_id: "...", private_key: "..." } }
 ```
 
-  Google Ready = `enabled`；Apple Ready = `key_id` 与 `private_key` 均非空。未就绪 = 提供方关：`/api/app/config` 的 `socialSignIn` 对应 flag 为 false，直调端点回 405002，不 panic。私钥来源 `~/.config/kaitu-secrets/`，**绝不进仓库 / 日志**；日志不写 idToken / refresh token，邮箱用 `hideEmail`。
-- **Apple refresh token**：`LoginIdentify.ProviderClientID` + `ProviderRefreshToken`（`secretEncryptString` 加密，默认空串）。撤销点：① 解绑（`api_social.go`）② 用户自助注销（`api_user.go`）③ 管理员硬删（`logic_approval_callbacks.go`）。**新增任何删用户入口必须在删 `LoginIdentify` 行之前调 `loadAppleRevocations`，事务提交后调 `revokeAppleTokensAsync`**（审核要求；漏了不报错，Apple 侧授权永远残留）。
+  Google Ready = `enabled`；Apple Ready = `key_id` 与 `private_key` 均非空。未就绪 = 提供方关：`/api/app/config` 的 `socialSignIn` 对应 flag 为 false，login / bind / handoff 直调端点均回 405002，不 panic。私钥来源 `~/.config/kaitu-secrets/`，**绝不进仓库**；社交代码自身不记 idToken / refresh token，邮箱用 `hideEmail`（请求日志中间件会记请求 / 响应 body，既有问题，未处理）。
+- **Apple refresh token**：`LoginIdentify.ProviderClientID` + `ProviderRefreshToken`（经 `secretEncryptString`，该函数目前直通 = 库中明文；无 .p8 私钥不可用；默认空串）。撤销点：① 解绑（`api_social.go`）② 用户自助注销（`api_user.go`）③ 管理员硬删（`logic_approval_callbacks.go`）。**新增任何删用户入口必须在删 `LoginIdentify` 行之前调 `loadAppleRevocations`，事务提交后调 `revokeAppleTokensAsync`**（审核要求；漏了不报错，Apple 侧授权永远残留）。
 - **网络调用**（JWKS、Apple token / revoke）全经包级 `var` 函数，测试替换，测试不打外网。
 - **部署核对**：两台 center 都写好 `social_auth` → `make deploy-api` → `curl -s https://www.kaitu.io/api/app/config` 与 overleap 域各一次，确认 `socialSignIn` 对应 flag 为 `true`。
 

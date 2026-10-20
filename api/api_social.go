@@ -20,6 +20,8 @@ func socialErrorCode(err error) ErrorCode {
 		return ErrorSocialProviderDisabled
 	case errors.Is(err, errSocialIdentityTaken):
 		return ErrorSocialIdentityTaken
+	case errors.Is(err, errSocialEmailInUse):
+		return ErrorEmailAlreadyInUse
 	case errors.Is(err, errSocialProviderAlreadyBound):
 		return ErrorSocialProviderAlreadyBound
 	case errors.Is(err, errSocialHandoffExpired):
@@ -84,10 +86,21 @@ func api_social_web_login(c *gin.Context) {
 		return
 	}
 
+	// 返回账号自己的 email 身份（与验证码 web 登录一致），不是 provider 给的邮箱；没有则 ""。
+	accountEmail := ""
+	if idf, ierr := GetEmailIdentifyByUserID(c, int64(userID)); ierr == nil {
+		if dec, derr := secretDecryptString(c, idf.EncryptedValue); derr == nil {
+			accountEmail = dec
+		}
+	}
+
 	resp, err := completeWebLogin(c, userID, webLoginParams{
 		Language: req.Language,
 		Email:    cl.Email,
 	})
+	if err == nil {
+		resp.User.Email = accountEmail
+	}
 	if err != nil {
 		log.Errorf(c, "social web login transaction failed for user %d: %v", userID, err)
 		ErrorE(c, err)
