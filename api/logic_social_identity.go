@@ -144,7 +144,7 @@ func attachSocialIdentityToMatchedUser(ctx context.Context, brand Brand, userID 
 	case errors.Is(err, errSocialIdentityTaken), isDuplicateKeyErr(err):
 		row, ferr := findSocialIdentity(ctx, db.Get().WithContext(ctx), brand, cl.Provider, cl.Sub)
 		if ferr != nil {
-			return 0, err // 冲突却查不到：交给上层重试
+			return 0, err // 冲突却查不到：唯一键错误由上层重试；errSocialIdentityTaken 不重试，登录会拿到 409002
 		}
 		return row.UserID, nil
 	default:
