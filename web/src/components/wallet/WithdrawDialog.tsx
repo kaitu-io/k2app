@@ -27,9 +27,9 @@ import { api } from "@/lib/api";
 
 interface WithdrawAccount {
   id: number;
-  accountType: string;      // tron, polygon, bsc, arbitrum, paypal
-  accountId: string;        // 钱包地址或 PayPal 邮箱
-  currency: string;         // usdt, usdc, usd
+  accountType: string;      // tron, polygon, bsc, arbitrum, paypal, alipay
+  accountId: string;        // 钱包地址、PayPal 邮箱或支付宝脱敏账号
+  currency: string;         // usdt, usdc, usd, cny
   label?: string;
   isDefault: boolean;
 }
@@ -165,6 +165,9 @@ export function WithdrawDialog({
     if (accountType === "paypal") {
       return "PayPal (USD)";
     }
+    if (accountType === "alipay") {
+      return `${t("wallet.wallet.alipay")} (CNY)`;
+    }
     const networkNames: Record<string, string> = {
       'tron': 'TRON (TRC20)',
       'polygon': 'Polygon',
@@ -177,8 +180,8 @@ export function WithdrawDialog({
 
   // 格式化账户标识（钱包地址截断，邮箱保持原样）
   const formatAccountId = (accountId: string, accountType: string) => {
-    if (accountType === "paypal") {
-      return accountId; // PayPal 邮箱不截断
+    if (accountType === "paypal" || accountType === "alipay") {
+      return accountId; // 邮箱 / 支付宝脱敏账号不截断
     }
     if (accountId.length <= 16) return accountId;
     return `${accountId.slice(0, 8)}...${accountId.slice(-6)}`;
@@ -301,7 +304,9 @@ export function WithdrawDialog({
               <div className="flex items-start gap-2 p-3 bg-muted border border-border rounded-lg">
                 <AlertCircle className="h-4 w-4 mt-0.5 text-secondary" />
                 <p className="text-sm text-foreground">
-                  {t("wallet.wallet.withdrawFeeNotice")}
+                  {accounts.find(a => a.id.toString() === selectedAccountId)?.accountType === "alipay"
+                    ? t("wallet.wallet.alipayWithdrawNotice")
+                    : t("wallet.wallet.withdrawFeeNotice")}
                 </p>
               </div>
             </>

@@ -236,7 +236,7 @@ func SetupRouter() *gin.Engine {
 			wallet.GET("/changes", AuthRequired(), WalletRequired(), api_get_wallet_changes)
 			// 提现账户管理
 			wallet.GET("/withdraw-accounts", AuthRequired(), WalletRequired(), api_get_withdraw_accounts)
-			wallet.POST("/withdraw-accounts", AuthRequired(), WalletRequired(), api_create_withdraw_account)
+			// POST /withdraw-accounts 挂在下方 walletSensitive 组：请求体含支付宝账号与真实姓名，不能进请求日志
 			wallet.PUT("/withdraw-accounts/:id/set-default", AuthRequired(), WalletRequired(), api_set_default_withdraw_account)
 			wallet.DELETE("/withdraw-accounts/:id", AuthRequired(), WalletRequired(), api_delete_withdraw_account)
 			// 提现申请
@@ -332,6 +332,16 @@ func SetupRouter() *gin.Engine {
 
 	}
 
+	// 载荷含收款人个人信息的路由（支付宝账号 + 真实姓名，库中加密存储）：用 requestLogWithoutBodies
+	// 代替 log.MiddlewareRequestLog(true)——后者把 POST 请求体与 JSON 响应体原样写进 app.log。
+	walletSensitive := r.Group("/api/wallet")
+	walletSensitive.Use(requestLogWithoutBodies(), MiddleRecovery(), BrandResolver(), ApiCORSMiddleware())
+	walletSensitive.POST("/withdraw-accounts", AuthRequired(), WalletRequired(), api_create_withdraw_account)
+
+	adminSensitive := r.Group("/app")
+	adminSensitive.Use(requestLogWithoutBodies(), MiddleRecovery(), BrandResolver(), CORSMiddleware(), AdminRequired())
+	adminSensitive.GET("/wallet/withdraws", api_admin_list_withdraw_requests) // 响应含解密后的支付宝收款信息
+
 	admin := r.Group("/app")
 	log.Debugf(ctx, "registering /app group")
 	admin.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), CORSMiddleware(), AdminRequired())
@@ -389,7 +399,7 @@ func SetupRouter() *gin.Engine {
 		admin.GET("/admins", api_admin_list_admin_users)
 
 		// 钱包和提现管理
-		admin.GET("/wallet/withdraws", api_admin_list_withdraw_requests)
+		// GET /wallet/withdraws 挂在上方 adminSensitive 组（响应含明文收款信息）
 		admin.POST("/wallet/withdraws/:id/approve", api_admin_approve_withdraw)
 		admin.POST("/wallet/withdraws/:id/complete", api_admin_complete_withdraw)
 		admin.POST("/orders/:uuid/refund", api_admin_refund_order)

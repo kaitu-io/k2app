@@ -78,11 +78,7 @@ func api_admin_list_withdraw_requests(c *gin.Context) {
 			FeeAmount: w.FeeAmount,
 			NetAmount: w.NetAmount,
 			Status:    string(w.Status),
-			Account: ResourceWithdrawAccount{
-				AccountType: string(w.AccountType),
-				AccountID:   w.AccountID,
-				Currency:    string(w.Currency),
-			},
+			Account:     adminWithdrawAccountResource(c, &w),
 			Remark:      w.Remark,
 			ProcessedAt: processedAt,
 		}

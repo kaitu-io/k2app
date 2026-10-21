@@ -802,6 +802,28 @@ func RetailerRequired() gin.HandlerFunc {
 	}
 }
 
+// requestLogWithoutBodies 只记请求元数据（方法 / 路由 / 状态 / 耗时），不记请求体与响应体。
+// 用于载荷含个人敏感信息的路由：log.MiddlewareRequestLog 会把 POST 请求体与 JSON 响应体
+// 原样写进 app.log，对加密存储的字段等于在日志里留了一份明文。
+func requestLogWithoutBodies() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		log.RequestId(c)
+		start := time.Now()
+		c.Next()
+		status := c.Writer.Status()
+		msg := fmt.Sprintf("request %s %s status=%d size=%d took=%s (bodies not logged)",
+			c.Request.Method, c.FullPath(), status, c.Writer.Size(), time.Since(start))
+		switch {
+		case status >= 500:
+			log.Errorf(c, "%s", msg)
+		case status >= 400:
+			log.Warnf(c, "%s", msg)
+		default:
+			log.Infof(c, "%s", msg)
+		}
+	}
+}
+
 func MiddleRecovery() gin.HandlerFunc {
 	return gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
 		stack := debug.Stack()

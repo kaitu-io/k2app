@@ -774,8 +774,9 @@ export interface ResourceCashback {
 }
 
 export interface ResourceWithdrawAccount {
-  accountType: string;     // 渠道类型: tron, polygon, bsc, arbitrum, paypal
-  accountId: string;       // 收款标识（钱包地址/PayPal邮箱）
+  accountType: string;     // 渠道类型: tron, polygon, bsc, arbitrum, paypal, alipay
+  accountId: string;       // 收款标识（钱包地址/PayPal邮箱/支付宝账号，管理端为明文）
+  realName?: string;       // 收款人真实姓名（仅支付宝）
   currency?: string;       // 币种: usdt, usdc, usd
 }
 
@@ -2125,9 +2126,10 @@ export const api = {
   },
 
   // Create withdraw account
-  // accountType: tron, polygon, bsc, arbitrum, paypal
-  // currency: usdt, usdc (加密货币), usd (PayPal 自动设置)
-  async createWithdrawAccount(data: { accountType: string; accountId: string; currency: string; label?: string }) {
+  // accountType: tron, polygon, bsc, arbitrum, paypal, alipay
+  // currency: usdt, usdc (加密货币), usd (PayPal), cny (支付宝)，后两者服务端强制
+  // realName: 支付宝实名认证的真实姓名（仅支付宝，必填；服务端加密存储）
+  async createWithdrawAccount(data: { accountType: string; accountId: string; currency: string; label?: string; realName?: string }) {
     return this.request(`/api/wallet/withdraw-accounts`, {
       method: 'POST',
       body: JSON.stringify(data),

@@ -3,7 +3,7 @@
  *
  * `defineApiTool` targets the Center Go API's `{code, message, data}` envelope
  * (always HTTP 200), with GET query-string building, POST/PUT/DELETE body
- * construction, dynamic path interpolation, `mapQuery`/`mapBody` overrides,
+ * construction, dynamic path interpolation, `mapQuery`/`mapBody`/`mapResponse` overrides,
  * unified error formatting, and audit logging.
  */
 
@@ -29,6 +29,8 @@ export interface ApiToolDef {
   path: string | ((params: Params) => string)
   mapQuery?: (params: Params) => Record<string, string>
   mapBody?: (params: Params) => unknown
+  /** Transforms `data` before it reaches the model — e.g. redacting PII the tool's caller doesn't need. */
+  mapResponse?: (data: unknown) => unknown
 }
 
 export interface ToolRegistration {
@@ -169,7 +171,7 @@ export function defineApiTool(def: ApiToolDef): ToolRegistration {
               content: [
                 {
                   type: 'text' as const,
-                  text: JSON.stringify(response.data, null, 2),
+                  text: JSON.stringify(def.mapResponse ? def.mapResponse(response.data) : response.data, null, 2),
                 },
               ],
             }

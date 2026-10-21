@@ -528,9 +528,10 @@ type ResourceCashback struct {
 
 // ResourceWithdrawAccount 提现账户资源
 type ResourceWithdrawAccount struct {
-	AccountType string `json:"accountType"`           // 渠道类型: tron, polygon, bsc, arbitrum, paypal
-	AccountID   string `json:"accountId"`             // 收款标识（钱包地址/PayPal邮箱）
-	Currency    string `json:"currency,omitempty"`    // 币种（仅加密货币）: usdt, usdc
+	AccountType string `json:"accountType"`           // 渠道类型: tron, polygon, bsc, arbitrum, paypal, alipay
+	AccountID   string `json:"accountId"`             // 收款标识（钱包地址/PayPal邮箱/支付宝账号明文）
+	Currency    string `json:"currency,omitempty"`    // 币种: usdt, usdc, usd, cny
+	RealName    string `json:"realName,omitempty"`    // 收款人真实姓名（仅支付宝，管理端打款用）
 }
 
 // ResourceTransaction 交易凭证资源
@@ -888,12 +889,14 @@ type UpdateBetaChannelRequest struct {
 
 // CreateWithdrawAccountRequest 创建提现账户请求
 type CreateWithdrawAccountRequest struct {
-	// 渠道类型: tron, polygon, bsc, arbitrum, paypal
+	// 渠道类型: tron, polygon, bsc, arbitrum, paypal, alipay
 	AccountType WithdrawAccountType `json:"accountType" binding:"required"`
-	// 收款标识（加密货币=钱包地址，PayPal=邮箱地址）
+	// 收款标识（加密货币=钱包地址，PayPal=邮箱地址，支付宝=手机号或邮箱）
 	AccountID string `json:"accountId" binding:"required"`
-	// 币种: usdt, usdc（加密货币）或 usd（PayPal）
+	// 币种: usdt, usdc（加密货币）、usd（PayPal）或 cny（支付宝），后两者由服务端强制
 	Currency Currency `json:"currency" binding:"required"`
+	// 支付宝实名认证的真实姓名（仅支付宝，必填）
+	RealName string `json:"realName"`
 	// 账户标签（可选，如"主账户"、"公司账户"）
 	Label string `json:"label"`
 }

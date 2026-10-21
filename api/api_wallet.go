@@ -1,7 +1,9 @@
 package center
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -80,6 +82,9 @@ func api_get_withdraw_accounts(c *gin.Context) {
 		Error(c, 500, "查询提现账户失败")
 		return
 	}
+	for i := range accounts {
+		maskWithdrawAccountForUser(c, &accounts[i])
+	}
 
 	Success(c, &accounts)
 }
@@ -101,6 +106,7 @@ func api_create_withdraw_account(c *gin.Context) {
 		WithdrawAccountTypeBSC:      true,
 		WithdrawAccountTypeArbitrum: true,
 		WithdrawAccountTypePayPal:   true,
+		WithdrawAccountTypeAlipay:   true,
 	}
 	if !validAccountTypes[req.AccountType] {
 		Error(c, 422, "不支持的渠道类型")
@@ -112,6 +118,9 @@ func api_create_withdraw_account(c *gin.Context) {
 	if req.AccountType == WithdrawAccountTypePayPal {
 		// PayPal 强制使用 USD
 		currency = CurrencyUSD
+	} else if req.AccountType == WithdrawAccountTypeAlipay {
+		// 支付宝强制使用 CNY
+		currency = CurrencyCNY
 	} else {
 		// 加密货币验证币种
 		if req.Currency != CurrencyUSDT && req.Currency != CurrencyUSDC {
@@ -121,8 +130,31 @@ func api_create_withdraw_account(c *gin.Context) {
 		currency = req.Currency
 	}
 
-	// 验证收款标识格式
-	if err := validateAccountID(req.AccountType, req.AccountID); err != nil {
+	// 支付宝：明文只进密文列，AccountID 存确定性哈希用于去重
+	var accountSecret string
+	if req.AccountType == WithdrawAccountTypeAlipay {
+		account := normalizeAlipayAccount(req.AccountID)
+		realName := strings.TrimSpace(req.RealName)
+		if err := validateAlipayPayee(account, realName); err != nil {
+			Error(c, 422, err.Error())
+			return
+		}
+		secret, err := encryptAlipayPayee(c, alipayPayee{Account: account, RealName: realName})
+		if err != nil {
+			log.Errorf(c, "failed to encrypt alipay payee: %v", err)
+			Error(c, 500, "创建提现账户失败")
+			return
+		}
+		accountID, err := alipayAccountID(c, userID, account)
+		if err != nil {
+			log.Errorf(c, "failed to derive alipay account id: %v", err)
+			Error(c, 500, "创建提现账户失败")
+			return
+		}
+		accountSecret = secret
+		req.AccountID = accountID
+	} else if err := validateAccountID(req.AccountType, req.AccountID); err != nil {
+		// 验证收款标识格式
 		Error(c, 422, err.Error())
 		return
 	}
@@ -143,13 +175,44 @@ func api_create_withdraw_account(c *gin.Context) {
 	db.Get().Model(&WithdrawAccount{}).Where(&WithdrawAccount{UserID: userID}).Count(&accountCount)
 	isDefault := accountCount == 0
 
+	// account_id 唯一索引包含软删除的行：本人删过的同一账户就地恢复（如删掉重填姓名），
+	// 被别的账号占用则明确拒绝，而不是撞索引报 500
+	var stale WithdrawAccount
+	err := db.Get().Unscoped().Where(&WithdrawAccount{AccountID: req.AccountID}).First(&stale).Error
+	if err == nil {
+		if stale.UserID != userID || stale.AccountType != req.AccountType || !stale.DeletedAt.Valid {
+			Error(c, 422, "该收款账户已被绑定，无法重复添加")
+			return
+		}
+		stale.DeletedAt = gorm.DeletedAt{}
+		stale.Currency = currency
+		stale.AccountSecret = accountSecret
+		stale.Label = req.Label
+		stale.IsDefault = BoolPtr(isDefault)
+		if err := db.Get().Unscoped().Model(&stale).
+			Select("DeletedAt", "Currency", "AccountSecret", "Label", "IsDefault").
+			Updates(&stale).Error; err != nil {
+			log.Errorf(c, "恢复提现账户失败: %v", err)
+			Error(c, 500, "创建提现账户失败")
+			return
+		}
+		maskWithdrawAccountForUser(c, &stale)
+		Success(c, &stale)
+		return
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		log.Errorf(c, "查询提现账户失败: %v", err)
+		Error(c, 500, "创建提现账户失败")
+		return
+	}
+
 	account := WithdrawAccount{
 		UserID:      userID,
 		AccountType: req.AccountType,
 		AccountID:   req.AccountID,
-		Currency:    currency,
-		Label:       req.Label,
-		IsDefault:   BoolPtr(isDefault),
+		Currency:      currency,
+		AccountSecret: accountSecret,
+		Label:         req.Label,
+		IsDefault:     BoolPtr(isDefault),
 	}
 
 	if err := db.Get().Create(&account).Error; err != nil {
@@ -158,6 +221,7 @@ func api_create_withdraw_account(c *gin.Context) {
 		return
 	}
 
+	maskWithdrawAccountForUser(c, &account)
 	Success(c, &account)
 }
 
@@ -317,6 +381,9 @@ func api_get_withdraw_requests(c *gin.Context) {
 		Error(c, 500, "查询失败")
 		return
 	}
+	for i := range withdraws {
+		maskWithdrawForUser(c, &withdraws[i])
+	}
 
 	pagination.Total = total
 	List(c, withdraws, pagination)
@@ -379,6 +446,7 @@ func api_create_withdraw_request(c *gin.Context) {
 			AccountType:       account.AccountType,
 			AccountID:         account.AccountID,
 			Currency:          account.Currency,
+			AccountSecret:     account.AccountSecret,
 			Status:            WithdrawStatusPending,
 			Remark:            req.UserRemark,
 		}
@@ -431,6 +499,7 @@ func api_create_withdraw_request(c *gin.Context) {
 		return
 	}
 
+	maskWithdrawForUser(c, &withdraw)
 	Success(c, &withdraw)
 }
 
