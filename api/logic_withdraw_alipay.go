@@ -2,7 +2,10 @@ package center
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -19,7 +22,9 @@ import (
 // SECRET_KEY_HASH 由进程启动时注入）。注意不要改用 secretEncryptString——它目前是明文直通。
 //
 // AccountID 列有全局唯一索引，而 GCM 每次随机 nonce、密文不可比较，所以支付宝的
-// AccountID 存账号的确定性哈希（"alipay:" + secretHashIt），只用于去重，从不展示。
+// AccountID 存 HMAC-SHA256(SECRET_KEY_HASH, user_id + 账号)，只用于本人去重，从不展示：
+//   - 带密钥：手机号空间只有 ~10^10，无密钥哈希（如 secretHashIt 的源码常量盐）库一泄露即可穷举反推；
+//   - 带 user_id：唯一性落在本人维度，别的账号既无法探测某支付宝号是否已被绑定，也无法抢先占用。
 // 用户侧接口返回前用 maskWithdrawAccountForUser / maskWithdrawForUser 换成脱敏值；
 // 只有管理端提现列表（打款要用）解密出明文。
 
@@ -66,9 +71,15 @@ func validateAlipayPayee(account, realName string) error {
 	return nil
 }
 
-// alipayAccountID 返回用于唯一索引去重的确定性标识
-func alipayAccountID(ctx context.Context, account string) string {
-	return alipayAccountIDPrefix + secretHashIt(ctx, []byte(account))
+// alipayAccountID 返回用于唯一索引去重的确定性标识（入参账号须已规范化）
+func alipayAccountID(ctx context.Context, userID uint64, account string) (string, error) {
+	key, err := getGlobalSecretKey(ctx)
+	if err != nil {
+		return "", err
+	}
+	mac := hmac.New(sha256.New, key)
+	fmt.Fprintf(mac, "withdraw-alipay:%d:%s", userID, account)
+	return alipayAccountIDPrefix + hex.EncodeToString(mac.Sum(nil)), nil
 }
 
 // encryptAlipayPayee 加密收款信息，返回 base64(nonce|ciphertext|tag)

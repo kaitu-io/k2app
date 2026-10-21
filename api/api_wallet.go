@@ -145,8 +145,14 @@ func api_create_withdraw_account(c *gin.Context) {
 			Error(c, 500, "创建提现账户失败")
 			return
 		}
+		accountID, err := alipayAccountID(c, userID, account)
+		if err != nil {
+			log.Errorf(c, "failed to derive alipay account id: %v", err)
+			Error(c, 500, "创建提现账户失败")
+			return
+		}
 		accountSecret = secret
-		req.AccountID = alipayAccountID(c, account)
+		req.AccountID = accountID
 	} else if err := validateAccountID(req.AccountType, req.AccountID); err != nil {
 		// 验证收款标识格式
 		Error(c, 422, err.Error())

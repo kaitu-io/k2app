@@ -78,15 +78,29 @@ func TestAlipayPayee_Validate(t *testing.T) {
 	}
 }
 
-func TestAlipayAccountID_DeterministicAndNormalized(t *testing.T) {
+func TestAlipayAccountID_KeyedPerUserAndNormalized(t *testing.T) {
+	t.Setenv("SECRET_KEY_HASH", alipayTestKey)
 	ctx := context.Background()
-	a := alipayAccountID(ctx, normalizeAlipayAccount("  User@Example.COM "))
-	b := alipayAccountID(ctx, normalizeAlipayAccount("user@example.com"))
-	assert.Equal(t, a, b, "邮箱大小写/空白不同应视为同一账户")
+	id := func(userID uint64, account string) string {
+		t.Helper()
+		v, err := alipayAccountID(ctx, userID, account)
+		require.NoError(t, err)
+		return v
+	}
+	a := id(1, normalizeAlipayAccount("  User@Example.COM "))
+	assert.Equal(t, a, id(1, normalizeAlipayAccount("user@example.com")), "邮箱大小写/空白不同应视为同一账户")
 	assert.True(t, strings.HasPrefix(a, alipayAccountIDPrefix))
 	assert.LessOrEqual(t, len(a), 100, "必须放得进 account_id varchar(100)")
 	assert.NotContains(t, a, "example")
-	assert.NotEqual(t, a, alipayAccountID(ctx, "13812345678"))
+	assert.NotEqual(t, a, id(1, "13812345678"))
+	assert.NotEqual(t, a, id(2, "user@example.com"), "按用户隔离：别人绑同一账号不冲突、不可探测")
+	// 带密钥：不同密钥得到不同标识（无密钥的源码常量盐哈希可被离线穷举手机号）
+	assert.NotEqual(t, a, secretHashIt(ctx, []byte("user@example.com")))
+	t.Setenv("SECRET_KEY_HASH", "fedcba9876543210fedcba9876543210")
+	assert.NotEqual(t, a, id(1, "user@example.com"))
+	t.Setenv("SECRET_KEY_HASH", "")
+	_, err := alipayAccountID(ctx, 1, "user@example.com")
+	assert.Error(t, err, "没有密钥必须失败，不能退化成无密钥哈希")
 }
 
 func TestAlipayMasking(t *testing.T) {
@@ -220,9 +234,12 @@ func TestAlipayWithdraw_EndToEnd(t *testing.T) {
 	assert.Equal(t, "王晓二", payee.RealName)
 	assert.True(t, *restored.IsDefault, "唯一账户恢复后应为默认")
 
-	// 5. 别的账号绑同一支付宝：明确 422，不是 500
+	// 5. 别的账号绑同一支付宝：唯一性按用户隔离，不冲突（也就无从探测别人绑了什么）
 	resp = addAlipay(otherKey, phone, "王晓二")
-	assert.Equal(t, 422, resp.Code, resp.Message)
+	assert.Equal(t, 0, resp.Code, resp.Message)
+	var otherRow WithdrawAccount
+	require.NoError(t, db.Get().Where(&WithdrawAccount{UserID: other.ID}).First(&otherRow).Error)
+	assert.NotEqual(t, row.AccountID, otherRow.AccountID)
 
 	// 6. 列表脱敏
 	resp = call("GET", "/api/wallet/withdraw-accounts", key, nil)
