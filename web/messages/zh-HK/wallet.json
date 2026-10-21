@@ -79,7 +79,7 @@
     "loadAccountsFailed": "載入帳戶清單失敗",
     "noAccountsDescription": "新增您嘅第一個提現帳戶，開始管理您嘅資金。",
     "addFirstAccount": "新增第一個帳戶",
-    "addAccountDescription": "選擇提現方式並填寫收款資訊，支援加密貨幣錢包同 PayPal。",
+    "addAccountDescription": "選擇提現方式並填寫收款資訊，支援支付寶、加密貨幣錢包同 PayPal。",
     "selectChannelType": "選擇提現方式",
     "channelType": "提現渠道",
     "accountIdentifier": "收款標識",

@@ -327,8 +327,8 @@ export default function WalletWithdrawsPage() {
                   <TableRow>
                     <TableHead className="w-[180px]">{t("common.common.time")}</TableHead>
                     <TableHead className="text-right">{t("common.common.amount")}</TableHead>
-                    <TableHead>{t("wallet.wallet.network")}</TableHead>
-                    <TableHead>{t("wallet.wallet.walletAddress")}</TableHead>
+                    <TableHead>{t("wallet.wallet.channelType")}</TableHead>
+                    <TableHead>{t("wallet.wallet.accountIdentifier")}</TableHead>
                     <TableHead>{t("common.common.status")}</TableHead>
                     <TableHead>{t("wallet.wallet.transaction")}</TableHead>
                     <TableHead>{t("wallet.wallet.remark")}</TableHead>

@@ -79,7 +79,7 @@
     "loadAccountsFailed": "加载账户列表失败",
     "noAccountsDescription": "添加您的第一个提现账户，开始管理您的资金。",
     "addFirstAccount": "添加第一个账户",
-    "addAccountDescription": "选择提现方式并填写收款信息，支持加密货币钱包和 PayPal。",
+    "addAccountDescription": "选择提现方式并填写收款信息，支持支付宝、加密货币钱包和 PayPal。",
     "selectChannelType": "选择提现方式",
     "channelType": "提现渠道",
     "accountIdentifier": "收款标识",
