@@ -21,7 +21,7 @@
     "build": "tsc"
   },
   "peerDependencies": {
-    "@capacitor/core": ">=7.0.0"
+    "@capacitor/core": ">=8.0.0"
   },
   "devDependencies": {
     "typescript": "^5.0.0"

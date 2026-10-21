@@ -2,8 +2,8 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
 android {
-    namespace "io.kaitu"
-    compileSdk rootProject.ext.compileSdkVersion
+    namespace = "io.kaitu"
+    compileSdk = rootProject.ext.compileSdkVersion
 
     defaultConfig {
         minSdkVersion rootProject.ext.minSdkVersion
@@ -14,7 +14,7 @@ android {
             abiFilters 'arm64-v8a'
         }
         aaptOptions {
-            ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
 
@@ -88,8 +88,11 @@ android {
         buildConfig true
     }
 
-    kotlinOptions {
-        jvmTarget = '21'
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21
     }
 }
 

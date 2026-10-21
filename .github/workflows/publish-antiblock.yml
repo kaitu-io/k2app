@@ -22,7 +22,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22' # @capacitor/cli 8 engines.node >=22 — yarn 1 fails the root install on 20
 
       - name: Fetch node seed from Center
         run: |

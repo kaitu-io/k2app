@@ -1,20 +1,20 @@
-# Mobile — Capacitor 7 + gomobile
+# Mobile — Capacitor 8 + gomobile
 
-Capacitor 7 mobile app wrapping the k2 Go tunnel core via gomobile. K2Plugin bridges JS ↔ native VPN lifecycle.
+Capacitor 8 mobile app wrapping the k2 Go tunnel core via gomobile. K2Plugin bridges JS ↔ native VPN lifecycle.
 
-## Toolchain baseline (Capacitor 7)
+## Toolchain baseline (Capacitor 8, upgraded 2026-10-21)
 
-- Node ≥ 20
-- **JDK 21** required for Android builds (Cap 7 regenerates `capacitor.build.gradle` with `VERSION_21` on every `cap sync`; JDK 17 will fail with `invalid source release: 21`).
+- **Node ≥ 22** — `@capacitor/cli` 8 declares `engines.node >=22`, and yarn 1 **fails the whole root `yarn install`** on an engines mismatch, so every workflow that installs the root workspace (not just mobile) must run Node 22. All `.github/workflows` pin `'22'`; don't drop one back to 20.
+- **JDK 21** required for Android builds (Capacitor regenerates `capacitor.build.gradle` with `VERSION_21` on every `cap sync`; JDK 17 will fail with `invalid source release: 21`).
   - **Local:** just `brew install openjdk@21`. The root `Makefile`'s `ANDROID_JAVA_HOME` auto-detects it and exports `JAVA_HOME` only for `appext-android` / `build-android` / `dev-android` targets — your shell's default `JAVA_HOME` stays untouched. `make check-jdk-21` prints the install hint on failure.
   - **CI:** `actions/setup-java@v4` with `java-version: '21'` in `.github/workflows/build-mobile.yml`.
-- Gradle wrapper 8.13 + AGP 8.11.1 + Kotlin 1.9.25
+- Gradle wrapper 8.14.3 + AGP 8.13.0 + Kotlin 2.2.20 (Kotlin 2.2 rejects the old `kotlinOptions {}` block — JVM target lives in a top-level `kotlin { compilerOptions { … } }`). `versionCode` / `versionName` keep the old space-separated Groovy syntax on purpose: `scripts/sync-version.sh` and CI `check-versions` match them by sed pattern.
 - **compileSdk / targetSdk 36** (`android/variables.gradle`, minSdk 24). Play rejects an upload
   targeting below 36, so this is a floor, not a preference — bumping it back breaks the Play lane
   silently (CI still builds; only the Console refuses).
 - **Xcode 26+** required for App Store submissions (Apple mandate from 2026-04-28: iOS 26 SDK + Xcode 26). CI pins `runs-on: macos-26` with `setup-xcode@v1 xcode-version: '26.4'`. Local dev machines need macOS 15.6+ to install Xcode 26.
 - iOS deployment target: 14.0 at the pbxproj project level, but every target (App, PacketTunnelExtension, K2Tests) overrides to **16.0** and `Podfile` is `platform :ios, '16.0'` — 16 is the real floor.
-- CocoaPods for iOS (NOT SPM — avoids Capacitor 8's SPM regression surface when we later upgrade)
+- CocoaPods for iOS (NOT SPM — Capacitor 8 defaults *new* projects to SPM; existing CocoaPods projects keep working, and switching is a separate change)
 
 ## Commands
 
@@ -245,7 +245,7 @@ Go package `k2/appext/` → gomobile naming:
 - **iOS extension plist**: Must have explicit `CFBundleExecutable` + `CFBundleVersion`. Build settings NOT inherited from project.
 - **Android JVM unit tests**: Pure utils in `K2VpnServiceUtils.kt` / `K2PluginUtils.kt` / `AutoUpdatePlan.kt` / `WebBootDecision.kt`. Need `testImplementation "org.json:json:20231013"` (built into Android runtime but not JVM).
 - **Capacitor iOS router fix**: `AppBridgeViewController` overrides `router()` with `FixedCapacitorRouter` — added for the Capacitor 6.x empty-path bug, kept through v7 since it's harmless. Main.storyboard must reference this subclass.
-- **Android 15 edge-to-edge**: Handled by `@capawesome/capacitor-android-edge-to-edge-support` (pads the WebView's parent for system-bar insets). `BottomNavigation.tsx` uses plain `env(safe-area-inset-bottom, 0px)` — works on iOS natively and on Android via the plugin. Do not hand-roll CSS variables or MainActivity WindowInsets listeners.
+- **Android 15 edge-to-edge**: Handled by `@capawesome/capacitor-android-edge-to-edge-support` (pads the WebView's parent for system-bar insets). Capacitor 8's core `SystemBars` plugin also handles insets **by default** — `capacitor.config.ts` sets `SystemBars.insetsHandling: 'disable'` as the capawesome README requires; remove that line and the insets are applied twice. `BottomNavigation.tsx` uses plain `env(safe-area-inset-bottom, 0px)` — works on iOS natively and on Android via the plugin. Do not hand-roll CSS variables or MainActivity WindowInsets listeners.
 - **VPN teardown critical**: `vpnInterface.close()` is mandatory on Android. Without it, Android keeps VPN routing active → all external requests hang. Only phone reboot recovers.
 - **K2Plugin dual-CDN pattern**: `fetchManifest(endpoints)` tries CloudFront first, S3 fallback. `resolveDownloadURL()` handles relative vs absolute URLs.
 - **Android `VpnService.protect()` scope**: Must protect wire transport (QUIC UDP, TCP-WS TCP), direct DNS (raw UDP), and direct tunnel connections (smart routing bypass). Uses `syscall.RawConn.Control()` in Go's `net.Dialer.Control`. gomobile requires `int32` fd parameter (not `int`).

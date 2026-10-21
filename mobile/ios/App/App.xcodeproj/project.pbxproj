@@ -7,15 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A9F11BBBBBB0000000B0002 /* IapHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A9F11AAAAAA0000000A0001 /* IapHelpers.swift */; };
+		1A9F11BBBBBB0000000B0004 /* IapHelpersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A9F11AAAAAA0000000A0003 /* IapHelpersTests.swift */; };
+		1A9F11BBBBBB0000000B0006 /* BrandDerivationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A9F11AAAAAA0000000A0005 /* BrandDerivationTests.swift */; };
+		1A9F11BBBBBB0000000B0010 /* MinisignVerifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A9F11AAAAAA0000000A0010 /* MinisignVerifier.swift */; };
+		1A9F11BBBBBB0000000B0011 /* MinisignVerifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A9F11AAAAAA0000000A0011 /* MinisignVerifierTests.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		3781D684BB9C96059E40EA5D /* NEHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10F65EE64D38B428B1B21F29 /* NEHelpers.swift */; };
 		41A12CB52DDBDCFEF454E423 /* NEHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10F65EE64D38B428B1B21F29 /* NEHelpers.swift */; };
 		4A0F6114028D95A7FEB60E53 /* K2Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBFAE7F17CEFF46E3748DC13 /* K2Helpers.swift */; };
-		1A9F11BBBBBB0000000B0002 /* IapHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A9F11AAAAAA0000000A0001 /* IapHelpers.swift */; };
-		1A9F11BBBBBB0000000B0004 /* IapHelpersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A9F11AAAAAA0000000A0003 /* IapHelpersTests.swift */; };
-		1A9F11BBBBBB0000000B0010 /* MinisignVerifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A9F11AAAAAA0000000A0010 /* MinisignVerifier.swift */; };
-		1A9F11BBBBBB0000000B0011 /* MinisignVerifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A9F11AAAAAA0000000A0011 /* MinisignVerifierTests.swift */; };
-		1A9F11BBBBBB0000000B0006 /* BrandDerivationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A9F11AAAAAA0000000A0005 /* BrandDerivationTests.swift */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
@@ -72,6 +72,11 @@
 /* Begin PBXFileReference section */
 		10F65EE64D38B428B1B21F29 /* NEHelpers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NEHelpers.swift; sourceTree = "<group>"; };
 		13241B00605BFFDAF811223D /* NativeLogger.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NativeLogger.swift; sourceTree = "<group>"; };
+		1A9F11AAAAAA0000000A0001 /* IapHelpers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = IapHelpers.swift; path = "../../../plugins/k2-plugin/ios/Plugin/IapHelpers.swift"; sourceTree = "<group>"; };
+		1A9F11AAAAAA0000000A0003 /* IapHelpersTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = IapHelpersTests.swift; sourceTree = "<group>"; };
+		1A9F11AAAAAA0000000A0005 /* BrandDerivationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BrandDerivationTests.swift; sourceTree = "<group>"; };
+		1A9F11AAAAAA0000000A0010 /* MinisignVerifier.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MinisignVerifier.swift; path = "../../../plugins/k2-plugin/ios/Plugin/MinisignVerifier.swift"; sourceTree = "<group>"; };
+		1A9F11AAAAAA0000000A0011 /* MinisignVerifierTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MinisignVerifierTests.swift; sourceTree = "<group>"; };
 		1BA01B94F08FAC328D94CDED /* Pods-PacketTunnelExtension.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-PacketTunnelExtension.debug.xcconfig"; path = "Pods/Target Support Files/Pods-PacketTunnelExtension/Pods-PacketTunnelExtension.debug.xcconfig"; sourceTree = "<group>"; };
 		233A3F316C4F467CA6A1A8A2 /* Pods_PacketTunnelExtension.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_PacketTunnelExtension.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
@@ -93,19 +98,6 @@
 		AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.release.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.release.xcconfig"; sourceTree = "<group>"; };
 		B3E4F1BB9F484E6F4766ADD2 /* PacketTunnelExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PacketTunnelExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		BBCE1198135DD938090D5E41 /* K2Mobile.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcframework; path = K2Mobile.xcframework; sourceTree = SOURCE_ROOT; };
-		BF81A8541F041F2827C75E09 /* K2HelpersTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = K2HelpersTests.swift; sourceTree = "<group>"; };
-		CBFAE7F17CEFF46E3748DC13 /* K2Helpers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = K2Helpers.swift; path = "../../../plugins/k2-plugin/ios/Plugin/K2Helpers.swift"; sourceTree = "<group>"; };
-		1A9F11AAAAAA0000000A0001 /* IapHelpers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = IapHelpers.swift; path = "../../../plugins/k2-plugin/ios/Plugin/IapHelpers.swift"; sourceTree = "<group>"; };
-		1A9F11AAAAAA0000000A0003 /* IapHelpersTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = IapHelpersTests.swift; sourceTree = "<group>"; };
-		1A9F11AAAAAA0000000A0010 /* MinisignVerifier.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MinisignVerifier.swift; path = "../../../plugins/k2-plugin/ios/Plugin/MinisignVerifier.swift"; sourceTree = "<group>"; };
-		1A9F11AAAAAA0000000A0011 /* MinisignVerifierTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MinisignVerifierTests.swift; sourceTree = "<group>"; };
-		1A9F11AAAAAA0000000A0005 /* BrandDerivationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BrandDerivationTests.swift; sourceTree = "<group>"; };
-		D08300DE0A8C33C607A9BC3E /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
-		D37F6F07B15C96C61F3681FF /* Pods-PacketTunnelExtension.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-PacketTunnelExtension.release.xcconfig"; path = "Pods/Target Support Files/Pods-PacketTunnelExtension/Pods-PacketTunnelExtension.release.xcconfig"; sourceTree = "<group>"; };
-		DDF0660D7E007B680F0370F8 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
-		E8FBC8B200147C902DEE140F /* NEHelpersTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NEHelpersTests.swift; sourceTree = "<group>"; };
-		FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.debug.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig"; sourceTree = "<group>"; };
-		FF10000000000000000000A2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		BEEF00000000000000000001 /* brand-kaitu.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "brand-kaitu.xcconfig"; sourceTree = "<group>"; };
 		BEEF00000000000000000002 /* brand-overleap.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "brand-overleap.xcconfig"; sourceTree = "<group>"; };
 		BEEF00000000000000000003 /* brand-active.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "brand-active.xcconfig"; sourceTree = "<group>"; };
@@ -113,6 +105,14 @@
 		BEEF00000000000000000015 /* App-Base-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "App-Base-Release.xcconfig"; sourceTree = "<group>"; };
 		BEEF00000000000000000016 /* PacketTunnelExtension-Base-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "PacketTunnelExtension-Base-Debug.xcconfig"; sourceTree = "<group>"; };
 		BEEF00000000000000000017 /* PacketTunnelExtension-Base-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "PacketTunnelExtension-Base-Release.xcconfig"; sourceTree = "<group>"; };
+		BF81A8541F041F2827C75E09 /* K2HelpersTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = K2HelpersTests.swift; sourceTree = "<group>"; };
+		CBFAE7F17CEFF46E3748DC13 /* K2Helpers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = K2Helpers.swift; path = "../../../plugins/k2-plugin/ios/Plugin/K2Helpers.swift"; sourceTree = "<group>"; };
+		D08300DE0A8C33C607A9BC3E /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		D37F6F07B15C96C61F3681FF /* Pods-PacketTunnelExtension.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-PacketTunnelExtension.release.xcconfig"; path = "Pods/Target Support Files/Pods-PacketTunnelExtension/Pods-PacketTunnelExtension.release.xcconfig"; sourceTree = "<group>"; };
+		DDF0660D7E007B680F0370F8 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
+		E8FBC8B200147C902DEE140F /* NEHelpersTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NEHelpersTests.swift; sourceTree = "<group>"; };
+		FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.debug.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig"; sourceTree = "<group>"; };
+		FF10000000000000000000A2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -234,14 +234,6 @@
 			name = Pods;
 			sourceTree = "<group>";
 		};
-		F51C0397F366A222FECB19D5 /* iOS */ = {
-			isa = PBXGroup;
-			children = (
-				D08300DE0A8C33C607A9BC3E /* Foundation.framework */,
-			);
-			name = iOS;
-			sourceTree = "<group>";
-		};
 		BEEF00000000000000000006 /* Config */ = {
 			isa = PBXGroup;
 			children = (
@@ -254,6 +246,14 @@
 				BEEF00000000000000000017 /* PacketTunnelExtension-Base-Release.xcconfig */,
 			);
 			path = Config;
+			sourceTree = "<group>";
+		};
+		F51C0397F366A222FECB19D5 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				D08300DE0A8C33C607A9BC3E /* Foundation.framework */,
+			);
+			name = iOS;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -366,6 +366,7 @@
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
 				AA10000000000000000000A1 /* InfoPlist.strings in Resources */,
+				FF10000000000000000000A1 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -394,14 +395,15 @@
 			inputPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-App/Pods-App-resources.sh",
 				"${PODS_ROOT}/../../../../node_modules/@capacitor/ios/Capacitor/Capacitor/assets/native-bridge.js",
-				"${PODS_ROOT}/../../../../node_modules/@capacitor/ios/Capacitor/Capacitor/PrivacyInfo.xcprivacy",
-				"${PODS_ROOT}/../../../../node_modules/@capacitor/ios/CapacitorCordova/CapacitorCordova/PrivacyInfo.xcprivacy",
+				"${PODS_CONFIGURATION_BUILD_DIR}/Capacitor/Capacitor.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/CapacitorCordova/CapacitorCordova.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/SSZipArchive/SSZipArchive.bundle",
 			);
 			name = "[CP] Copy Pods Resources";
 			outputPaths = (
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/native-bridge.js",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/PrivacyInfo.xcprivacy",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Capacitor.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CapacitorCordova.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/SSZipArchive.bundle",
 			);
 			runOnlyForDeploymentPostprocessing = 0;

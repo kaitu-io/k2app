@@ -19,7 +19,7 @@ export K2_BRAND = $(BRAND)
 BRAND_PRODUCT := $(if $(filter overleap,$(BRAND)),Overleap,Kaitu)
 TAURI_CONFIG_ARG := $(if $(filter overleap,$(BRAND)),--config src-tauri/tauri.conf.overleap.json,)
 
-# Capacitor 7 Android targets require JDK 21. Honor caller's JAVA_HOME if it's
+# Capacitor 8 Android targets require JDK 21. Honor caller's JAVA_HOME if it's
 # already 21.x (CI sets this via actions/setup-java); otherwise auto-detect a
 # brew-installed openjdk@21 locally. Leaves system-default JDK alone so other
 # projects keep their JDK 17/20/etc.
@@ -34,7 +34,7 @@ ANDROID_JAVA_HOME := $(shell \
 check-jdk-21:
 	@if [ -z "$(ANDROID_JAVA_HOME)" ]; then \
 	  echo ""; \
-	  echo "❌ JDK 21 required for Capacitor 7 Android builds, none found."; \
+	  echo "❌ JDK 21 required for Capacitor 8 Android builds, none found."; \
 	  echo "   macOS: brew install openjdk@21"; \
 	  echo "   Or set JAVA_HOME to an existing JDK 21 install."; \
 	  echo ""; \

@@ -294,7 +294,7 @@ jobs:
         if: matrix.platform == 'macOS' || matrix.platform == 'Linux'
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22' # @capacitor/cli 8 engines.node >=22 — yarn 1 fails the root install on 20
           cache: 'yarn'
 
       - name: Verify tools (self-hosted macOS)
