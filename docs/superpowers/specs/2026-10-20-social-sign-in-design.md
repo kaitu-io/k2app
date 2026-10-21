@@ -92,16 +92,17 @@ Apple 的 `team_id/key_id/private_key` 用于生成 client secret，去换 refre
 
 | 方法 | 路径 | 鉴权 | 用途 |
 |---|---|---|---|
-| POST | `/api/auth/social/login` | 无 | App 内原生登录（设备绑定），body：`provider, idToken, nonce, authorizationCode?, udid, remark, language` → `DataAuthResult` |
+| POST | `/api/auth/social/login` | 无 | App 登录（设备绑定，所有端），body：`provider, idToken, nonce, authorizationCode?, redirectURI?, udid, remark, language` → `DataAuthResult` |
 | POST | `/api/auth/social/web-login` | 无 | 官网登录（cookie），→ `DataWebLoginResponse` |
-| POST | `/api/auth/social/handoff` | 无 | 桌面/Linux/安卓 Apple 发起浏览器登录会话（§6.3，只用于登录） |
-| POST | `/api/auth/social/handoff/complete` | 无 | 浏览器页把 idToken 交回会话，成功返回跳往本机回环地址的 `redirect` |
-| POST | `/api/auth/social/handoff/poll` | 无 | App 凭 pollSecret + returnCode + udid 领取结果（不带 returnCode 只能看状态） |
 | GET | `/api/user/social` | AuthRequired | 列出已绑定的 provider（provider + 脱敏邮箱） |
-| POST | `/api/user/social/bind` | AuthRequired | 绑定到当前账号，body 同 login 的令牌部分；App（iOS/Android 原生）与官网账号页（cookie）调用 |
+| POST | `/api/user/social/bind` | AuthRequired | 绑定到当前账号，body 同 login 的令牌部分；所有端 App 与官网账号页（cookie）调用 |
 | DELETE | `/api/user/social/:provider` | AuthRequired | 解绑（Apple 解绑时同时撤销令牌） |
 
 新路径加入 webapp `cloud-api.ts` 的 `AUTH_TOKEN_PATHS`，否则令牌不会被保存。
+
+`redirectURI`：Apple **网页流**（`aud` = Services ID）的授权码换 refresh token 时，Apple 要求带上授权时的 `redirect_uri`，所以网页流的 `authorizationCode` 必须伴随 `redirectURI`（缺 → 400）；值必须在品牌注册表 `AppleReturnURLs` 里（https、host ∈ 本品牌 Hosts、路径 `/auth/social/apple`，契约导出）。原生 iOS 码（`aud` = bundle ID）永远不带 `redirect_uri`。（2026-10-21 用真 Apple 令牌发现并修复：不带时 Apple 返回 `invalid_grant`，refresh token 存不下来，撤销形同虚设。）
+
+**没有服务端 handoff**（2026-10-21 定，取代 handoff 会话 / returnCode 方案）：每个端自己按 RFC 8252（原生 App OAuth）拿到 idToken，再调 `/social/login`。服务端只认令牌，不托管任何浏览器会话。
 
 ### 5.4 错误码
 新增（HTTP 仍 200，code 分段遵循现有约定），并同步 `webapp/src/utils/errorCatalog.ts`、全部语言、契约 golden：
@@ -117,7 +118,7 @@ Apple 的 `team_id/key_id/private_key` 用于生成 client secret，去换 refre
 
 ### 5.6 Apple 撤销（App Store 审核硬性要求）
 提供 Sign in with Apple 且支持注销的 App，注销时必须调用 Apple 的 `/auth/revoke`。
-- iOS 原生登录时客户端同时送 `authorizationCode`；服务端用 client secret 换取 refresh token 并加密保存。网页 / handoff 的 Apple JS 同样拿得到 code。
+- 客户端同时送 `authorizationCode`（iOS 原生、网页 Apple JS、`/auth/social/apple` 回调都拿得到）；服务端用 client secret 换取 refresh token 并加密保存（网页流需 `redirectURI`，§5.3）。撤销成功与失败都记日志（不含令牌），线上可据此确认。
 - `api_delete_user_account` 与管理员硬删除：对该用户所有 apple 身份调用 revoke，失败只记日志不阻塞注销。
 - 解绑 Apple 时也撤销。
 
@@ -127,60 +128,60 @@ Apple 的 `team_id/key_id/private_key` 用于生成 client secret，去换 refre
 
 | 端 | Apple | Google |
 |---|---|---|
-| iOS（两品牌） | 系统原生 `ASAuthorizationController` | Google Sign-In iOS SDK |
-| Android | 浏览器 handoff（§6.3） | 系统原生 Credential Manager；**设备无 GMS 时隐藏按钮** |
-| macOS / Windows（Tauri） | 浏览器 handoff | 浏览器 handoff |
-| Linux（k2 内嵌网页） | 浏览器 handoff | 浏览器 handoff |
+| iOS（两品牌） | 系统原生（`@capgo/capacitor-social-login`） | Google Sign-In（同一插件） |
+| Android | 同一插件的网页流：Custom Tab → 官网 `/auth/social/apple` → App 深链（§6.3） | 同一插件，Credential Manager；**设备无 GMS 时隐藏按钮** |
+| macOS / Windows（Tauri） | 系统浏览器 → 官网 `/auth/social/apple` → 本机回环（§6.3） | 系统浏览器 + 本机回环 + PKCE（Google 桌面 client，§6.3） |
+| Linux（k2 内嵌网页） | 同桌面，回环即 webui 自身 `127.0.0.1:1777` | 同桌面 |
 | 官网 kaitu.io / overleap.io | Apple JS（popup） | Google Identity Services（popup） |
 
 ### 6.1.1 Google 连通性探测（David 决定，两品牌所有端）
 登录前 VPN 未连接，国内用户在任何端都连不上 Google。因此 Google 按钮的可见性额外加一层：
 - 登录界面打开时即后台探测 Google 可达性（对 Google 端点发一个无副作用请求，超时 3 秒），**不阻塞界面**：探测完成前 Google 按钮不显示，成功后再出现；失败则整场不显示，只留 Apple 与验证码。
-- 原生 Android 在此之外还需有 GMS；官网 handoff 页 / 官网登录页以 Google 脚本能否加载为准（同等效果）。
+- 原生 Android 在此之外还需有 GMS；桌面 / Linux 与官网登录页以对 Google 端点的探测或 Google 脚本能否加载为准（同等效果）。
 - 结果按"本次界面打开"缓存，不持久化（网络环境会变，比如用户连上 VPN 后再登录）。
 - 探测封装成 webapp 里一个独立函数，可在测试中注入结果。
 
 ### 6.2 原生（iOS / Android）
-- K2Plugin 新增 `socialSignIn({provider, nonce})` → `{idToken, authorizationCode?, nonce}`，以及 `socialSignInAvailable()` → `{apple: bool, google: bool}`。iOS 写在新文件 `K2Plugin+SocialSignIn.swift`（照 `K2Plugin+Iap.swift` 的样子）；Android 对应 Kotlin。
-- webapp 侧作为 `IPlatform` 的**可选**成员，`typeof fn === 'function'` 探测；bump `BRIDGE_API_VERSION`，同步 iOS/Android/桌面镜像与 `contracts/bridge-api.json`。老版本 App 没有这个能力 → 按钮不显示，不报错。
-- iOS：两个品牌的 App target 加 `com.apple.developer.applesignin` entitlement；Google SDK 需要每品牌的 reversed client ID URL scheme（走品牌 xcconfig）。App Store 4.8 条款：iOS 上出现 Google 登录就必须同时提供 Apple 登录——本方案满足。
-- Android：Credential Manager 用本品牌 **Web client ID** 作 `serverClientId`；Google Cloud 里按 flavor 包名 + 签名证书 SHA-1 注册 Android client（Play 签名证书和自签分发证书都要登记）。
+- **用成熟插件，不自写原生桥**（David 2026-10-21 定）：`@capgo/capacitor-social-login` v8。它要求 Capacitor 8，所以**先单独把 Capacitor 7→8 升级做完并发版**，再集成插件（两个独立计划）。
+- 插件输出 idToken（+ Apple `authorizationCode`），webapp 原样交给 `/social/login`；nonce 由 webapp 生成，传给插件的是 `sha256(nonce)`。
+- webapp 侧作为 `IPlatform` 的**可选**成员，`typeof fn === 'function'` 探测；老版本 App 没有这个能力 → 按钮不显示，不报错。
+- iOS：两个品牌的 App target 加 `com.apple.developer.applesignin` entitlement；Google 需要每品牌的 reversed client ID URL scheme（走品牌 xcconfig）。App Store 4.8 条款：iOS 上出现 Google 登录就必须同时提供 Apple 登录——本方案满足。
+- Android：Google 用本品牌 **Web client ID** 作 `serverClientId`；Google Cloud 里按 flavor 包名 + 签名证书 SHA-1 注册 Android client（已完成，§7.1）。Apple 走插件的网页流，回调页见 §6.3。
 
-### 6.3 浏览器 handoff（桌面 / Linux / 安卓 Apple）
-"开浏览器登录 + 结果经本机回环地址交回 App"。iOS 两种登录都是原生，不走 handoff。
+### 6.3 浏览器登录（桌面 / Linux / 安卓 Apple）— 原生 App OAuth（RFC 8252）
+App 自己完成整个 OAuth，拿到 idToken 后与原生一样调 `/social/login`。服务端无会话、无轮询。
 
-1. App 先在本机起一个只监听 `127.0.0.1` 的回传入口，调 `POST /handoff {provider, returnURL}` → `{sessionId, pollSecret, url}`。`returnURL` 必须是 `http://127.0.0.1:<端口>/...`（服务端只认这个形态，其他一律 400，杜绝开放跳转）。服务端生成 nonce 存进会话；会话存 Redis，TTL 5 分钟。
-2. App 用系统浏览器打开 `url` = 本品牌官网 `/auth/social?session=<id>&provider=...&nonce=<sha256(nonce)>`（Apple 回调路径 `/auth/social/apple`，已在 Services ID 登记），App 内显示"请在浏览器中完成登录"。
-3. 官网页直接显示对应的 Apple / Google 按钮；拿到 idToken 后调 `/handoff/complete {sessionId, idToken}`。服务端完成令牌校验与 §4 匹配，成功时生成一次性 `returnCode`（会话里只存其 hash），返回 `{redirect: returnURL 加 code=<returnCode>}`；官网页立即跳转过去。失败则官网页直接显示错误，并把错误记进会话。
-4. App 的回传入口收到 `code`（本机页面显示"登录成功，可以回到 App"），随即调 `poll {sessionId, pollSecret, returnCode, udid, remark}`，服务端走与 `/social/login` 相同的设备登录事务签发令牌，会话作废。**领取令牌必须同时有 pollSecret 和 returnCode**；不带 returnCode 的 poll 只能看到 pending / 失败状态（用于给 App 显示错误），永远拿不到令牌。
+**Google（桌面 / Linux）**：本品牌 **Google 桌面 client**（§7.1），授权码 + PKCE + nonce，`redirect_uri = http://127.0.0.1:<端口>`（Google 桌面 client 接受任意端口的回环）。App 用系统浏览器打开授权页，回环收到 code 后自己去 `oauth2.googleapis.com/token` 换 idToken。桌面 client 的 client secret **嵌在 App 里**（David 2026-10-21 定）——Google 对"已安装应用"明确说明该 secret 不保密，安全性来自 PKCE + 回环。
+- macOS / Windows（Tauri）：Rust 侧临时绑定 `127.0.0.1:0`，收到回调即关闭（可用 `tauri-plugin-oauth`）。
+- Linux：webui 本身就在 `http://127.0.0.1:1777`，`redirect_uri` 指向 webapp 自己的路由。
 
-**为什么要回环**（David 2026-10-20 定，取代先前删掉的 4 位确认码）：没有它时，攻击者把自己 App 发起的 handoff 链接发给受害者，受害者在真官网登录后令牌会落到攻击者的 App——完整长期登录，还能再绑定攻击者自己的 Google 实现永久接管。回环把凭证交给"点开链接的那台机器"：受害者的浏览器只能跳到受害者自己的 127.0.0.1，攻击者那台收不到 returnCode。用户无感知、无额外输入。
+**Apple（桌面 / Linux / 安卓）**：Apple 不接受回环或自定义 scheme 作 return URL，所以经本品牌官网中转：
+1. App 生成 nonce 与 state，用浏览器（安卓为 Custom Tab）打开 Apple 授权页：`client_id` = 本品牌 Services ID、`redirect_uri` = 官网 `/auth/social/apple`、`response_mode=form_post`、`nonce=sha256(nonce)`。App 要的回传目标编码在 `state` 里。
+2. Apple 把 `code`、`id_token`、`state` 以 form POST 发到官网回调页。回调页**只做转发**：从 `state` 解出回传目标，**只允许** `http://127.0.0.1:<端口>/…` 或本品牌 App scheme（深链），其他一律显示错误、不跳转；然后把 `code`、`id_token`、`state` 带过去。
+3. App 校验 `state` 后调 `/social/login {provider: apple, idToken, nonce, authorizationCode: code, redirectURI: 官网回调地址}`。
 
-各端回传入口（实现属客户端计划）：
-- macOS / Windows（Tauri）：Rust 侧临时绑定 `127.0.0.1:0` 随机端口，收到 code 后事件交给 webview，结束即关闭。
-- Linux：webui 本身就在 `http://127.0.0.1:1777`，`returnURL` 指向 webapp 自己的路由；pollSecret 存同源 storage，新标签页读到 code 后完成领取。
-- 安卓（仅 Apple）：App 进程在 Custom Tab 打开期间仍存活，用线程临时监听 `127.0.0.1` 随机端口（必要时短时前台服务）。**需真机验证** Chrome 从 https 页顶层跳转到 `http://127.0.0.1` 不被 Local Network Access / 明文策略拦截；若被拦，安卓改用本品牌域名的 App Link（https，已验证域名）作为回传入口，服务端相应放行该固定 URL。
+**安全性**：回调页转发的 idToken 绑定了只在发起 App 内存里的 nonce 原值，被别的程序截到也用不了。钓鱼链接只会把令牌送到受害者自己的 127.0.0.1 或受害者自己的 App——攻击者拿不到。这正是之前 handoff 方案要靠 returnCode 才能补上的洞，在原生 OAuth 里天然不存在。
 
-`sessionId`、`pollSecret`、`returnCode` 三者分离：URL 里只有 sessionId；pollSecret 只在 App 内存；returnCode 只出现在完成登录的那台机器的回环跳转里。
+**回调页注意（2026-10-21 线上实测）**：两站的 locale 中间件会把 `POST /auth/social/apple` 307 到 `/<locale>/auth/social/apple`（kaitu.io → `/zh-TW/…`，overleap.io → `/en-GB/…`，后者当前 404）。回调路由必须排除在 locale 中间件之外，且以服务端路由处理 POST（307 虽保留方法和 body，但不要依赖它）。
 
-**handoff 只做登录，不做绑定**（David 2026-10-20 定）：需要浏览器才能绑定的端（桌面、Linux、安卓 Apple）改为打开官网账号页，在官网登录态下绑定（§6.4）。
+**绑定也在 App 内直接完成**（我的判断，随方案简化）：所有端的 App 都能自己拿到 idToken，因此账号页"绑定"统一调 `/api/user/social/bind`，不再需要跳官网账号页。
 
 ### 6.4 官网
-- kaitu.io（`web/src/app/[locale]/login/page.tsx`）与 overleap.io（`sites/overleap/.../LoginForm.tsx`）登录页加两个按钮，调 `/api/auth/social/web-login`；同时新增 §6.3 的 `/auth/social` handoff 页。两站账号页加"登录方式"区：列出、绑定（Apple JS / Google Identity Services 拿 idToken 后调 `/api/user/social/bind`）、解绑。两站不共享代码（按 overleap 站拆分惯例各写一份，靠契约一致）。
+- kaitu.io（`web/src/app/[locale]/login/page.tsx`）与 overleap.io（`sites/overleap/.../LoginForm.tsx`）登录页加两个按钮，调 `/api/auth/social/web-login`；同时新增 §6.3 的 `/auth/social/apple` 回调转发页。两站账号页加"登录方式"区：列出、绑定（Apple JS / Google Identity Services 拿 idToken 后调 `/api/user/social/bind`）、解绑。两站不共享代码（按 overleap 站拆分惯例各写一份，靠契约一致）。
 - Google 脚本加载失败（国内）→ 不显示 Google 按钮。Apple JS 在国内可达。
 - Apple 网页登录需每品牌一个 Services ID，登记域名与 return URL（见 §7.1）；Google Web client 登记 JS origin。
 
 ### 6.5 webapp UI
-- `LoginDialog.tsx` 与 `EmailLoginForm.tsx`（两个都要，后者被购买页和 iOS 订阅面板使用）的验证码表单下方加"或"分隔 + "通过 Apple 继续" / "通过 Google 继续"。按钮可见性 = 品牌开关 × 平台能力（原生可用性 / handoff 永远可用）。
+- `LoginDialog.tsx` 与 `EmailLoginForm.tsx`（两个都要，后者被购买页和 iOS 订阅面板使用）的验证码表单下方加"或"分隔 + "通过 Apple 继续" / "通过 Google 继续"。按钮可见性 = 品牌开关 × 平台能力（原生插件可用性 / 桌面与 Linux 浏览器登录永远可用）× Google 连通性。
 - 文案中文用户面不出现 "Kaitu" 裸词；全部语言补齐。
-- 账号页（`pages/Account.tsx`）新增"登录方式"区：显示已绑定项，可绑定 / 解绑。iOS / Android(Google) 原生直接绑定；桌面、Linux、Android(Apple) 的"绑定"按钮打开本品牌官网账号页（用户在官网登录后绑定），返回 App 后刷新列表。解绑直接生效，不弹确认（随时可以重新绑定）。
+- 账号页（`pages/Account.tsx`）新增"登录方式"区：显示已绑定项，可绑定 / 解绑。所有端都在 App 内拿到 idToken 后直接绑定（§6.3）。解绑直接生效，不弹确认（随时可以重新绑定）。
 - client ID 放各品牌 `index.ts`（与 Go 注册表由契约锁定，见 §5.2）；开关来自服务端下发，不在客户端写死。改品牌数据后重生成 `contracts/api-contract.json`。
 - **路由器（k2r，`platformType === 'gateway'`）不显示第三方登录按钮**（我的判断：路由器管理页没有"回到 App"的场景，设备上限也另算），需有测试锁住。
 
 ## 7. 上线前置（后台配置，非代码）
 
-- **Apple Developer**：两个 iOS App ID 开启 Sign in with Apple；每品牌建一个 Services ID（网页 + handoff 用）并登记域名/return URL；建 Sign in with Apple Key（.p8）放进 Center 配置；在 "Sign in with Apple for Email Communication" 登记发信域名/地址，否则发往 relay 邮箱的邮件（续费、收据、验证码）会被丢弃。
-- **Google Cloud**：每品牌一个 OAuth consent screen + Web / iOS / Android client（Android 登记包名 + 所有签名证书 SHA-1）。Overleap 的 consent screen 署名 Wordgate LLC，开途侧沿用现有署名；两品牌不互相提及。
+- **Apple Developer**：两个 iOS App ID 开启 Sign in with Apple；每品牌建一个 Services ID（网页 + 浏览器登录用）并登记域名/return URL；建 Sign in with Apple Key（.p8）放进 Center 配置；在 "Sign in with Apple for Email Communication" 登记发信域名/地址，否则发往 relay 邮箱的邮件（续费、收据、验证码）会被丢弃。
+- **Google Cloud**：每品牌一个 OAuth consent screen + Web / iOS / Android / 桌面 client（Android 登记包名 + 所有签名证书 SHA-1）。Overleap 的 consent screen 署名 Wordgate LLC，开途侧沿用现有署名；两品牌不互相提及。
 - Center 两台机器配置 `social_auth`，`make deploy-api`。
 
 ### 7.1 已完成的后台配置（2026-10-20）
@@ -194,8 +195,9 @@ Apple 的 `team_id/key_id/private_key` 用于生成 client secret，去换 refre
 | Google Web client（也是 Android `serverClientId`） | `125062807005-fqpjkq2pjjqdueen84q1kpp3rlkvq5sg.apps.googleusercontent.com` | `808676014960-fvo8an88b4c79f1ua9n0pctr40ta09fm.apps.googleusercontent.com` |
 | Google iOS client | `125062807005-r08pi88vadprilgo5mr1oqndpinnkb0l.apps.googleusercontent.com` | `808676014960-ug0b6ahv3lm2s1fboj0dinmtp5p0t6qu.apps.googleusercontent.com` |
 | Google Android client | `125062807005-jtpkj6bmt48jrk0bjk80afb0gdh7cqlj`（`io.kaitu`，SHA-1 `95:3C:D4:…:F8:DB`，取自 CDN 0.4.13 APK） | 3 个（Play 当前签名 / 之前签名 / 上传密钥）：`808676014960-pr6d5hsab78ela9mo2h0h7bl8ns8r208`、`…-eu9c9sghcmdq0n795n2vu850mcj4b290`、`…-ignp65u1nvrt12kaar5v8g6hs1dt10u6` |
+| Google 桌面 client（2026-10-21 建；secret 嵌 App，暂存 `~/.config/kaitu-secrets/google-desktop-clients.env`） | `125062807005-9vlr5ea2hp42hn5r2sc5prn8m82nnrv7.apps.googleusercontent.com` | `808676014960-kb76trvs3q7q89a5qb914kjv5gfhu841.apps.googleusercontent.com` |
 | Apple App ID（已开 Sign in with Apple，primary） | `com.allnationconnect.anc.wgios` | `io.overleap` |
-| Apple Services ID（网页 / handoff 的 `aud`） | `io.kaitu.signin`（描述 "KaiTu VPN"） | `io.overleap.signin`（描述 "Overleap"） |
+| Apple Services ID（网页 / 浏览器登录的 `aud`） | `io.kaitu.signin`（描述 "KaiTu VPN"） | `io.overleap.signin`（描述 "Overleap"） |
 | Apple return URL | `https://www.kaitu.io/auth/social/apple`、`https://kaitu.io/auth/social/apple` | `https://overleap.io/auth/social/apple`、`https://www.overleap.io/auth/social/apple` |
 | Sign in with Apple Key ID | `Y47F4Y5BSL` | `8MSCS26D9J` |
 
@@ -203,13 +205,14 @@ Apple 的 `team_id/key_id/private_key` 用于生成 client secret，去换 refre
 - Apple 私密邮件转发已登记发信源 `mail.allnationconnect.com` / `joshua@mail.allnationconnect.com`（SPF 通过）。线上两个品牌目前都由该地址发信（`mail_overleap.send_from` 未配置）；将来换发信域名必须同步在 Apple 登记，否则发往 relay 邮箱的邮件被丢弃。
 - Google 授权页的用户支持邮箱只能是 `anc.info7@gmail.com`（Google 限制本账号或群组）；未上传 logo（上传即需 Google 审核）。
 - 两个 App ID 开能力使旧描述文件失效；iOS 是自动签名 + `-allowProvisioningUpdates`，下次构建自动重建。
-- 发布顺序：API 先上（未配置 = 关闭，安全）→ 官网（含 handoff 页）→ 桌面/移动发版 + `webapp/*` OTA。handoff 依赖官网页先上线。
+- 发布顺序：API 先上（未配置 = 关闭，安全）→ 官网（含 Apple 回调转发页）→ Capacitor 8 升级发版 → 客户端登录发版 + `webapp/*` OTA。桌面 / 安卓的 Apple 登录依赖官网回调页先上线。
 
 ## 8. 测试
 
-- API：令牌校验（伪造签名、错 aud、跨品牌 aud、过期、nonce 不符）、§4 三步匹配各分支、绑定冲突、handoff 会话（过期、重复领取、错 pollSecret、缺/错 returnCode 拿不到令牌、非 127.0.0.1 的 returnURL 被拒）、注销触发 revoke。DB 测试必须真跑（0 SKIP）。JWKS 用测试密钥对注入，不打外网。
+- API：令牌校验（伪造签名、错 aud、跨品牌 aud、过期、nonce 不符）、§4 三步匹配各分支、绑定冲突、Apple 网页码缺 / 错 `redirectURI` 被拒而原生码不带、注销 / 解绑触发 revoke。DB 测试必须真跑（0 SKIP）。JWKS 用测试密钥对注入，不打外网。
 - webapp：按钮可见性矩阵（品牌 × 平台能力）、老 bridge 无能力时不显示、令牌保存路径。
-- 真机 smoke：iOS 两品牌 Apple + Google；Android 有/无 GMS；macOS / Windows / Linux handoff；两个官网。按项目信心框架，没有真机 smoke 不宣布完成。
+- 真机 smoke：iOS 两品牌 Apple + Google；Android 有/无 GMS；macOS / Windows / Linux 浏览器登录（含 Apple 回调转发）；两个官网。
+- **已用真令牌在本机 Center 验过（2026-10-21）**：Google 桌面回环（两品牌，新建 / sub 匹配 / 邮箱匹配 / 跨品牌 aud 拒 / 错 nonce 拒 / 列表、解绑、绑定）；Apple 网页流（两品牌：relay 邮箱新建、同邮箱匹配已有账号、refresh token 存下、解绑与注销撤销成功、跨品牌拒）。按项目信心框架，没有真机 smoke 不宣布完成。
 
 ## 9. 留给 builder 的
 
