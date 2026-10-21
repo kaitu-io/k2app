@@ -1,6 +1,6 @@
 # k2app — Kaitu VPN Client
 
-Tauri v2 desktop + Capacitor 7 mobile app wrapping the k2 Go tunnel core. React webapp frontend shared across platforms. Next.js website for marketing, user self-service, and admin management. **This file loads every session — keep it to the map plus rules that fail silently; layer detail belongs in the layer doc** (29 `CLAUDE.md` files: 10 here + 19 in `k2/`, each loading when you work in its directory).
+Tauri v2 desktop + Capacitor 8 mobile app wrapping the k2 Go tunnel core. React webapp frontend shared across platforms. Next.js website for marketing, user self-service, and admin management. **This file loads every session — keep it to the map plus rules that fail silently; layer detail belongs in the layer doc** (29 `CLAUDE.md` files: 10 here + 19 in `k2/`, each loading when you work in its directory).
 
 ## Quick Commands
 
@@ -45,7 +45,7 @@ sites/overleap/      overleap.io — standalone Next app, shares no code with we
 api/                 Center API service — Go + Gin + GORM
   cloudprovider/     Multi-cloud VPS management (AWS, Aliyun, Tencent, Bandwagon)
 desktop/             Tauri v2 Rust shell (macOS + Windows)
-mobile/              Capacitor 7 mobile app
+mobile/              Capacitor 8 mobile app
 mobile/plugins/      K2Plugin (Swift + Kotlin) — native VPN bridge
 tools/kaitu-center/  MCP server (Claude Code) + OpenClaw plugin
 tools/kaitu-mail/    OpenClaw email plugin (himalaya CLI, per-account IMAP)
@@ -63,7 +63,7 @@ docs/plans/          Architecture design docs
 - Website: Next.js 15, React 19, Tailwind CSS 4, shadcn/ui, next-intl
 - Desktop: Tauri v2, Rust · Core: Go (k2 submodule)
 - API: Go, Gin, GORM, MySQL, Redis, Asynq
-- Mobile: Capacitor 7, gomobile bind (K2Plugin Swift/Kotlin), `@capawesome/capacitor-android-edge-to-edge-support` for Android 15 edge-to-edge
+- Mobile: Capacitor 8, gomobile bind (K2Plugin Swift/Kotlin), `@capawesome/capacitor-android-edge-to-edge-support` for Android 15 edge-to-edge
 - CI: GitHub Actions — see `.github/workflows/`
 
 ## Cross-Layer Conventions

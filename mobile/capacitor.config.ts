@@ -34,6 +34,12 @@ const config: CapacitorConfig = {
       style: 'DARK',
       backgroundColor: '#00000000',
     },
+    // Insets are owned by @capawesome/capacitor-android-edge-to-edge-support
+    // (pads the WebView's parent). Its README requires Capacitor 8's built-in
+    // SystemBars insets handling off, otherwise insets are applied twice.
+    SystemBars: {
+      insetsHandling: 'disable',
+    },
     EdgeToEdge: {
       backgroundColor: '#0F0F13',
     },
