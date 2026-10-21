@@ -222,12 +222,12 @@ export default function WithdrawsPage() {
       header: "提现账户",
       cell: ({ row }) => {
         const account = row.original.account;
-        const isPaypal = account.accountType === "paypal";
+        const channelNames: Record<string, string> = { paypal: "PayPal", alipay: "支付宝" };
         return (
           <div className="space-y-1">
             <div className="text-sm flex items-center gap-1">
               <Badge variant="outline">
-                {isPaypal ? "PayPal" : account.accountType.toUpperCase()}
+                {channelNames[account.accountType] ?? account.accountType.toUpperCase()}
               </Badge>
               {account.currency && (
                 <Badge variant="secondary" className="text-xs">
@@ -238,6 +238,9 @@ export default function WithdrawsPage() {
             <code className="text-xs text-muted-foreground break-all">
               {account.accountId}
             </code>
+            {account.realName && (
+              <div className="text-xs">{"收款人："}{account.realName}</div>
+            )}
           </div>
         );
       },
@@ -567,7 +570,7 @@ export default function WithdrawsPage() {
           <DialogHeader>
             <DialogTitle>{"标记为已完成"}</DialogTitle>
             <DialogDescription>
-              {"请在线下完成打款后，填写交易凭证（区块链交易哈希或 PayPal 交易 ID）"}
+              {"请在线下完成打款后，填写交易凭证（区块链交易哈希、PayPal 交易 ID 或支付宝转账订单号）"}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -576,7 +579,7 @@ export default function WithdrawsPage() {
               <Input
                 value={txHash}
                 onChange={(e) => setTxHash(e.target.value)}
-                placeholder="输入交易哈希或 PayPal 交易 ID..."
+                placeholder="输入交易哈希、PayPal 交易 ID 或支付宝订单号..."
               />
             </div>
             <div>

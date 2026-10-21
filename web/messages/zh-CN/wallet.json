@@ -92,6 +92,17 @@
     "paypalExists": "该 PayPal 邮箱已存在",
     "paypalGuide": "请输入您的 PayPal 账户邮箱。提现将以美元 (USD) 形式发送到您的 PayPal 账户。PayPal 手续费约为 3%。",
     "currency": "币种",
-    "currencyGuide": "USDT 和 USDC 都是与美元 1:1 挂钩的稳定币。如果您不确定选择哪个，推荐使用 USDT，它是目前最广泛使用的稳定币。"
+    "currencyGuide": "USDT 和 USDC 都是与美元 1:1 挂钩的稳定币。如果您不确定选择哪个，推荐使用 USDT，它是目前最广泛使用的稳定币。",
+    "alipay": "支付宝",
+    "alipayDescription": "人民币到账，免手续费",
+    "alipayAccount": "支付宝账号",
+    "alipayAccountPlaceholder": "支付宝绑定的手机号或邮箱",
+    "alipayAccountRequired": "请输入支付宝账号",
+    "alipayAccountInvalid": "请填写支付宝绑定的手机号（11 位）或邮箱",
+    "alipayRealName": "真实姓名",
+    "alipayRealNamePlaceholder": "与支付宝实名认证一致",
+    "alipayRealNameRequired": "请填写支付宝实名认证的真实姓名",
+    "alipayGuide": "提现按打款当日汇率换算为人民币转入您的支付宝，不收手续费。真实姓名须与支付宝实名认证一致，否则无法到账。账号与姓名加密保存，页面只显示脱敏信息。",
+    "alipayWithdrawNotice": "支付宝提现免手续费，按打款当日汇率换算为人民币到账。"
   }
 }

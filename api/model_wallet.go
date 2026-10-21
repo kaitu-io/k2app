@@ -101,6 +101,7 @@ const (
 
 	// 传统支付渠道
 	WithdrawAccountTypePayPal WithdrawAccountType = "paypal" // PayPal - 传统支付方式
+	WithdrawAccountTypeAlipay WithdrawAccountType = "alipay" // 支付宝 - 人民币打款，收款信息加密存储
 )
 
 // Currency 币种（打款时需要知道具体币种）
@@ -110,6 +111,7 @@ const (
 	CurrencyUSDT Currency = "usdt" // USDT - 加密货币稳定币
 	CurrencyUSDC Currency = "usdc" // USDC - 加密货币稳定币
 	CurrencyUSD  Currency = "usd"  // USD - 美元（PayPal 默认）
+	CurrencyCNY  Currency = "cny"  // CNY - 人民币（支付宝；余额仍以美分记账，打款时按汇率折算）
 )
 
 // IsBlockchainAccount 判断是否为区块链账户（加密货币）
@@ -169,10 +171,14 @@ type WithdrawAccount struct {
 	User   *User  `gorm:"foreignKey:UserID" json:"user,omitempty"`
 
 	// 账户信息
-	// AccountType: 渠道类型（tron/polygon/bsc/arbitrum/paypal）
-	// AccountID: 收款标识（加密货币=钱包地址，PayPal=邮箱地址）
+	// AccountType: 渠道类型（tron/polygon/bsc/arbitrum/paypal/alipay）
+	// AccountID: 收款标识（加密货币=钱包地址，PayPal=邮箱地址，支付宝=账号的确定性哈希，仅用于去重）
 	AccountType WithdrawAccountType `gorm:"type:varchar(20);not null;index:idx_user_type" json:"accountType"`
 	AccountID   string              `gorm:"type:varchar(100);not null;uniqueIndex:idx_unique_account" json:"accountId"`
+
+	// AccountSecret: 加密的收款信息（目前仅支付宝：账号 + 真实姓名，AES-256-GCM，见 logic_withdraw_alipay.go）
+	// 永不出现在 JSON 里；对外展示用脱敏值，只有管理端提现列表解密
+	AccountSecret string `gorm:"type:varchar(512)" json:"-"`
 
 	// 币种：usdt/usdc（加密货币）或 usd（PayPal）
 	// 管理员打款时需要知道具体币种
@@ -231,6 +237,7 @@ type Withdraw struct {
 	AccountType       WithdrawAccountType `gorm:"type:varchar(20);not null" json:"accountType"` // 渠道类型快照
 	AccountID         string              `gorm:"type:varchar(100);not null" json:"accountId"`  // 收款标识快照（钱包地址/邮箱）
 	Currency          Currency            `gorm:"type:varchar(10);not null" json:"currency"`    // 币种快照
+	AccountSecret     string              `gorm:"type:varchar(512)" json:"-"`                    // 加密收款信息快照（支付宝）
 
 	// 状态流程：pending -> approved/rejected -> processing -> completed
 	Status WithdrawStatus `gorm:"type:varchar(20);not null;default:'pending';index:idx_user_status" json:"status"`

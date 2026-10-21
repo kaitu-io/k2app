@@ -42,9 +42,9 @@ import { WithdrawDialog } from "@/components/wallet/WithdrawDialog";
 interface Withdraw {
   id: number;
   amount: number;
-  accountType: string;
-  walletAddress: string;
-  network: string;
+  accountType: string;      // 渠道类型快照：tron, polygon, bsc, arbitrum, paypal, alipay
+  accountId: string;        // 收款标识快照（支付宝为脱敏值）
+  currency: string;
   status: "pending" | "approved" | "processing" | "completed" | "rejected" | "cancelled";
   txHash?: string;
   txExplorerUrl?: string;
@@ -55,9 +55,9 @@ interface Withdraw {
 
 interface WithdrawAccount {
   id: number;
-  accountType: string;      // tron, polygon, bsc, arbitrum, paypal
-  accountId: string;        // 钱包地址或 PayPal 邮箱
-  currency: string;         // usdt, usdc, usd
+  accountType: string;      // tron, polygon, bsc, arbitrum, paypal, alipay
+  accountId: string;        // 钱包地址、PayPal 邮箱或支付宝脱敏账号
+  currency: string;         // usdt, usdc, usd, cny
   label?: string;
   isDefault: boolean;
 }
@@ -163,7 +163,7 @@ export default function WalletWithdrawsPage() {
   };
 
   const formatAddress = (address: string) => {
-    if (address.length <= 16) return address;
+    if (!address || address.length <= 16) return address;
     return `${address.slice(0, 8)}...${address.slice(-6)}`;
   };
 
@@ -217,6 +217,8 @@ export default function WalletWithdrawsPage() {
   };
 
   const getNetworkName = (network: string) => {
+    if (network === "alipay") return t("wallet.wallet.alipay");
+    if (network === "paypal") return "PayPal";
     const networkMap: Record<string, string> = {
       'tron': 'TRON',
       'ethereum': 'ETH',
@@ -346,12 +348,14 @@ export default function WalletWithdrawsPage() {
                       </TableCell>
                       <TableCell>
                         <Badge variant="secondary">
-                          {getNetworkName(withdraw.network)}
+                          {getNetworkName(withdraw.accountType)}
                         </Badge>
                       </TableCell>
                       <TableCell>
                         <code className="text-xs bg-muted px-1 py-0.5 rounded">
-                          {formatAddress(withdraw.walletAddress)}
+                          {withdraw.accountType === "alipay" || withdraw.accountType === "paypal"
+                            ? withdraw.accountId
+                            : formatAddress(withdraw.accountId)}
                         </code>
                       </TableCell>
                       <TableCell>{getStatusBadge(withdraw.status)}</TableCell>

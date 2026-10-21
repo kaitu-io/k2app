@@ -92,6 +92,17 @@
     "paypalExists": "該 PayPal 電子郵件已存在",
     "paypalGuide": "請輸入您的 PayPal 帳戶電子郵件。提現將以美元 (USD) 形式發送到您的 PayPal 帳戶。PayPal 手續費約為 3%。",
     "currency": "幣種",
-    "currencyGuide": "USDT 和 USDC 都是與美元 1:1 掛鉤的穩定幣。如果您不確定選擇哪個，推薦使用 USDT，它是目前最廣泛使用的穩定幣。"
+    "currencyGuide": "USDT 和 USDC 都是與美元 1:1 掛鉤的穩定幣。如果您不確定選擇哪個，推薦使用 USDT，它是目前最廣泛使用的穩定幣。",
+    "alipay": "支付寶",
+    "alipayDescription": "人民幣到帳，免手續費",
+    "alipayAccount": "支付寶帳號",
+    "alipayAccountPlaceholder": "支付寶綁定的手機號或電子郵件",
+    "alipayAccountRequired": "請輸入支付寶帳號",
+    "alipayAccountInvalid": "請填寫支付寶綁定的手機號（11 位）或電子郵件",
+    "alipayRealName": "真實姓名",
+    "alipayRealNamePlaceholder": "與支付寶實名認證一致",
+    "alipayRealNameRequired": "請填寫支付寶實名認證的真實姓名",
+    "alipayGuide": "提現按打款當日匯率換算為人民幣轉入您的支付寶，不收手續費。真實姓名須與支付寶實名認證一致，否則無法到帳。帳號與姓名加密保存，頁面只顯示遮蔽後的資訊。",
+    "alipayWithdrawNotice": "支付寶提現免手續費，按打款當日匯率換算為人民幣到帳。"
   }
 }

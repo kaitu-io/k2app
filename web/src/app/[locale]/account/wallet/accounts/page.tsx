@@ -44,7 +44,8 @@ import {
   Wallet,
   Info,
   CreditCard,
-  Bitcoin
+  Bitcoin,
+  Banknote
 } from "lucide-react";
 import { useRouter } from "@/i18n/routing";
 import { toast } from "sonner";
@@ -52,15 +53,18 @@ import { toast } from "sonner";
 // 提现账户类型（匹配后端）
 interface WithdrawAccount {
   id: number;
-  accountType: string;      // tron, polygon, bsc, arbitrum, paypal
-  accountId: string;        // 钱包地址或 PayPal 邮箱
-  currency: string;         // usdt, usdc, usd
+  accountType: string;      // tron, polygon, bsc, arbitrum, paypal, alipay
+  accountId: string;        // 钱包地址、PayPal 邮箱或支付宝脱敏账号（服务端已脱敏）
+  currency: string;         // usdt, usdc, usd, cny
   label?: string;
   isDefault: boolean;
 }
 
 // 渠道类型配置
-type ChannelType = 'crypto' | 'paypal';
+type ChannelType = 'alipay' | 'crypto' | 'paypal';
+
+// 支付宝账号：大陆手机号或邮箱（与服务端 validateAlipayPayee 一致）
+const alipayAccountPattern = /^(1\d{10}|[^\s@]+@[^\s@]+\.[^\s@]+)$/;
 
 interface CryptoNetwork {
   value: string;
@@ -117,10 +121,11 @@ export default function WalletAccountsPage() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   // 表单状态
-  const [channelType, setChannelType] = useState<ChannelType>("crypto");
+  const [channelType, setChannelType] = useState<ChannelType>("alipay");
   const [network, setNetwork] = useState("tron");
-  const [currency, setCurrency] = useState("usdt");
+  const [currency, setCurrency] = useState("cny");
   const [accountId, setAccountId] = useState("");
+  const [realName, setRealName] = useState("");
   const [label, setLabel] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -145,6 +150,12 @@ export default function WalletAccountsPage() {
 
   // 验证地址/邮箱格式
   const validateAccountId = (value: string, type: ChannelType, networkValue: string): string | null => {
+    if (type === "alipay") {
+      // 列表里的支付宝账号是脱敏值，无法在前端查重，重复由服务端拒绝
+      if (!value.trim()) return t("wallet.wallet.alipayAccountRequired");
+      return alipayAccountPattern.test(value.trim()) ? null : t("wallet.wallet.alipayAccountInvalid");
+    }
+
     if (!value) {
       return type === "paypal" ? t("wallet.wallet.paypalEmailRequired") : t("wallet.wallet.addressRequired");
     }
@@ -184,9 +195,12 @@ export default function WalletAccountsPage() {
   const handleChannelTypeChange = (type: ChannelType) => {
     setChannelType(type);
     setAccountId("");
+    setRealName("");
     setValidationError(null);
     if (type === "paypal") {
       setCurrency("usd");
+    } else if (type === "alipay") {
+      setCurrency("cny");
     } else {
       setCurrency("usdt");
     }
@@ -201,10 +215,11 @@ export default function WalletAccountsPage() {
   };
 
   const resetForm = () => {
-    setChannelType("crypto");
+    setChannelType("alipay");
     setNetwork("tron");
-    setCurrency("usdt");
+    setCurrency("cny");
     setAccountId("");
+    setRealName("");
     setLabel("");
     setValidationError(null);
   };
@@ -215,17 +230,22 @@ export default function WalletAccountsPage() {
       setValidationError(error);
       return;
     }
+    if (channelType === "alipay" && !realName.trim()) {
+      setValidationError(t("wallet.wallet.alipayRealNameRequired"));
+      return;
+    }
 
     setIsSubmitting(true);
     try {
-      const accountType = channelType === "paypal" ? "paypal" : network;
-      const currencyValue = channelType === "paypal" ? "usd" : currency;
+      const accountType = channelType === "crypto" ? network : channelType;
+      const currencyValue = channelType === "paypal" ? "usd" : channelType === "alipay" ? "cny" : currency;
 
       await api.createWithdrawAccount({
         accountType,
         accountId: accountId.trim(),
         currency: currencyValue,
         label: label.trim() || undefined,
+        realName: channelType === "alipay" ? realName.trim() : undefined,
       });
 
       toast.success(t("wallet.wallet.accountAddSuccess"));
@@ -285,8 +305,8 @@ export default function WalletAccountsPage() {
   };
 
   const formatAccountId = (accountId: string, accountType: string) => {
-    if (accountType === "paypal") {
-      return accountId; // PayPal 邮箱不截断
+    if (accountType === "paypal" || accountType === "alipay") {
+      return accountId; // 邮箱 / 支付宝脱敏账号不截断
     }
     if (accountId.length <= 16) return accountId;
     return `${accountId.slice(0, 8)}...${accountId.slice(-6)}`;
@@ -295,6 +315,9 @@ export default function WalletAccountsPage() {
   const getAccountTypeDisplay = (account: WithdrawAccount) => {
     if (account.accountType === "paypal") {
       return { icon: "💳", label: "PayPal", sublabel: "USD" };
+    }
+    if (account.accountType === "alipay") {
+      return { icon: "💴", label: t("wallet.wallet.alipay"), sublabel: "CNY" };
     }
     const network = cryptoNetworks.find(n => n.value === account.accountType);
     const currencyLabel = account.currency?.toUpperCase() || "USDT";
@@ -497,7 +520,25 @@ export default function WalletAccountsPage() {
             {/* Channel Type Selection */}
             <div className="space-y-3">
               <Label>{t("wallet.wallet.selectChannelType")}</Label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <Card
+                  className={`p-4 cursor-pointer transition-all ${
+                    channelType === "alipay"
+                      ? "border-primary bg-primary/5"
+                      : "hover:border-muted-foreground/50"
+                  }`}
+                  onClick={() => handleChannelTypeChange("alipay")}
+                >
+                  <div className="flex items-center gap-3">
+                    <Banknote className="h-6 w-6 text-sky-600" />
+                    <div>
+                      <div className="font-medium">{t("wallet.wallet.alipay")}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {t("wallet.wallet.alipayDescription")}
+                      </div>
+                    </div>
+                  </div>
+                </Card>
                 <Card
                   className={`p-4 cursor-pointer transition-all ${
                     channelType === "crypto"
@@ -611,6 +652,49 @@ export default function WalletAccountsPage() {
               </>
             )}
 
+            {/* Alipay Options */}
+            {channelType === "alipay" && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="alipay-account">{t("wallet.wallet.alipayAccount")}</Label>
+                  <Input
+                    id="alipay-account"
+                    type="text"
+                    autoComplete="off"
+                    placeholder={t("wallet.wallet.alipayAccountPlaceholder")}
+                    value={accountId}
+                    onChange={(e) => handleAccountIdChange(e.target.value)}
+                    className={validationError ? 'border-red-500' : ''}
+                    disabled={isSubmitting}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="alipay-name">{t("wallet.wallet.alipayRealName")}</Label>
+                  <Input
+                    id="alipay-name"
+                    type="text"
+                    autoComplete="off"
+                    placeholder={t("wallet.wallet.alipayRealNamePlaceholder")}
+                    value={realName}
+                    onChange={(e) => {
+                      setRealName(e.target.value);
+                      if (e.target.value.trim()) {
+                        setValidationError(validateAccountId(accountId, channelType, network));
+                      }
+                    }}
+                    disabled={isSubmitting}
+                  />
+                  {validationError && (
+                    <p className="text-sm text-red-500">{validationError}</p>
+                  )}
+                </div>
+                <div className="flex items-start gap-2 p-2 bg-blue-50 dark:bg-blue-950/20 rounded text-xs text-blue-800 dark:text-blue-200">
+                  <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                  <span>{t("wallet.wallet.alipayGuide")}</span>
+                </div>
+              </>
+            )}
+
             {/* PayPal Options */}
             {channelType === "paypal" && (
               <div className="space-y-2">
@@ -664,7 +748,7 @@ export default function WalletAccountsPage() {
             </Button>
             <Button
               onClick={handleSubmit}
-              disabled={isSubmitting || !!validationError || !accountId}
+              disabled={isSubmitting || !!validationError || !accountId || (channelType === "alipay" && !realName.trim())}
             >
               {isSubmitting ? (
                 <>
