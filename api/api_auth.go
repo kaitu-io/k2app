@@ -342,8 +342,8 @@ func api_logout(c *gin.Context) {
 	// 清除认证 Cookie（Web 端）
 	clearAuthCookies(c)
 
-	// 如果是设备认证，删除设备记录。零身份（设备账号）保留设备行：udid 是找回账号的唯一凭据，
-	// 删了重装即丢会员（spec §4.4）。
+	// 如果是设备认证，删除设备记录。零身份（设备账号）保留设备行、只作废 token（spec §4.4）：
+	// 账号要回来只能走 Apple 恢复（/device-account/restore）。
 	if udid != "" {
 		has, err := userHasIdentity(db.Get(), userID)
 		if err != nil {
@@ -352,8 +352,8 @@ func api_logout(c *gin.Context) {
 			return
 		}
 		if !has {
-			// 保留设备行（找回凭据），但作废已签发的 token：单调推进 token_issue_at
-			// （同一秒内登录后立刻登出也必须与旧值不同）。/device-account 找回会重新签发。
+			// 保留设备行，但作废已签发的 token：单调推进 token_issue_at
+			// （同一秒内登录后立刻登出也必须与旧值不同）。
 			if err := db.Get().Model(&Device{}).Where("udid = ? AND user_id = ?", udid, userID).
 				Update("token_issue_at", gorm.Expr("GREATEST(?, token_issue_at + 1)", time.Now().Unix())).Error; err != nil {
 				log.Errorf(c, "failed to revoke tokens of device %s for user %d on logout: %v", udid, userID, err)

@@ -236,6 +236,10 @@
       "code": 403005
     },
     {
+      "name": "ErrorDeviceAccountProofRequired",
+      "code": 403006
+    },
+    {
       "name": "ErrorPaymentChannelUnavailable",
       "code": 405001
     },

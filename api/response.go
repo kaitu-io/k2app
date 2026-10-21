@@ -56,6 +56,7 @@ const (
 	// 设备账号（零登录身份用户，2026-10-20）
 	ErrorDeviceAccountDisabled      ErrorCode = 403004 // 当前品牌/版本不支持设备账号
 	ErrorDeviceAccountLoginRequired ErrorCode = 403005 // 该设备已绑定账号，需登录
+	ErrorDeviceAccountProofRequired ErrorCode = 403006 // 该设备属于设备账号，需凭证（Keychain token 或 Apple 恢复）
 
 	// Tier system error codes (added 2026-04-20)
 	ErrorTierMismatch            ErrorCode = 422001 // Plan tier 与 user tier 不匹配（续费场景）

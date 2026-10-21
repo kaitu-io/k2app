@@ -115,31 +115,25 @@ func TestDeviceAccount_CreateNew(t *testing.T) {
 	require.False(t, has, "设备账号零身份")
 }
 
-func TestDeviceAccount_ReinstallReissues(t *testing.T) {
+// TestDeviceAccount_ExistingDeviceAccountRequiresProof 设备行属设备账号时不凭 udid 签 token（spec §4.2）：
+// 返回 403006，设备行与原主人的 token 锚点都不动。
+func TestDeviceAccount_ExistingDeviceAccountRequiresProof(t *testing.T) {
 	r := devAcctRouter(t)
 	udid := devAcctUDID(t)
 
 	first := postDeviceAccount(t, r, "www.kaitu.io", udid)
 	require.Equal(t, 0, first.Code)
 	d1 := devAcctDevice(t, udid)
-	// 让 TokenIssueAt 能看出刷新
-	require.NoError(t, db.Get().Model(&Device{}).Where("id = ?", d1.ID).
-		Updates(map[string]any{"token_issue_at": 1, "token_last_used_at": 1, "app_version": "0.0.1"}).Error)
 
 	second := postDeviceAccount(t, r, "www.kaitu.io", udid)
-	require.Equal(t, 0, second.Code)
-	require.NotEmpty(t, second.Data.AccessToken)
+	require.Equal(t, int(ErrorDeviceAccountProofRequired), second.Code)
+	require.Empty(t, second.Data.AccessToken)
 
 	d2 := devAcctDevice(t, udid)
-	require.Equal(t, d1.ID, d2.ID, "不新建设备行")
-	require.Equal(t, d1.UserID, d2.UserID, "同一用户")
-	require.Greater(t, d2.TokenIssueAt, int64(1))
-	require.Greater(t, d2.TokenLastUsedAt, int64(1))
-	require.Equal(t, "0.5.0", d2.AppVersion, "app info 刷新")
-
-	var n int64
-	require.NoError(t, db.Get().Model(&Device{}).Where("user_id = ?", d1.UserID).Count(&n).Error)
-	require.Equal(t, int64(1), n)
+	require.Equal(t, d1.UserID, d2.UserID)
+	require.Equal(t, d1.TokenIssueAt, d2.TokenIssueAt, "原主人的 token 照常可用")
+	_, _, err := validateToken(context.Background(), first.Data.RefreshToken, TokenTypeRefresh)
+	require.NoError(t, err)
 }
 
 func TestDeviceAccount_IdentityOwnerRequiresLogin(t *testing.T) {
@@ -187,7 +181,7 @@ func TestDeviceAccount_BrandGate(t *testing.T) {
 		require.Equal(t, int64(0), n, "关闭时不建号")
 	})
 
-	t.Run("零身份用户品牌不符", func(t *testing.T) {
+	t.Run("已存在的别品牌设备账号", func(t *testing.T) {
 		udid := devAcctUDID(t)
 		u := User{UUID: generateId("user"), Brand: string(BrandOverleap), IsActivated: BoolPtr(true)}
 		require.NoError(t, db.Get().Create(&u).Error)
@@ -195,19 +189,8 @@ func TestDeviceAccount_BrandGate(t *testing.T) {
 		require.NoError(t, db.Get().Create(&Device{UDID: udid, UserID: u.ID, TokenIssueAt: 1, TokenLastUsedAt: 1}).Error)
 
 		resp := postDeviceAccount(t, r, "www.kaitu.io", udid)
-		require.Equal(t, int(ErrorBrandMismatch), resp.Code)
+		require.Equal(t, int(ErrorDeviceAccountProofRequired), resp.Code, "已存在的设备账号一律要凭证，不泄露品牌")
 	})
-}
-
-func TestDeviceAccount_BlockedUser(t *testing.T) {
-	r := devAcctRouter(t)
-	udid := devAcctUDID(t)
-	require.Equal(t, 0, postDeviceAccount(t, r, "www.kaitu.io", udid).Code)
-	d := devAcctDevice(t, udid)
-	require.NoError(t, db.Get().Model(&User{}).Where("id = ?", d.UserID).Update("is_blocked", true).Error)
-
-	resp := postDeviceAccount(t, r, "www.kaitu.io", udid)
-	require.Equal(t, int(ErrorForbidden), resp.Code)
 }
 
 func TestDeviceAccount_InvalidClientHeader(t *testing.T) {
@@ -253,9 +236,17 @@ func TestDeviceAccount_ConcurrentCreateSingleUser(t *testing.T) {
 	}
 	close(start)
 	wg.Wait()
+	// 只有一个建号成功；其余撞上已存在的设备账号，不凭 udid 拿 token（客户端单飞建号）。
+	ok := 0
 	for i, rs := range resps {
-		require.Equal(t, 0, rs.Code, "请求 %d: %s", i, rs.Message)
+		if rs.Code == 0 {
+			ok++
+			continue
+		}
+		require.Equal(t, int(ErrorDeviceAccountProofRequired), rs.Code, "请求 %d: %s", i, rs.Message)
+		require.Empty(t, rs.Data.AccessToken)
 	}
+	require.Equal(t, 1, ok)
 
 	d := devAcctDevice(t, udid)
 	var devCount int64
@@ -301,9 +292,9 @@ func TestDeviceAccount_FunnelEvent(t *testing.T) {
 
 	require.Equal(t, 0, postDeviceAccount(t, r, "www.kaitu.io", udid).Code)
 	check("create")
-	// 重装回来也记一次，Source 区分
-	require.Equal(t, 0, postDeviceAccount(t, r, "www.kaitu.io", udid).Code)
-	check("reissue")
+	// 已存在的设备账号被拒，不记事件
+	require.Equal(t, int(ErrorDeviceAccountProofRequired), postDeviceAccount(t, r, "www.kaitu.io", udid).Code)
+	require.Empty(t, drain())
 }
 
 // TestDeviceAccount_FunnelJoinsAnonFirstOpen 建号前的匿名 app_first_open（device_hash=udid）
@@ -360,38 +351,6 @@ func TestDeviceAccount_GatewayClientRejected(t *testing.T) {
 	var n int64
 	require.NoError(t, db.Get().Model(&Device{}).Where("udid = ?", udid).Count(&n).Error)
 	require.Equal(t, int64(0), n)
-}
-
-// TestDeviceAccount_ReissueRaceDeviceMoved 校验后、写 token 前设备被 api_login 转给有身份用户：
-// 不得覆盖新主人的 token_issue_at，返回 403005。
-func TestDeviceAccount_ReissueRaceDeviceMoved(t *testing.T) {
-	r := devAcctRouter(t)
-	udid := devAcctUDID(t)
-	require.Equal(t, 0, postDeviceAccount(t, r, "www.kaitu.io", udid).Code)
-	devAcctUser := devAcctDevice(t, udid).UserID
-	t.Cleanup(func() { db.Get().Unscoped().Delete(&User{}, devAcctUser) })
-
-	owner := User{UUID: generateId("user"), Brand: string(BrandKaitu), IsActivated: BoolPtr(true)}
-	require.NoError(t, db.Get().Create(&owner).Error)
-	t.Cleanup(func() {
-		db.Get().Where("user_id = ?", owner.ID).Delete(&LoginIdentify{})
-		db.Get().Unscoped().Delete(&User{}, owner.ID)
-	})
-	require.NoError(t, db.Get().Create(&LoginIdentify{UserID: owner.ID, Type: "email",
-		IndexID: "devacct-race-" + udid, EncryptedValue: "x", Brand: string(BrandKaitu)}).Error)
-
-	deviceAccountBeforeReissueWrite = func() {
-		require.NoError(t, db.Get().Model(&Device{}).Where("udid = ?", udid).
-			Updates(map[string]any{"user_id": owner.ID, "token_issue_at": 7}).Error)
-	}
-	t.Cleanup(func() { deviceAccountBeforeReissueWrite = nil })
-
-	resp := postDeviceAccount(t, r, "www.kaitu.io", udid)
-	require.Equal(t, int(ErrorDeviceAccountLoginRequired), resp.Code)
-	require.Empty(t, resp.Data.AccessToken)
-	d := devAcctDevice(t, udid)
-	require.Equal(t, owner.ID, d.UserID)
-	require.Equal(t, int64(7), d.TokenIssueAt, "新主人的 token 锚点不被覆盖")
 }
 
 func TestDeviceLimit_ZeroIdentityIsOne(t *testing.T) {
