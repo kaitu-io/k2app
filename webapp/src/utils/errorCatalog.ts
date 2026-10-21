@@ -98,6 +98,7 @@ export const ERROR_CODES = {
   BRAND_MISMATCH: 403003,
   DEVICE_ACCOUNT_DISABLED: 403004,
   DEVICE_ACCOUNT_LOGIN_REQUIRED: 403005,
+  DEVICE_ACCOUNT_PROOF_REQUIRED: 403006,
   INVALID_CLIENT_CLASS: 422003,
   PAYMENT_CHANNEL_UNAVAILABLE: 405001,
   SOCIAL_PROVIDER_DISABLED: 405002,
@@ -255,7 +256,7 @@ export const API_ERROR_CATALOG: Readonly<Record<number, ErrorEntry>> = {
   // ("参数错误") read as a transient glitch and users retried for hours.
   [ERROR_CODES.EMAIL_ALREADY_IN_USE]: { key: 'auth:updateEmail.emailAlreadyInUse', defaultValue: 'This email is already used by another account' },
   // 409004: the Apple subscription is owned by another device's account.
-  [ERROR_CODES.APPLE_SUBSCRIPTION_OWNED_ELSEWHERE]: { key: 'auth:auth.appleSubscriptionOwnedElsewhere', defaultValue: "This subscription belongs to another device's account. On that device, set an email under \"Me → Sign in on other devices\", then sign in here." },
+  [ERROR_CODES.APPLE_SUBSCRIPTION_OWNED_ELSEWHERE]: { key: 'auth:auth.appleSubscriptionOwnedElsewhere', defaultValue: "This subscription belongs to another account. Sign in with that account's email or Apple ID, or contact support." },
 
   // Backend custom codes (400000+ range)
   [ERROR_CODES.INVALID_CAMPAIGN_CODE]: { key: 'purchase:purchase.invalidCampaignCode', defaultValue: 'Invalid promo code' },
@@ -291,9 +292,11 @@ export const API_ERROR_CATALOG: Readonly<Record<number, ErrorEntry>> = {
   // 403003: account was born on the other brand — baked-brand clients should
   // never see this except with restored/stale token storage.
   [ERROR_CODES.BRAND_MISMATCH]: { key: 'auth:auth.brandMismatch', defaultValue: 'This account belongs to a different app' },
-  // 403004/403005: device accounts (login-free). Disabled for this brand/version, or the device already has an account.
+  // 403004/403005/403006: device accounts (login-free). Disabled for this brand/version, the device already has an account
+  // (sign in), or it holds a device account that needs proof (handled silently: Restore Purchases or a fresh udid).
   [ERROR_CODES.DEVICE_ACCOUNT_DISABLED]: { key: 'auth:auth.deviceAccountDisabled', defaultValue: "Using the app without signing in isn't supported in this version. Please sign in." },
   [ERROR_CODES.DEVICE_ACCOUNT_LOGIN_REQUIRED]: { key: 'auth:auth.deviceAccountLoginRequired', defaultValue: 'This device is already linked to an account. Please sign in.' },
+  [ERROR_CODES.DEVICE_ACCOUNT_PROOF_REQUIRED]: { key: 'auth:auth.deviceAccountProofRequired', defaultValue: 'This device\'s account needs to be verified. Tap "Restore Purchases" to recover it, or contact support.' },
   // 405001: payment channel not allowed for this brand (e.g. WordGate on an
   // overleap account). User-actionable: buy on the brand website.
   [ERROR_CODES.PAYMENT_CHANNEL_UNAVAILABLE]: { key: 'purchase:purchase.paymentChannelUnavailable', defaultValue: 'This payment method is unavailable for your account' },

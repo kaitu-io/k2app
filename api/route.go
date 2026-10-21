@@ -65,6 +65,7 @@ func SetupRouter() *gin.Engine {
 			auth.POST("/login", api_login)
 			// 设备账号（零登录身份，按 udid 建号 / 重装找回；品牌开关 DeviceAccount）
 			auth.POST("/device-account", api_device_account)
+			auth.POST("/device-account/restore", api_device_account_restore)
 			auth.POST("/social/login", api_social_login)
 			auth.POST("/social/web-login", api_social_web_login)
 			// Password login (with device binding)

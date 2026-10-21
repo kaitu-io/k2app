@@ -149,7 +149,7 @@ func dapDeviceCount(t *testing.T, udid string) int64 {
 	return n
 }
 
-// 零身份登出不删设备行（否则 udid 找不回账号，重装即丢会员）；/device-account 能找回同一用户。
+// 零身份登出不删设备行、只作废 token；/device-account 不凭 udid 重签（403006），账号经 Apple 恢复拿回。
 // 有身份用户登出照旧删设备行。
 func TestLogout_ZeroIdentityKeepsDevice(t *testing.T) {
 	r := devAcctRouter(t)
@@ -166,8 +166,9 @@ func TestLogout_ZeroIdentityKeepsDevice(t *testing.T) {
 		"零身份登出必须推进 token_issue_at，使已签发 token 被 TokenIssueAt 校验拒绝")
 
 	again := postDeviceAccount(t, r, "www.kaitu.io", udid)
-	require.Equal(t, 0, again.Code)
-	require.Equal(t, zero.ID, devAcctDevice(t, udid).UserID, "重装能找回同一账号")
+	require.Equal(t, int(ErrorDeviceAccountProofRequired), again.Code, "登出后不能凭 udid 拿回 token")
+	require.Empty(t, again.Data.AccessToken)
+	require.Equal(t, zero.ID, devAcctDevice(t, udid).UserID, "设备行仍属原账号，可经 Apple 恢复拿回")
 
 	ident := dapUser(t, dapEmail("logout"), "")
 	udid2 := fmt.Sprintf("dap-logout-%d", time.Now().UnixNano())
