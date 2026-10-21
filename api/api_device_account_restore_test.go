@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -117,6 +118,13 @@ func TestVerifyAppleSignedTransaction(t *testing.T) {
 
 	t.Run("叶子缺收据签名扩展被拒", func(t *testing.T) {
 		noOID := newTestAppleCA(t, nil, appleJWSIntermediateOID)
+		useTestAppleRoot(t, noOID)
+		_, err := verifyAppleSignedTransaction(noOID.sign(t, txnClaims("2000001", "1000001")))
+		require.ErrorIs(t, err, errAppleJWSInvalid)
+	})
+
+	t.Run("中间证书缺 WWDR 扩展被拒", func(t *testing.T) {
+		noOID := newTestAppleCA(t, appleJWSLeafOID, nil)
 		useTestAppleRoot(t, noOID)
 		_, err := verifyAppleSignedTransaction(noOID.sign(t, txnClaims("2000001", "1000001")))
 		require.ErrorIs(t, err, errAppleJWSInvalid)
@@ -375,6 +383,35 @@ func TestDeviceAccountRestore_Refusals(t *testing.T) {
 		assertUntouched(t, f, ownerUDID, ownerRefresh)
 	})
 
+	t.Run("主人被封禁", func(t *testing.T) {
+		f := newRestoreFixture(t)
+		ownerUDID, _ := f.ownerDevice(t)
+		require.NoError(t, db.Get().Model(&User{}).Where("id = ?", f.owner.ID).Update("is_blocked", true).Error)
+		resp := postRestore(t, f.r, "www.kaitu.io", devAcctUDID(t), f.jws(t))
+		require.Equal(t, int(ErrorForbidden), resp.Code)
+		require.Equal(t, f.owner.ID, devAcctDevice(t, ownerUDID).UserID)
+		require.Equal(t, int64(1), devAcctCount(t, f.owner.ID))
+	})
+
+	t.Run("主人属另一个品牌", func(t *testing.T) {
+		f := newRestoreFixture(t)
+		ownerUDID, _ := f.ownerDevice(t)
+		require.NoError(t, db.Get().Model(&User{}).Where("id = ?", f.owner.ID).Update("brand", string(BrandOverleap)).Error)
+		resp := postRestore(t, f.r, "www.kaitu.io", devAcctUDID(t), f.jws(t))
+		require.Equal(t, int(ErrorBrandMismatch), resp.Code)
+		require.Equal(t, f.owner.ID, devAcctDevice(t, ownerUDID).UserID)
+		require.Equal(t, int64(1), devAcctCount(t, f.owner.ID))
+	})
+
+	t.Run("Apple 复核的 bundle 不符", func(t *testing.T) {
+		f := newRestoreFixture(t)
+		ownerUDID, ownerRefresh := f.ownerDevice(t)
+		f.apple.BundleId = "test.other.bundle"
+		resp := postRestore(t, f.r, "www.kaitu.io", devAcctUDID(t), f.jws(t))
+		require.Equal(t, int(ErrorInvalidArgument), resp.Code)
+		assertUntouched(t, f, ownerUDID, ownerRefresh)
+	})
+
 	t.Run("品牌开关关闭", func(t *testing.T) {
 		f := newRestoreFixture(t)
 		ownerUDID, ownerRefresh := f.ownerDevice(t)
@@ -382,4 +419,29 @@ func TestDeviceAccountRestore_Refusals(t *testing.T) {
 		require.Equal(t, int(ErrorDeviceAccountDisabled), resp.Code)
 		assertUntouched(t, f, ownerUDID, ownerRefresh)
 	})
+}
+
+// 同一主人并发恢复到两台设备（连点两次 / 两台 iPhone 同时恢复）：都不报系统错误，最终只剩 1 台。
+func TestDeviceAccountRestore_ConcurrentSameOwner(t *testing.T) {
+	f := newRestoreFixture(t)
+	f.ownerDevice(t)
+	signed := f.jws(t)
+	udids := []string{devAcctUDID(t), devAcctUDID(t), devAcctUDID(t)}
+	resps := make([]devAcctResp, len(udids))
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := range udids {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			resps[i] = postRestore(t, f.r, "www.kaitu.io", udids[i], signed)
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	for i, rs := range resps {
+		require.Equal(t, 0, rs.Code, "请求 %d: %s", i, rs.Message)
+	}
+	require.Equal(t, int64(1), devAcctCount(t, f.owner.ID), "轮流挤，最后只剩 1 台")
 }

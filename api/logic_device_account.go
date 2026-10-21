@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -115,6 +116,8 @@ func deviceAccountSignIn(c *gin.Context, brand Brand, req DataDeviceAccountReque
 // 搬是移动不是共享：主人的其他设备行全删（零身份上限 1）。所有拒绝都不写库。
 func deviceAccountRestore(c *gin.Context, brand Brand, udid, remark string, info *appstore.TransactionInfo) (*deviceAccountResult, error) {
 	res := &deviceAccountResult{}
+	// 读已提交：并发恢复靠主人行 FOR UPDATE 排队；可重复读下，排在后面的事务开头的快照读早于
+	// 前一个的提交，之后锁读 / 删主人设备行会撞 MariaDB innodb_snapshot_isolation 的 1020。
 	err := db.Get().Transaction(func(tx *gorm.DB) error {
 		var sub Subscription
 		if err := tx.Where(&Subscription{Provider: SubscriptionProviderApple, ProviderSubscriptionID: info.OriginalTransactionId}).
@@ -190,7 +193,7 @@ func deviceAccountRestore(c *gin.Context, brand Brand, udid, remark string, info
 		}
 		res.Auth, res.UserID, res.Created = auth, owner.ID, !exists
 		return nil
-	})
+	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return nil, err
 	}
