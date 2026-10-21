@@ -168,7 +168,9 @@ func revokeAppleTokensAsync(revs []appleRevocation) {
 			cfg := configSocialAuth(rev.Brand)
 			if err := appleRevokeToken(ctx, cfg, rev.ClientID, rev.RefreshToken); err != nil {
 				log.Errorf(ctx, "apple revoke refresh token failed (brand %s, client %s): %v", rev.Brand, rev.ClientID, err)
+				continue
 			}
+			log.Infof(ctx, "apple refresh token revoked (brand %s, client %s)", rev.Brand, rev.ClientID)
 		}
 	}()
 }
