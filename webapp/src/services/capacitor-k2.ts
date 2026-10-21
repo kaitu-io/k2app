@@ -20,6 +20,7 @@ import { transformStatus } from './status-transform';
 import { createCapacitorStorage } from './capacitor-storage';
 import { mapInstalledApp, type AndroidInstalledApp } from './capacitor-app-map';
 import { withAppAttribution } from '../utils/site-link';
+import { buildCapacitorSocialSignIn } from './capacitor-social-signin';
 
 /**
  * Check if running inside a Capacitor native environment.
@@ -481,6 +482,8 @@ export async function injectCapacitorGlobals(): Promise<void> {
     // IAP: iOS-only (StoreKit 2). Android/web keep WordGate external-link flow
     // (capability stays undefined → Purchase.tsx falls back automatically).
     iap: platform === 'ios' ? buildIapBridge() : undefined,
+
+    socialSignIn: buildCapacitorSocialSignIn(platform),
   };
 
   // Inject globals

@@ -2,6 +2,7 @@ import UIKit
 import Capacitor
 import K2Mobile
 import K2Plugin
+import GoogleSignIn
 
 // App Group from Info.plist (baked by brand-active.xcconfig at build time).
 private let kAppGroup = Bundle.main.object(forInfoDictionaryKey: "K2AppGroup") as? String ?? "group.io.kaitu"
@@ -51,5 +52,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         }
 
         return true
+    }
+
+    func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        // Google Sign-In (via @capgo/capacitor-social-login) redirects back
+        // through the reversed-client-ID scheme registered in Info.plist.
+        // Everything else goes to Capacitor so the App plugin still sees it.
+        if GIDSignIn.sharedInstance.handle(url) {
+            return true
+        }
+        return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
     }
 }

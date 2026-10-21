@@ -681,6 +681,7 @@ export interface AppConfig {
   minClientVersion?: string; // 最低客户端版本要求，低于此版本强制升级
   announcement?: Announcement; // 向后兼容：最高优先级公告
   announcements?: Announcement[]; // 全部活跃公告（按 priority DESC 排序）
+  socialSignIn?: { apple: boolean; google: boolean }; // 联合登录开关（老服务端不下发 = 全关）
 }
 
 // 链接有效期选项

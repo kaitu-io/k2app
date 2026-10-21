@@ -116,6 +116,10 @@ export class K2PluginWeb extends WebPlugin implements K2PluginInterface {
     return { gateway: null };
   }
 
+  async hasGooglePlayServices(): Promise<{ available: boolean }> {
+    return { available: false };
+  }
+
   async iapGetProducts(): Promise<{ products: [] }> {
     throw this.unavailable('IAP is not available on web');
   }

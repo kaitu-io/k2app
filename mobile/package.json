@@ -12,6 +12,7 @@
     "@capacitor/share": "^8.0.3",
     "@capacitor/status-bar": "^8.0.4",
     "@capawesome/capacitor-android-edge-to-edge-support": "^8.0.8",
+    "@capgo/capacitor-social-login": "8.7.4",
     "k2-plugin": "file:./plugins/k2-plugin"
   }
 }

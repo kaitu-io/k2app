@@ -40,6 +40,7 @@ import { getDeviceUdid } from '../services/device-udid';
 import { statsService } from '../services/stats';
 import { useAppConfig } from '../hooks/useAppConfig';
 import { delayedFocus } from '../utils/ui';
+import SocialSignInButtons from './SocialSignInButtons';
 
 // Cookie helper function
 function getCookie(name: string): string | null {
@@ -416,6 +417,15 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
             emailSuggestion={emailSuggestion}
             onAcceptSuggestion={() => { setEmail(emailSuggestion!); setEmailSuggestion(null); }}
             isSubmitting={isSubmitting}
+          />
+        )}
+
+        {/* Google / Apple — renders nothing where unavailable */}
+        {step === "email" && (
+          <SocialSignInButtons
+            onSuccess={() => onLoginSuccess?.()}
+            onError={setError}
+            disabled={isSubmitting}
           />
         )}
 

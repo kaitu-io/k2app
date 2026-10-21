@@ -147,6 +147,7 @@ Apple 的 `team_id/key_id/private_key` 用于生成 client secret，去换 refre
 - webapp 侧作为 `IPlatform` 的**可选**成员，`typeof fn === 'function'` 探测；老版本 App 没有这个能力 → 按钮不显示，不报错。
 - iOS：两个品牌的 App target 加 `com.apple.developer.applesignin` entitlement；Google 需要每品牌的 reversed client ID URL scheme（走品牌 xcconfig）。App Store 4.8 条款：iOS 上出现 Google 登录就必须同时提供 Apple 登录——本方案满足。
 - Android：Google 用本品牌 **Web client ID** 作 `serverClientId`；Google Cloud 里按 flavor 包名 + 签名证书 SHA-1 注册 Android client（已完成，§7.1）。Apple 走插件的网页流，回调页见 §6.3。
+- **实现落地（2026-10-21）**：插件只启用 Google + Apple（`capacitor.config.ts` `SocialLogin.providers`，Facebook SDK 不打包）。Apple 用 `useProperTokenExchange: true` + `redirectUrl: ''` 拿到 `authorizationCode`，插件自身不发任何请求。安卓 Apple **本期隐藏**——插件的安卓 Apple 只有 `response_type=code`，要么 App 内嵌 client secret、要么服务端换 token，都不取；等官网回调页（§6.3）上线后按 §6.3 自己实现。安卓"有无 GMS"由 `K2Plugin.hasGooglePlayServices` 判断（插件不提供）。
 
 ### 6.3 浏览器登录（桌面 / Linux / 安卓 Apple）— 原生 App OAuth（RFC 8252）
 App 自己完成整个 OAuth，拿到 idToken 后与原生一样调 `/social/login`。服务端无会话、无轮询。

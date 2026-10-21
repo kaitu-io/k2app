@@ -158,6 +158,13 @@ mobile/
 - **TUN fd acquisition** (in order): KVC `packetFlow.value(forKeyPath: "socket.fileDescriptor")` → utun fd scan (`findTunnelFileDescriptor()`)
 - The **App target also links `K2Mobile.xcframework`** (relay fetch + rule prefetch run in the app process, VPN-independent); the K2Plugin pod does not — see Gotchas "plugin is gomobile-free".
 
+## Social Sign-In (Google / Apple)
+
+`@capgo/capacitor-social-login` (native name `SocialLogin`), wrapped by `webapp/src/services/capacitor-social-signin.ts` → `_platform.socialSignIn` (webapp has no capgo dependency; old shells lack the native plugin → no buttons). Spec: `docs/superpowers/specs/2026-10-20-social-sign-in-design.md` §6.2.
+- **`capacitor.config.ts` `SocialLogin.providers` is load-bearing**: the plugin's `capacitor:sync:before` hook rewrites its own podspec / gradle in `node_modules` from that map. `facebook: false` is what keeps the Facebook SDK out — after `cap sync`, `Podfile.lock` must not contain `FBSDK`.
+- iOS: `com.apple.developer.applesignin` in `App.entitlements`; Google needs the reversed iOS client ID as a URL scheme (`K2_GOOGLE_REVERSED_CLIENT_ID` in the brand xcconfig → `Info.plist` `CFBundleURLTypes`, locked to the brand registry by `webapp/src/brands/__tests__/ios-google-url-scheme.test.ts`); `AppDelegate` forwards `open url` to `GIDSignIn` before Capacitor.
+- Android: Google only (Credential Manager, brand **Web** client as server client ID); hidden without Play services (`K2Plugin.hasGooglePlayServices`, package-visibility `<queries>` entry in the app manifest). Apple on Android waits for the website callback relay (§6.3). Never pass custom Google scopes — on Android that needs MainActivity changes.
+
 ## Server Selection — Manual only on mobile
 
 Mobile has **no smart-mode / k2subs resolution**: users pick a tunnel on Dashboard and the webapp passes that single `k2v5://` URL as `_k2.run('up', {routes:[{via:'k2v5://...'}]})` — the NE's 50 MB jetsam limit rules out an in-extension resolver, and a webapp-side one would fetch `/api/subs` through the tunnel it is trying to establish. Failure mode: any raw `k2subs://` leaked to appext is dropped by `engine.buildOutboundMap` as a reserved scheme → code 570 "no k2v5 outbound configured" — always a webapp bug; the only legitimate `via` on mobile is `k2v5://` or `direct`. `probe.store` + `ProbeChip` populate RTT/loss via the webapp-triggered `runProbe()`; the daemon-side background probe loop is desktop-only.

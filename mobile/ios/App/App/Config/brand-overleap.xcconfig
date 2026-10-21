@@ -9,6 +9,11 @@ K2_VPN_DISPLAY_NAME = Overleap
 // in Info.plist; K2Plugin.swift's fallback only protects the kaitu literal.
 K2_APP_STORE_URL =
 K2_DEVELOPMENT_REGION = en
+
+// Google Sign-In: reversed iOS OAuth client ID, registered as a URL scheme in
+// Info.plist (GoogleSignIn refuses to start without it). Must match the brand's
+// googleIosClientId in webapp/src/brands/<brand>/index.ts (contract-locked).
+K2_GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.808676014960-ug0b6ahv3lm2s1fboj0dinmtp5p0t6qu
 // Export compliance: k2 uses only standard algorithms (TLS / standard symmetric
 // ciphers) — exempt. Answered here so every upload skips the ASC questionnaire.
 // INFOPLIST_KEY_* is injected by Xcode 13+; the shared Info.plist stays untouched.

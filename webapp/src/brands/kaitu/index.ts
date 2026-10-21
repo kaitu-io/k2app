@@ -46,6 +46,10 @@ export const KAITU_BRAND: WebappBrandConfig = {
   ],
   storeUrls: { ios: 'https://apps.apple.com/app/id6448744655', android: '' },
   defaultRoutingCountry: 'cn',
+  social: {
+    googleWebClientId: '125062807005-fqpjkq2pjjqdueen84q1kpp3rlkvq5sg.apps.googleusercontent.com',
+    googleIosClientId: '125062807005-r08pi88vadprilgo5mr1oqndpinnkb0l.apps.googleusercontent.com',
+  },
   theme: KAITU_THEME,
   features: {
     invite: true,

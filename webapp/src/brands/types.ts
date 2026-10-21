@@ -169,6 +169,10 @@ export interface WebappBrandConfig {
    * 可分流的国家（routes.test.ts 守卫）。
    */
   defaultRoutingCountry: string;
+  /** Google OAuth client IDs used by native sign-in (not secrets). Must equal
+   *  api/brand.go's social registry — locked by cross-layer-contract.test.ts.
+   *  Web client = Android serverClientId and the iOS `aud` the server checks. */
+  social: { googleWebClientId: string; googleIosClientId: string };
   theme: BrandThemeTokens;
   features: BrandFeatures;
 }

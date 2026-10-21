@@ -51,6 +51,7 @@ import { brandConfig } from '../brands';
 import { purchaseSurfaceAvailable } from '../utils/purchase-surface';
 import { getCurrentAppConfig } from '../config/apps';
 import { statsService } from '../services/stats';
+import SocialSignInButtons from './SocialSignInButtons';
 
 /**
  * DialogContent is a flex column, so a form taller than the viewport squashes its
@@ -489,6 +490,8 @@ export default function LoginDialog() {
               {t("auth:auth.sendCode")}
             </Button>
 
+            <SocialSignInButtons onSuccess={close} onError={setError} disabled={isSubmitting} />
+
             {/* Activate Service → /purchase: only where that route is registered
                 (utils/purchase-surface.ts — iOS without IAP / Play-only Android hide it);
                 the iOS affordance clause stays as before. */}
@@ -533,6 +536,7 @@ export default function LoginDialog() {
               onAcceptSuggestion={() => { setEmail(emailSuggestion!); setEmailSuggestion(null); }}
               isSubmitting={isSubmitting}
             />
+            <SocialSignInButtons onSuccess={close} onError={setError} disabled={isSubmitting} />
           </Stack>
         )}
 
