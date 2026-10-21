@@ -43,8 +43,13 @@ const (
 type SocialClientIDs struct {
 	GoogleWebClientID string `json:"googleWebClientId"` // Web 与 Android Credential Manager 的 token aud
 	GoogleIOSClientID string `json:"googleIosClientId"`
-	AppleBundleID     string `json:"appleBundleId"`   // 原生 iOS
-	AppleServicesID   string `json:"appleServicesId"` // 网页 / Android
+	// GoogleDesktopClientID 桌面（macOS / Windows / Linux）经系统浏览器 + 127.0.0.1 回环取 token 的 aud。
+	GoogleDesktopClientID string `json:"googleDesktopClientId"`
+	AppleBundleID         string `json:"appleBundleId"`   // 原生 iOS
+	AppleServicesID       string `json:"appleServicesId"` // 网页 / Android
+	// AppleReturnURLs 已在 Apple Services ID 登记的网页授权回调地址。Apple 网页授权码换 token
+	// 必须带与授权时一致的 redirect_uri；服务端只接受此列表内的值。
+	AppleReturnURLs []string `json:"appleReturnUrls"`
 }
 
 // Audiences 返回某提供方允许的 aud 列表，空串剔除；未知提供方返回 nil。
@@ -52,7 +57,7 @@ func (s SocialClientIDs) Audiences(provider string) []string {
 	var raw []string
 	switch provider {
 	case SocialProviderGoogle:
-		raw = []string{s.GoogleWebClientID, s.GoogleIOSClientID}
+		raw = []string{s.GoogleWebClientID, s.GoogleIOSClientID, s.GoogleDesktopClientID}
 	case SocialProviderApple:
 		raw = []string{s.AppleBundleID, s.AppleServicesID}
 	default:
@@ -134,10 +139,12 @@ var brandRegistry = map[Brand]*BrandConfig{
 		DeviceAccount:     true,
 		ChatAIStore:       "crm",
 		Social: SocialClientIDs{
-			GoogleWebClientID: "125062807005-fqpjkq2pjjqdueen84q1kpp3rlkvq5sg.apps.googleusercontent.com",
-			GoogleIOSClientID: "125062807005-r08pi88vadprilgo5mr1oqndpinnkb0l.apps.googleusercontent.com",
-			AppleBundleID:     "com.allnationconnect.anc.wgios",
-			AppleServicesID:   "io.kaitu.signin",
+			GoogleWebClientID:     "125062807005-fqpjkq2pjjqdueen84q1kpp3rlkvq5sg.apps.googleusercontent.com",
+			GoogleIOSClientID:     "125062807005-r08pi88vadprilgo5mr1oqndpinnkb0l.apps.googleusercontent.com",
+			GoogleDesktopClientID: "125062807005-9vlr5ea2hp42hn5r2sc5prn8m82nnrv7.apps.googleusercontent.com",
+			AppleBundleID:         "com.allnationconnect.anc.wgios",
+			AppleServicesID:       "io.kaitu.signin",
+			AppleReturnURLs:       []string{"https://www.kaitu.io/auth/social/apple", "https://kaitu.io/auth/social/apple"},
 		},
 	},
 	BrandOverleap: {
@@ -160,10 +167,12 @@ var brandRegistry = map[Brand]*BrandConfig{
 		ChatAIStore:       "overleap",
 		FunnelCookieless:  true,
 		Social: SocialClientIDs{
-			GoogleWebClientID: "808676014960-fvo8an88b4c79f1ua9n0pctr40ta09fm.apps.googleusercontent.com",
-			GoogleIOSClientID: "808676014960-ug0b6ahv3lm2s1fboj0dinmtp5p0t6qu.apps.googleusercontent.com",
-			AppleBundleID:     "io.overleap",
-			AppleServicesID:   "io.overleap.signin",
+			GoogleWebClientID:     "808676014960-fvo8an88b4c79f1ua9n0pctr40ta09fm.apps.googleusercontent.com",
+			GoogleIOSClientID:     "808676014960-ug0b6ahv3lm2s1fboj0dinmtp5p0t6qu.apps.googleusercontent.com",
+			GoogleDesktopClientID: "808676014960-kb76trvs3q7q89a5qb914kjv5gfhu841.apps.googleusercontent.com",
+			AppleBundleID:         "io.overleap",
+			AppleServicesID:       "io.overleap.signin",
+			AppleReturnURLs:       []string{"https://overleap.io/auth/social/apple", "https://www.overleap.io/auth/social/apple"},
 		},
 	},
 }

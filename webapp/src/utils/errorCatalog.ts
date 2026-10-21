@@ -86,7 +86,6 @@ export const ERROR_CODES = {
   // Social sign-in (Google / Apple); 400016 intentionally unused
   SOCIAL_TOKEN_INVALID: 400014,
   SOCIAL_EMAIL_UNVERIFIED: 400015,
-  SOCIAL_HANDOFF_EXPIRED: 400017,
 
   // Tier system error codes (added 2026-04-20)
   TIER_MISMATCH: 422001,
@@ -302,7 +301,6 @@ export const API_ERROR_CATALOG: Readonly<Record<number, ErrorEntry>> = {
   // Social sign-in (Google / Apple)
   [ERROR_CODES.SOCIAL_TOKEN_INVALID]: { key: 'auth:auth.socialTokenInvalid', defaultValue: 'Sign-in credential is invalid or expired. Please try again.' },
   [ERROR_CODES.SOCIAL_EMAIL_UNVERIFIED]: { key: 'auth:auth.socialEmailUnverified', defaultValue: 'The email on this account is not verified. Please sign in with an email code instead.' },
-  [ERROR_CODES.SOCIAL_HANDOFF_EXPIRED]: { key: 'auth:auth.socialHandoffExpired', defaultValue: 'The sign-in request expired. Please start again from the app.' },
   [ERROR_CODES.SOCIAL_PROVIDER_DISABLED]: { key: 'auth:auth.socialProviderDisabled', defaultValue: 'This sign-in method is not available yet.' },
   [ERROR_CODES.SOCIAL_IDENTITY_TAKEN]: { key: 'auth:auth.socialIdentityTaken', defaultValue: 'This account is already linked to another user.' },
   [ERROR_CODES.SOCIAL_PROVIDER_ALREADY_BOUND]: { key: 'auth:auth.socialProviderAlreadyBound', defaultValue: 'Your account is already linked to a different account of this type.' },

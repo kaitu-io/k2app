@@ -20,12 +20,14 @@ import (
 
 const (
 	appleIDAudience       = "https://appleid.apple.com"
-	appleTokenURL         = "https://appleid.apple.com/auth/token"
 	appleRevokeURL        = "https://appleid.apple.com/auth/revoke"
 	appleClientSecretTTL  = 5 * time.Minute
 	appleHTTPTimeout      = 10 * time.Second
 	appleErrorBodyMaxSize = 1024
 )
+
+// appleTokenURL var 形态供测试指向 httptest 服务。
+var appleTokenURL = "https://appleid.apple.com/auth/token"
 
 var appleHTTPClient = &http.Client{Timeout: appleHTTPTimeout}
 
@@ -48,17 +50,21 @@ func appleClientSecret(cfg socialAuthConfig, clientID string, now time.Time) (st
 }
 
 // appleExchangeCode 用授权码换 refresh token。包级可替换，测试不打外网。
-var appleExchangeCode = func(ctx context.Context, cfg socialAuthConfig, clientID, code string) (string, error) {
+var appleExchangeCode = func(ctx context.Context, cfg socialAuthConfig, clientID, code, redirectURI string) (string, error) {
 	secret, err := appleClientSecret(cfg, clientID, time.Now())
 	if err != nil {
 		return "", err
 	}
-	body, err := applePostForm(ctx, appleTokenURL, url.Values{
+	form := url.Values{
 		"client_id":     {clientID},
 		"client_secret": {secret},
 		"code":          {code},
 		"grant_type":    {"authorization_code"},
-	})
+	}
+	if redirectURI != "" { // 网页（Services ID）授权码必带，且须与授权时一致；原生 iOS 码不用
+		form.Set("redirect_uri", redirectURI)
+	}
+	body, err := applePostForm(ctx, appleTokenURL, form)
 	if err != nil {
 		return "", err
 	}
@@ -162,7 +168,9 @@ func revokeAppleTokensAsync(revs []appleRevocation) {
 			cfg := configSocialAuth(rev.Brand)
 			if err := appleRevokeToken(ctx, cfg, rev.ClientID, rev.RefreshToken); err != nil {
 				log.Errorf(ctx, "apple revoke refresh token failed (brand %s, client %s): %v", rev.Brand, rev.ClientID, err)
+				continue
 			}
+			log.Infof(ctx, "apple refresh token revoked (brand %s, client %s)", rev.Brand, rev.ClientID)
 		}
 	}()
 }

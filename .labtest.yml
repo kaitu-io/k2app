@@ -17,7 +17,7 @@ suites:
   webapp:
     run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG webapp
     paths: [webapp/**, mobile/plugins/k2-plugin/**, package.json, yarn.lock]
-    mem: 5G
+    mem: 7G
     cpus: 6
   web:
     run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG web

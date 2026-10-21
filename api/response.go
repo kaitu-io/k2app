@@ -45,8 +45,7 @@ const (
 	ErrorVerificationCodeExpired   ErrorCode = 400013 // 验证码已过期或未发送
 	ErrorSocialTokenInvalid        ErrorCode = 400014 // 联合登录凭证无效/过期/aud 或 nonce 不符
 	ErrorSocialEmailUnverified     ErrorCode = 400015 // 第三方账号邮箱未验证，不可据此建号/绑定
-	// 400016 刻意留空
-	ErrorSocialHandoffExpired ErrorCode = 400017 // 浏览器 handoff 会话不存在或已过期
+	// 400016–400017 未使用（已移除，勿复用）
 
 	// Router class system error codes (added 2026-05-22)
 	ErrorPlanNoRouter        ErrorCode = 402001 // 套餐不支持路由器
