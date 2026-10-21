@@ -99,7 +99,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22' # @capacitor/cli 8 engines.node >=22 — yarn 1 fails the root install on 20
 
       - name: Run CI script tests (web OTA manifest + plan + anti-rollback gate + release plan)
         run: |
@@ -185,7 +185,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22' # @capacitor/cli 8 engines.node >=22 — yarn 1 fails the root install on 20
           cache: 'yarn'
 
       - name: Install Node dependencies
@@ -267,7 +267,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22' # @capacitor/cli 8 engines.node >=22 — yarn 1 fails the root install on 20
           cache: 'yarn'
 
       - name: Setup Go
