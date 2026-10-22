@@ -35,6 +35,7 @@ BINARY_PATH="./release/$APP_NAME"
 BASE_PATH="/apps/kaitu"
 CENTER_HOSTS=(center-1 center-2)
 SERVICE_UNIT=kaitu-center
+KEEP_BAK=3   # 部署成功后保留的带时间戳二进制备份数（不含 .prev）
 
 AWS_REGION="${AWS_REGION:-ap-northeast-1}"
 TG_NAME="${TG_NAME:-tokyo-alb-tg-kaitu}"
@@ -433,6 +434,11 @@ for host in "${CENTER_HOSTS[@]}"; do
     remote "$host" "ok=0; for i in \$(seq 1 20); do sleep 2; if curl -fsS $HEALTH_URL >/dev/null 2>&1; then ok=1; break; fi; done; if [ \"\$ok\" != 1 ]; then echo '--- systemctl status ---'; sudo systemctl status $SERVICE_UNIT --no-pager 2>&1 | tail -20; fi; [ \"\$ok\" = 1 ]" \
         || { dump_remote; echo "❌ $host 健康检查未通过（40s），已停止滚动；其余主机仍运行旧版本。"; rollback_hint "$host"; exit 1; }
     echo "  ✅ 本地健康检查通过"
+
+    # 新版已健康才清理：二进制带时间戳的 .bak 只留最近 $KEEP_BAK 份（每份 ~65 MB，从不清理会无限堆积）。
+    # .prev（秒级回滚用）与 config 备份不动。失败不影响部署。
+    remote "$host" "cd $BASE_PATH && ls -1t $APP_NAME.bak.* 2>/dev/null | tail -n +$((KEEP_BAK + 1)) | xargs -r rm -f --" \
+        || echo "  ⚠️  $host 清理旧 .bak 失败（忽略）"
 
     if [ "$USE_ALB" = "1" ]; then
         alb_register_and_wait "$INSTANCE_ID" || {
