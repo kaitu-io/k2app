@@ -7,7 +7,7 @@
  * usable, so old shells, the router UI and switched-off brands see no change.
  */
 import { useEffect, useState } from 'react';
-import { Button, CircularProgress, Divider, Stack, Typography } from '@mui/material';
+import { Button, CircularProgress, Divider, Stack, Typography, useTheme } from '@mui/material';
 import { Apple as AppleIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../stores';
@@ -42,6 +42,7 @@ function GoogleGlyph() {
 
 function SocialSignInInner({ bridge, onSuccess, onError, disabled }: SocialSignInButtonsProps & { bridge: ISocialSignIn }) {
   const { t, i18n } = useTranslation();
+  const isDark = useTheme().palette.mode === 'dark';
   const { appConfig } = useAppConfig();
   const setIsAuthenticated = useAuthStore((s) => s.setIsAuthenticated);
   const [providers, setProviders] = useState<SocialProvider[]>([]);
@@ -116,7 +117,7 @@ function SocialSignInInner({ bridge, onSuccess, onError, disabled }: SocialSignI
           key={provider}
           fullWidth
           size="large"
-          variant={provider === 'apple' ? 'contained' : 'outlined'}
+          variant={provider === 'apple' && !isDark ? 'contained' : 'outlined'}
           disabled={disabled || busy !== null}
           onClick={() => handleSignIn(provider)}
           startIcon={
@@ -129,14 +130,18 @@ function SocialSignInInner({ bridge, onSuccess, onError, disabled }: SocialSignI
             )
           }
           sx={
-            provider === 'apple'
-              ? (theme) => ({
-                  // Apple HIG: black button (white on dark backgrounds).
-                  bgcolor: theme.palette.mode === 'dark' ? '#fff' : '#000',
-                  color: theme.palette.mode === 'dark' ? '#000' : '#fff',
-                  '&:hover': { bgcolor: theme.palette.mode === 'dark' ? '#e6e6e6' : '#1a1a1a' },
-                })
-              : undefined
+            provider !== 'apple'
+              ? undefined
+              : isDark
+                ? // A solid white button reads as a text field in the dark dialog (same shape as the
+                  // email input), so dark mode uses the outlined style Google uses, in white.
+                  {
+                    color: '#fff',
+                    borderColor: 'rgba(255,255,255,0.7)',
+                    '&:hover': { borderColor: '#fff', bgcolor: 'rgba(255,255,255,0.08)' },
+                  }
+                : // Apple HIG: black button on light backgrounds.
+                  { bgcolor: '#000', color: '#fff', '&:hover': { bgcolor: '#1a1a1a' } }
           }
         >
           {provider === 'apple' ? t('auth:auth.continueWithApple') : t('auth:auth.continueWithGoogle')}
