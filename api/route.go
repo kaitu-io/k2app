@@ -66,8 +66,7 @@ func SetupRouter() *gin.Engine {
 			// 设备账号（零登录身份，按 udid 建号 / 重装找回；品牌开关 DeviceAccount）
 			auth.POST("/device-account", api_device_account)
 			auth.POST("/device-account/restore", api_device_account_restore)
-			auth.POST("/social/login", api_social_login)
-			auth.POST("/social/web-login", api_social_web_login)
+			// POST /social/login、/social/web-login 挂在下方 socialSensitive 组：请求体含 idToken
 			// Password login (with device binding)
 			auth.POST("/login/password", api_password_login)
 			// Web用户登录（无设备绑定）
@@ -148,7 +147,7 @@ func SetupRouter() *gin.Engine {
 			user.GET("/info", AuthRequired(), EnforceDeviceClass(), api_get_user_info)
 			// 第三方登录（Google / Apple）：列表 / 绑定 / 解绑
 			user.GET("/social", AuthRequired(), EnforceDeviceClass(), api_user_social_list)
-			user.POST("/social/bind", AuthRequired(), EnforceDeviceClass(), api_user_social_bind)
+			// POST /social/bind 挂在下方 socialSensitive 组（请求体含 idToken）
 			user.DELETE("/social/:provider", AuthRequired(), EnforceDeviceClass(), api_user_social_unbind)
 			// 删除设备
 			user.DELETE("/devices/:uuid", AuthRequired(), EnforceDeviceClass(), api_delete_device)
@@ -337,6 +336,13 @@ func SetupRouter() *gin.Engine {
 	walletSensitive := r.Group("/api/wallet")
 	walletSensitive.Use(requestLogWithoutBodies(), MiddleRecovery(), BrandResolver(), ApiCORSMiddleware())
 	walletSensitive.POST("/withdraw-accounts", AuthRequired(), WalletRequired(), api_create_withdraw_account)
+
+	// 联合登录：请求体含 idToken + rawNonce（token 过期前可重放登录），响应体含 access/refresh token。
+	socialSensitive := r.Group("/api")
+	socialSensitive.Use(requestLogWithoutBodies(), MiddleRecovery(), BrandResolver(), ApiCORSMiddleware())
+	socialSensitive.POST("/auth/social/login", api_social_login)
+	socialSensitive.POST("/auth/social/web-login", api_social_web_login)
+	socialSensitive.POST("/user/social/bind", AuthRequired(), EnforceDeviceClass(), api_user_social_bind)
 
 	adminSensitive := r.Group("/app")
 	adminSensitive.Use(requestLogWithoutBodies(), MiddleRecovery(), BrandResolver(), CORSMiddleware(), AdminRequired())
