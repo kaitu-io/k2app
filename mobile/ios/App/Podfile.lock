@@ -1,4 +1,16 @@
 PODS:
+  - AppAuth (2.1.0):
+    - AppAuth/Core (= 2.1.0)
+    - AppAuth/ExternalUserAgent (= 2.1.0)
+  - AppAuth/Core (2.1.0)
+  - AppAuth/ExternalUserAgent (2.1.0):
+    - AppAuth/Core
+  - AppCheckCore (11.3.2):
+    - GoogleUtilities/Environment (~> 8.0)
+    - GoogleUtilities/UserDefaults (~> 8.0)
+    - PromisesObjC (~> 2.4)
+    - PromisesSwift (~> 2.4)
+    - RecaptchaInterop (~> 101.0)
   - Capacitor (8.5.3):
     - CapacitorCordova
   - CapacitorApp (8.1.2):
@@ -10,11 +22,36 @@ PODS:
     - Capacitor
   - CapacitorStatusBar (8.0.4):
     - Capacitor
+  - CapgoCapacitorSocialLogin (8.7.4):
+    - Capacitor
+    - GoogleSignIn (~> 9.0.0)
+  - GoogleSignIn (9.0.0):
+    - AppAuth (~> 2.0)
+    - AppCheckCore (~> 11.0)
+    - GTMAppAuth (~> 5.0)
+    - GTMSessionFetcher/Core (~> 3.3)
+  - GoogleUtilities/Environment (8.1.5):
+    - GoogleUtilities/Privacy
+  - GoogleUtilities/Logger (8.1.5):
+    - GoogleUtilities/Environment
+    - GoogleUtilities/Privacy
+  - GoogleUtilities/Privacy (8.1.5)
+  - GoogleUtilities/UserDefaults (8.1.5):
+    - GoogleUtilities/Logger
+    - GoogleUtilities/Privacy
+  - GTMAppAuth (5.0.0):
+    - AppAuth/Core (~> 2.0)
+    - GTMSessionFetcher/Core (< 4.0, >= 3.3)
+  - GTMSessionFetcher/Core (3.5.0)
   - GzipSwift (5.1.1)
   - K2Plugin (0.1.0):
     - Capacitor
     - GzipSwift (~> 5.1)
     - SSZipArchive (~> 2.5)
+  - PromisesObjC (2.4.1)
+  - PromisesSwift (2.4.1):
+    - PromisesObjC (= 2.4.1)
+  - RecaptchaInterop (101.0.0)
   - SSZipArchive (2.6.0)
 
 DEPENDENCIES:
@@ -24,11 +61,21 @@ DEPENDENCIES:
   - "CapacitorCordova (from `../../../node_modules/@capacitor/ios`)"
   - "CapacitorShare (from `../../../node_modules/@capacitor/share`)"
   - "CapacitorStatusBar (from `../../../node_modules/@capacitor/status-bar`)"
+  - "CapgoCapacitorSocialLogin (from `../../../node_modules/@capgo/capacitor-social-login`)"
   - K2Plugin (from `../../../node_modules/k2-plugin`)
 
 SPEC REPOS:
   trunk:
+    - AppAuth
+    - AppCheckCore
+    - GoogleSignIn
+    - GoogleUtilities
+    - GTMAppAuth
+    - GTMSessionFetcher
     - GzipSwift
+    - PromisesObjC
+    - PromisesSwift
+    - RecaptchaInterop
     - SSZipArchive
 
 EXTERNAL SOURCES:
@@ -44,20 +91,32 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/@capacitor/share"
   CapacitorStatusBar:
     :path: "../../../node_modules/@capacitor/status-bar"
+  CapgoCapacitorSocialLogin:
+    :path: "../../../node_modules/@capgo/capacitor-social-login"
   K2Plugin:
     :path: "../../../node_modules/k2-plugin"
 
 SPEC CHECKSUMS:
+  AppAuth: ef4da5a3fc2e10b90c09a0a94a9baeaedc0341d5
+  AppCheckCore: be8fce5469f68d7f6a29aa94b25f097409ff7fdc
   Capacitor: 17e970df74ced80ad73f1bf99f2c53aa6fcabde0
   CapacitorApp: 542f92c179e3e08ed5d787846bcfa1b377e9745e
   CapacitorClipboard: 1ba60616f1b2d3df52417000217ec810216bbbaf
   CapacitorCordova: 0b7326439c7a09fc5d20eced5e0dab986327a493
   CapacitorShare: c19ef886b846555a4eca4f085d4414b6cac91d4b
   CapacitorStatusBar: 9b98299f3d119657ea338c047e0b876714c213ad
+  CapgoCapacitorSocialLogin: b74430e2200f9d1fbe2fd46862135f0b87e6ee9a
+  GoogleSignIn: c7f09cfbc85a1abf69187be091997c317cc33b77
+  GoogleUtilities: 7dc09b3fa9ecb5c2298b952313d14628b61b9da3
+  GTMAppAuth: 217a876b249c3c585a54fd6f73e6b58c4f5c4238
+  GTMSessionFetcher: 5aea5ba6bd522a239e236100971f10cb71b96ab6
   GzipSwift: 893f3e48e597a1a4f62fafcb6514220fcf8287fa
   K2Plugin: 6417bb0881f846831ac5f066a27fb5879d7fb47b
+  PromisesObjC: 752c3227f599e3467650e47ea36f433eeb10c273
+  PromisesSwift: 217dea0fd5d2ad65222a109c48698add13cc1c5b
+  RecaptchaInterop: 11e0b637842dfb48308d242afc3f448062325aba
   SSZipArchive: 8a6ee5677c8e304bebc109e39cf0da91ccef22ea
 
-PODFILE CHECKSUM: 7b1fc45305b590b24a2570c41c6fb51cfd0a5bf5
+PODFILE CHECKSUM: 2f2d1076cf3324c1a02458c898dd8ea84b9d361a
 
 COCOAPODS: 1.16.2

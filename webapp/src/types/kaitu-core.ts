@@ -293,6 +293,32 @@ export interface IPlatform {
 
   /** 仅 iOS 注入。其余平台 undefined → 走外链 WordGate 支付 */
   iap?: IIap;
+
+  // ====== 第三方登录（可选）======
+
+  /** 拿 Google / Apple idToken 的原生能力（spec 2026-10-20 §6.2）。
+   *  undefined = 老版本 App / 不支持的平台 → 不显示按钮，不报错。 */
+  socialSignIn?: ISocialSignIn;
+}
+
+// ==================== Social Sign-In ====================
+
+export type SocialProvider = 'apple' | 'google';
+
+export interface SocialCredential {
+  idToken: string;
+  /** 仅 Apple 原生：一次性授权码，服务端换 refresh token 供注销时撤销 */
+  authorizationCode?: string;
+}
+
+export interface ISocialSignIn {
+  /** 本设备此刻能用的提供方（如安卓无 Apple、无 GMS 时无 Google）。不含网络可达性。 */
+  availableProviders(): Promise<SocialProvider[]>;
+  /**
+   * 拉起提供方的登录界面。`hashedNonce` = sha256hex(原始 nonce)，原样进 idToken 的
+   * nonce claim；原始值只发给服务端。用户取消 → resolve null（不算错误）。
+   */
+  signIn(provider: SocialProvider, hashedNonce: string): Promise<SocialCredential | null>;
 }
 
 // ==================== App List ====================

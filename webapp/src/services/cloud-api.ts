@@ -45,6 +45,7 @@ const AUTH_TOKEN_PATHS = [
   '/api/auth/login/password',
   '/api/auth/register',
   '/api/auth/refresh',
+  '/api/auth/social/login',
 ];
 
 /** Auth path where tokens + cache should be cleared on success */

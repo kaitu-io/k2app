@@ -106,6 +106,9 @@ export declare class K2PluginWeb extends WebPlugin implements K2PluginInterface 
     getDefaultGateway(): Promise<{
         gateway: string | null;
     }>;
+    hasGooglePlayServices(): Promise<{
+        available: boolean;
+    }>;
     iapGetProducts(): Promise<{
         products: [];
     }>;

@@ -364,6 +364,26 @@ describe('Cloud API Client', () => {
       });
     });
 
+    it('test_social_login_auto_saves_tokens', async () => {
+      mockedAuthService.getToken.mockResolvedValue(null);
+      mockedAuthService.setTokens.mockResolvedValue(undefined);
+      mockedResolveAndFetch.mockResolvedValue(
+        okTransport(200, { code: 0, data: { accessToken: 'at', refreshToken: 'rt' } })
+      );
+
+      const response = await cloudApi.post('/api/auth/social/login', {
+        provider: 'apple',
+        idToken: 'id',
+        nonce: 'n',
+      });
+
+      expect(response.code).toBe(0);
+      expect(mockedAuthService.setTokens).toHaveBeenCalledWith({
+        accessToken: 'at',
+        refreshToken: 'rt',
+      });
+    });
+
     // Regression guard: /api/auth/login/password used to fall through the
     // exact-match path allowlist, so a successful password login returned
     // tokens that were silently discarded. Dialog closed, user not logged in.

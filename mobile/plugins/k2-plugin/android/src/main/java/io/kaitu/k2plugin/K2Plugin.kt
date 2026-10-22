@@ -903,6 +903,23 @@ class K2Plugin : Plugin() {
      * 物理接口(WiFi/Ethernet)的默认网关。不用 activeNetwork——VPN 连接时
      * active network 是 TUN,其 LinkProperties 没有真实网关。
      */
+    /**
+     * 是否装有可用的 Google Play 服务。Google 登录（Credential Manager）离不开它，
+     * 没有时 webapp 隐藏 Google 按钮（spec 2026-10-20 §6.1）。只看包是否存在且启用，
+     * 不引 play-services-base；可见性靠 app manifest 的 <queries><package>。
+     */
+    @PluginMethod
+    fun hasGooglePlayServices(call: PluginCall) {
+        val ret = JSObject()
+        val available = try {
+            context.packageManager.getApplicationInfo("com.google.android.gms", 0).enabled
+        } catch (_: Exception) {
+            false
+        }
+        ret.put("available", available)
+        call.resolve(ret)
+    }
+
     @PluginMethod
     fun getDefaultGateway(call: PluginCall) {
         val ret = JSObject()

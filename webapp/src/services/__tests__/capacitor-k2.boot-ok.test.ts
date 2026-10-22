@@ -17,8 +17,10 @@ vi.mock('@capacitor/core', () => ({
   Capacitor: {
     isNativePlatform: vi.fn(() => true),
     getPlatform: vi.fn(() => 'android'),
+    isPluginAvailable: vi.fn(() => false),
   },
   CapacitorHttp: { request: vi.fn() },
+  registerPlugin: vi.fn(() => ({})),
 }));
 
 vi.mock('@capacitor/clipboard', () => ({

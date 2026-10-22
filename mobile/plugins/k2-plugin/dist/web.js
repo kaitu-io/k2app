@@ -86,6 +86,9 @@ export class K2PluginWeb extends WebPlugin {
     async getDefaultGateway() {
         return { gateway: null };
     }
+    async hasGooglePlayServices() {
+        return { available: false };
+    }
     async iapGetProducts() {
         throw this.unavailable('IAP is not available on web');
     }

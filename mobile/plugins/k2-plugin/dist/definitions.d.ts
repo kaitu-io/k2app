@@ -171,6 +171,13 @@ export interface K2PluginInterface {
         gateway: string | null;
     }>;
     /**
+     * Android only: Google Play services installed and enabled (Google sign-in
+     * needs it). iOS / web reject as unimplemented.
+     */
+    hasGooglePlayServices(): Promise<{
+        available: boolean;
+    }>;
+    /**
      * StoreKit 2 IAP (iOS only). Android/web reject as unimplemented.
      * Trust model: native NEVER grants entitlement — it returns transactionId,
      * the webapp calls Center verify, then calls iapFinishTransaction.

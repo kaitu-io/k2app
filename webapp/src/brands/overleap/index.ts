@@ -50,6 +50,10 @@ export const OVERLEAP_BRAND: WebappBrandConfig = {
   // in once the listing is live (spec 2026-09-06 §1.6 backfill commit).
   storeUrls: { ios: 'https://apps.apple.com/app/id6759199298', android: 'https://play.google.com/store/apps/details?id=io.overleap' },
   defaultRoutingCountry: 'gb',
+  social: {
+    googleWebClientId: '808676014960-fvo8an88b4c79f1ua9n0pctr40ta09fm.apps.googleusercontent.com',
+    googleIosClientId: '808676014960-ug0b6ahv3lm2s1fboj0dinmtp5p0t6qu.apps.googleusercontent.com',
+  },
   theme: OVERLEAP_THEME,
   features: {
     invite: false,

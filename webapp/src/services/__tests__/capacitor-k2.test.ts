@@ -17,10 +17,12 @@ vi.mock('@capacitor/core', () => ({
   Capacitor: {
     isNativePlatform: vi.fn(() => true),
     getPlatform: vi.fn(() => 'ios'),
+    isPluginAvailable: vi.fn(() => false),
   },
   CapacitorHttp: {
     request: vi.fn(),
   },
+  registerPlugin: vi.fn(() => ({})),
 }));
 
 // Mock @capacitor/clipboard

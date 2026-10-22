@@ -77,5 +77,13 @@
  * rejected invoke (older desktop shell) as "no blocker", i.e. the pre-v4 UI.
  * Mobile shells implement neither; they bump only to stay "up to date with the
  * surface". Zero effect on OTA eligibility — min_bridge = floor (1).
+ *
+ * v5 (2026-10-21): Capacitor gained `hasGooglePlayServices` (Android only) —
+ * gates the Google sign-in button, which needs Play services. Capability-gated
+ * as required: its only caller (services/capacitor-social-signin.ts) runs only
+ * when the native `SocialLogin` plugin exists (same release), and treats a
+ * rejection as "no Play services". iOS / desktop bump only to stay current.
+ * The Linux mirror (k2/webui) is not bumped: k2 is read-only from this repo
+ * and the method is mobile-only. Zero effect on OTA eligibility — floor (1).
  */
-export const BRIDGE_API_VERSION = 4;
+export const BRIDGE_API_VERSION = 5;

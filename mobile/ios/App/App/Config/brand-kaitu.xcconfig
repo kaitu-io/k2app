@@ -7,3 +7,8 @@ K2_CDN_FALLBACK = https:/$()/d0.all7.cc/kaitu
 K2_VPN_DISPLAY_NAME = kaitu.io
 K2_APP_STORE_URL = https:/$()/apps.apple.com/app/id6448744655
 K2_DEVELOPMENT_REGION = zh-CN
+
+// Google Sign-In: reversed iOS OAuth client ID, registered as a URL scheme in
+// Info.plist (GoogleSignIn refuses to start without it). Must match the brand's
+// googleIosClientId in webapp/src/brands/<brand>/index.ts (contract-locked).
+K2_GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.125062807005-r08pi88vadprilgo5mr1oqndpinnkb0l

@@ -17,5 +17,8 @@ project(':capacitor-status-bar').projectDir = new File('../../node_modules/@capa
 include ':capawesome-capacitor-android-edge-to-edge-support'
 project(':capawesome-capacitor-android-edge-to-edge-support').projectDir = new File('../../node_modules/@capawesome/capacitor-android-edge-to-edge-support/android')
 
+include ':capgo-capacitor-social-login'
+project(':capgo-capacitor-social-login').projectDir = new File('../../node_modules/@capgo/capacitor-social-login/android')
+
 include ':k2-plugin'
 project(':k2-plugin').projectDir = new File('../../node_modules/k2-plugin/android')

@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@capacitor/core', () => ({
-  Capacitor: { isNativePlatform: () => true },
+  Capacitor: { isNativePlatform: () => true, isPluginAvailable: () => false },
   CapacitorHttp: { request: vi.fn() },
+  registerPlugin: vi.fn(() => ({})),
 }));
 vi.mock('@capacitor/clipboard', () => ({ Clipboard: {} }));
 vi.mock('@capacitor/share', () => ({ Share: {} }));

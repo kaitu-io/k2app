@@ -100,6 +100,7 @@ interface ContractBrand {
   edmFromName: string;
   paymentChannels: string[];
   wallet: boolean;
+  social: { googleWebClientId: string; googleIosClientId: string };
 }
 
 interface ApiContract {
@@ -201,6 +202,14 @@ describe('cross-layer contract: brand registry (webapp ⇄ api/brand.go)', () =>
             `postMessage would trust an origin the backend treats as another brand`
         ).toContain(hostname);
       }
+    });
+
+    it('native Google client IDs match the backend audience list verbatim', () => {
+      // The plugin mints idTokens whose `aud` is one of these; the server only
+      // accepts its own registry's values. Drift = every Google sign-in on this
+      // brand fails with an invalid-token error and no local test notices.
+      expect(webapp.social.googleWebClientId).toBe(backend.social.googleWebClientId);
+      expect(webapp.social.googleIosClientId).toBe(backend.social.googleIosClientId);
     });
 
     it('supportEmail matches the backend verbatim', () => {

@@ -40,6 +40,17 @@ const config: CapacitorConfig = {
     SystemBars: {
       insetsHandling: 'disable',
     },
+    // @capgo/capacitor-social-login: only Google + Apple are used. Its
+    // `capacitor:sync:before` hook rewrites the plugin's podspec / gradle from
+    // this map, so `false` keeps the Facebook SDK out of both apps entirely.
+    SocialLogin: {
+      providers: {
+        google: true,
+        apple: true,
+        facebook: false,
+        twitter: false,
+      },
+    },
     EdgeToEdge: {
       backgroundColor: '#0F0F13',
     },
