@@ -22,37 +22,48 @@ vi.mock('../../../hooks/useAppLinks', () => ({
   useAppLinks: () => ({ links: { termsOfServiceUrl: 'https://example.test/terms', privacyPolicyUrl: 'https://example.test/privacy' }, loading: false, error: null, currentLang: 'zh-CN' }),
 }));
 vi.mock('../../../stores/alert.store', () => ({ useAlert: () => ({ showAlert: vi.fn() }) }));
+let mockUser: any;
 vi.mock('../../../hooks/useUser', () => ({
-  useUser: () => ({ user: { loginIdentifies: [{ type: 'email', value: 'a@b.com' }] }, fetchUser: vi.fn() }),
+  useUser: () => ({ user: mockUser, fetchUser: vi.fn() }),
 }));
-vi.mock('../../EmailLoginForm', () => ({ default: () => <div /> }));
-vi.mock('../../../stores/login-dialog.store', () => ({
-  useLoginDialogStore: (selector: (s: any) => any) => selector({ open: vi.fn() }),
-}));
+vi.mock('../../../hooks/useStripeCheckout', () => ({ useStripeCheckout: () => ({ openPortal: vi.fn() }) }));
+vi.mock('../../../hooks/useAppConfig', () => ({ useAppConfig: () => ({ appConfig: null, loading: false, error: null }) }));
+vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
 let hookState: any;
 vi.mock('../../../hooks/useIapPurchase', () => ({
   IAP_PRODUCT_IDS: ['io.kaitu.sub.basic.1y'],
   useIapPurchase: () => hookState,
 }));
 
-import IosSubscribePanel from '../IosSubscribePanel';
+import IosMembershipPanel from '../IosMembershipPanel';
 import ConsumptionConsentSheet from '../ConsumptionConsentSheet';
 
 const API = '/api/user/apple-consumption-consent';
 
-function panelState(lastGrantedUser: any) {
+const APPLE_SUB = {
+  provider: 'apple', tier: 'basic', currentPeriodEnd: 4102444800, autoRenew: true,
+  manage: { kind: 'apple_settings' }, isTrial: false, trialEndsAt: 0,
+};
+function setUser(extra: Record<string, unknown>, subs: any[] = [APPLE_SUB]) {
+  mockUser = { expiredAt: 4102444800, maxDevice: 5, subscriptions: subs, ...extra };
+}
+function panelState() {
   hookState = {
     products: [], loadProducts: vi.fn(), productsLoading: false, purchase: vi.fn(), restore: vi.fn(),
-    purchasing: false, restoring: false, purchaseError: null, lastGrantedUser, clearError: vi.fn(),
+    restoring: false, purchaseError: null, lastGrantedUser: null, clearError: vi.fn(),
   };
 }
-function renderPanel() {
-  return render(
+function panel() {
+  return (
     <I18nextProvider i18n={i18n}>
-      <IosSubscribePanel isAuthenticated accountToken="tok" isMembership={false} isExpired={false} />
-    </I18nextProvider>,
+      <IosMembershipPanel mode="manage" activeSub={APPLE_SUB as any} />
+    </I18nextProvider>
   );
 }
+function renderPanel() {
+  return render(panel());
+}
+const TITLE = '退款时，是否允许提供使用情况？';
 
 describe('ConsumptionConsentSheet', () => {
   let originalPlatform: any;
@@ -78,10 +89,10 @@ describe('ConsumptionConsentSheet', () => {
   });
   afterEach(() => { (window as any)._platform = originalPlatform; });
 
-  it('consent null after a successful grant opens the sheet with the approved copy', () => {
-    panelState({ appleConsumptionConsent: null });
+  it('apple subscription + consent null opens the sheet with the approved copy', () => {
+    setUser({ appleConsumptionConsent: null }); panelState();
     renderPanel();
-    expect(screen.getByText('退款时，是否允许提供使用情况？')).toBeDefined();
+    expect(screen.getByText(TITLE)).toBeDefined();
     expect(screen.getByText('订阅已使用的天数')).toBeDefined();
     expect(screen.getByText('大致使用的流量')).toBeDefined();
     expect(screen.getByRole('button', { name: '允许' })).toBeDefined();
@@ -89,48 +100,59 @@ describe('ConsumptionConsentSheet', () => {
   });
 
   it('missing field (older server) also counts as never asked', () => {
-    panelState({});
+    setUser({}); panelState();
     renderPanel();
-    expect(screen.getByText('退款时，是否允许提供使用情况？')).toBeDefined();
+    expect(screen.getByText(TITLE)).toBeDefined();
   });
 
-  it('consent already false or true does not open the sheet', () => {
-    panelState({ appleConsumptionConsent: false });
+  it('consent already true or false does not open the sheet', () => {
+    setUser({ appleConsumptionConsent: false }); panelState();
     const { unmount } = renderPanel();
-    expect(screen.queryByText('退款时，是否允许提供使用情况？')).toBeNull();
+    expect(screen.queryByText(TITLE)).toBeNull();
     unmount();
-    panelState({ appleConsumptionConsent: true });
+    setUser({ appleConsumptionConsent: true });
     renderPanel();
-    expect(screen.queryByText('退款时，是否允许提供使用情况？')).toBeNull();
+    expect(screen.queryByText(TITLE)).toBeNull();
   });
 
-  it('Allow PUTs consented:true, syncs the user cache and closes', async () => {
-    panelState({ appleConsumptionConsent: null });
+  it('no apple subscription does not open the sheet', () => {
+    setUser({ appleConsumptionConsent: null }, [{ ...APPLE_SUB, provider: 'stripe' }]); panelState();
     renderPanel();
+    expect(screen.queryByText(TITLE)).toBeNull();
+  });
+
+  it('Allow PUTs consented:true, syncs the cache, and a re-render with the updated user does not reopen', async () => {
+    setUser({ appleConsumptionConsent: null }); panelState();
+    const { rerender } = renderPanel();
     fireEvent.click(screen.getByRole('button', { name: '允许' }));
     await waitFor(() => expect(m.request).toHaveBeenCalledWith('PUT', API, { consented: true }));
     await waitFor(() =>
       expect(m.cacheSet).toHaveBeenCalledWith('api:user_info', { appleConsumptionConsent: true }, { ttl: 3600 }),
     );
-    await waitFor(() => expect(screen.queryByText('退款时，是否允许提供使用情况？')).toBeNull());
+    await waitFor(() => expect(screen.queryByText(TITLE)).toBeNull());
+    setUser({ appleConsumptionConsent: true });
+    rerender(panel());
+    expect(screen.queryByText(TITLE)).toBeNull();
   });
 
   it('Deny PUTs consented:false and closes', async () => {
     m.request.mockResolvedValue({ code: 0, data: { appleConsumptionConsent: false } });
-    panelState({ appleConsumptionConsent: null });
+    setUser({ appleConsumptionConsent: null }); panelState();
     renderPanel();
     fireEvent.click(screen.getByRole('button', { name: '不允许' }));
     await waitFor(() => expect(m.request).toHaveBeenCalledWith('PUT', API, { consented: false }));
-    await waitFor(() => expect(screen.queryByText('退款时，是否允许提供使用情况？')).toBeNull());
+    await waitFor(() => expect(screen.queryByText(TITLE)).toBeNull());
   });
 
-  it('request failure closes the sheet without writing the cache', async () => {
+  it('request failure closes without writing the cache, and does not reopen on re-render', async () => {
     m.request.mockResolvedValue({ code: 500, message: 'x' });
-    panelState({ appleConsumptionConsent: null });
-    renderPanel();
+    setUser({ appleConsumptionConsent: null }); panelState();
+    const { rerender } = renderPanel();
     fireEvent.click(screen.getByRole('button', { name: '允许' }));
-    await waitFor(() => expect(screen.queryByText('退款时，是否允许提供使用情况？')).toBeNull());
+    await waitFor(() => expect(screen.queryByText(TITLE)).toBeNull());
     expect(m.cacheSet).not.toHaveBeenCalled();
+    rerender(panel());
+    expect(screen.queryByText(TITLE)).toBeNull();
   });
 
   it('the privacy link opens the brand privacy page via openExternal', () => {

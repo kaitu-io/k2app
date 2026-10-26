@@ -13,7 +13,7 @@
  * 保持本面板对 iOS 会员态自洽。
  */
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Box, Stack, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -30,6 +30,7 @@ import RenewalStatusCard from './RenewalStatusCard';
 import TrialStatusCard from './TrialStatusCard';
 import InviteRewardCard from './InviteRewardCard';
 import MembershipActions from './MembershipActions';
+import ConsumptionConsentSheet from './ConsumptionConsentSheet';
 
 interface IosMembershipPanelProps {
   /** affordance 模式（仅 manage/status 渲染此面板；subscribe 走 IosSubscribePanel）。 */
@@ -55,6 +56,20 @@ export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPan
   const trialProduct = products.find((p) => p.id === IAP_PRODUCT_IDS[0]) ?? products[0];
   const { openPortal } = useStripeCheckout();
   const { showAlert } = useAlert();
+
+  // 退款同意弹层（设计稿 ④）：状态驱动——用户有 Apple 订阅且从未回答过（null/缺省）时，
+  // 本面板每次挂载最多弹一次。购买成功后 Purchase 会把订阅面板换成本面板，所以不能挂在
+  // 订阅面板的「授予成功」事件上。回答后 PUT 回写用户缓存，不会再开；失败 / 点遮罩 = 不写状态。
+  const [consentOpen, setConsentOpen] = useState(false);
+  const consentAsked = useRef(false);
+  const needsConsent =
+    !!user?.subscriptions?.some((s) => s.provider === 'apple') && user.appleConsumptionConsent == null;
+  useEffect(() => {
+    if (needsConsent && !consentAsked.current) {
+      consentAsked.current = true;
+      setConsentOpen(true);
+    }
+  }, [needsConsent]);
 
   // 恢复成功后：提示 + 刷新用户，使 affordance 重算（未绑定的 Apple 订阅被绑定后
   // status → manage 自动翻转）。
@@ -142,6 +157,7 @@ export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPan
           </Typography>
         )}
       </Stack>
+      <ConsumptionConsentSheet open={consentOpen} onClose={() => setConsentOpen(false)} />
     </Box>
   );
 }

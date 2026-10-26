@@ -5,6 +5,9 @@ import { brandConfig } from '../../../brands';
 import type { DataSubscription } from '../../../services/api-types';
 
 // t echoes the key, appending interpolated date/days so assertions can see them.
+vi.mock('../../../hooks/useAppLinks', () => ({
+  useAppLinks: () => ({ links: { privacyPolicyUrl: 'https://example.test/privacy' } }),
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (k: string, opts?: { date?: string; days?: number }) =>
