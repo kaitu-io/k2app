@@ -2,14 +2,12 @@ package center
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	db "github.com/wordgate/qtoolkit/db"
 )
@@ -213,81 +211,4 @@ func TestV20260717TunnelsCarriesTunnelToken(t *testing.T) {
 	r2.ServeHTTP(w2, httptest.NewRequest("GET", "/api/v20260717/tunnels", nil))
 	require.Equal(t, 200, w2.Code)
 	require.NotContains(t, w2.Body.String(), "tunnelToken", "无设备上下文时字段应 omitempty")
-}
-
-// TestV20260717Tunnels_TrialUserSeesOnlyTrialPool —— webapp 主列表接口的池限制。
-// Needs dev MySQL.
-func TestV20260717Tunnels_TrialUserSeesOnlyTrialPool(t *testing.T) {
-	testInitConfig()
-	skipIfNoConfig(t)
-	_, regular, trial := seedPoolFixture(t)
-
-	body := callHandlerAs(t, api_v20260717_tunnels, poolTrialUser(), "/api/v20260717/tunnels", nil)
-	assert.Equal(t, 0, countPresent(body, regular...), "trial user must not receive regular-pool tunnels")
-	assert.Equal(t, 1, countPresent(body, trial), "trial user must receive the trial-pool tunnel")
-
-	body = callHandlerAs(t, api_v20260717_tunnels, poolPaidUser(), "/api/v20260717/tunnels", nil)
-	assert.Equal(t, 3, countPresent(body, append(regular, trial)...), "paid user sees all pools")
-}
-
-// TestTunnelsV20260717_LockedSummary —— 试用用户拿到「锁定的会员线路」按国家计数，
-// 只统计因池规则被挡、且品牌可见 / 在线 / 未超配额的节点；响应里不得出现任何
-// 会员节点的域名或 IP。付费用户无 lockedSummary。Needs dev MySQL.
-func TestTunnelsV20260717_LockedSummary(t *testing.T) {
-	testInitConfig()
-	skipIfNoConfig(t)
-	uniq := fmt.Sprintf("%d", time.Now().UnixNano())
-	// 用不存在的国家码隔离 dev 库里的其他节点。
-	locked := []poolFixtureNode{
-		seedPoolNode(t, "lk1", uniq, "ZQ", ""),
-		seedPoolNode(t, "lk2", uniq, "ZQ", ""),
-		seedPoolNode(t, "lk3", uniq, "ZX", ""),
-	}
-	trial := seedPoolNode(t, "lktrial", uniq, "ZQ", NodePoolTrial)
-
-	// 不该计入的：品牌不可见（overleap-only）、离线、超配额 —— 都在国家 ZW。
-	hidden := seedPoolNode(t, "lkhidden", uniq, "ZW", "")
-	require.NoError(t, db.Get().Model(&SlaveNode{}).Where("id = ?", hidden.Node.ID).
-		Updates(map[string]any{"brands": "kaitu,overleap", "visible_kaitu": false, "visible_overleap": true}).Error)
-	offline := seedPoolNode(t, "lkoffline", uniq, "ZW", "")
-	over := seedPoolNode(t, "lkover", uniq, "ZW", "")
-	now := time.Now().Unix()
-	for _, u := range []NodeUsage{
-		{NodeID: offline.Node.ID, Ipv4: offline.Node.Ipv4, LastReportAt: now - 30*86400},
-		{NodeID: over.Node.ID, Ipv4: over.Node.Ipv4, QuotaTotalBytes: 1 << 40, UsedBytes: 1 << 40, LastReportAt: now},
-	} {
-		u := u
-		require.NoError(t, db.Get().Create(&u).Error)
-		t.Cleanup(func() { db.Get().Unscoped().Delete(&u) })
-	}
-
-	type resp struct {
-		LockedSummary []LockedTunnelGroup `json:"lockedSummary"`
-	}
-	body := callHandlerAs(t, api_v20260717_tunnels, poolTrialUser(), "/api/v20260717/tunnels", nil)
-	var env struct {
-		Data json.RawMessage `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(body), &env))
-	var r resp
-	require.NoError(t, json.Unmarshal(env.Data, &r))
-
-	got := map[string]int{}
-	for _, g := range r.LockedSummary {
-		got[g.Country] = g.Count
-	}
-	assert.Equal(t, 2, got["ZQ"], "ZQ: two locked regular nodes (trial-pool node is not locked)")
-	assert.Equal(t, 1, got["ZX"], "ZX: one locked regular node")
-	_, hasZW := got["ZW"]
-	assert.False(t, hasZW, "brand-hidden / offline / over-quota nodes must not be counted, got %v", r.LockedSummary)
-
-	for _, fn := range append(locked, hidden, offline, over) {
-		assert.NotContains(t, body, fn.Tunnel.Domain, "locked node domain must not leak")
-		assert.NotContains(t, body, `"`+fn.Node.Ipv4+`"`, "locked node IP must not leak")
-		assert.NotContains(t, body, fn.Tunnel.ServerURL, "locked node serverUrl must not leak")
-	}
-	assert.Contains(t, body, trial.Tunnel.Domain, "trial-pool tunnel itself is still served")
-
-	paidBody := callHandlerAs(t, api_v20260717_tunnels, poolPaidUser(), "/api/v20260717/tunnels", nil)
-	assert.NotContains(t, paidBody, "lockedSummary", "paid user response must not carry lockedSummary")
 }

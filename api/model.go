@@ -564,9 +564,6 @@ const (
 	NodeClassPrivate = "private" // 专属节点（单一主人）
 )
 
-// NodePoolTrial 是 SlaveNode.Pool 的试用池取值。
-const NodePoolTrial = "trial"
-
 // SlaveNode 物理节点模型
 // Note: Only active nodes exist in the database. When a node goes offline,
 // it should be deleted along with its associated tunnels.
@@ -604,9 +601,6 @@ type SlaveNode struct {
 	// docs/superpowers/specs/2026-07-14-brand-split-design.md §7），而那是节点
 	// 自身的配置事实，Center 无从判断。
 	Brands string `gorm:"type:varchar(64);not null;default:''" json:"brands"`
-
-	// Pool 节点池：'' = 普通池；NodePoolTrial = 仅服务免费试用用户的体验线路。
-	Pool string `gorm:"column:pool;type:varchar(16);not null;default:''" json:"pool"`
 
 	// 品牌上架开关（运营侧），语义是**下架用的 kill switch**，不是上架用的许可。
 	// 默认 true = 未下架；只有在能力上限之内才有意义（见 VisibleTo）。

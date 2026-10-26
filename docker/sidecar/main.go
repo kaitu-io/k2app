@@ -120,13 +120,6 @@ func parseBrandList(s string) []string {
 	return out
 }
 
-// parseNodePool normalizes K2_NODE_POOL ("" or "trial"). Validation lives in
-// Center, which rejects the registration on an unknown pool — loud, so a typo
-// never silently turns a trial line into a member node.
-func parseNodePool(s string) string {
-	return strings.ToLower(strings.TrimSpace(s))
-}
-
 // NewSidecar creates a new sidecar instance
 func NewSidecar(cfg *config.Config) (*Sidecar, error) {
 	n, err := sidecar.NewNode(cfg.K2Center.BaseURL, cfg.K2Center.Secret)
@@ -144,9 +137,6 @@ func NewSidecar(cfg *config.Config) (*Sidecar, error) {
 	// comma-separated). Unset → nil → omitted from the wire → Center reads it as
 	// "kaitu only", which is exactly what every existing node means today.
 	n.Brands = parseBrandList(cfg.Node.Brands)
-	// Node pool this node declares for itself (K2_NODE_POOL: "" or "trial").
-	// Blank → omitted from the wire → Center stores '' (member pool).
-	n.Pool = parseNodePool(cfg.Node.Pool)
 	// Private-node activation: echo the one-time claim token back to Center on
 	// registration. Empty for shared-pool nodes (omitempty → no wire change).
 	n.PrivateClaim = cfg.K2Center.PrivateClaim

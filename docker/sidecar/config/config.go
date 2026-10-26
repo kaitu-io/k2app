@@ -65,11 +65,6 @@ type NodeSectionConfig struct {
 	// 放在节点这一侧是因为只有节点知道自己的 SNI 伪装域名：伪装成
 	// www.<省份>.people.cn 的节点不能出现在 Overleap 上（暴露中国属性）。
 	Brands string `yaml:"brands"`
-
-	// Pool 是本节点自我声明的节点池（K2_NODE_POOL）：留空 = 会员节点，"trial" = 体验线路。
-	// 与 Brands 同理放在节点侧：Unregister 会硬删 Center 的节点行，只有每次注册重发才扛得住重启。
-	// 校验在 Center（非法值拒绝注册）。
-	Pool string `yaml:"pool"`
 }
 
 // RelaySectionConfig holds relay-specific configuration

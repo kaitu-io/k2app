@@ -53,16 +53,3 @@ k2_center:
 		assert.Equal(t, "", cfg.K2Center.PrivateClaim)
 	})
 }
-
-// TestNodeConfig_PoolFromYAML: entrypoint.sh 把 K2_NODE_POOL 写到 node.pool，与 node.brands 同路径加载。
-func TestNodeConfig_PoolFromYAML(t *testing.T) {
-	for yml, want := range map[string]string{
-		"node:\n  brands: \"kaitu\"\n  pool: \"trial\"\n": "trial",
-		"node:\n  brands: \"kaitu\"\n  pool: \"\"\n":      "",
-		"node:\n  brands: \"kaitu\"\n":                   "",
-	} {
-		cfg := &Config{}
-		require.NoError(t, yaml.Unmarshal([]byte(yml), cfg))
-		assert.Equal(t, want, cfg.Node.Pool, yml)
-	}
-}

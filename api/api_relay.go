@@ -76,10 +76,6 @@ func api_k2_relays(c *gin.Context) {
 		if !isAdmin && user != nil && !tunnel.Node.VisibleTo(Brand(user.Brand)) {
 			continue
 		}
-		// Trial-pool isolation (spec §3.7): relay IPs are node addresses too.
-		if !isAdmin && !nodeAllowedForUser(tunnel.Node, user) {
-			continue
-		}
 
 		relay := DataRelay{
 			ID:         fmt.Sprintf("relay-%s-%d", tunnel.Node.Region, tunnel.ID),

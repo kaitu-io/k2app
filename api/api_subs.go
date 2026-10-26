@@ -362,11 +362,6 @@ func api_subs(c *gin.Context) {
 		if !isAdmin && !t.Node.VisibleTo(Brand(auth.User.Brand)) {
 			continue
 		}
-		// Trial-pool isolation (spec §3.7): free-trial users only get pool=trial
-		// nodes. Same admin bypass as the brand filter above.
-		if !isAdmin && !nodeAllowedForUser(t.Node, auth.User) {
-			continue
-		}
 		if t.ServerURL == "" {
 			continue
 		}
