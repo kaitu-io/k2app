@@ -107,6 +107,17 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      // 广告着陆页 /<locale>/go/<码>：二维码内容随 query（utm_*）变，不能进 CDN 公共缓存。
+      // 必须排在上面的通配之后——同名头后匹配的覆盖先匹配的。
+      {
+        source: '/:locale(zh-CN|zh-TW|zh-HK)/go/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'private, no-store, must-revalidate',
+          },
+        ],
+      },
       // API 与管理后台不缓存 (/api/、/app/、/manager/)
       {
         source: '/(api|app|manager)/(.*)',

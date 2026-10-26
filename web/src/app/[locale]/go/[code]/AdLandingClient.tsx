@@ -91,7 +91,7 @@ export default function AdLandingClient({ variant, appStoreHref, qrSvg }: AdLand
   return (
     <>
       <section className="mx-auto w-full max-w-[1180px] lg:grid lg:grid-cols-2 lg:items-center lg:gap-16 lg:px-16 lg:pb-16 lg:pt-6">
-        <div className="relative aspect-square w-full overflow-hidden lg:rounded-[28px]">
+        <div className="relative aspect-square max-h-[45svh] w-full overflow-hidden lg:max-h-none lg:rounded-[28px]">
           <Image
             src="/ads/x-hero.jpg"
             alt={t('adLanding.heroAlt')}
@@ -109,9 +109,6 @@ export default function AdLandingClient({ variant, appStoreHref, qrSvg }: AdLand
 
         <div className="flex flex-col gap-4 px-6 pb-12 pt-8 lg:px-0 lg:pb-0 lg:pt-0">
           <p className="m-0 text-[22px] font-semibold leading-[1.45] lg:text-[28px]">{t(`adLanding.subtitle.${variant}`)}</p>
-          <p className="m-0 text-[17px] leading-relaxed" style={{ color: MUTED }}>
-            {t('adLanding.oneTap')}
-          </p>
           <div className="mt-2">{primaryCta}</div>
           <p className="m-0 text-center text-[13px] text-[#5d6b63]">{t('adLanding.platforms')}</p>
         </div>

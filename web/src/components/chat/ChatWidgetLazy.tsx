@@ -31,8 +31,13 @@ export class ChatErrorBoundary extends Component<{ children: ReactNode }, { fail
   }
 }
 
+/** 广告着陆页 /<locale>/go/<码>：一屏一件事，不放聊天入口这类多余出口。 */
+function isAdLandingPage(): boolean {
+  return /^\/[^/]+\/go(\/|$)/.test(window.location.pathname);
+}
+
 /**
- * 全站挂载点（根布局里放一个）。先用便宜的判断决定要不要加载挂件，品牌没开或 App 内嵌页连探测都不发：
+ * 全站挂载点（根布局里放一个）。先用便宜的判断决定要不要加载挂件，品牌没开、App 内嵌页或广告着陆页连探测都不发：
  * - 预览身份 / 继续对话令牌 / 建过会话的浏览器：直接加载，挂件立刻建会话；
  * - 其余访客：先探测会话开没开，开着才加载，挂件只画入口，访客展开面板时才建会话。
  * 判断放在 effect 里——服务端与首帧恒为空，不产生水合差异。
@@ -41,7 +46,7 @@ export default function ChatWidgetLazy() {
   const [mode, setMode] = useState<'start' | 'deferred' | null>(null);
   useEffect(() => {
     const brand = siteBrand();
-    if (!brand.chatEnabled || isEmbeddedPage()) return;
+    if (!brand.chatEnabled || isEmbeddedPage() || isAdLandingPage()) return;
     if (shouldStartSession()) {
       setMode('start');
       return;
