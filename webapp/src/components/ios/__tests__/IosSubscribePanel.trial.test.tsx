@@ -160,9 +160,65 @@ describe('IosSubscribePanel trial paywall', () => {
   it('benefit devices count follows maxDevice (default 5)', () => {
     setProducts([product(ELIGIBLE)]);
     const { unmount } = renderPanel();
-    expect(screen.getByText('绑定邮箱或 Apple 登录后，5 台设备同时用')).toBeDefined();
+    expect(screen.getByText('5 台设备同时用')).toBeDefined();
     unmount();
     renderPanel({ maxDevice: 3 });
-    expect(screen.getByText('绑定邮箱或 Apple 登录后，3 台设备同时用')).toBeDefined();
+    expect(screen.getByText('3 台设备同时用')).toBeDefined();
+  });
+
+  it('zero-identity device account on a Keychain shell sees the bind clause on devices', () => {
+    mockUser = { loginIdentifies: [] };
+    (window as any)._platform = { iap: {}, openExternal: vi.fn(), keychainIdentity: true };
+    setProducts([product(ELIGIBLE)]);
+    renderPanel();
+    expect(screen.getByText('绑定邮箱或 Apple 登录后，5 台设备同时用')).toBeDefined();
+  });
+
+  it('identity user on a Keychain shell gets the plain devices line', () => {
+    (window as any)._platform = { iap: {}, openExternal: vi.fn(), keychainIdentity: true };
+    setProducts([product(ELIGIBLE)]);
+    const { container } = renderPanel();
+    expect(screen.getByText('5 台设备同时用')).toBeDefined();
+    expect(container.textContent).not.toContain('绑定邮箱或 Apple 登录后');
+  });
+
+  it('zero-identity user without Keychain shell gets the plain devices line', () => {
+    mockUser = { loginIdentifies: [] };
+    setProducts([product(ELIGIBLE)]);
+    const { container } = renderPanel();
+    expect(screen.getByText('5 台设备同时用')).toBeDefined();
+    expect(container.textContent).not.toContain('绑定邮箱或 Apple 登录后');
+  });
+
+  it('all-nodes benefit carries the trial clause only when a trial is offered', () => {
+    setProducts([product(ELIGIBLE)]);
+    const { unmount } = renderPanel();
+    expect(screen.getByText('全部会员节点，试用期间同样可用')).toBeDefined();
+    unmount();
+    setProducts([product({ ...ELIGIBLE, isEligibleForIntroOffer: false })]);
+    const { container } = renderPanel();
+    expect(screen.getByText('全部会员节点')).toBeDefined();
+    expect(container.textContent).not.toContain('试用期间');
+  });
+
+  it('no products yet: disclosure has no price phrase and no placeholder price', () => {
+    setProducts([]);
+    const { container } = renderPanel();
+    expect(screen.getByTestId('iap-auto-renewal-disclosure').textContent).toBe(
+      '订阅按年自动续订，通过 Apple ID 扣费。每期结束前至少 24 小时在 App Store 取消，下期就不再扣费。',
+    );
+    expect(container.textContent).not.toContain('—');
+    expect(container.textContent).not.toContain('/年');
+  });
+
+  it('eligible trial without a displayPrice: trial disclosure and timeline drop the price', () => {
+    setProducts([product({ ...ELIGIBLE, displayPrice: '' })]);
+    const { container } = renderPanel();
+    expect(screen.getByTestId('iap-auto-renewal-disclosure').textContent).toBe(
+      '免费试用 7 天，之后按年自动续订，通过 Apple ID 扣费。试用结束前至少 24 小时在 App Store 取消，就不会扣费。',
+    );
+    expect(screen.getByText('开始扣费，成为正式会员')).toBeDefined();
+    expect(container.textContent).not.toContain('—');
+    expect(container.textContent).not.toContain('/年');
   });
 });

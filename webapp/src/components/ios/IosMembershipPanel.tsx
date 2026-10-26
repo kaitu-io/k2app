@@ -117,6 +117,7 @@ export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPan
           <TrialStatusCard
             trialEndsAtSec={activeSub?.trialEndsAt ?? 0}
             product={trialProduct}
+            autoRenew={activeSub?.autoRenew}
             onManage={openManage}
           />
         ) : (

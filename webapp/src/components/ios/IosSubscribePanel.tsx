@@ -112,7 +112,9 @@ export default function IosSubscribePanel({
     return {
       id: meta?.id ?? DEFAULT_SELECTED,
       displayName: t('purchase:purchase.iap.planName'),
-      displayPrice: meta?.displayPrice || '—',
+      // 没有真实价格（加载中 / 加载失败）时为空串：绝不渲染「—」之类占位价，
+      // 披露 / 时间线改用不带价格的文案，商品行不显示价格。
+      displayPrice: meta?.displayPrice || '',
       trial: trialOfferOf(meta),
     };
   }, [products, t]);
@@ -122,6 +124,9 @@ export default function IosSubscribePanel({
   const deviceCount = maxDevice && maxDevice > 0 ? maxDevice : DEFAULT_DEVICE_COUNT;
   // 零身份设备账号：已登录但没有绑定邮箱 / Apple。旧壳未登录走下方 EmailLoginForm。
   const zeroIdentity = isAuthenticated && !!user && !(user.loginIdentifies?.length > 0);
+  // 「绑定邮箱或 Apple 登录后 N 台设备」只对 Keychain 新壳上的零身份设备账号成立；
+  // 其他人（已有身份、旧壳、Overleap）只说「N 台设备同时用」。
+  const showBindDevicesClause = zeroIdentity && window._platform?.keychainIdentity === true;
 
   const openExternal = (url: string) => {
     void window._platform?.openExternal?.(url);
@@ -136,15 +141,19 @@ export default function IosSubscribePanel({
 
   const benefits = [
     t('purchase:purchase.iap.benefitStable'),
-    t('purchase:purchase.iap.benefitAllNodes'),
-    t('purchase:purchase.iap.benefitDevices', { count: deviceCount }),
+    trial
+      ? t('purchase:purchase.iap.benefitAllNodes')
+      : t('purchase:purchase.iap.benefitAllNodesNoTrial'),
+    showBindDevicesClause
+      ? t('purchase:purchase.iap.benefitDevices', { count: deviceCount })
+      : t('purchase:purchase.iap.benefitDevicesPlain', { count: deviceCount }),
   ];
 
   const timeline = trial
     ? [
         { title: t('purchase:purchase.iap.timelineToday'), body: t('purchase:purchase.iap.timelineTodayBody'), active: true },
         { title: t('purchase:purchase.iap.timelineCancelBy', { day: trial.days - 1 }), body: t('purchase:purchase.iap.timelineCancelByBody'), active: false },
-        { title: t('purchase:purchase.iap.timelineCharge', { days: trial.days }), body: t('purchase:purchase.iap.timelineChargeBody', { price }), active: false },
+        { title: t('purchase:purchase.iap.timelineCharge', { days: trial.days }), body: price ? t('purchase:purchase.iap.timelineChargeBody', { price }) : t('purchase:purchase.iap.timelineChargeBodyNoPrice'), active: false },
       ]
     : [];
 
@@ -301,10 +310,12 @@ export default function IosSubscribePanel({
                 </Typography>
               )}
             </Box>
-            <Typography sx={{ fontSize: 16, fontWeight: 700 }}>
-              <span>{price}</span>
-              <span>{t('purchase:purchase.iap.perYear')}</span>
-            </Typography>
+            {price && (
+              <Typography sx={{ fontSize: 16, fontWeight: 700 }}>
+                <span>{price}</span>
+                <span>{t('purchase:purchase.iap.perYear')}</span>
+              </Typography>
+            )}
           </Card>
         )}
 
@@ -366,8 +377,12 @@ export default function IosSubscribePanel({
             sx={{ fontSize: 12, lineHeight: 1.5, textAlign: 'center' }}
           >
             {trial
-              ? t('purchase:purchase.iap.trialDisclosure', { days: trial.days, price })
-              : t('purchase:purchase.iap.autoRenewalDisclosure', { price })}
+              ? price
+                ? t('purchase:purchase.iap.trialDisclosure', { days: trial.days, price })
+                : t('purchase:purchase.iap.trialDisclosureNoPrice', { days: trial.days })
+              : price
+                ? t('purchase:purchase.iap.autoRenewalDisclosure', { price })
+                : t('purchase:purchase.iap.autoRenewalDisclosureNoPrice')}
           </Typography>
         </Stack>
 

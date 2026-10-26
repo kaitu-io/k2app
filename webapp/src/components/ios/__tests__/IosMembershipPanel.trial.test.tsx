@@ -94,6 +94,22 @@ describe('IosMembershipPanel trial card', () => {
     expect(hookState.loadProducts).toHaveBeenCalled();
   });
 
+  it('auto-renew off (trial cancelled): says the trial ends without a charge, no renew note', () => {
+    const ends = endsIn5Days();
+    renderPanel(sub({ isTrial: true, trialEndsAt: ends, autoRenew: false }));
+    const card = screen.getByTestId('trial-status-card');
+    expect(card.textContent).toContain(`试用将于 ${formatExpiryDate(ends)} 结束，不会扣费。`);
+    expect(card.textContent).not.toContain('自动续订');
+  });
+
+  it('auto-renew on: keeps the renew note', () => {
+    const ends = endsIn5Days();
+    renderPanel(sub({ isTrial: true, trialEndsAt: ends, autoRenew: true }));
+    const card = screen.getByTestId('trial-status-card');
+    expect(card.textContent).toContain('自动续订');
+    expect(card.textContent).not.toContain('不会扣费');
+  });
+
   it('manage button opens the manage surface', () => {
     const openExternal = vi.fn();
     (window as any)._platform = { openExternal };
