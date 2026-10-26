@@ -12,6 +12,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ConnectionButton } from '../ConnectionButton';
+import { CompactConnectionButton } from '../CompactConnectionButton';
 
 const base = {
   serviceState: 'disconnected' as const,
@@ -40,5 +41,17 @@ describe('ConnectionButton upsellHint', () => {
   it('dormant still wins over upsellHint (logged-out: the CTA is login, not purchase)', () => {
     render(<ConnectionButton {...base} onToggle={vi.fn()} upsellHint="点击开通会员" dormant />);
     expect(screen.getByRole('button')).toBeDisabled();
+  });
+});
+
+describe('CompactConnectionButton upsellHint', () => {
+  it('collapsed layout gets the same treatment: switch enabled, hint replaces select-server', () => {
+    const onToggle = vi.fn();
+    render(<CompactConnectionButton {...base} onToggle={onToggle} upsellHint="点击开通会员" />);
+    expect(screen.getByText('点击开通会员')).toBeInTheDocument();
+    const sw = screen.getByRole('checkbox');
+    expect(sw).not.toBeDisabled();
+    fireEvent.click(sw);
+    expect(onToggle).toHaveBeenCalledTimes(1);
   });
 });

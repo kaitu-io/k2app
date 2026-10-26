@@ -226,10 +226,14 @@ export default function Dashboard() {
 
   // 无可连节点是因为没有会员（live 402）：主按钮改为引去开通/续费，
   // 否则新用户点首页最大的按钮毫无反应。门与 CloudTunnelList 的续费按钮同一个。
+  // 只在云端节点模式下成立——自部署模式没选节点是另一回事，仍提示「请选择」。
   const cloudAccessRevoked = useConnectionStore((s) => s.cloudAccessRevoked);
-  const upsellLocked = cloudAccessRevoked && !hasTunnelSelected && purchaseSurfaceAvailable();
+  // 从未开通（如免登录新建的设备账号）≠ 已过期；user 未加载时两边都按「过期」处理，保持一致
+  const neverSubscribed = !!user && !user.expiredAt;
+  const upsellLocked = isAuthenticated && serverMode === 'manual' && cloudAccessRevoked
+    && !hasTunnelSelected && purchaseSurfaceAvailable();
   const upsellHint = upsellLocked
-    ? t(user?.expiredAt ? 'dashboard:dashboard.tapToRenewHint' : 'dashboard:dashboard.tapToSubscribeHint')
+    ? t(neverSubscribed ? 'dashboard:dashboard.tapToSubscribeHint' : 'dashboard:dashboard.tapToRenewHint')
     : undefined;
 
   // Stable onSelect for CloudTunnelList — Auto row → clearCloudSelection, concrete → selectCloudTunnel
@@ -281,7 +285,7 @@ export default function Dashboard() {
       disabled={isInteractive}
       onTunnelsLoaded={handleTunnelsLoaded}
       hideHeader
-      neverSubscribed={!!user && !user.expiredAt}
+      neverSubscribed={neverSubscribed}
     />
   );
 

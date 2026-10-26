@@ -131,6 +131,7 @@ export function CollapsibleConnectionSection({
           error={error}
           isRetrying={isRetrying}
           networkAvailable={networkAvailable}
+          upsellHint={upsellHint}
           flush
         />
       </Collapse>
