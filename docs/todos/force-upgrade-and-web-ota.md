@@ -16,7 +16,7 @@
 - [ ] `ForceUpgradeDialog` 缺 `setOpen(false)`：最低版本调低后，本次会话里对话框也不会关闭。另外 k2r 路由器 webui 也渲染该对话框，11-11 路由器版发售前确认是否要排除 gateway。
 
 ### Web OTA 补洞（改移动端插件，需 worktree，随下一个原生版本生效）
-- [ ] 移动端原生升级后清掉旧磁盘包：桌面已有 `discard_stale_disk_ui`，iOS / Android 没有。疑似 iOS 0.4.12 / 0.4.13 用户仍在跑 9 月的旧 OTA webapp，需真机核实。
+- [ ] 移动端原生升级后清掉旧磁盘包：桌面已有 `discard_stale_disk_ui`；**iOS 已补（9731ec56，`WebBootDecision.discardStale`，随 4.4.14 发布）**，Android 仍没有。
 - [ ] 移动端 minisign 签名改为强制：现在是「manifest 有 sig 才验」（`K2Plugin.swift` / `K2Plugin.kt`）。
 - [ ] 顺带修：iOS `resolveDownloadURL` 强制解包可能崩溃；Android 自动路径解压失败后留下半成品目录；包里缺 `index.html` 时被清掉但不隔离，导致反复下载；桌面 gate 跳过原因只打 debug 日志。
 - [ ] Android JVM 单测（AutoUpdatePlan / WebBootDecision / Minisign）与 iOS K2Tests 接入 CI 和 labtest；K2Plugin 的 I/O 路径（load / scheduleWebBoot / 下载解压）目前零覆盖。
