@@ -21,3 +21,6 @@ jobs:
         --lockfile=./yarn.lock
         --lockfile=./web/yarn.lock
         --lockfile=./tools/kaitu-center/package-lock.json
+        --lockfile=./sites/overleap/yarn.lock
+        --lockfile=./scripts/lambda/s3-log-notify/package-lock.json
+        --lockfile=./mobile/plugins/k2-plugin/package-lock.json
