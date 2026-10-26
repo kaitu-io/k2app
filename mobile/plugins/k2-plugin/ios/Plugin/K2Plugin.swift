@@ -119,7 +119,8 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             hasWebUpdateDir: FileManager.default.fileExists(atPath: webUpdatePath.path),
             hasBootPending: FileManager.default.fileExists(atPath: bootPending.path),
             hasIndex: FileManager.default.fileExists(atPath: indexPath.path),
-            diskVersion: Self.readDiskWebVersion()
+            diskVersion: Self.readDiskWebVersion(),
+            appVersion: appVersion
         ) {
         case .rollback(let version):
             // The webapp never called confirmWebBootOk() — it failed to render.
@@ -130,6 +131,10 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             let webBackupPath = documentsPath.appendingPathComponent("web-backup")
             try? FileManager.default.removeItem(at: webUpdatePath)
             try? FileManager.default.removeItem(at: webBackupPath)
+        case .discardStale(let version):
+            logger.info("load: shell \(self.appVersion) is newer than disk web \(version) — discarding stale OTA bundle")
+            try? FileManager.default.removeItem(at: webUpdatePath)
+            try? FileManager.default.removeItem(at: documentsPath.appendingPathComponent("web-backup"))
         case .serveDisk:
             FileManager.default.createFile(atPath: bootPending.path, contents: nil)
             bridge?.setServerBasePath(webUpdatePath.path)

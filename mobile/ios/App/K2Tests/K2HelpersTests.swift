@@ -131,13 +131,13 @@ class K2HelpersTests: XCTestCase {
     /// gone, and the auto-check 3s later re-downloads the same broken bundle.
     func testDecideWebBoot_unconfirmedBootRollsBackAndNamesVersion() {
         XCTAssertEqual(
-            decideWebBoot(hasWebUpdateDir: true, hasBootPending: true, hasIndex: true, diskVersion: "0.4.8.20000000"),
+            decideWebBoot(hasWebUpdateDir: true, hasBootPending: true, hasIndex: true, diskVersion: "0.4.8.20000000", appVersion: "0.4.8"),
             .rollback(version: "0.4.8.20000000"))
     }
 
     func testDecideWebBoot_rollbackWithoutReadableVersionStillRollsBack() {
         XCTAssertEqual(
-            decideWebBoot(hasWebUpdateDir: true, hasBootPending: true, hasIndex: true, diskVersion: nil),
+            decideWebBoot(hasWebUpdateDir: true, hasBootPending: true, hasIndex: true, diskVersion: nil, appVersion: "0.4.8"),
             .rollback(version: nil))
     }
 
@@ -146,31 +146,59 @@ class K2HelpersTests: XCTestCase {
     /// silently drop the quarantine.
     func testDecideWebBoot_unconfirmedBootWinsOverCorruptCheck() {
         XCTAssertEqual(
-            decideWebBoot(hasWebUpdateDir: true, hasBootPending: true, hasIndex: false, diskVersion: "0.4.8.20000000"),
+            decideWebBoot(hasWebUpdateDir: true, hasBootPending: true, hasIndex: false, diskVersion: "0.4.8.20000000", appVersion: "0.4.8"),
             .rollback(version: "0.4.8.20000000"))
     }
 
     func testDecideWebBoot_confirmedBundleServedFromDisk() {
         XCTAssertEqual(
-            decideWebBoot(hasWebUpdateDir: true, hasBootPending: false, hasIndex: true, diskVersion: "0.4.8.20000000"),
+            decideWebBoot(hasWebUpdateDir: true, hasBootPending: false, hasIndex: true, diskVersion: "0.4.8.20000000", appVersion: "0.4.8"),
             .serveDisk)
+    }
+
+    /// A store upgrade must not keep serving the OTA bundle the previous shell
+    /// downloaded: 4.4.13 users with a 0.4.11 OTA on disk would otherwise run
+    /// the September webapp on the new shell indefinitely.
+    func testDecideWebBoot_bundleOlderThanShellIsDiscarded() {
+        XCTAssertEqual(
+            decideWebBoot(hasWebUpdateDir: true, hasBootPending: false, hasIndex: true, diskVersion: "0.4.11.22325782", appVersion: "0.4.13"),
+            .discardStale(version: "0.4.11.22325782"))
+    }
+
+    func testDecideWebBoot_bundleOfSameBaseAsShellIsServed() {
+        XCTAssertEqual(
+            decideWebBoot(hasWebUpdateDir: true, hasBootPending: false, hasIndex: true, diskVersion: "0.4.13.22400000", appVersion: "0.4.13"),
+            .serveDisk)
+    }
+
+    func testDecideWebBoot_undatableBundleIsNotDiscarded() {
+        XCTAssertEqual(
+            decideWebBoot(hasWebUpdateDir: true, hasBootPending: false, hasIndex: true, diskVersion: nil, appVersion: "0.4.13"),
+            .serveDisk)
+    }
+
+    /// Rollback still wins: an unconfirmed stale bundle must be quarantined.
+    func testDecideWebBoot_unconfirmedStaleBundleStillRollsBack() {
+        XCTAssertEqual(
+            decideWebBoot(hasWebUpdateDir: true, hasBootPending: true, hasIndex: true, diskVersion: "0.4.11.22325782", appVersion: "0.4.13"),
+            .rollback(version: "0.4.11.22325782"))
     }
 
     func testDecideWebBoot_directoryWithoutIndexIsCleaned() {
         XCTAssertEqual(
-            decideWebBoot(hasWebUpdateDir: true, hasBootPending: false, hasIndex: false, diskVersion: nil),
+            decideWebBoot(hasWebUpdateDir: true, hasBootPending: false, hasIndex: false, diskVersion: nil, appVersion: "0.4.8"),
             .cleanCorrupt)
     }
 
     func testDecideWebBoot_noBundleServesBundled() {
         XCTAssertEqual(
-            decideWebBoot(hasWebUpdateDir: false, hasBootPending: false, hasIndex: false, diskVersion: nil),
+            decideWebBoot(hasWebUpdateDir: false, hasBootPending: false, hasIndex: false, diskVersion: nil, appVersion: "0.4.8"),
             .serveBundled)
     }
 
     func testDecideWebBoot_strayMarkerWithoutBundleServesBundled() {
         XCTAssertEqual(
-            decideWebBoot(hasWebUpdateDir: false, hasBootPending: true, hasIndex: false, diskVersion: nil),
+            decideWebBoot(hasWebUpdateDir: false, hasBootPending: true, hasIndex: false, diskVersion: nil, appVersion: "0.4.8"),
             .serveBundled)
     }
 

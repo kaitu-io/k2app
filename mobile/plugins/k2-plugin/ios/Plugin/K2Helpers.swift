@@ -117,6 +117,11 @@ enum WebBootDecision: Equatable {
     /// the bundled webapp, and quarantine `version` so it is not re-applied.
     /// `version` is nil when version.txt was missing or unreadable.
     case rollback(version: String?)
+    /// The bundle predates this shell (the shell's own webapp is newer): a
+    /// store upgrade must not keep serving an older OTA. Delete it and its
+    /// backup, serve the bundled webapp; a later OTA newer than the shell
+    /// re-populates the disk. Mirror of desktop `discard_stale_disk_ui`.
+    case discardStale(version: String)
     /// Bundle directory present but has no index.html — remove it.
     case cleanCorrupt
     /// Nothing usable on disk; serve the webapp bundled in the app.
@@ -127,13 +132,19 @@ func decideWebBoot(
     hasWebUpdateDir: Bool,
     hasBootPending: Bool,
     hasIndex: Bool,
-    diskVersion: String?
+    diskVersion: String?,
+    appVersion: String
 ) -> WebBootDecision {
     guard hasWebUpdateDir else { return .serveBundled }
     // Checked before the corrupt case on purpose: an unconfirmed boot is a
     // FAILURE and must be quarantined, whereas cleanCorrupt merely tidies up.
     // Reordering silently drops the quarantine for half the failures.
     if hasBootPending { return .rollback(version: diskVersion) }
+    // Unreadable version.txt counts as current, same as desktop's fallback to
+    // the app version — never discard a bundle we cannot date.
+    if let v = diskVersion, isNewerVersion(appVersion, than: v) {
+        return .discardStale(version: v)
+    }
     return hasIndex ? .serveDisk : .cleanCorrupt
 }
 
