@@ -17,6 +17,7 @@ import { cacheStore } from '../services/cache-store';
 import type { IapProduct } from '../types/kaitu-core';
 import type { DataUser } from '../services/api-types';
 import { brandConfig } from '../brands';
+import { ERROR_CODES, getErrorMessage } from '../utils/errorCode';
 
 /**
  * App Store 商品 id —— 品牌派生（brands/<id> 配置，与该品牌 iOS app 的 ASC 一致）。
@@ -90,7 +91,7 @@ export function useIapPurchase(): UseIapPurchaseReturn {
    * after a confirmed grant.
    */
   const verifyAndGrant = useCallback(
-    async (transactionId: string): Promise<void> => {
+    async (transactionId: string, jws?: string): Promise<void> => {
       const iap = window._platform?.iap;
       if (!iap) {
         console.warn('[useIapPurchase] verifyAndGrant: iap missing');
@@ -100,6 +101,26 @@ export function useIapPurchase(): UseIapPurchaseReturn {
         const res = await cloudApi.post<DataUser>('/api/user/apple-iap/verify', {
           transactionId,
         });
+
+        if (res.code === ERROR_CODES.APPLE_SUBSCRIPTION_OWNED_ELSEWHERE) {
+          // The transaction belongs to another account. If this device is a zero-identity
+          // device account and we hold the JWS, move that account here and verify once more.
+          // Never finish on this branch — only the re-verify (which finishes on success) may.
+          const cachedUser = cacheStore.get<DataUser>(USER_CACHE_KEY);
+          const zeroIdentity = !!cachedUser && !(cachedUser.loginIdentifies?.length > 0);
+          // Lazy: device-account pulls in i18n + auth store, only needed on this rare path.
+          const restored =
+            zeroIdentity && !!jws &&
+            (await (await import('../services/device-account')).restoreDeviceAccount(jws));
+          if (restored) {
+            await verifyAndGrant(transactionId);
+            return;
+          }
+          if (mountedRef.current) {
+            setPurchaseError(getErrorMessage(res.code, res.message, t));
+          }
+          return;
+        }
 
         if (res.code !== 0 || !res.data) {
           // Do NOT finishTransaction — StoreKit will re-deliver via onTransactionUpdate.
@@ -135,6 +156,7 @@ export function useIapPurchase(): UseIapPurchaseReturn {
         }
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- self-recursion (re-verify after restore)
     [t],
   );
 
@@ -206,7 +228,7 @@ export function useIapPurchase(): UseIapPurchaseReturn {
       // SEQUENTIAL on purpose — Center uses FOR UPDATE row locks; parallel
       // verify calls deadlock. Never Promise.all here.
       for (const txn of txns) {
-        await verifyAndGrant(txn.transactionId);
+        await verifyAndGrant(txn.transactionId, txn.jws);
       }
     } catch (err) {
       console.error('[useIapPurchase] restore threw:', err);
