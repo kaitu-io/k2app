@@ -1,4 +1,4 @@
-**Last updated: 2026-10**
+**Last updated: [Effective date]**
 
 ### 1. Information We Collect
 
@@ -77,6 +77,8 @@
 6.3 **Crash Diagnostics**: We use Sentry, a third-party crash diagnostics service, to receive error reports from our client applications so that we can locate defects. A report contains the error stack trace, application version, operating system and device model, and the IP address it was sent from; it does **not** contain your browsing history, DNS queries or any network activity.
 
 6.4 **Data Sharing Restrictions**: We do not sell, rent, or otherwise provide your personal information to third parties for marketing purposes.
+
+6.5 **Apple Refund Information**: Only after you agree in the app, and only when you ask Apple for a refund of an App Store subscription and Apple asks us, we tell Apple that you consented, that the service was delivered, whether the subscription included a free trial, and our preference for a pro-rata refund based on remaining time. We do not provide Apple with your browsing history, DNS queries or connection content. Apple makes the final decision on whether to refund and how much. You can withdraw your consent at any time in the app settings.
 
 ### 7. Your Rights
 

@@ -1,12 +1,12 @@
 # 隐私政策 / Privacy Policy
 
-**最后更新 / Last Updated: 2026-10**
+**最后更新 / Last Updated: [发布日] / [Effective date]**
 
 ---
 
 ## 中文版本
 
-**最后更新：2026-10**
+**最后更新：[发布日]**
 
 ### 一、我们收集的信息
 
@@ -80,6 +80,8 @@
 
 6.4 **数据共享限制**：我们不会出售、出租或以其他方式将您的个人信息提供给第三方用于营销目的。
 
+6.5 **Apple 退款信息**：仅在您于 App 内明确同意后，当您就 App Store 订阅向 Apple 申请退款且 Apple 询问时，我们会向 Apple 提供：您已同意提供、服务内容已交付、该订阅是否含免费试用，以及我们按剩余时长比例退款的倾向。我们不会向 Apple 提供您的访问记录、DNS 查询或连接内容。最终是否退款及金额由 Apple 决定。您可随时在 App 设置中撤回同意。
+
 ### 七、您的权利
 
 7.1 **访问权**：您有权访问我们收集的关于您的个人信息。
@@ -110,7 +112,7 @@
 
 ## English Version
 
-**Last updated: 2026-10**
+**Last updated: [Effective date]**
 
 ### 1. Information We Collect
 
@@ -183,6 +185,8 @@
 6.3 **Crash Diagnostics**: We use Sentry, a third-party crash diagnostics service, to receive error reports from our client applications so that we can locate defects. A report contains the error stack trace, application version, operating system and device model, and the IP address it was sent from; it does **not** contain your browsing history, DNS queries or any network activity.
 
 6.4 **Data Sharing Restrictions**: We do not sell, rent, or otherwise provide your personal information to third parties for marketing purposes.
+
+6.5 **Apple Refund Information**: Only after you agree in the app, and only when you ask Apple for a refund of an App Store subscription and Apple asks us, we tell Apple that you consented, that the service was delivered, whether the subscription included a free trial, and our preference for a pro-rata refund based on remaining time. We do not provide Apple with your browsing history, DNS queries or connection content. Apple makes the final decision on whether to refund and how much. You can withdraw your consent at any time in the app settings.
 
 ### 7. Your Rights
 
