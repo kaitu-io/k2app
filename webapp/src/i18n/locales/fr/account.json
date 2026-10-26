@@ -168,6 +168,8 @@
     "emailHeading": "Ajouter un e-mail",
     "noCharge": "L'association n'affecte ni votre abonnement ni votre essai en cours, et vous ne serez pas débité à nouveau.",
     "bound": "Connectez-vous avec {{account}} sur vos autres appareils, jusqu'à {{count}}",
-    "bindFailed": "Échec de l'association, réessayez plus tard"
+    "bindFailed": "Échec de l'association, réessayez plus tard",
+    "emailConflict": "Cet e-mail a déjà un compte. Associez un autre e-mail ; pour fusionner des comptes, contactez le support.",
+    "socialConflict": "Cet identifiant Apple / compte Google est déjà associé à un autre compte. Associez-en un autre ; pour fusionner des comptes, contactez le support."
   }
 }

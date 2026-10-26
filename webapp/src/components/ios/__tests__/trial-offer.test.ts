@@ -4,12 +4,12 @@ import type { IapProduct } from '../../../types/kaitu-core';
 
 function product(over: Partial<IapProduct> = {}): IapProduct {
   return {
-    id: 'sub.1y', displayName: 'x', description: 'x', displayPrice: '¥88',
+    id: 'sub.1y', displayName: 'x', description: 'x', displayPrice: '$12.99',
     price: 88, periodUnit: 'year', periodValue: 1, ...over,
   } as IapProduct;
 }
 const offer = (periodUnit: any, periodValue: number, paymentMode: any = 'freeTrial') =>
-  ({ paymentMode, periodUnit, periodValue, displayPrice: '¥0' });
+  ({ paymentMode, periodUnit, periodValue, displayPrice: '$0.00' });
 
 describe('trialOfferOf', () => {
   it('week x1 -> 7 days', () => {

@@ -168,6 +168,8 @@
     "emailHeading": "Add email",
     "noCharge": "Linking doesn't affect your current subscription or trial, and you won't be charged again.",
     "bound": "Sign in with {{account}} on your other devices, up to {{count}} devices",
-    "bindFailed": "Couldn't link, please try again later"
+    "bindFailed": "Couldn't link, please try again later",
+    "emailConflict": "This email already has an account. Please link a different email; to merge accounts, contact support.",
+    "socialConflict": "This Apple ID / Google account is already linked to another account. Please link a different one; to merge accounts, contact support."
   }
 }

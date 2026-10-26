@@ -39,13 +39,13 @@ const ID = 'io.kaitu.sub.basic.1y';
 
 function product(extra: Record<string, unknown> = {}) {
   return {
-    id: ID, displayName: 'Kaitu Annual', description: 'x', displayPrice: '¥88',
+    id: ID, displayName: 'Kaitu Annual', description: 'x', displayPrice: '$12.99',
     price: 88, periodUnit: 'year', periodValue: 1, ...extra,
   };
 }
 const ELIGIBLE = {
   isEligibleForIntroOffer: true,
-  introOffer: { paymentMode: 'freeTrial', periodUnit: 'week', periodValue: 1, displayPrice: '¥0' },
+  introOffer: { paymentMode: 'freeTrial', periodUnit: 'week', periodValue: 1, displayPrice: '$0.00' },
 };
 
 function setProducts(products: any[]) {
@@ -84,10 +84,10 @@ describe('IosSubscribePanel trial paywall', () => {
     expect(screen.getByText('新设备免费体验 7 天')).toBeDefined();
     expect(screen.getByText('第 6 天前')).toBeDefined();
     expect(screen.getByText('第 7 天')).toBeDefined();
-    expect(screen.getByText('开始按 ¥88/年 扣费，成为正式会员')).toBeDefined();
+    expect(screen.getByText('开始按 $12.99/年 扣费，成为正式会员')).toBeDefined();
     expect(screen.getByText('前 7 天免费')).toBeDefined();
     expect(screen.getByTestId('iap-auto-renewal-disclosure').textContent).toBe(
-      '免费试用 7 天，之后按 ¥88/年 自动续订，通过 Apple ID 扣费。试用结束前至少 24 小时在 App Store 取消，就不会扣费。',
+      '免费试用 7 天，之后按 $12.99/年 自动续订，通过 Apple ID 扣费。试用结束前至少 24 小时在 App Store 取消，就不会扣费。',
     );
     expect(screen.getByText(i18n.t('purchase:purchase.iap.heroTitle'))).toBeDefined();
     // 旧的「试用中 / 首次充值」横幅已删除
@@ -101,7 +101,7 @@ describe('IosSubscribePanel trial paywall', () => {
     expect(container.textContent).not.toContain('免费');
     expect(screen.getByTestId('iap-subscribe-btn').textContent).toBe('立即订阅');
     expect(screen.getByTestId('iap-auto-renewal-disclosure').textContent).toBe(
-      '订阅按 ¥88/年 自动续订，通过 Apple ID 扣费。每期结束前至少 24 小时在 App Store 取消，下期就不再扣费。',
+      '订阅按 $12.99/年 自动续订，通过 Apple ID 扣费。每期结束前至少 24 小时在 App Store 取消，下期就不再扣费。',
     );
   });
 

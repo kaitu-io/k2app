@@ -168,6 +168,8 @@
     "emailHeading": "Tambah e-mel",
     "noCharge": "Memautkan tidak menjejaskan langganan atau percubaan semasa, dan anda tidak akan dicaj semula.",
     "bound": "Log masuk dengan {{account}} pada peranti lain, sehingga {{count}} peranti",
-    "bindFailed": "Gagal memautkan, sila cuba lagi kemudian"
+    "bindFailed": "Gagal memautkan, sila cuba lagi kemudian",
+    "emailConflict": "E-mel ini sudah mempunyai akaun. Sila pautkan e-mel lain; untuk menggabungkan akaun, hubungi sokongan.",
+    "socialConflict": "Apple ID / akaun Google ini sudah dipautkan ke akaun lain. Sila pautkan yang lain; untuk menggabungkan akaun, hubungi sokongan."
   }
 }

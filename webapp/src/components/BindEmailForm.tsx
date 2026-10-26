@@ -20,9 +20,15 @@ export interface BindEmailFormProps {
   autoFocus?: boolean;
   /** 渲染在提交按钮左侧的额外动作（如设置邮箱页的「取消」）；`busy` = 正在提交。 */
   renderSecondaryAction?: (busy: boolean) => React.ReactNode;
+  /**
+   * 邮箱已属别的账号（409001）时显示的文案。缺省用通用的「…或直接用该邮箱登录原账号」；
+   * 零身份设备账号的绑定区必须传入「请换一个邮箱绑定；如需合并请联系客服」（spec §4.4）——
+   * 去登录原账号会丢掉本机账号上的会员。
+   */
+  emailConflictMessage?: string;
 }
 
-export default function BindEmailForm({ onBound, autoFocus = false, renderSecondaryAction }: BindEmailFormProps) {
+export default function BindEmailForm({ onBound, autoFocus = false, renderSecondaryAction, emailConflictMessage }: BindEmailFormProps) {
   const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -47,6 +53,13 @@ export default function BindEmailForm({ onBound, autoFocus = false, renderSecond
     if (timerRef.current) clearInterval(timerRef.current);
   }, []);
 
+  const checkResponse = (code: number, message: string | undefined, fallback: string) => {
+    if (emailConflictMessage && code === ERROR_CODES.EMAIL_ALREADY_IN_USE) {
+      throw new Error(emailConflictMessage);
+    }
+    handleResponseError(code, message, t, fallback);
+  };
+
   // 发送验证码
   const handleSendCode = async () => {
     if (!email) {
@@ -60,12 +73,7 @@ export default function BindEmailForm({ onBound, autoFocus = false, renderSecond
       // verbatim. Without handleResponseError here the user would see the
       // "code sent" UX even on a backend rejection.
       const response = await cloudApi.post('/api/user/email/send-bind-verification', { email });
-      handleResponseError(
-        response.code,
-        response.message,
-        t,
-        t('auth:updateEmail.sendCodeFailed')
-      );
+      checkResponse(response.code, response.message, t('auth:updateEmail.sendCodeFailed'));
       setSuccess(true);
       setCountdown(60);
       if (timerRef.current) clearInterval(timerRef.current);
@@ -98,12 +106,7 @@ export default function BindEmailForm({ onBound, autoFocus = false, renderSecond
       if (response.code === ERROR_CODES.VERIFICATION_CODE_EXPIRED) {
         setCode("");
       }
-      handleResponseError(
-        response.code,
-        response.message,
-        t,
-        t('auth:updateEmail.setEmailFailed')
-      );
+      checkResponse(response.code, response.message, t('auth:updateEmail.setEmailFailed'));
       setSuccess(true);
       onBound();
     } catch (err) {

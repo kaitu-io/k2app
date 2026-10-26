@@ -168,6 +168,8 @@
     "emailHeading": "E-Mail hinzufügen",
     "noCharge": "Die Verknüpfung ändert nichts an deinem aktuellen Abo oder Test und es wird nichts erneut abgebucht.",
     "bound": "Melde dich auf deinen anderen Geräten mit {{account}} an, bis zu {{count}} Geräte",
-    "bindFailed": "Verknüpfen fehlgeschlagen, bitte später erneut versuchen"
+    "bindFailed": "Verknüpfen fehlgeschlagen, bitte später erneut versuchen",
+    "emailConflict": "Diese E-Mail hat bereits ein Konto. Bitte verknüpfe eine andere E-Mail; zum Zusammenführen wende dich an den Support.",
+    "socialConflict": "Diese Apple-ID / dieses Google-Konto ist bereits mit einem anderen Konto verknüpft. Bitte verknüpfe ein anderes; zum Zusammenführen wende dich an den Support."
   }
 }

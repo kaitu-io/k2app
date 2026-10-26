@@ -168,6 +168,8 @@
     "emailHeading": "Añadir correo",
     "noCharge": "Vincular no afecta a tu suscripción ni a tu prueba actual, y no se te volverá a cobrar.",
     "bound": "Inicia sesión con {{account}} en tus otros dispositivos, hasta {{count}}",
-    "bindFailed": "No se pudo vincular, inténtalo más tarde"
+    "bindFailed": "No se pudo vincular, inténtalo más tarde",
+    "emailConflict": "Este correo ya tiene una cuenta. Vincula otro correo; para fusionar cuentas, contacta con soporte.",
+    "socialConflict": "Este Apple ID / cuenta de Google ya está vinculado a otra cuenta. Vincula otro; para fusionar cuentas, contacta con soporte."
   }
 }

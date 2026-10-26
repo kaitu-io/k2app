@@ -168,6 +168,8 @@
     "emailHeading": "Aggiungi email",
     "noCharge": "Il collegamento non influisce sull'abbonamento o sulla prova in corso e non verrai addebitato di nuovo.",
     "bound": "Accedi con {{account}} sugli altri dispositivi, fino a {{count}}",
-    "bindFailed": "Collegamento non riuscito, riprova più tardi"
+    "bindFailed": "Collegamento non riuscito, riprova più tardi",
+    "emailConflict": "Questa email ha già un account. Collega un'altra email; per unire gli account contatta l'assistenza.",
+    "socialConflict": "Questo ID Apple / account Google è già collegato a un altro account. Collegane un altro; per unire gli account contatta l'assistenza."
   }
 }

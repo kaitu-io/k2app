@@ -44,11 +44,11 @@ const sub = (over: Partial<DataSubscription> = {}): DataSubscription => ({
 });
 
 const PRODUCT = {
-  id: 'io.kaitu.sub.basic.1y', displayName: 'x', description: 'x', displayPrice: '¥88',
+  id: 'io.kaitu.sub.basic.1y', displayName: 'x', description: 'x', displayPrice: '$12.99',
   price: 88, periodUnit: 'year', periodValue: 1,
   // 试用进行中 StoreKit 报告的就是 eligible=false（已用过试用资格）。
   isEligibleForIntroOffer: false,
-  introOffer: { paymentMode: 'freeTrial', periodUnit: 'week', periodValue: 1, displayPrice: '¥0' },
+  introOffer: { paymentMode: 'freeTrial', periodUnit: 'week', periodValue: 1, displayPrice: '$0.00' },
 };
 
 function setHook(products: any[]) {
@@ -87,7 +87,7 @@ describe('IosMembershipPanel trial card', () => {
     expect(card.textContent).toContain('试用还剩 5 天');
     expect(card.textContent).toContain('共 7 天');
     expect(card.textContent).toContain(
-      `${formatExpiryDate(ends)} 起按 ¥88/年 自动续订。不想继续，在到期前至少 24 小时取消即可。`,
+      `${formatExpiryDate(ends)} 起按 $12.99/年 自动续订。不想继续，在到期前至少 24 小时取消即可。`,
     );
     expect(screen.getByTestId('trial-progress')).toBeTruthy();
     expect(screen.queryByTestId('renewal-status-card')).toBeNull();

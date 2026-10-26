@@ -168,6 +168,8 @@
     "emailHeading": "绑定邮箱",
     "noCharge": "绑定不影响当前订阅和试用，也不会重新扣费。",
     "bound": "在其他设备上用 {{account}} 登录即可，最多 {{count}} 台",
-    "bindFailed": "绑定失败，请稍后重试"
+    "bindFailed": "绑定失败，请稍后重试",
+    "emailConflict": "该邮箱已有账号，请换一个邮箱绑定；如需合并请联系客服",
+    "socialConflict": "该 Apple ID / Google 账号已绑定其他账号，请换一个绑定；如需合并请联系客服"
   }
 }

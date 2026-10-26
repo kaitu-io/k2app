@@ -168,6 +168,8 @@
     "emailHeading": "Tambahkan email",
     "noCharge": "Menautkan tidak memengaruhi langganan atau uji coba saat ini, dan Anda tidak akan ditagih lagi.",
     "bound": "Masuk dengan {{account}} di perangkat lain, hingga {{count}} perangkat",
-    "bindFailed": "Gagal menautkan, coba lagi nanti"
+    "bindFailed": "Gagal menautkan, coba lagi nanti",
+    "emailConflict": "Email ini sudah punya akun. Tautkan email lain; untuk menggabungkan akun, hubungi dukungan.",
+    "socialConflict": "Apple ID / akun Google ini sudah ditautkan ke akun lain. Tautkan yang lain; untuk menggabungkan akun, hubungi dukungan."
   }
 }

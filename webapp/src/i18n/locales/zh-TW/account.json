@@ -168,6 +168,8 @@
     "emailHeading": "綁定信箱",
     "noCharge": "綁定不影響目前的訂閱和試用，也不會重新扣款。",
     "bound": "在其他裝置上用 {{account}} 登入即可，最多 {{count}} 台",
-    "bindFailed": "綁定失敗，請稍後再試"
+    "bindFailed": "綁定失敗，請稍後再試",
+    "emailConflict": "該信箱已有帳號，請換一個信箱綁定；如需合併請聯絡客服",
+    "socialConflict": "該 Apple ID / Google 帳號已綁定其他帳號，請換一個綁定；如需合併請聯絡客服"
   }
 }

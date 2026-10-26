@@ -144,7 +144,7 @@ function DeviceAccountSection() {
         <Typography variant="subtitle2" component="div" sx={{ fontWeight: 600 }}>
           {t('account:deviceBind.emailHeading')}
         </Typography>
-        <BindEmailForm onBound={onBound} />
+        <BindEmailForm onBound={onBound} emailConflictMessage={t('account:deviceBind.emailConflict')} />
 
         <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.5 }}>
           {t('account:deviceBind.noCharge')}

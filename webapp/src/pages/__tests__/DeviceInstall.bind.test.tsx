@@ -4,7 +4,7 @@
  * - 已有登录身份：没有绑定区，改为「在其他设备上用 … 登录即可」。
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { render } from '../../test/utils/render';
 import i18n, { i18nPromise, changeLanguage } from '../../i18n/i18n';
 
@@ -54,6 +54,22 @@ describe('DeviceInstall — 绑定区', () => {
     expect(screen.queryByText(/登录即可/)).toBeNull();
     // 安装内容仍在
     expect(screen.getByText(i18n.t('purchase:deviceInstall.title'))).toBeInTheDocument();
+  });
+
+  it('绑定区：邮箱已属别的账号（409001）提示换邮箱 / 联系客服，不引导去登录原账号', async () => {
+    m.user = { uuid: 'u-1', loginIdentifies: [], maxDevice: 5, expiredAt: 4102444800 };
+    vi.mocked(cloudApi.post).mockResolvedValue({ code: 409001, message: 'email already in use' } as any);
+    render(<DeviceInstall />);
+
+    const form = screen.getByTestId('bind-email-form');
+    fireEvent.change(form.querySelector('input')!, { target: { value: 'taken@example.com' } });
+    const send = Array.from(form.querySelectorAll('button')).find(
+      (b) => b.textContent === i18n.t('auth:updateEmail.sendCode'),
+    )!;
+    fireEvent.click(send);
+
+    await waitFor(() => expect(screen.getByText(i18n.t('account:deviceBind.emailConflict'))).toBeInTheDocument());
+    expect(screen.queryByText(i18n.t('auth:updateEmail.emailAlreadyInUse'))).toBeNull();
   });
 
   it('设备数跟随套餐 maxDevice（与 MembershipBenefits 同源）', () => {

@@ -23,7 +23,7 @@ import { cacheStore } from '../services/cache-store';
 import { getDeviceUdid } from '../services/device-udid';
 import { statsService } from '../services/stats';
 import { createNonce, resolveSocialProviders, sha256Hex } from '../services/social-sign-in';
-import { handleResponseError } from '../utils/errorCode';
+import { ERROR_CODES, handleResponseError } from '../utils/errorCode';
 import type { AuthResult } from '../services/api-types';
 import type { ISocialSignIn, SocialCredential, SocialProvider } from '../types/kaitu-core';
 
@@ -95,6 +95,11 @@ function SocialSignInInner({ bridge, onSuccess, onError, disabled, mode = 'login
           nonce,
           authorizationCode: credential.authorizationCode,
         });
+        // Identity already owned by another account: never steer toward signing in to it —
+        // that strands this device account's membership (spec §4.4).
+        if (response.code === ERROR_CODES.SOCIAL_IDENTITY_TAKEN || response.code === ERROR_CODES.EMAIL_ALREADY_IN_USE) {
+          throw new Error(t('account:deviceBind.socialConflict'));
+        }
         handleResponseError(response.code, response.message, t, t('account:deviceBind.bindFailed'));
         // The identity list on /api/user/info changed; drop cached copies.
         cacheStore.clear();

@@ -168,6 +168,8 @@
     "emailHeading": "Thêm email",
     "noCharge": "Liên kết không ảnh hưởng đến gói đăng ký hay bản dùng thử hiện tại và bạn sẽ không bị tính phí lại.",
     "bound": "Đăng nhập bằng {{account}} trên các thiết bị khác, tối đa {{count}} thiết bị",
-    "bindFailed": "Liên kết không thành công, vui lòng thử lại sau"
+    "bindFailed": "Liên kết không thành công, vui lòng thử lại sau",
+    "emailConflict": "Email này đã có tài khoản. Hãy liên kết email khác; nếu cần gộp tài khoản, vui lòng liên hệ hỗ trợ.",
+    "socialConflict": "Apple ID / tài khoản Google này đã liên kết với tài khoản khác. Hãy liên kết cái khác; nếu cần gộp tài khoản, vui lòng liên hệ hỗ trợ."
   }
 }

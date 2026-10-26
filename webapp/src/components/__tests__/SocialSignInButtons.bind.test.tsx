@@ -85,6 +85,16 @@ describe('SocialSignInButtons mode="bind"', () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
+  it('identity already owned by another account (409002) shows the bind-conflict copy', async () => {
+    signIn.mockResolvedValue({ idToken: 'jwt' });
+    m.post.mockResolvedValue({ code: 409002, message: 'taken' });
+    const { onSuccess, onError } = setup();
+
+    fireEvent.click(await appleButton());
+    await waitFor(() => expect(onError).toHaveBeenCalledWith(i18n.t('account:deviceBind.socialConflict')));
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+
   it('server rejection reaches onError and never calls onSuccess', async () => {
     signIn.mockResolvedValue({ idToken: 'jwt' });
     m.post.mockResolvedValue({ code: 400014, message: 'invalid' });
