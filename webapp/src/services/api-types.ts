@@ -459,6 +459,8 @@ export interface DataUser {
   // StoreKit appAccountToken (uuidv5-derived). iOS purchase only — `omitempty`
   // in Go `api/type.go`, so optional. Bound to the Apple purchase for S2S verify.
   appleAccountToken?: string;
+  /** 是否同意退款时向 Apple 提供使用情况：true / false；null / 缺省 = 从未问过（服务端三态）。 */
+  appleConsumptionConsent?: boolean | null;
   /** 当前活跃的续订订阅（0..N）。驱动 iOS 购买入口决策；跨 provider，防永久双扣。 */
   subscriptions?: DataSubscription[];
 }

@@ -55,7 +55,15 @@
       "trialDaysLeft": "トライアル残り {{days}} 日",
       "trialTotal": "全 {{days}} 日",
       "trialRenewNote": "{{date}} から {{price}}/年 で自動更新されます。続けない場合は、終了の 24 時間前までにキャンセルしてください。",
-      "trialRenewNoteNoPrice": "{{date}} から自動更新されます。続けない場合は、終了の 24 時間前までにキャンセルしてください。"
+      "trialRenewNoteNoPrice": "{{date}} から自動更新されます。続けない場合は、終了の 24 時間前までにキャンセルしてください。",
+      "consentTitle": "返金時に利用状況の提供を許可しますか？",
+      "consentBody": "後で Apple に返金を申請すると、Apple からこのサブスクリプションの利用状況を尋ねられることがあります。許可すると、実際の利用量に応じて返金を処理できるよう、次の情報のみを Apple に提供します：",
+      "consentPointDays": "サブスクリプションの利用日数",
+      "consentPointTraffic": "おおよその通信量",
+      "consentNote": "閲覧したサイトや通信内容は一切提供しません。「設定」からいつでも変更できます。詳しくは<privacy>プライバシーポリシー</privacy>をご覧ください。",
+      "consentAllow": "許可する",
+      "consentDeny": "許可しない",
+      "consentSetting": "返金時に Apple へ利用状況を提供"
     },
     "title": "プランを購入",
     "memberBenefits": "会員特典",

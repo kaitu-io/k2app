@@ -55,7 +55,15 @@
       "trialDaysLeft": "Quedan {{days}} días de prueba",
       "trialTotal": "{{days}} días en total",
       "trialRenewNote": "Se renueva automáticamente a {{price}}/año desde el {{date}}. Si no quieres continuar, cancela al menos 24 horas antes de que termine.",
-      "trialRenewNoteNoPrice": "Se renueva automáticamente desde el {{date}}. Si no quieres continuar, cancela al menos 24 horas antes de que termine."
+      "trialRenewNoteNoPrice": "Se renueva automáticamente desde el {{date}}. Si no quieres continuar, cancela al menos 24 horas antes de que termine.",
+      "consentTitle": "¿Compartir datos de uso si pides un reembolso?",
+      "consentBody": "Si más adelante solicitas un reembolso a Apple, es posible que Apple pregunte cómo se usó esta suscripción. Si lo permites, solo le daremos a Apple la información siguiente, para que gestione el reembolso según lo que realmente usaste:",
+      "consentPointDays": "Días de suscripción utilizados",
+      "consentPointTraffic": "Datos utilizados (aproximado)",
+      "consentNote": "Nunca compartimos qué sitios visitas ni el contenido de tus conexiones. Puedes cambiarlo cuando quieras en Ajustes. Consulta la <privacy>Política de privacidad</privacy>.",
+      "consentAllow": "Permitir",
+      "consentDeny": "No permitir",
+      "consentSetting": "Compartir datos de uso con Apple para reembolsos"
     },
     "title": "Comprar Plan",
     "memberBenefits": "Beneficios de Membresía",

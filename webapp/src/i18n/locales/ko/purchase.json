@@ -55,7 +55,15 @@
       "trialDaysLeft": "체험 {{days}}일 남음",
       "trialTotal": "총 {{days}}일",
       "trialRenewNote": "{{date}}부터 연 {{price}}에 자동 갱신됩니다. 계속하지 않으려면 종료 최소 24시간 전에 취소하세요.",
-      "trialRenewNoteNoPrice": "{{date}}부터 자동 갱신됩니다. 계속하지 않으려면 종료 최소 24시간 전에 취소하세요."
+      "trialRenewNoteNoPrice": "{{date}}부터 자동 갱신됩니다. 계속하지 않으려면 종료 최소 24시간 전에 취소하세요.",
+      "consentTitle": "환불 시 사용 현황을 제공할까요?",
+      "consentBody": "나중에 Apple에 환불을 요청하면 Apple이 이 구독의 사용 현황을 물을 수 있습니다. 허용하시면 실제 사용량에 맞게 환불을 처리할 수 있도록 아래 정보만 Apple에 제공합니다:",
+      "consentPointDays": "구독 사용 일수",
+      "consentPointTraffic": "대략적인 데이터 사용량",
+      "consentNote": "방문한 사이트나 연결 내용은 제공하지 않습니다. 언제든 「설정」에서 변경할 수 있습니다. 자세한 내용은 <privacy>개인정보 처리방침</privacy>을 확인하세요.",
+      "consentAllow": "허용",
+      "consentDeny": "허용 안 함",
+      "consentSetting": "환불 시 Apple에 사용 현황 제공"
     },
     "title": "플랜 구매",
     "memberBenefits": "멤버십 혜택",

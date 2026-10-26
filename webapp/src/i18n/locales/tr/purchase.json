@@ -55,7 +55,15 @@
       "trialDaysLeft": "Denemenin bitmesine {{days}} gün",
       "trialTotal": "Toplam {{days}} gün",
       "trialRenewNote": "{{date}} tarihinden itibaren yıllık {{price}} ile otomatik yenilenir. Devam etmek istemiyorsanız bitişten en az 24 saat önce iptal edin.",
-      "trialRenewNoteNoPrice": "{{date}} tarihinden itibaren otomatik yenilenir. Devam etmek istemiyorsanız bitişten en az 24 saat önce iptal edin."
+      "trialRenewNoteNoPrice": "{{date}} tarihinden itibaren otomatik yenilenir. Devam etmek istemiyorsanız bitişten en az 24 saat önce iptal edin.",
+      "consentTitle": "İade durumunda kullanım bilgisi paylaşılsın mı?",
+      "consentBody": "Daha sonra Apple’dan iade isterseniz Apple bu aboneliğin nasıl kullanıldığını sorabilir. İzin verirseniz, iadeyi gerçek kullanımınıza göre işleyebilmesi için Apple’a yalnızca aşağıdaki bilgileri veririz:",
+      "consentPointDays": "Aboneliğin kullanıldığı gün sayısı",
+      "consentPointTraffic": "Yaklaşık kullanılan veri miktarı",
+      "consentNote": "Hangi sitelere girdiğinizi veya bağlantı içeriğinizi asla paylaşmayız. Bunu istediğiniz zaman Ayarlar’dan değiştirebilirsiniz. Ayrıntılar için <privacy>Gizlilik Politikası</privacy>.",
+      "consentAllow": "İzin ver",
+      "consentDeny": "İzin verme",
+      "consentSetting": "İadelerde kullanım bilgisini Apple ile paylaş"
     },
     "title": "Satın Al Plan",
     "memberBenefits": "Üyelik Avantajları",

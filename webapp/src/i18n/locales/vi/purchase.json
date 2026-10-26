@@ -55,7 +55,15 @@
       "trialDaysLeft": "Còn {{days}} ngày dùng thử",
       "trialTotal": "Tổng {{days}} ngày",
       "trialRenewNote": "Tự động gia hạn với giá {{price}}/năm từ {{date}}. Nếu không muốn tiếp tục, hãy hủy ít nhất 24 giờ trước khi hết hạn.",
-      "trialRenewNoteNoPrice": "Tự động gia hạn từ {{date}}. Nếu không muốn tiếp tục, hãy hủy ít nhất 24 giờ trước khi hết hạn."
+      "trialRenewNoteNoPrice": "Tự động gia hạn từ {{date}}. Nếu không muốn tiếp tục, hãy hủy ít nhất 24 giờ trước khi hết hạn.",
+      "consentTitle": "Cho phép cung cấp thông tin sử dụng khi hoàn tiền?",
+      "consentBody": "Nếu sau này bạn yêu cầu Apple hoàn tiền, Apple có thể hỏi về mức sử dụng của gói đăng ký này. Nếu bạn cho phép, chúng tôi chỉ cung cấp cho Apple những thông tin dưới đây để Apple xử lý hoàn tiền theo mức bạn thực sự đã dùng:",
+      "consentPointDays": "Số ngày đã sử dụng gói đăng ký",
+      "consentPointTraffic": "Lượng dữ liệu đã dùng (ước chừng)",
+      "consentNote": "Chúng tôi không bao giờ cung cấp các trang web bạn truy cập hay nội dung kết nối. Bạn có thể thay đổi bất cứ lúc nào trong Cài đặt. Xem <privacy>Chính sách quyền riêng tư</privacy>.",
+      "consentAllow": "Cho phép",
+      "consentDeny": "Không cho phép",
+      "consentSetting": "Cung cấp thông tin sử dụng cho Apple khi hoàn tiền"
     },
     "title": "Gói mua",
     "memberBenefits": "Lợi ích thành viên",

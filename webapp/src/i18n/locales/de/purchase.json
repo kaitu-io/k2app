@@ -55,7 +55,15 @@
       "trialDaysLeft": "Noch {{days}} Tage Testphase",
       "trialTotal": "{{days}} Tage insgesamt",
       "trialRenewNote": "Ab {{date}} automatische Verlängerung für {{price}}/Jahr. Wenn du nicht weitermachen willst, kündige mindestens 24 Stunden vor Ablauf.",
-      "trialRenewNoteNoPrice": "Ab {{date}} automatische Verlängerung. Wenn du nicht weitermachen willst, kündige mindestens 24 Stunden vor Ablauf."
+      "trialRenewNoteNoPrice": "Ab {{date}} automatische Verlängerung. Wenn du nicht weitermachen willst, kündige mindestens 24 Stunden vor Ablauf.",
+      "consentTitle": "Nutzungsdaten bei einer Rückerstattung weitergeben?",
+      "consentBody": "Wenn Sie später bei Apple eine Rückerstattung beantragen, fragt Apple möglicherweise nach der Nutzung dieses Abonnements. Wenn Sie zustimmen, geben wir nur die folgenden Angaben an Apple weiter, damit die Rückerstattung entsprechend Ihrer tatsächlichen Nutzung bearbeitet werden kann:",
+      "consentPointDays": "Anzahl der genutzten Abonnementtage",
+      "consentPointTraffic": "Ungefähr genutztes Datenvolumen",
+      "consentNote": "Wir geben niemals weiter, welche Websites Sie besuchen oder was Sie über die Verbindung übertragen. Sie können dies jederzeit in den Einstellungen ändern. Siehe <privacy>Datenschutzrichtlinie</privacy>.",
+      "consentAllow": "Erlauben",
+      "consentDeny": "Nicht erlauben",
+      "consentSetting": "Nutzungsdaten bei Rückerstattung an Apple weitergeben"
     },
     "title": "Kauf-Plan",
     "memberBenefits": "Mitgliedschaftsvorteile",

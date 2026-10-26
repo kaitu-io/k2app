@@ -23,7 +23,7 @@
  * 旧壳无 introOffer 字段）与原来一样是「立即订阅」。天数与价格全部来自 StoreKit。
  */
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Card,
@@ -46,6 +46,7 @@ import { useLoginDialogStore } from '../../stores/login-dialog.store';
 import { statsService } from '../../services/stats';
 import EmailLoginForm from '../EmailLoginForm';
 import { trialOfferOf } from './trial-offer';
+import ConsumptionConsentSheet from './ConsumptionConsentSheet';
 
 interface IosSubscribePanelProps {
   /** 是否已登录（决定先登录还是可直接订阅）。 */
@@ -89,6 +90,9 @@ export default function IosSubscribePanel({
     lastGrantedUser,
   } = useIapPurchase();
 
+  // 退款同意弹层（设计稿 ④）：授予成功且从未问过时弹一次。
+  const [consentOpen, setConsentOpen] = useState(false);
+
   // Load StoreKit products on mount.
   useEffect(() => {
     void loadProducts();
@@ -99,6 +103,7 @@ export default function IosSubscribePanel({
     if (lastGrantedUser) {
       showAlert(t('purchase:purchase.iap.successAlert'), 'success');
       void fetchUser();
+      if (lastGrantedUser.appleConsumptionConsent == null) setConsentOpen(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastGrantedUser]);
@@ -416,6 +421,7 @@ export default function IosSubscribePanel({
           </Link>
         </Stack>
       </Stack>
+      <ConsumptionConsentSheet open={consentOpen} onClose={() => setConsentOpen(false)} />
     </Box>
   );
 }

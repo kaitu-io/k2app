@@ -10,6 +10,7 @@ import {
   Chip,
   Button,
   Divider,
+  Switch,
   Alert,
   CircularProgress,
   Card,
@@ -29,6 +30,7 @@ import {
   ChevronRight as ChevronRightIcon,
   Logout as LogoutIcon,
   Language as LanguageIcon,
+  PrivacyTip as PrivacyTipIcon,
   Group as GroupIcon,
   CardMembership as MembershipIcon,
   PhoneAndroid as PhoneAndroidIcon,
@@ -57,6 +59,7 @@ import { useLoginDialogStore } from "../stores/login-dialog.store";
 import type { DataUser } from "../services/api-types";
 import { getThemeColors } from '../theme/colors';
 import { useAppLinks } from "../hooks/useAppLinks";
+import { setAppleConsumptionConsent } from '../components/ios/consumption-consent';
 import VersionItem from "../components/VersionItem";
 import DeleteAccountDialog from "../components/DeleteAccountDialog";
 import BetaChannelToggle from "../components/BetaChannelToggle";
@@ -112,6 +115,22 @@ export default function Account() {
     }
     setAppVersion(version);
   }, []);
+
+  // iOS + Apple 订阅：退款时是否向 Apple 提供使用情况（null = 从未问过，按关闭显示）。
+  const showAppleConsent =
+    window._platform?.os === 'ios' && !!user?.subscriptions?.some((s) => s.provider === 'apple');
+  const [consentOverride, setConsentOverride] = useState<boolean | null>(null);
+  const [consentBusy, setConsentBusy] = useState(false);
+  const appleConsentOn = consentOverride ?? user?.appleConsumptionConsent === true;
+  const handleAppleConsentToggle = async () => {
+    if (consentBusy) return;
+    const next = !appleConsentOn;
+    setConsentBusy(true);
+    setConsentOverride(next);
+    const ok = await setAppleConsumptionConsent(next);
+    if (!ok) setConsentOverride(null);
+    setConsentBusy(false);
+  };
 
   const handleLogout = async () => {
     try {
@@ -871,6 +890,29 @@ export default function Account() {
             </ListItem>
 
             <Divider />
+
+            {showAppleConsent && (<>
+            <ListItem sx={{ py: 1.5 }} data-testid="account-apple-consent">
+              <ListItemIcon>
+                <PrivacyTipIcon />
+              </ListItemIcon>
+              <ListItemText
+                primary={
+                  <Typography component="span" variant="body2" sx={{ fontWeight: 500, fontSize: '0.9rem' }}>
+                    {t('purchase:purchase.iap.consentSetting')}
+                  </Typography>
+                }
+              />
+              <Switch
+                edge="end"
+                checked={appleConsentOn}
+                disabled={consentBusy}
+                onChange={() => void handleAppleConsentToggle()}
+                inputProps={{ 'aria-label': t('purchase:purchase.iap.consentSetting') }}
+              />
+            </ListItem>
+            <Divider />
+            </>)}
 
             <ListItem sx={{ py: 1.5 }}>
               <ListItemIcon>

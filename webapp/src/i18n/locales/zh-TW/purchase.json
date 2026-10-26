@@ -55,7 +55,15 @@
       "trialDaysLeft": "試用還剩 {{days}} 天",
       "trialTotal": "共 {{days}} 天",
       "trialRenewNote": "{{date}} 起按 {{price}}/年 自動續訂。不想繼續，在到期前至少 24 小時取消即可。",
-      "trialRenewNoteNoPrice": "{{date}} 起自動續訂。不想繼續，在到期前至少 24 小時取消即可。"
+      "trialRenewNoteNoPrice": "{{date}} 起自動續訂。不想繼續，在到期前至少 24 小時取消即可。",
+      "consentTitle": "退款時，是否允許提供使用情況？",
+      "consentBody": "如果你之後向 Apple 申請退款，Apple 可能會詢問這筆訂閱的使用情況。允許後，我們只會把這些資訊提供給 Apple，用來協助它依你實際使用的程度處理退款：",
+      "consentPointDays": "訂閱已使用的天數",
+      "consentPointTraffic": "大致使用的流量",
+      "consentNote": "不會提供你瀏覽了哪些網站或任何連線內容。可隨時在「設定」中更改。詳見<privacy>隱私權政策</privacy>。",
+      "consentAllow": "允許",
+      "consentDeny": "不允許",
+      "consentSetting": "退款時向 Apple 提供使用情況"
     },
     "title": "購買方案",
     "memberBenefits": "會員權益",

@@ -55,7 +55,15 @@
       "trialDaysLeft": "{{days}} days left in trial",
       "trialTotal": "{{days}} days total",
       "trialRenewNote": "Renews automatically at {{price}}/year from {{date}}. To stop, cancel at least 24 hours before the trial ends.",
-      "trialRenewNoteNoPrice": "Renews automatically from {{date}}. To stop, cancel at least 24 hours before the trial ends."
+      "trialRenewNoteNoPrice": "Renews automatically from {{date}}. To stop, cancel at least 24 hours before the trial ends.",
+      "consentTitle": "Share usage info if you request a refund?",
+      "consentBody": "If you later ask Apple for a refund, Apple may ask about how this subscription was used. If you allow it, we'll share only the info below with Apple, to help it handle the refund based on how much you actually used:",
+      "consentPointDays": "Days the subscription has been used",
+      "consentPointTraffic": "Approximate data used",
+      "consentNote": "We never share which sites you visit or anything about your connections. You can change this anytime in Settings. See our <privacy>Privacy Policy</privacy>.",
+      "consentAllow": "Allow",
+      "consentDeny": "Don't allow",
+      "consentSetting": "Share usage info with Apple for refunds"
     },
     "title": "Purchase plan",
     "memberBenefits": "Membership Benefits",
