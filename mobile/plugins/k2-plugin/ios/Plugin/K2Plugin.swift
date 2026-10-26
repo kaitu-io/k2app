@@ -1156,7 +1156,13 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func secureGet(_ call: CAPPluginCall) {
         let key = call.getString("key") ?? ""
-        call.resolve(["value": KeychainStore.get(key) as Any])
+        // nil must cross the bridge as JSON null — a nil Optional boxed as Any
+        // is not guaranteed to serialize, so resolve NSNull explicitly.
+        if let value = KeychainStore.get(key) {
+            call.resolve(["value": value])
+        } else {
+            call.resolve(["value": NSNull()])
+        }
     }
 
     @objc func secureSet(_ call: CAPPluginCall) {

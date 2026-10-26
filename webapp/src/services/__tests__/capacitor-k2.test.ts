@@ -164,6 +164,18 @@ describe('capacitor-k2', () => {
       expect(fileStore.get('k2.auth.token')).toBe(JSON.stringify('tok'));
     });
 
+    it('native secureGet resolving without `value` (undefined) is treated like null → file fallback', async () => {
+      (Capacitor.getPlatform as any).mockReturnValue('ios');
+      pluginAny.secureGet.mockResolvedValue({});
+      fileStore.set('device-udid', JSON.stringify('raw-file'));
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      expect(window._platform.keychainIdentity).toBe(true);
+      expect(await window._platform.storage.get('device-udid')).toBe('raw-file');
+      expect(pluginAny.secureSet).toHaveBeenCalledWith({ key: 'device-udid', value: JSON.stringify('raw-file') });
+    });
+
     it('iOS old shell (probe rejects) → no flag, storage is file-only', async () => {
       (Capacitor.getPlatform as any).mockReturnValue('ios');
       pluginAny.secureGet.mockRejectedValue(new Error('"K2Plugin.secureGet()" is not implemented on ios'));

@@ -127,4 +127,50 @@ describe('keychain-storage', () => {
 
     expect(await s.get('device-udid')).toBe('raw-file');
   });
+
+  it('remove with failing kc.remove → subsequent get returns null (no token resurrection)', async () => {
+    const file = memFile({ 'k2.auth.token': 'tok' });
+    const kc = memKc({ 'k2.auth.token': JSON.stringify('tok') });
+    kc.remove.mockRejectedValue(new Error('kc down'));
+    const s = createKeychainBackedStorage(file, kc);
+
+    await s.remove('k2.auth.token');
+    expect(await s.get('k2.auth.token')).toBeNull();
+    expect(await s.has('k2.auth.token')).toBe(false);
+  });
+
+  it('set with failing kc.set → subsequent get returns new file value, not stale kc value', async () => {
+    const file = memFile({ 'k2.auth.refresh': 'old' });
+    const kc = memKc({ 'k2.auth.refresh': JSON.stringify('old') });
+    kc.set.mockRejectedValue(new Error('kc down'));
+    const s = createKeychainBackedStorage(file, kc);
+
+    await s.set('k2.auth.refresh', 'new');
+    expect(await s.get('k2.auth.refresh')).toBe('new');
+  });
+
+  it('a later successful kc write clears the file-only mark', async () => {
+    const file = memFile({ 'k2.auth.refresh': 'old' });
+    const kc = memKc({ 'k2.auth.refresh': JSON.stringify('old') });
+    kc.set.mockRejectedValueOnce(new Error('kc down'));
+    const s = createKeychainBackedStorage(file, kc);
+
+    await s.set('k2.auth.refresh', 'new');
+    await s.set('k2.auth.refresh', 'newer');
+    expect(kc.data.get('k2.auth.refresh')).toBe(JSON.stringify('newer'));
+    kc.get.mockClear();
+    expect(await s.get('k2.auth.refresh')).toBe('newer');
+    expect(kc.get).toHaveBeenCalledWith('k2.auth.refresh');
+  });
+
+  it('kc.get resolving undefined is treated exactly like null', async () => {
+    const file = memFile({ 'device-udid': 'raw-file' });
+    const kc = memKc();
+    kc.get.mockResolvedValue(undefined as any);
+    const s = createKeychainBackedStorage(file, kc);
+
+    expect(await s.get('device-udid')).toBe('raw-file');
+    expect(kc.data.get('device-udid')).toBe(JSON.stringify('raw-file'));
+    expect(await createKeychainBackedStorage(memFile(), kc).get('device-udid')).toBeNull();
+  });
 });
