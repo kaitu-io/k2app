@@ -60,7 +60,8 @@
     "deleteFinalWarning": "最終確認：下のボタンを押すと、アカウントは直ちに完全に削除されます。",
     "deleteTypePrompt": "完全削除を確認するには「{{word}}」と入力してください",
     "deleteConfirmWord": "削除",
-    "deleteFinalButton": "アカウントを完全に削除"
+    "deleteFinalButton": "アカウントを完全に削除",
+    "bindBanner": "メールまたは Apple でサインインを設定すると、{{count}} 台のデバイスで使えます"
   },
   "developerModeActivated": "開発者モードが有効になりました",
   "logLevel": "ログレベル",

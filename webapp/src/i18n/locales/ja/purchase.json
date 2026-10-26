@@ -50,7 +50,12 @@
       "perYear": "/年",
       "startTrial": "{{days}} 日間無料で試す",
       "trialDisclosure": "{{days}} 日間の無料体験後、{{price}}/年 で自動更新され、Apple ID に請求されます。無料体験終了の少なくとも 24 時間前までに App Store で解約すれば、請求されません。",
-      "haveAccountLogin": "アカウントをお持ちの方はログイン"
+      "haveAccountLogin": "アカウントをお持ちの方はログイン",
+      "trialStatusTag": "無料トライアル中",
+      "trialDaysLeft": "トライアル残り {{days}} 日",
+      "trialTotal": "全 {{days}} 日",
+      "trialRenewNote": "{{date}} から {{price}}/年 で自動更新されます。続けない場合は、終了の 24 時間前までにキャンセルしてください。",
+      "trialRenewNoteNoPrice": "{{date}} から自動更新されます。続けない場合は、終了の 24 時間前までにキャンセルしてください。"
     },
     "title": "プランを購入",
     "memberBenefits": "会員特典",

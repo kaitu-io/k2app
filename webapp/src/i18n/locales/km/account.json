@@ -82,7 +82,8 @@
     "deleteFinalWarning": "ការបញ្ជាក់ចុងក្រោយ៖ នៅពេលអ្នកចុចប៊ូតុងខាងក្រោម គណនីរបស់អ្នកនឹងត្រូវលុបជាអចិន្ត្រៃយ៍ភ្លាមៗ។",
     "deleteTypePrompt": "វាយ \"{{word}}\" ដើម្បីបញ្ជាក់ការលុបជាអចិន្ត្រៃយ៍",
     "deleteConfirmWord": "DELETE",
-    "deleteFinalButton": "លុបគណនីជាអចិន្ត្រៃយ៍"
+    "deleteFinalButton": "លុបគណនីជាអចិន្ត្រៃយ៍",
+    "bindBanner": "ភ្ជាប់អ៊ីមែល ឬចូលដោយ Apple ដើម្បីប្រើលើឧបករណ៍រហូតដល់ {{count}} គ្រឿង"
   },
   "betaProgram": {
     "title": "កម្មវិធីបេតា",

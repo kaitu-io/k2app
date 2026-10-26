@@ -50,7 +50,12 @@
       "perYear": "/año",
       "startTrial": "Prueba gratis {{days}} días",
       "trialDisclosure": "Gratis durante {{days}} días; después {{price}}/año con renovación automática, cobrado a tu Apple ID. Cancela en la App Store al menos 24 horas antes de que termine la prueba y no se te cobrará.",
-      "haveAccountLogin": "¿Ya tienes cuenta? Inicia sesión"
+      "haveAccountLogin": "¿Ya tienes cuenta? Inicia sesión",
+      "trialStatusTag": "Prueba gratuita activa",
+      "trialDaysLeft": "Quedan {{days}} días de prueba",
+      "trialTotal": "{{days}} días en total",
+      "trialRenewNote": "Se renueva automáticamente a {{price}}/año desde el {{date}}. Si no quieres continuar, cancela al menos 24 horas antes de que termine.",
+      "trialRenewNoteNoPrice": "Se renueva automáticamente desde el {{date}}. Si no quieres continuar, cancela al menos 24 horas antes de que termine."
     },
     "title": "Comprar Plan",
     "memberBenefits": "Beneficios de Membresía",

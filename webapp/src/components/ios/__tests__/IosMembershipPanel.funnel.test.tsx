@@ -15,7 +15,8 @@ vi.mock('../../../services/stats', () => ({
   },
 }));
 vi.mock('../../../hooks/useIapPurchase', () => ({
-  useIapPurchase: () => ({ restore: vi.fn(), restoring: false, purchaseError: null, lastGrantedUser: null }),
+  IAP_PRODUCT_IDS: ['io.kaitu.sub.basic.1y'],
+  useIapPurchase: () => ({ products: [], loadProducts: vi.fn(), restore: vi.fn(), restoring: false, purchaseError: null, lastGrantedUser: null }),
 }));
 vi.mock('../../../hooks/useStripeCheckout', () => ({
   useStripeCheckout: () => ({ checkout: vi.fn(), openPortal: vi.fn(), loading: false, error: null, clearError: vi.fn() }),

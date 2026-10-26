@@ -24,7 +24,8 @@ const user = { expiredAt: 1_700_000_000 + 200 * 86400, maxDevice: 5, maxRouterDe
 const mockOpenPortal = vi.fn();
 
 vi.mock('../../../hooks/useIapPurchase', () => ({
-  useIapPurchase: () => ({ restore, restoring, purchaseError, lastGrantedUser: null }),
+  IAP_PRODUCT_IDS: ['io.kaitu.sub.basic.1y'],
+  useIapPurchase: () => ({ products: [], loadProducts: vi.fn(), restore, restoring, purchaseError, lastGrantedUser: null }),
 }));
 vi.mock('../../../hooks/useStripeCheckout', () => ({
   useStripeCheckout: () => ({

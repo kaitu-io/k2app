@@ -50,7 +50,12 @@
       "perYear": "/year",
       "startTrial": "Try free for {{days}} days",
       "trialDisclosure": "Free for {{days}} days, then {{price}}/year, renewing automatically and charged to your Apple ID. Cancel in the App Store at least 24 hours before the trial ends and you won't be charged.",
-      "haveAccountLogin": "Already have an account? Log in"
+      "haveAccountLogin": "Already have an account? Log in",
+      "trialStatusTag": "Free trial",
+      "trialDaysLeft": "{{days}} days left in trial",
+      "trialTotal": "{{days}} days total",
+      "trialRenewNote": "Renews automatically at {{price}}/year from {{date}}. To stop, cancel at least 24 hours before the trial ends.",
+      "trialRenewNoteNoPrice": "Renews automatically from {{date}}. To stop, cancel at least 24 hours before the trial ends."
     },
     "title": "Purchase plan",
     "memberBenefits": "Membership Benefits",

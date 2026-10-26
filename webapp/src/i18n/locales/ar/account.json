@@ -82,7 +82,8 @@
     "deleteFinalWarning": "التأكيد الأخير: بمجرد الضغط على الزر أدناه سيُحذف حسابك نهائيًا وفورًا.",
     "deleteTypePrompt": "اكتب «{{word}}» لتأكيد الحذف النهائي",
     "deleteConfirmWord": "DELETE",
-    "deleteFinalButton": "حذف الحساب نهائيًا"
+    "deleteFinalButton": "حذف الحساب نهائيًا",
+    "bindBanner": "اربط بريدًا إلكترونيًا أو تسجيل الدخول باستخدام Apple لاستخدامه على ما يصل إلى {{count}} أجهزة"
   },
   "betaProgram": {
     "title": "برنامج بيتا",

@@ -82,7 +82,8 @@
     "deleteFinalWarning": "Dernière confirmation : dès que vous appuyez sur le bouton ci-dessous, votre compte est supprimé définitivement et immédiatement.",
     "deleteTypePrompt": "Saisissez « {{word}} » pour confirmer la suppression définitive",
     "deleteConfirmWord": "SUPPRIMER",
-    "deleteFinalButton": "Supprimer définitivement le compte"
+    "deleteFinalButton": "Supprimer définitivement le compte",
+    "bindBanner": "Associez un e-mail ou « Se connecter avec Apple » pour l’utiliser sur {{count}} appareils"
   },
   "betaProgram": {
     "title": "Programme bêta",

@@ -50,7 +50,12 @@
       "perYear": "/tahun",
       "startTrial": "Coba gratis {{days}} hari",
       "trialDisclosure": "Gratis {{days}} hari, lalu {{price}}/tahun dan diperpanjang otomatis, ditagihkan ke Apple ID Anda. Batalkan di App Store paling lambat 24 jam sebelum masa uji coba berakhir agar tidak ditagih.",
-      "haveAccountLogin": "Sudah punya akun? Masuk"
+      "haveAccountLogin": "Sudah punya akun? Masuk",
+      "trialStatusTag": "Uji coba gratis berjalan",
+      "trialDaysLeft": "Sisa uji coba {{days}} hari",
+      "trialTotal": "Total {{days}} hari",
+      "trialRenewNote": "Diperpanjang otomatis seharga {{price}}/tahun mulai {{date}}. Jika tidak ingin lanjut, batalkan paling lambat 24 jam sebelum berakhir.",
+      "trialRenewNoteNoPrice": "Diperpanjang otomatis mulai {{date}}. Jika tidak ingin lanjut, batalkan paling lambat 24 jam sebelum berakhir."
     },
     "title": "Beli Paket",
     "memberBenefits": "Manfaat Keanggotaan",

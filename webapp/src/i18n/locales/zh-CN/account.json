@@ -82,7 +82,8 @@
     "deleteFinalWarning": "最后一次确认：点击下方按钮后，账号将立即被永久删除。",
     "deleteTypePrompt": "请输入「{{word}}」以确认永久注销",
     "deleteConfirmWord": "注销",
-    "deleteFinalButton": "永久注销账号"
+    "deleteFinalButton": "永久注销账号",
+    "bindBanner": "绑定邮箱或 Apple 登录，就能在 {{count}} 台设备上用"
   },
   "betaProgram": {
     "title": "Beta 测试计划",

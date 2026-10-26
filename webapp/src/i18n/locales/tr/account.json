@@ -82,7 +82,8 @@
     "deleteFinalWarning": "Son onay: aşağıdaki düğmeye dokunduğunuz anda hesabınız kalıcı olarak silinir.",
     "deleteTypePrompt": "Kalıcı silme işlemini onaylamak için \"{{word}}\" yazın",
     "deleteConfirmWord": "DELETE",
-    "deleteFinalButton": "Hesabı kalıcı olarak sil"
+    "deleteFinalButton": "Hesabı kalıcı olarak sil",
+    "bindBanner": "E-posta veya Apple ile Giriş bağlayın, {{count}} cihaza kadar kullanın"
   },
   "betaProgram": {
     "title": "Beta Programı",

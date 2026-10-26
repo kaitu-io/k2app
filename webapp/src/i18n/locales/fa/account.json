@@ -82,7 +82,8 @@
     "deleteFinalWarning": "تأیید نهایی: به محض لمس دکمه زیر، حساب شما فوراً و برای همیشه حذف می‌شود.",
     "deleteTypePrompt": "برای تأیید حذف دائمی، «{{word}}» را تایپ کنید",
     "deleteConfirmWord": "DELETE",
-    "deleteFinalButton": "حذف دائمی حساب"
+    "deleteFinalButton": "حذف دائمی حساب",
+    "bindBanner": "ایمیل یا ورود با Apple را متصل کنید تا روی حداکثر {{count}} دستگاه استفاده کنید"
   },
   "betaProgram": {
     "title": "برنامه بتا",

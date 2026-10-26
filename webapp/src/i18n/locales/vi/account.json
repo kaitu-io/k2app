@@ -82,7 +82,8 @@
     "deleteFinalWarning": "Xác nhận lần cuối: ngay khi bạn nhấn nút bên dưới, tài khoản của bạn sẽ bị xóa vĩnh viễn tức thì.",
     "deleteTypePrompt": "Nhập \"{{word}}\" để xác nhận xóa vĩnh viễn",
     "deleteConfirmWord": "DELETE",
-    "deleteFinalButton": "Xóa vĩnh viễn tài khoản"
+    "deleteFinalButton": "Xóa vĩnh viễn tài khoản",
+    "bindBanner": "Liên kết email hoặc Đăng nhập bằng Apple để dùng trên tối đa {{count}} thiết bị"
   },
   "betaProgram": {
     "title": "Chương trình Beta",

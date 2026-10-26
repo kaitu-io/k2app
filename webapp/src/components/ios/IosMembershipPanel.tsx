@@ -3,6 +3,7 @@
  *
  * 组合（容器只编排，每个模块独立文件）：
  *   RenewalStatusCard  — 续订状态 + 到期倒计时（P0 核心，防流失）
+ *   TrialStatusCard    — 订阅处于 Apple 免费试用期（isTrial）时取代上一项（设计稿 ②）
  *   MembershipBenefits — 权益回顾（复用，数据取自 user 配额）
  *   InviteRewardCard   — 免费增长闭环（Apple 合规，仅 inviteReward 存在时）
  *   MembershipActions  — 付费记录 + 恢复购买（Restore 两态常驻，Apple 强制）
@@ -17,7 +18,7 @@ import { Box, Stack, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import type { DataSubscription } from '../../services/api-types';
-import { useIapPurchase } from '../../hooks/useIapPurchase';
+import { useIapPurchase, IAP_PRODUCT_IDS } from '../../hooks/useIapPurchase';
 import { useStripeCheckout } from '../../hooks/useStripeCheckout';
 import { useUser } from '../../hooks/useUser';
 import { useAppConfig } from '../../hooks/useAppConfig';
@@ -26,6 +27,7 @@ import { useAlert } from '../../stores/alert.store';
 import { statsService } from '../../services/stats';
 import MembershipBenefits from '../MembershipBenefits';
 import RenewalStatusCard from './RenewalStatusCard';
+import TrialStatusCard from './TrialStatusCard';
 import InviteRewardCard from './InviteRewardCard';
 import MembershipActions from './MembershipActions';
 
@@ -43,7 +45,14 @@ export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPan
   const navigate = useNavigate();
   const { user, fetchUser } = useUser();
   const { appConfig } = useAppConfig();
-  const { restore, restoring, purchaseError, lastGrantedUser } = useIapPurchase();
+  const { products, loadProducts, restore, restoring, purchaseError, lastGrantedUser } = useIapPurchase();
+  const isTrial = activeSub?.isTrial === true;
+
+  // 试用卡的总天数 / 续订价格来自 StoreKit 商品——只在试用态才去取。
+  useEffect(() => {
+    if (isTrial) void loadProducts();
+  }, [isTrial, loadProducts]);
+  const trialProduct = products.find((p) => p.id === IAP_PRODUCT_IDS[0]) ?? products[0];
   const { openPortal } = useStripeCheckout();
   const { showAlert } = useAlert();
 
@@ -83,14 +92,22 @@ export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPan
           {t('purchase:purchase.iap.membershipTitle')}
         </Typography>
 
-        {/* 续订状态 + 到期倒计时 */}
-        <RenewalStatusCard
-          mode={mode}
-          autoRenew={activeSub?.autoRenew}
-          periodEndSec={activeSub?.currentPeriodEnd}
-          expiredAtSec={user?.expiredAt ?? 0}
-          onManage={openManage}
-        />
+        {/* 试用中：试用卡；否则续订状态 + 到期倒计时 */}
+        {isTrial ? (
+          <TrialStatusCard
+            trialEndsAtSec={activeSub?.trialEndsAt ?? 0}
+            product={trialProduct}
+            onManage={openManage}
+          />
+        ) : (
+          <RenewalStatusCard
+            mode={mode}
+            autoRenew={activeSub?.autoRenew}
+            periodEndSec={activeSub?.currentPeriodEnd}
+            expiredAtSec={user?.expiredAt ?? 0}
+            onManage={openManage}
+          />
+        )}
 
         {/* 权益回顾 — 配额取自用户档（tier quota） */}
         <MembershipBenefits

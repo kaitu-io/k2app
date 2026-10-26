@@ -50,7 +50,12 @@
       "perYear": "/yıl",
       "startTrial": "{{days}} gün ücretsiz deneyin",
       "trialDisclosure": "{{days}} gün ücretsiz, ardından {{price}}/yıl olarak otomatik yenilenir ve Apple Kimliğinizden tahsil edilir. Deneme bitmeden en az 24 saat önce App Store'da iptal ederseniz ücret alınmaz.",
-      "haveAccountLogin": "Zaten hesabınız var mı? Giriş yapın"
+      "haveAccountLogin": "Zaten hesabınız var mı? Giriş yapın",
+      "trialStatusTag": "Ücretsiz deneme sürüyor",
+      "trialDaysLeft": "Denemenin bitmesine {{days}} gün",
+      "trialTotal": "Toplam {{days}} gün",
+      "trialRenewNote": "{{date}} tarihinden itibaren yıllık {{price}} ile otomatik yenilenir. Devam etmek istemiyorsanız bitişten en az 24 saat önce iptal edin.",
+      "trialRenewNoteNoPrice": "{{date}} tarihinden itibaren otomatik yenilenir. Devam etmek istemiyorsanız bitişten en az 24 saat önce iptal edin."
     },
     "title": "Satın Al Plan",
     "memberBenefits": "Üyelik Avantajları",

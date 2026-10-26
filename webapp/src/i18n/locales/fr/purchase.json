@@ -50,7 +50,12 @@
       "perYear": "/an",
       "startTrial": "Essai gratuit de {{days}} jours",
       "trialDisclosure": "Gratuit pendant {{days}} jours, puis {{price}}/an avec renouvellement automatique, facturé sur votre identifiant Apple. Annulez dans l'App Store au moins 24 heures avant la fin de l'essai et vous ne serez pas facturé.",
-      "haveAccountLogin": "Déjà un compte ? Se connecter"
+      "haveAccountLogin": "Déjà un compte ? Se connecter",
+      "trialStatusTag": "Essai gratuit en cours",
+      "trialDaysLeft": "Plus que {{days}} jours d’essai",
+      "trialTotal": "{{days}} jours au total",
+      "trialRenewNote": "Renouvellement automatique à {{price}}/an à partir du {{date}}. Pour arrêter, annulez au moins 24 heures avant la fin.",
+      "trialRenewNoteNoPrice": "Renouvellement automatique à partir du {{date}}. Pour arrêter, annulez au moins 24 heures avant la fin."
     },
     "title": "Plan d'achat",
     "memberBenefits": "Avantages de l'adhésion",

@@ -82,7 +82,8 @@
     "deleteFinalWarning": "Pengesahan terakhir: sebaik sahaja anda mengetik butang di bawah, akaun anda dipadam secara kekal serta-merta.",
     "deleteTypePrompt": "Taip \"{{word}}\" untuk mengesahkan pemadaman kekal",
     "deleteConfirmWord": "PADAM",
-    "deleteFinalButton": "Padam akaun secara kekal"
+    "deleteFinalButton": "Padam akaun secara kekal",
+    "bindBanner": "Pautkan e-mel atau Log masuk dengan Apple untuk guna pada sehingga {{count}} peranti"
   },
   "betaProgram": {
     "title": "Program Beta",

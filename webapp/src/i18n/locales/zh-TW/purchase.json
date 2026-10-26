@@ -50,7 +50,12 @@
       "perYear": "/年",
       "startTrial": "免費試用 {{days}} 天",
       "trialDisclosure": "免費試用 {{days}} 天，之後按 {{price}}/年 自動續訂，透過 Apple ID 扣款。試用結束前至少 24 小時在 App Store 取消，就不會扣款。",
-      "haveAccountLogin": "已有帳號？登入"
+      "haveAccountLogin": "已有帳號？登入",
+      "trialStatusTag": "免費試用中",
+      "trialDaysLeft": "試用還剩 {{days}} 天",
+      "trialTotal": "共 {{days}} 天",
+      "trialRenewNote": "{{date}} 起按 {{price}}/年 自動續訂。不想繼續，在到期前至少 24 小時取消即可。",
+      "trialRenewNoteNoPrice": "{{date}} 起自動續訂。不想繼續，在到期前至少 24 小時取消即可。"
     },
     "title": "購買方案",
     "memberBenefits": "會員權益",

@@ -50,7 +50,12 @@
       "perYear": "/anno",
       "startTrial": "Prova gratis per {{days}} giorni",
       "trialDisclosure": "Gratis per {{days}} giorni, poi {{price}}/anno con rinnovo automatico, addebitato sul tuo ID Apple. Annulla nell'App Store almeno 24 ore prima della fine della prova e non ti verrà addebitato nulla.",
-      "haveAccountLogin": "Hai già un account? Accedi"
+      "haveAccountLogin": "Hai già un account? Accedi",
+      "trialStatusTag": "Prova gratuita in corso",
+      "trialDaysLeft": "Ancora {{days}} giorni di prova",
+      "trialTotal": "{{days}} giorni in totale",
+      "trialRenewNote": "Rinnovo automatico a {{price}}/anno dal {{date}}. Per non continuare, annulla almeno 24 ore prima della scadenza.",
+      "trialRenewNoteNoPrice": "Rinnovo automatico dal {{date}}. Per non continuare, annulla almeno 24 ore prima della scadenza."
     },
     "title": "Acquista Piano",
     "memberBenefits": "Vantaggi dell'Iscrizione",

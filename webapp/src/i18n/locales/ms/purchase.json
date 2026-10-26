@@ -50,7 +50,12 @@
       "perYear": "/tahun",
       "startTrial": "Cuba percuma {{days}} hari",
       "trialDisclosure": "Percuma {{days}} hari, kemudian {{price}}/tahun dengan pembaharuan automatik, dicaj kepada Apple ID anda. Batalkan di App Store sekurang-kurangnya 24 jam sebelum percubaan tamat dan anda tidak akan dicaj.",
-      "haveAccountLogin": "Sudah ada akaun? Log masuk"
+      "haveAccountLogin": "Sudah ada akaun? Log masuk",
+      "trialStatusTag": "Percubaan percuma sedang berjalan",
+      "trialDaysLeft": "Baki percubaan {{days}} hari",
+      "trialTotal": "Jumlah {{days}} hari",
+      "trialRenewNote": "Diperbaharui secara automatik pada {{price}}/tahun mulai {{date}}. Jika tidak mahu teruskan, batalkan sekurang-kurangnya 24 jam sebelum tamat.",
+      "trialRenewNoteNoPrice": "Diperbaharui secara automatik mulai {{date}}. Jika tidak mahu teruskan, batalkan sekurang-kurangnya 24 jam sebelum tamat."
     },
     "title": "Beli Pelan",
     "memberBenefits": "Faedah Keahlian",

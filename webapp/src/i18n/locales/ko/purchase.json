@@ -50,7 +50,12 @@
       "perYear": "/년",
       "startTrial": "{{days}}일 무료 체험",
       "trialDisclosure": "{{days}}일 무료 체험 후 {{price}}/년으로 자동 갱신되며 Apple ID로 청구됩니다. 체험 종료 최소 24시간 전에 App Store에서 취소하면 요금이 청구되지 않습니다.",
-      "haveAccountLogin": "이미 계정이 있나요? 로그인"
+      "haveAccountLogin": "이미 계정이 있나요? 로그인",
+      "trialStatusTag": "무료 체험 중",
+      "trialDaysLeft": "체험 {{days}}일 남음",
+      "trialTotal": "총 {{days}}일",
+      "trialRenewNote": "{{date}}부터 연 {{price}}에 자동 갱신됩니다. 계속하지 않으려면 종료 최소 24시간 전에 취소하세요.",
+      "trialRenewNoteNoPrice": "{{date}}부터 자동 갱신됩니다. 계속하지 않으려면 종료 최소 24시간 전에 취소하세요."
     },
     "title": "플랜 구매",
     "memberBenefits": "멤버십 혜택",

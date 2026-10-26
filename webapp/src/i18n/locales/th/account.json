@@ -82,7 +82,8 @@
     "deleteFinalWarning": "การยืนยันครั้งสุดท้าย: ทันทีที่คุณแตะปุ่มด้านล่าง บัญชีของคุณจะถูกลบอย่างถาวรในทันที",
     "deleteTypePrompt": "พิมพ์ \"{{word}}\" เพื่อยืนยันการลบอย่างถาวร",
     "deleteConfirmWord": "DELETE",
-    "deleteFinalButton": "ลบบัญชีอย่างถาวร"
+    "deleteFinalButton": "ลบบัญชีอย่างถาวร",
+    "bindBanner": "ผูกอีเมลหรือลงชื่อเข้าด้วย Apple เพื่อใช้ได้สูงสุด {{count}} อุปกรณ์"
   },
   "betaProgram": {
     "title": "โปรแกรมเบต้า",

@@ -50,7 +50,12 @@
       "perYear": "/Jahr",
       "startTrial": "{{days}} Tage gratis testen",
       "trialDisclosure": "{{days}} Tage gratis, danach {{price}}/Jahr mit automatischer Verlängerung, abgerechnet über deine Apple-ID. Kündige mindestens 24 Stunden vor Ende der Testphase im App Store, dann fallen keine Kosten an.",
-      "haveAccountLogin": "Schon ein Konto? Anmelden"
+      "haveAccountLogin": "Schon ein Konto? Anmelden",
+      "trialStatusTag": "Kostenlose Testphase",
+      "trialDaysLeft": "Noch {{days}} Tage Testphase",
+      "trialTotal": "{{days}} Tage insgesamt",
+      "trialRenewNote": "Ab {{date}} automatische Verlängerung für {{price}}/Jahr. Wenn du nicht weitermachen willst, kündige mindestens 24 Stunden vor Ablauf.",
+      "trialRenewNoteNoPrice": "Ab {{date}} automatische Verlängerung. Wenn du nicht weitermachen willst, kündige mindestens 24 Stunden vor Ablauf."
     },
     "title": "Kauf-Plan",
     "memberBenefits": "Mitgliedschaftsvorteile",

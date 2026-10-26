@@ -82,7 +82,8 @@
     "deleteFinalWarning": "Confirmación final: en cuanto toques el botón de abajo, tu cuenta se eliminará de forma permanente y al instante.",
     "deleteTypePrompt": "Escribe «{{word}}» para confirmar la eliminación permanente",
     "deleteConfirmWord": "ELIMINAR",
-    "deleteFinalButton": "Eliminar la cuenta permanentemente"
+    "deleteFinalButton": "Eliminar la cuenta permanentemente",
+    "bindBanner": "Vincula un correo o Iniciar sesión con Apple para usarlo en hasta {{count}} dispositivos"
   },
   "betaProgram": {
     "title": "Programa Beta",

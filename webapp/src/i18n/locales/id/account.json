@@ -82,7 +82,8 @@
     "deleteFinalWarning": "Konfirmasi terakhir: begitu Anda mengetuk tombol di bawah, akun Anda langsung dihapus secara permanen.",
     "deleteTypePrompt": "Ketik \"{{word}}\" untuk mengonfirmasi penghapusan permanen",
     "deleteConfirmWord": "HAPUS",
-    "deleteFinalButton": "Hapus akun secara permanen"
+    "deleteFinalButton": "Hapus akun secara permanen",
+    "bindBanner": "Tautkan email atau Masuk dengan Apple untuk memakainya di hingga {{count}} perangkat"
   },
   "betaProgram": {
     "title": "Program Beta",

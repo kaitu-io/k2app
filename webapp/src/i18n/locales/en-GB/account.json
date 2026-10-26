@@ -60,7 +60,8 @@
     "deleteFinalWarning": "Final confirmation: once you tap the button below, your account is permanently deleted at once.",
     "deleteTypePrompt": "Type \"{{word}}\" to confirm permanent deletion",
     "deleteConfirmWord": "DELETE",
-    "deleteFinalButton": "Permanently delete account"
+    "deleteFinalButton": "Permanently delete account",
+    "bindBanner": "Add an email or Sign in with Apple to use it on up to {{count}} devices"
   },
   "developerModeActivated": "Developer mode enabled",
   "logLevel": "Log Level",

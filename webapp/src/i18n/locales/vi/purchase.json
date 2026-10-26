@@ -50,7 +50,12 @@
       "perYear": "/năm",
       "startTrial": "Dùng thử miễn phí {{days}} ngày",
       "trialDisclosure": "Miễn phí {{days}} ngày, sau đó tự động gia hạn {{price}}/năm, tính phí qua Apple ID. Hủy trong App Store ít nhất 24 giờ trước khi hết thời gian dùng thử thì sẽ không bị tính phí.",
-      "haveAccountLogin": "Đã có tài khoản? Đăng nhập"
+      "haveAccountLogin": "Đã có tài khoản? Đăng nhập",
+      "trialStatusTag": "Đang dùng thử miễn phí",
+      "trialDaysLeft": "Còn {{days}} ngày dùng thử",
+      "trialTotal": "Tổng {{days}} ngày",
+      "trialRenewNote": "Tự động gia hạn với giá {{price}}/năm từ {{date}}. Nếu không muốn tiếp tục, hãy hủy ít nhất 24 giờ trước khi hết hạn.",
+      "trialRenewNoteNoPrice": "Tự động gia hạn từ {{date}}. Nếu không muốn tiếp tục, hãy hủy ít nhất 24 giờ trước khi hết hạn."
     },
     "title": "Gói mua",
     "memberBenefits": "Lợi ích thành viên",

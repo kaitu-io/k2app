@@ -60,7 +60,8 @@
     "deleteFinalWarning": "最後一次確認：點擊下方按鈕後，帳號將立即被永久刪除。",
     "deleteTypePrompt": "請輸入「{{word}}」以確認永久註銷",
     "deleteConfirmWord": "註銷",
-    "deleteFinalButton": "永久註銷帳號"
+    "deleteFinalButton": "永久註銷帳號",
+    "bindBanner": "綁定電郵或 Apple 登入，就能喺 {{count}} 部裝置上使用"
   },
   "developerModeActivated": "開發者模式已開啟",
   "logLevel": "日誌級別",

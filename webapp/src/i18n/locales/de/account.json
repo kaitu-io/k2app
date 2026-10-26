@@ -82,7 +82,8 @@
     "deleteFinalWarning": "Letzte Bestätigung: Sobald du auf die Schaltfläche unten tippst, wird dein Konto sofort und endgültig gelöscht.",
     "deleteTypePrompt": "Gib „{{word}}“ ein, um die endgültige Löschung zu bestätigen",
     "deleteConfirmWord": "DELETE",
-    "deleteFinalButton": "Konto endgültig löschen"
+    "deleteFinalButton": "Konto endgültig löschen",
+    "bindBanner": "E-Mail oder „Mit Apple anmelden“ verknüpfen und auf bis zu {{count}} Geräten nutzen"
   },
   "betaProgram": {
     "title": "Beta-Programm",
