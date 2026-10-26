@@ -116,6 +116,31 @@ describe('Account — 零身份设备账号', () => {
     expect(m.openLogin).toHaveBeenCalledTimes(1);
   });
 
+  it('Keychain 新壳 + 用户信息没加载出来（拉取失败）：不出切换账号按钮', () => {
+    vi.mocked(useUser).mockReturnValue({
+      user: null, loading: false, isMembership: false, isExpired: false, fetchUser: vi.fn(),
+    } as any);
+    render(<Account />);
+    expect(screen.queryByText(i18n.t('account:account.switchAccount'))).toBeNull();
+  });
+
+  it('Keychain 新壳 + 用户信息加载中：不出切换账号按钮', () => {
+    vi.mocked(useUser).mockReturnValue({
+      user: null, loading: true, isMembership: false, isExpired: false, fetchUser: vi.fn(),
+    } as any);
+    render(<Account />);
+    expect(screen.queryByText(i18n.t('account:account.switchAccount'))).toBeNull();
+  });
+
+  it('旧壳（无 keychainIdentity）+ 用户信息没加载出来：切换账号按钮照旧', () => {
+    (window as any)._platform.keychainIdentity = undefined;
+    vi.mocked(useUser).mockReturnValue({
+      user: null, loading: false, isMembership: false, isExpired: false, fetchUser: vi.fn(),
+    } as any);
+    render(<Account />);
+    expect(screen.getByText(i18n.t('account:account.switchAccount'))).toBeInTheDocument();
+  });
+
   it('有邮箱身份：保持原样（切换账号按钮在，无用户 ID 行）', () => {
     setUser({ uuid: UUID, expiredAt: 4102444800, loginIdentifies: [{ type: 'email', value: 'a@b.com' }] }, true);
     render(<Account />);

@@ -106,6 +106,10 @@ export default function Account() {
     isAuthenticated &&
     !!user &&
     !(user.loginIdentifies?.length > 0);
+  // Keychain 新壳上 user 没加载出来（加载中，或 /api/user/info 失败）= 身份未知，不能当成有身份：
+  // 对零身份账号点「切换账号」会作废设备账号的 token（spec §4.4）。身份确认之前不出退出按钮。
+  const identityUnknown =
+    window._platform?.keychainIdentity === true && isAuthenticated && !user;
   useEffect(() => {
     let version = window._platform!.version;
     // iOS App Store 审核要求：版本号不能包含 beta 后缀（如 0.4.0-beta.4），
@@ -995,7 +999,7 @@ export default function Account() {
       </Dialog>
 
       {/* 切换账号按钮 - 仅登录状态显示 */}
-      {isAuthenticated && !zeroIdentity && (
+      {isAuthenticated && !zeroIdentity && !identityUnknown && (
         <Box sx={{ mt: 1, display: "flex", justifyContent: "center", gap: 1.5 }}>
           <Button
             variant="outlined"
