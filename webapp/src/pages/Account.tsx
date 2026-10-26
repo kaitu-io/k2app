@@ -225,11 +225,15 @@ export default function Account() {
 
   // Display time formatting (matching AppBarMembership)
   const displayTime = user?.expiredAt ? formatDate(user.expiredAt) : "-";
+  // 从未开通（如免登录新建的设备账号）：不是「已过期」，别用错误色吓人，
+  // 也没有过期日期可显示
+  const neverSubscribed = !!user && !user.expiredAt;
 
   // Get status label and colors
   const getStatusLabel = () => {
     if (isNotLoggedIn) return t('account:account.notLoggedIn', '未登录');
     if (hasError) return t('common:common.loadFailed');
+    if (neverSubscribed) return t('account:account.notSubscribed');
     if (isExpired) return t('nav:appBarMembership.expired');
     return t('nav:appBarMembership.standard');
   };
@@ -237,6 +241,7 @@ export default function Account() {
   const getStatusColor = () => {
     if (isNotLoggedIn) return 'info';
     if (hasError) return 'warning';
+    if (neverSubscribed) return 'info';
     if (isExpired) return 'error';
     return 'success';
   };
@@ -244,6 +249,7 @@ export default function Account() {
   const getStatusIcon = () => {
     if (isNotLoggedIn) return <MembershipIcon sx={{ fontSize: 20 }} color="info" />;
     if (hasError) return <ErrorIcon sx={{ fontSize: 20 }} />;
+    if (neverSubscribed) return <MembershipIcon sx={{ fontSize: 20 }} color="info" />;
     if (isExpired) return <ErrorIcon sx={{ fontSize: 20 }} />;
     return <CheckCircleIcon sx={{ fontSize: 20 }} />;
   };
@@ -251,7 +257,7 @@ export default function Account() {
   // Get membership card background gradient
   const getMembershipCardBackground = () => {
     if (loading) return muiTheme.palette.background.paper;
-    if (isNotLoggedIn) {
+    if (isNotLoggedIn || neverSubscribed) {
       return `linear-gradient(135deg, ${colors.infoBgLight} 0%, ${colors.infoBgLighter} 100%)`;
     }
     if (hasError) {
@@ -268,6 +274,7 @@ export default function Account() {
     if (loading) return colors.divider;
     if (isNotLoggedIn) return colors.infoBorder;
     if (hasError) return colors.warningBorder;
+    if (neverSubscribed) return colors.infoBorder;
     if (isExpired) return colors.errorBorder;
     return colors.successBorder;
   };
@@ -375,6 +382,7 @@ export default function Account() {
                   size="small"
                   sx={{ fontWeight: 600, fontSize: '0.7rem', height: 22 }}
                 />
+                {!neverSubscribed && (
                 <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5 }}>
                   <Typography
                     variant="caption"
@@ -397,6 +405,7 @@ export default function Account() {
                     {displayTime}
                   </Typography>
                 </Box>
+                )}
                 {/* Quota info */}
                 {user?.tier && (
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
@@ -476,7 +485,7 @@ export default function Account() {
                     mt: 0.5
                   }}
                 >
-                  {t('account:account.renewNow')}
+                  {t(neverSubscribed ? 'account:account.subscribeNow' : 'account:account.renewNow')}
                 </Button>
               )}
               {!isNotLoggedIn && !hasError && !purchaseSurfaceAvailable() && window._platform?.os === 'android' && (

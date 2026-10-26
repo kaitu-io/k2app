@@ -142,6 +142,12 @@ export interface ConnectionButtonProps {
    * 让出视觉焦点，否则最强的视觉元素是一个点了没用的按钮。
    */
   dormant?: boolean;
+  /**
+   * 无可选节点是因为没有会员（而不是还没选）→ 按钮保持可点，点击由调用方
+   * 引向开通/续费，按钮下方显示这句提示代替「请选择服务器」。
+   * 只在 disconnected 且无可连节点时生效。
+   */
+  upsellHint?: string;
   /** Whether network is available during error retry (true=reconnecting to server, false=waiting for network) */
   networkAvailable?: boolean;
 }
@@ -157,6 +163,7 @@ export function ConnectionButton({
   isRetrying = false,
   networkAvailable = true,
   dormant = false,
+  upsellHint,
 }: ConnectionButtonProps) {
   const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
@@ -244,10 +251,11 @@ export function ConnectionButton({
   // - 禁用 disconnecting（等待操作完成）
   // - 禁用 disconnected 且未选择 tunnel
   // - dormant：确实没有可连的节点，点击无意义（行动点是同屏的登录 CTA）
+  // - upsellHint：没节点是因为没会员，点击去开通——新用户点主按钮不能没反应
   const isButtonDisabled =
     isDisconnecting ||
     dormant ||
-    (isDisconnected && !hasTunnelSelected);
+    (isDisconnected && !hasTunnelSelected && !upsellHint);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -275,7 +283,7 @@ export function ConnectionButton({
                   variant="caption"
                   sx={{ color: fg, opacity: 0.75, fontSize: '0.7rem', maxWidth: 140, textAlign: 'center' }}
                 >
-                  {t('dashboard:dashboard.selectServerHintShort')}
+                  {upsellHint ?? t('dashboard:dashboard.selectServerHintShort')}
                 </Typography>
               ) : (tunnelName || tunnelCountry) && (
                 <Box sx={{ mt: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>

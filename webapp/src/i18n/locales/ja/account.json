@@ -39,6 +39,8 @@
     "expiryDate": "有効期限",
     "upgradeToPro": "Proにアップグレード",
     "renewNow": "今すぐ更新",
+    "notSubscribed": "未登録",
+    "subscribeNow": "今すぐ登録",
     "exitApp": "アプリを終了",
     "deleteAccount": "アカウント削除",
     "deleteAccountTitle": "危険な操作：アカウントの完全削除",

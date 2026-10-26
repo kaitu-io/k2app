@@ -29,6 +29,7 @@ import { useAuthStore, useAppRoutesStore } from "../stores";
 import { useLayoutStore } from '../stores/layout.store';
 import { tunnelListSx } from './dashboard-layout';
 import { useUser } from "../hooks/useUser";
+import { purchaseSurfaceAvailable } from '../utils/purchase-surface';
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
 import { useConnectionStore, AUTO_TUNNEL_DOMAIN, useEffectiveCloudSelection, useHasConnectableSelection, isAutoSelection } from '../stores/connection.store';
@@ -223,6 +224,14 @@ export default function Dashboard() {
   // state and the click handler's pre-connect guard.
   const hasTunnelSelected = useHasConnectableSelection();
 
+  // 无可连节点是因为没有会员（live 402）：主按钮改为引去开通/续费，
+  // 否则新用户点首页最大的按钮毫无反应。门与 CloudTunnelList 的续费按钮同一个。
+  const cloudAccessRevoked = useConnectionStore((s) => s.cloudAccessRevoked);
+  const upsellLocked = cloudAccessRevoked && !hasTunnelSelected && purchaseSurfaceAvailable();
+  const upsellHint = upsellLocked
+    ? t(user?.expiredAt ? 'dashboard:dashboard.tapToRenewHint' : 'dashboard:dashboard.tapToSubscribeHint')
+    : undefined;
+
   // Stable onSelect for CloudTunnelList — Auto row → clearCloudSelection, concrete → selectCloudTunnel
   const handleCloudTunnelSelect = useCallback((tunnel: Tunnel) => {
     if (isAutoSelection(tunnel)) {
@@ -272,6 +281,7 @@ export default function Dashboard() {
       disabled={isInteractive}
       onTunnelsLoaded={handleTunnelsLoaded}
       hideHeader
+      neverSubscribed={!!user && !user.expiredAt}
     />
   );
 
@@ -374,6 +384,11 @@ export default function Dashboard() {
       console.info('[Dashboard] handleToggleConnection: → disconnect');
       disconnect();
     } else if (isDisconnected) {
+      if (!hasTunnelSelected && upsellLocked) {
+        console.info('[Dashboard] handleToggleConnection: no membership → /purchase');
+        navigate('/purchase', { state: { from: 'connect_locked' } });
+        return;
+      }
       if (!hasTunnelSelected) {
         console.warn('[Dashboard] handleToggleConnection: no tunnel selected, aborting');
         return;
@@ -388,7 +403,7 @@ export default function Dashboard() {
     } else {
       console.warn('[Dashboard] handleToggleConnection: no matching branch (vpnState=' + vpnState + ', isRetrying=' + isRetrying + ')');
     }
-  }, [isConnected, isDisconnected, isTransitioning, vpnState, displayTunnel, hasTunnelSelected, connect, disconnect, exclusion]);
+  }, [isConnected, isDisconnected, isTransitioning, vpnState, displayTunnel, hasTunnelSelected, upsellLocked, navigate, connect, disconnect, exclusion]);
 
   // Map vpnState to ServiceState for CollapsibleConnectionSection
   const serviceState = vpnState === 'idle' ? 'disconnected'
@@ -434,6 +449,7 @@ export default function Dashboard() {
         // 未登录且没有自建节点 = 确实无处可连。让主按钮熄灭，把焦点交给
         // 下方幻影列表上的登录 CTA（未登录但已配自建节点的用户不受影响）。
         dormant={!isAuthenticated && !selfHostedTunnel}
+        upsellHint={upsellHint}
         tunnelName={
           serverMode === 'k2sub'
             ? (subsCountry === null

@@ -308,6 +308,29 @@ describe('Account', () => {
     });
   });
 
+  // 免登录新建的设备账号从未开通过会员：不能显示成「已过期」
+  describe('从未开通的账号', () => {
+    beforeEach(() => {
+      (window as any)._platform.os = 'macos';
+      vi.mocked(useUser).mockReturnValue({
+        user: createMockUser({ expiredAt: 0 }),
+        loading: false,
+        isMembership: false,
+        isExpired: true,
+        fetchUser: vi.fn(),
+      } as any);
+    });
+
+    it('显示「未开通」+「立即开通」，不显示已过期、过期日期和立即续费', () => {
+      render(<Account />);
+      expect(screen.getByText('未开通')).toBeInTheDocument();
+      expect(screen.getByText('立即开通')).toBeInTheDocument();
+      expect(screen.queryByText('已过期')).toBeNull();
+      expect(screen.queryByText(/过期日期/)).toBeNull();
+      expect(screen.queryByText(TEXT.renewNow)).toBeNull();
+    });
+  });
+
   // ==================== Task 2: iOS 购买入口屏蔽 ====================
   describe('iOS 购买入口屏蔽', () => {
     beforeEach(() => {

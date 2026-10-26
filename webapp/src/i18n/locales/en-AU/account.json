@@ -39,6 +39,8 @@
     "expiryDate": "Expiry date",
     "upgradeToPro": "Upgrade to Pro",
     "renewNow": "Renew now",
+    "notSubscribed": "Not subscribed",
+    "subscribeNow": "Subscribe now",
     "exitApp": "Exit app",
     "deleteAccount": "Delete Account",
     "deleteAccountTitle": "Danger: permanently delete account",
