@@ -1,4 +1,4 @@
-**Last updated: [Effective date]**
+**Last updated: 2026-10**
 
 ### 1. Agreement Acceptance and Effectiveness
 
@@ -83,7 +83,7 @@
 
 7.4 **How to withdraw**: Tell us by email at support@overleap.io (ideally from your account's email address, so we can find you quickly) or in any other clear way. You may use the model withdrawal form at the end of these Terms, but you don't have to. We will confirm the amount and refund it to your original payment method within 5 business days, and in any case within 14 days.
 
-7.5 **App Store purchases**: Subscriptions bought through Apple's App Store are billed by Apple. Refunds are handled by Apple under its own policy; we can't issue them. If Apple refunds a purchase, the access it paid for ends. A new device's first subscription may include a 7-day free trial; cancel in your App Store settings at least 24 hours before the trial ends to avoid being charged, otherwise it renews automatically at the subscription price. When you request a refund from Apple, if you have agreed in the app, we will provide usage information to Apple and state a preference for a pro-rata refund based on remaining time; Apple makes the final decision on whether to refund and how much.
+7.5 **App Store purchases**: Subscriptions bought through Apple's App Store are billed by Apple. Refunds are handled by Apple under its own policy; we can't issue them. If Apple refunds a purchase, the access it paid for ends.
 
 7.6 **Other refunds**: Apart from Sections 7.2–7.5 and 8.3, payments are not refundable, including for partly used periods. If the Service is not provided as described or with reasonable care, you may be entitled to a remedy such as a price reduction under consumer law. Nothing in these Terms limits rights you have under the laws of your country.
 
