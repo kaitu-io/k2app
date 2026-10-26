@@ -77,3 +77,36 @@ reason = "vitest dev-server/browser RCE — dev-only test runner, never run with
 id = "GHSA-jxxr-4gwj-5jf2"
 ignoreUntil = 2026-12-02
 reason = "brace-expansion ReDoS — dev-only via eslint/minimatch chain, never sees untrusted input"
+
+# --- vitest 3 test runner chain (2026-10-27 batch) ---
+# Same scope as GHSA-5xrq-8626-4rwp above: tinypool / @vitest/mocker are only
+# reached through vitest's worker pool and its dev-server mock endpoints, fed by
+# our own test files — never untrusted input, never in CI artifacts or prod.
+# All three clear with the vitest 4 major upgrade (tinypool 2.x).
+[[IgnoredVulns]]
+id = "GHSA-5gmw-xhrv-c9v3"
+ignoreUntil = 2027-01-27
+reason = "tinypool prototype-pollution gadget — dev-only via vitest 3 worker pool, options come from our own config; clears with vitest 4"
+
+[[IgnoredVulns]]
+id = "GHSA-85c8-ppgw-ccpr"
+ignoreUntil = 2027-01-27
+reason = "tinypool run() options gadget — dev-only via vitest 3, never fed untrusted input; clears with vitest 4"
+
+[[IgnoredVulns]]
+id = "GHSA-82fw-gwwq-j7x9"
+ignoreUntil = 2027-01-27
+reason = "vitest/@vitest/mocker redirect-mock file read — dev server only, tests run headless without --api/browser; clears with vitest 4"
+
+[[IgnoredVulns]]
+id = "GHSA-qxg6-89mg-rqv8"
+ignoreUntil = 2027-01-27
+reason = "@vitest/mocker manual-mock registration injection — dev server only, never exposed; clears with vitest 4"
+
+# --- @tailwindcss/typography build chain (web) ---
+# postcss-selector-parser 6.0.10 is exact-pinned by @tailwindcss/typography and
+# only parses our own stylesheets during `next build` — no user-supplied CSS.
+[[IgnoredVulns]]
+id = "GHSA-rj75-hqrm-r3gf"
+ignoreUntil = 2027-01-27
+reason = "postcss-selector-parser quadratic parse — build-time only on our own CSS via @tailwindcss/typography exact pin"

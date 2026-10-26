@@ -2,7 +2,7 @@
 # Binary must be pre-built and copied to this directory before docker build
 # Build: cd k2 && go build -o ../docker/k2s/k2s ./cmd/k2s
 
-FROM alpine:3.20
+FROM alpine:3.24
 
 RUN apk add --no-cache ca-certificates
 

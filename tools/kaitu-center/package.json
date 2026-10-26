@@ -16,8 +16,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "smol-toml": "^1.6.1",
+    "@modelcontextprotocol/sdk": "^1.32.0",
+    "smol-toml": "^1.9.0",
     "ssh2": "^1.16.0"
   },
   "devDependencies": {
@@ -28,14 +28,15 @@
   },
   "overrides": {
     "@hono/node-server": "^1.19.13",
-    "body-parser": "^2.3.0",
-    "hono": "^4.12.18",
+    "body-parser": "^2.4.0",
     "express-rate-limit": "^8.2.2",
-    "fast-uri": "^3.1.2",
-    "ip-address": "^10.1.1",
+    "fast-uri": "^3.1.9",
+    "hono": "^4.13.11",
+    "ip-address": "^10.7.4",
     "path-to-regexp": "^8.4.0",
     "postcss": "^8.5.10",
-    "qs": "^6.15.2",
+    "proxy-addr": "^2.0.8",
+    "qs": "^6.16.0",
     "rollup": "^4.59.0"
   },
   "engines": {

@@ -1,7 +1,7 @@
 # K2 Sidecar - registration and config generation
 # Binary must be pre-built: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o k2-sidecar .
 
-FROM alpine:3.20
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates curl
 WORKDIR /app
 COPY k2-sidecar /usr/local/bin/k2-sidecar
