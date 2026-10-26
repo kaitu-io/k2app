@@ -18,10 +18,10 @@ function LocationProbe() {
   return <div data-testid="location">{loc.pathname}</div>;
 }
 
-function renderBanner() {
+function renderBanner(path = '/') {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={['/']}>
+      <MemoryRouter initialEntries={[path]}>
         <BindDevicesBanner />
         <Routes>
           <Route path="*" element={<LocationProbe />} />
@@ -76,6 +76,11 @@ describe('BindDevicesBanner', () => {
   it('no user → not rendered', () => {
     mockUser = null;
     renderBanner();
+    expect(screen.queryByTestId('bind-devices-banner')).toBeNull();
+  });
+
+  it('not rendered on /device-install itself (the page it links to)', () => {
+    renderBanner('/device-install');
     expect(screen.queryByTestId('bind-devices-banner')).toBeNull();
   });
 

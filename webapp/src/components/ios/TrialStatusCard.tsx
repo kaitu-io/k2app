@@ -2,7 +2,7 @@
  * TrialStatusCard — iOS 会员中心的试用卡（设计稿 ②，spec 2026-10-19 §4.2）。
  *
  * 订阅 `isTrial` 时取代 RenewalStatusCard：「免费试用中」+ 剩余天数 + 续订说明 +「管理订阅」。
- * 总天数 / 进度条 / 续订价格全部来自 StoreKit 商品（trialOfferOf + displayPrice）；
+ * 总天数 / 进度条 / 续订价格全部来自 StoreKit 商品（trialLengthOf + displayPrice）；
  * 拿不到商品（加载失败、旧壳无 introOffer）时只显示剩余天数和不带价格的续订说明。
  *
  * 纯展示组件：数据走 props，无副作用。
@@ -12,7 +12,7 @@ import { Box, Button, Card, Stack, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import type { IapProduct } from '../../types/kaitu-core';
 import { daysRemaining, formatExpiryDate } from './membership-format';
-import { trialOfferOf } from './trial-offer';
+import { trialLengthOf } from './trial-offer';
 
 interface TrialStatusCardProps {
   /** 试用结束（unix 秒）。 */
@@ -28,7 +28,8 @@ export default function TrialStatusCard({ trialEndsAtSec, product, nowSec, onMan
   const { t } = useTranslation();
   const now = nowSec ?? Math.floor(Date.now() / 1000);
   const daysLeft = daysRemaining(trialEndsAtSec, now);
-  const offer = trialOfferOf(product);
+  // 试用中资格已用掉（eligible=false），总天数取商品配置的试用时长，不看资格。
+  const offer = trialLengthOf(product);
   const total = offer?.days ?? 0;
   const price = product?.displayPrice;
   const date = formatExpiryDate(trialEndsAtSec);

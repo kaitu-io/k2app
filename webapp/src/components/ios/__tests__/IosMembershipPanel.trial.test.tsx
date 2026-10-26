@@ -46,7 +46,8 @@ const sub = (over: Partial<DataSubscription> = {}): DataSubscription => ({
 const PRODUCT = {
   id: 'io.kaitu.sub.basic.1y', displayName: 'x', description: 'x', displayPrice: '¥88',
   price: 88, periodUnit: 'year', periodValue: 1,
-  isEligibleForIntroOffer: true,
+  // 试用进行中 StoreKit 报告的就是 eligible=false（已用过试用资格）。
+  isEligibleForIntroOffer: false,
   introOffer: { paymentMode: 'freeTrial', periodUnit: 'week', periodValue: 1, displayPrice: '¥0' },
 };
 

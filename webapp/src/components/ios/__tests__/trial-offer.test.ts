@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { trialOfferOf } from '../trial-offer';
+import { trialOfferOf, trialLengthOf } from '../trial-offer';
 import type { IapProduct } from '../../../types/kaitu-core';
 
 function product(over: Partial<IapProduct> = {}): IapProduct {
@@ -40,5 +40,25 @@ describe('trialOfferOf', () => {
   });
   it('non-positive period -> null', () => {
     expect(trialOfferOf(product({ isEligibleForIntroOffer: true, introOffer: offer('day', 0) }))).toBeNull();
+  });
+});
+
+describe('trialLengthOf (ignores eligibility — used during an active trial)', () => {
+  it('eligible=false still returns the trial length', () => {
+    expect(trialLengthOf(product({ isEligibleForIntroOffer: false, introOffer: offer('week', 1) }))).toEqual({ days: 7 });
+  });
+  it('eligibility field absent still returns the trial length', () => {
+    expect(trialLengthOf(product({ introOffer: offer('day', 3) }))).toEqual({ days: 3 });
+  });
+  it('payUpFront -> null', () => {
+    expect(trialLengthOf(product({ isEligibleForIntroOffer: false, introOffer: offer('week', 1, 'payUpFront') }))).toBeNull();
+  });
+  it('missing intro offer / product -> null', () => {
+    expect(trialLengthOf(product({ isEligibleForIntroOffer: false }))).toBeNull();
+    expect(trialLengthOf(undefined)).toBeNull();
+  });
+  it('year / zero period -> null', () => {
+    expect(trialLengthOf(product({ introOffer: offer('year', 1) }))).toBeNull();
+    expect(trialLengthOf(product({ introOffer: offer('week', 0) }))).toBeNull();
   });
 });

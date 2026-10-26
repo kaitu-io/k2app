@@ -3,7 +3,7 @@
  *
  * 显示条件：Keychain 身份新壳（`_platform.keychainIdentity === true`）+ 当前用户没有任何
  * 登录身份（`loginIdentifies` 为空）+ 会员未过期（试用或付费，重装丢号最痛）。点击进
- * 【其他设备安装】绑定；绑定后条件不成立自动消失。
+ * 【其他设备安装】绑定；绑定后条件不成立自动消失。在【其他设备安装】页本身不显示。
  *
  * 常驻细横幅：不可关闭、不弹窗、不阻断使用——强制绑定会撞 Apple 审核 5.1.1(v)。
  */
@@ -11,7 +11,7 @@
 import { ButtonBase, Typography } from '@mui/material';
 import { DevicesOutlined as DevicesIcon, ChevronRight as ChevronIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useUser } from '../hooks/useUser';
 
 const DEVICE_INSTALL_PATH = '/device-install';
@@ -29,9 +29,11 @@ export default function BindDevicesBanner() {
 function ZeroIdentityBanner() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { user } = useUser();
 
   const show =
+    pathname !== DEVICE_INSTALL_PATH &&
     !!user &&
     !(user.loginIdentifies?.length > 0) &&
     user.expiredAt > Math.floor(Date.now() / 1000);
