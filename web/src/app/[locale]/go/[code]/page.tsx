@@ -64,7 +64,7 @@ export default async function AdLandingPage({
       style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Helvetica Neue', 'Microsoft YaHei', sans-serif" }}
     >
       <header className="mx-auto flex w-full max-w-[1180px] items-center gap-2 px-5 py-4 lg:px-16 lg:py-6">
-        <Image src="/kaitu-icon.png" alt="" width={28} height={28} className="rounded-[8px]" />
+        <Image src={brand.logoPath} alt="" width={28} height={28} className="rounded-[8px]" />
         <span className="text-[17px] font-bold">{brand.wordmark}</span>
       </header>
       <AdLandingClient
