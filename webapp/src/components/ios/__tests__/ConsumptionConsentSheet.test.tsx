@@ -93,8 +93,10 @@ describe('ConsumptionConsentSheet', () => {
     setUser({ appleConsumptionConsent: null }); panelState();
     renderPanel();
     expect(screen.getByText(TITLE)).toBeDefined();
-    expect(screen.getByText('订阅已使用的天数')).toBeDefined();
-    expect(screen.getByText('大致使用的流量')).toBeDefined();
+    expect(screen.getByText('服务已正常提供')).toBeDefined();
+    expect(screen.getByText('这笔订阅是否含免费试用')).toBeDefined();
+    expect(screen.getByText('我们建议按剩余时长比例退款')).toBeDefined();
+    expect(screen.queryByText('大致使用的流量')).toBeNull();
     expect(screen.getByRole('button', { name: '允许' })).toBeDefined();
     expect(screen.getByRole('button', { name: '不允许' })).toBeDefined();
   });

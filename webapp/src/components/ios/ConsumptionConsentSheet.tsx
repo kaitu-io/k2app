@@ -30,8 +30,9 @@ export default function ConsumptionConsentSheet({ open, onClose }: ConsumptionCo
   };
 
   const points = [
-    t('purchase:purchase.iap.consentPointDays'),
-    t('purchase:purchase.iap.consentPointTraffic'),
+    t('purchase:purchase.iap.consentPoint1'),
+    t('purchase:purchase.iap.consentPoint2'),
+    t('purchase:purchase.iap.consentPoint3'),
   ];
 
   // 文案里 <privacy>…</privacy> 标出隐私政策链接的位置（各语言语序不同，故留在文案里）。
