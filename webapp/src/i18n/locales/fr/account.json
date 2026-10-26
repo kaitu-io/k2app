@@ -61,6 +61,8 @@
     "expiryDate": "Date d'expiration",
     "upgradeToPro": "Passer à Pro",
     "renewNow": "Renouveler maintenant",
+    "notSubscribed": "Non abonné",
+    "subscribeNow": "S’abonner maintenant",
     "exitApp": "Quitter l'application",
     "deleteAccount": "Supprimer le compte",
     "deleteAccountTitle": "Danger : suppression définitive du compte",

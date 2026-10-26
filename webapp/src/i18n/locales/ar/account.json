@@ -61,6 +61,8 @@
     "expiryDate": "تاريخ انتهاء الصلاحية",
     "upgradeToPro": "الترقية إلى Pro",
     "renewNow": "تجديد الآن",
+    "notSubscribed": "غير مشترك",
+    "subscribeNow": "اشترك الآن",
     "exitApp": "خروج من التطبيق",
     "deleteAccount": "حذف الحساب",
     "deleteAccountTitle": "تحذير: حذف الحساب نهائيًا",

@@ -49,6 +49,8 @@ interface CloudTunnelListProps {
   onTunnelsLoaded?: (tunnels: Tunnel[]) => void;
   /** Hide the "☁️ 云端节点" sticky header — use when the tab label already provides context. */
   hideHeader?: boolean;
+  /** 账号从未开通过会员（不是过期）——402 空状态改用「开通」文案 */
+  neverSubscribed?: boolean;
 }
 
 /**
@@ -69,7 +71,7 @@ export interface CloudTunnelListHandle {
 }
 
 export const CloudTunnelList = forwardRef<CloudTunnelListHandle, CloudTunnelListProps>(
-function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, hideHeader }, ref) {
+function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, hideHeader, neverSubscribed = false }, ref) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const theme = useTheme();
@@ -292,25 +294,30 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
   // Membership expired (live 402) takes priority over every other list state —
   // the cloud list is empty by definition and the only useful action is renew.
   if (cloudAccessRevoked) {
+    // 从未开通（如免登录新建的设备账号）不能说「已过期」，也不该先推
+    // 【自部署】——新用户此刻唯一合理的下一步是开通。
+    const canRenew = purchaseSurfaceAvailable();
     return (
       <Box sx={{ px: 2, py: 2 }}>
         <EmptyState
           icon={<CloudOffIcon sx={{ fontSize: 48, color: 'text.disabled' }} />}
-          title={t('dashboard:dashboard.membershipExpiredTitle')}
+          title={t(neverSubscribed ? 'dashboard:dashboard.noMembershipTitle' : 'dashboard:dashboard.membershipExpiredTitle')}
           // Both escape hatches are gated, so the copy is picked from the same
           // two gates the UI itself obeys — on a build with neither (Play-only
           // brand on Android) it states the situation instead of pointing at a
           // /purchase route App.tsx never registered and a Self-Deployed tab
           // this brand does not have.
-          description={t(membershipExpiredHintKey(purchaseSurfaceAvailable(), SELF_HOSTED_ENABLED))}
+          description={t(neverSubscribed && canRenew
+            ? 'dashboard:dashboard.noMembershipHint'
+            : membershipExpiredHintKey(canRenew, SELF_HOSTED_ENABLED))}
           action={
-            purchaseSurfaceAvailable() ? (
+            canRenew ? (
               <Button
                 onClick={() => navigate('/purchase', { state: { from: 'tunnel_locked' } })}
                 variant="contained"
                 size="small"
               >
-                {t('dashboard:dashboard.renewMembership')}
+                {t(neverSubscribed ? 'dashboard:dashboard.subscribeMembership' : 'dashboard:dashboard.renewMembership')}
               </Button>
             ) : undefined
           }

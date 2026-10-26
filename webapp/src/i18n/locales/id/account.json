@@ -61,6 +61,8 @@
     "expiryDate": "Tanggal Kadaluarsa",
     "upgradeToPro": "Tingkatkan ke Pro",
     "renewNow": "Perbarui Sekarang",
+    "notSubscribed": "Belum berlangganan",
+    "subscribeNow": "Berlangganan sekarang",
     "exitApp": "Keluar Aplikasi",
     "deleteAccount": "Hapus Akun",
     "deleteAccountTitle": "Bahaya: hapus akun secara permanen",

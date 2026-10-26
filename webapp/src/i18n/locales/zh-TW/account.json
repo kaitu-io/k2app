@@ -39,6 +39,8 @@
     "expiryDate": "過期日期",
     "upgradeToPro": "升級到 Pro",
     "renewNow": "立即續費",
+    "notSubscribed": "未開通",
+    "subscribeNow": "立即開通",
     "exitApp": "結束應用程式",
     "deleteAccount": "註銷帳號",
     "deleteAccountTitle": "危險操作：永久註銷帳號",

@@ -61,6 +61,8 @@
     "expiryDate": "วันหมดอายุ",
     "upgradeToPro": "อัปเกรดเป็น Pro",
     "renewNow": "ต่ออายุเลย",
+    "notSubscribed": "ยังไม่ได้สมัคร",
+    "subscribeNow": "สมัครเลย",
     "exitApp": "ออกจากแอป",
     "deleteAccount": "ลบบัญชี",
     "deleteAccountTitle": "อันตราย: ลบบัญชีอย่างถาวร",

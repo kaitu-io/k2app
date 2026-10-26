@@ -90,6 +90,8 @@ export interface CollapsibleConnectionSectionProps {
   networkAvailable?: boolean;
   /** 无任何可连节点（未登录且无自建节点）→ 主按钮熄灭，见 ConnectionButton */
   dormant?: boolean;
+  /** 无会员时主按钮的引导提示，见 ConnectionButton */
+  upsellHint?: string;
 }
 
 export function CollapsibleConnectionSection({
@@ -102,6 +104,7 @@ export function CollapsibleConnectionSection({
   isRetrying = false,
   networkAvailable = true,
   dormant = false,
+  upsellHint,
 }: CollapsibleConnectionSectionProps) {
   const { t } = useTranslation();
   const { connectionButtonCollapsed, toggleConnectionButtonCollapsed } = useLayout();
@@ -128,6 +131,7 @@ export function CollapsibleConnectionSection({
           error={error}
           isRetrying={isRetrying}
           networkAvailable={networkAvailable}
+          upsellHint={upsellHint}
           flush
         />
       </Collapse>
@@ -177,6 +181,7 @@ export function CollapsibleConnectionSection({
             isRetrying={isRetrying}
             networkAvailable={networkAvailable}
             dormant={dormant}
+            upsellHint={upsellHint}
           />
         </Box>
       </Collapse>

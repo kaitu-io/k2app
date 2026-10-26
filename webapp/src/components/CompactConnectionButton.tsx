@@ -109,6 +109,8 @@ export interface CompactConnectionButtonProps {
   isRetrying?: boolean;
   /** Whether network is available during error retry */
   networkAvailable?: boolean;
+  /** 无会员时的引导提示，见 ConnectionButton.upsellHint */
+  upsellHint?: string;
 }
 
 export function CompactConnectionButton({
@@ -121,6 +123,7 @@ export function CompactConnectionButton({
   error = null,
   isRetrying = false,
   networkAvailable = true,
+  upsellHint,
 }: CompactConnectionButtonProps) {
   const { t } = useTranslation();
 
@@ -135,8 +138,8 @@ export function CompactConnectionButton({
   // Switch 状态：已连接或正在连接/重试时为开启
   const switchChecked = isConnected || isConnecting || isReconnecting;
 
-  // Switch 禁用：断开中或未选择服务器
-  const switchDisabled = isDisconnecting || (isDisconnected && !hasTunnelSelected);
+  // Switch 禁用：断开中或未选择服务器（无会员时保持可点，由调用方引去开通）
+  const switchDisabled = isDisconnecting || (isDisconnected && !hasTunnelSelected && !upsellHint);
 
   // Status text
   const statusText = useMemo(() => {
@@ -163,10 +166,10 @@ export function CompactConnectionButton({
   // Server display name
   const serverName = useMemo(() => {
     if (!hasTunnelSelected) {
-      return t('dashboard:dashboard.selectServerHint') || 'Select a server';
+      return upsellHint ?? (t('dashboard:dashboard.selectServerHint') || 'Select a server');
     }
     return tunnelName || t('dashboard:dashboard.selectedServer') || 'Selected Server';
-  }, [hasTunnelSelected, tunnelName, t]);
+  }, [hasTunnelSelected, tunnelName, upsellHint, t]);
 
   return (
     <CompactContainer flush={flush}>

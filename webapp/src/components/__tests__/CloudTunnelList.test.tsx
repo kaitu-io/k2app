@@ -396,6 +396,22 @@ describe('CloudTunnelList', () => {
       expect(screen.getByText(/续费会员|Renew membership/i)).toBeInTheDocument();
     });
 
+    it('never-subscribed account: says "no membership yet" + subscribe, not "expired" + renew', async () => {
+      mockCacheGet.mockReturnValue(null);
+      mockCloudApiGet.mockResolvedValue({ code: 402, message: 'membership expired' });
+
+      render(<CloudTunnelList {...defaultProps} neverSubscribed />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/尚未开通会员|No membership yet/i)).toBeInTheDocument();
+      });
+      expect(screen.getByText(/^(开通会员|Subscribe)$/i)).toBeInTheDocument();
+      expect(screen.queryByText(/会员已过期|Membership expired/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/续费会员|Renew membership/i)).not.toBeInTheDocument();
+      // A brand-new user is pointed at subscribing, not at Self-Deployed.
+      expect(screen.queryByText(/自部署|Self-Deployed/i)).not.toBeInTheDocument();
+    });
+
     it('on iOS WITHOUT IAP, shows the expired state WITHOUT a renew CTA (Apple 3.1.1: /purchase unregistered)', async () => {
       (window as any)._platform = { os: 'ios' };
       try {

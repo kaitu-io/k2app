@@ -81,7 +81,7 @@ describe('IosSubscribePanel trial paywall', () => {
     setProducts([product(ELIGIBLE)]);
     renderPanel();
     expect(screen.getByTestId('iap-subscribe-btn').textContent).toBe('免费试用 7 天');
-    expect(screen.getByText('新设备免费体验 7 天')).toBeDefined();
+    expect(screen.getByText('新用户免费体验 7 天')).toBeDefined();
     expect(screen.getByText('第 6 天前')).toBeDefined();
     expect(screen.getByText('第 7 天')).toBeDefined();
     expect(screen.getByText('开始按 $12.99/年 扣费，成为正式会员')).toBeDefined();

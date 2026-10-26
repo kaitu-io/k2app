@@ -61,6 +61,8 @@
     "expiryDate": "过期日期",
     "upgradeToPro": "升级到Pro",
     "renewNow": "立即续费",
+    "notSubscribed": "未开通",
+    "subscribeNow": "立即开通",
     "exitApp": "退出应用",
     "deleteAccount": "注销账号",
     "deleteAccountTitle": "危险操作：永久注销账号",

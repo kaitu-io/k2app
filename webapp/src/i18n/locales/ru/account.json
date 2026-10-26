@@ -61,6 +61,8 @@
     "expiryDate": "Дата истечения",
     "upgradeToPro": "Обновиться на Pro",
     "renewNow": "Обновить сейчас",
+    "notSubscribed": "Нет подписки",
+    "subscribeNow": "Оформить сейчас",
     "exitApp": "Выход из приложения",
     "deleteAccount": "Удалить аккаунт",
     "deleteAccountTitle": "Внимание: безвозвратное удаление аккаунта",

@@ -61,6 +61,8 @@
     "expiryDate": "만료 날짜",
     "upgradeToPro": "Pro로 업그레이드",
     "renewNow": "지금 갱신",
+    "notSubscribed": "미가입",
+    "subscribeNow": "지금 가입",
     "exitApp": "앱 종료",
     "deleteAccount": "계정 삭제",
     "deleteAccountTitle": "경고: 계정 영구 삭제",
