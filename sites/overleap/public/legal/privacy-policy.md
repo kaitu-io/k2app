@@ -1,4 +1,4 @@
-**Last updated: [Effective date]**
+**Last updated: 2026-11**
 
 ### 1. Information We Collect
 

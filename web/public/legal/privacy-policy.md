@@ -1,12 +1,12 @@
 # 隐私政策 / Privacy Policy
 
-**最后更新 / Last Updated: [发布日] / [Effective date]**
+**最后更新 / Last Updated: 2026-11**
 
 ---
 
 ## 中文版本
 
-**最后更新：[发布日]**
+**最后更新：2026-11**
 
 ### 一、我们收集的信息
 
@@ -112,7 +112,7 @@
 
 ## English Version
 
-**Last updated: [Effective date]**
+**Last updated: 2026-11**
 
 ### 1. Information We Collect
 
