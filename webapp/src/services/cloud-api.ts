@@ -59,6 +59,18 @@ const REQUEST_TIMEOUT_MS = 15000;
 /** Module-level refresh promise for concurrent 401 dedup */
 let _refreshPromise: Promise<boolean> | null = null;
 
+/**
+ * True when the refresh endpoint definitively rejected the refresh token:
+ * 401 / 403 and their business refinements (401xxx / 403xxx, e.g. 403003
+ * brand mismatch), or an HTTP 401/403 status.
+ */
+function isDefinitiveAuthRejection(code: number | undefined, status: number): boolean {
+  if (status === 401 || status === 403) return true;
+  if (typeof code !== 'number') return false;
+  const base = code >= 1000 ? Math.floor(code / 1000) : code;
+  return base === 401 || base === 403;
+}
+
 /** Sentinel value returned by withTimeout when the deadline is exceeded. */
 const TIMEOUT_SENTINEL = Symbol('timeout');
 
@@ -321,16 +333,24 @@ export const cloudApi = {
         }),
         REQUEST_TIMEOUT_MS
       );
+      // A timeout or transport failure says nothing about the refresh token.
+      // Keep the tokens: on a Keychain shell the device account's token is its
+      // only proof of ownership, and a network blip must not discard it.
       if (resultOrTimeout === TIMEOUT_SENTINEL || resultOrTimeout.transport === 'fail') {
-        await authService.clearTokens();
-        useAuthStore.setState({ isAuthenticated: false });
+        console.warn('[CloudAPI] token refresh did not reach the server; keeping tokens');
         return false;
       }
       const result = resultOrTimeout;
       const refreshJson = await result.json() as SResponse<{ token: string; refreshToken: string }>;
       if (refreshJson.code !== 0 || result.status >= 400) {
-        await authService.clearTokens();
-        useAuthStore.setState({ isAuthenticated: false });
+        // Only a definitive auth rejection clears the tokens. 5xx / 429 / any
+        // other failure is transient: keep the tokens and let a later request retry.
+        if (isDefinitiveAuthRejection(refreshJson.code, result.status)) {
+          await authService.clearTokens();
+          useAuthStore.setState({ isAuthenticated: false });
+        } else {
+          console.warn(`[CloudAPI] token refresh failed transiently (code ${refreshJson.code}, status ${result.status}); keeping tokens`);
+        }
         return false;
       }
 
@@ -342,9 +362,9 @@ export const cloudApi = {
       });
 
       return true;
-    } catch {
-      await authService.clearTokens();
-      useAuthStore.setState({ isAuthenticated: false });
+    } catch (e) {
+      // Unparseable body or a thrown transport: not a definitive rejection.
+      console.warn('[CloudAPI] token refresh threw; keeping tokens', e);
       return false;
     }
   },
