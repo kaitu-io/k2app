@@ -80,7 +80,7 @@ func api_apple_webhook(c *gin.Context) {
 	// 信任边界：Apple 根证书签的是所有 app 的通知，签名有效 ≠ 是本品牌 app 的通知。
 	// 通知与交易的 bundleId 都必须是这条订阅所属品牌的 bundle；对不上一律 400（不重试）。
 	var owner User
-	if err := db.Get().Select("brand").First(&owner, sub.UserID).Error; err != nil {
+	if err := db.Get().Select("id", "brand", "apple_consumption_consent").First(&owner, sub.UserID).Error; err != nil {
 		log.Errorf(c, "[AppleWebhook] load owner of otx=%s: %v", otx, err)
 		c.AbortWithStatus(500)
 		return
@@ -164,8 +164,17 @@ func api_apple_webhook(c *gin.Context) {
 			return
 		}
 
-	case appstore.NotificationType_REFUND_DECLINED, appstore.NotificationType_CONSUMPTION_REQUEST:
-		// Consumption 应答未上线（spec 2026-10-08 §5）：只留痕。
+	case appstore.NotificationType_CONSUMPTION_REQUEST:
+		// 用户发起退款，Apple 询问消费信息（spec 2026-10-08 §5）。没同意的用户不应答（应答器内跳过）；
+		// 发送失败 500 让 Apple 重投——不记 UUID，重投不会被去重门挡掉。
+		sandbox := asn.Payload.Data.Environment == appstore.Environment_Sandbox
+		if err := respondAppleConsumption(c, &owner, &sub, asn.TransactionInfo.TransactionId, wantBundle, sandbox); err != nil {
+			log.Errorf(c, "[AppleWebhook] consumption response failed otx=%s txn=%s: %v", otx, asn.TransactionInfo.TransactionId, err)
+			c.AbortWithStatus(500)
+			return
+		}
+
+	case appstore.NotificationType_REFUND_DECLINED:
 		log.Infof(c, "[AppleWebhook] %s otx=%s txn=%s (no action)", nType, otx, asn.TransactionInfo.TransactionId)
 
 	case appstore.NotificationType_EXPIRED, appstore.NotificationType_GRACE_PERIOD_EXPIRED:

@@ -243,6 +243,7 @@ Apple 退款（§3.3 第 6b 步）与后台网页退款（`ProcessOrderRefund`�
 ## 5. 明确不做（及理由）
 
 - **Send Consumption Information + 用户同意**：要 app 内 opt-in 界面、隐私政策与隐私标签变更；开途 iOS 至今 0 笔退款。独立项目，与 C 期（iOS 试用）同批做两品牌同意界面，再开 12h 应答器（Overleap 回 `GRANT_PRORATED`，开途按 1GB 用量口径 `DECLINE`/`GRANT_PRORATED`）。**提前触发条件**：开途 30 天内 Apple 退款 ≥3 次（§3.3 第 10 步告警会标注）。
+  - **2026-10-26 David：两品牌一律 `GRANT_PRORATED`，1GB 口径作废**（与用户协议「按剩余比例退款」一致，不算用量、不分品牌；不发 `consumptionPercentage`，Apple 自算）。已随 iOS 试用第 ② 步实现：`users.apple_consumption_consent` + `PUT /api/user/apple-consumption-consent` + `logic_apple_consumption.go`（webhook `CONSUMPTION_REQUEST`，未同意不应答）。
 - **屡退用户禁用 IAP**：iOS app 内引导外部支付受审核指南 3.1.1 约束（非美区），且已扣款的购买不能拒绝入账；以告警中的累计退款次数 + 未来 Consumption 应答处理。已知残留："用约 80 天→退款→换 Apple ID"在 Consumption 上线前仍可行，每轮约年费的 20–25%，靠 Apple 自己的退款审核约束。
 - **撤销退款时自动反转订单 / 返现 / 分销 / 邀请**：见 §3.6。
 - **分销商自动降级**：告警代替，业务决策。
