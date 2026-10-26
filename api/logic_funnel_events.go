@@ -35,6 +35,7 @@ var funnelEventRegistry = []funnelEventDef{
 	{"install_view", funnelWeb, FunnelKindView},
 	{"welcome_view", funnelWeb, FunnelKindView},
 	{"install_click", funnelWeb, FunnelKindAction},
+	{"qr_view", funnelWeb, FunnelKindAction},
 	{"checkout_cancelled", funnelWeb, FunnelKindAction},
 	{"refund_click", funnelWeb, FunnelKindAction},
 	{"cancel_click", funnelWeb, FunnelKindAction},

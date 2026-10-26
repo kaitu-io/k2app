@@ -320,6 +320,13 @@
       "kind": "action"
     },
     {
+      "name": "qr_view",
+      "surfaces": [
+        "web"
+      ],
+      "kind": "action"
+    },
+    {
       "name": "checkout_cancelled",
       "surfaces": [
         "web"

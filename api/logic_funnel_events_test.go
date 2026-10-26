@@ -55,3 +55,20 @@ func TestFunnelEventRegistry_NoDuplicates(t *testing.T) {
 		}
 	}
 }
+
+func TestFunnelEvent_QrViewIsWebAction(t *testing.T) {
+	if !funnelEventAllowed("qr_view", FunnelSurfaceWeb) {
+		t.Error("qr_view must be allowed on web")
+	}
+	if funnelEventAllowed("qr_view", FunnelSurfaceApp) {
+		t.Error("qr_view must not be allowed on app")
+	}
+	if got := funnelEventKind("qr_view"); got != FunnelKindAction {
+		t.Errorf("kind = %q, want action", got)
+	}
+	for _, v := range funnelViewsWeb() {
+		if v == "qr_view" { // 不能波及 web_purchase/web_install/app_to_web 的访问步
+			t.Error("qr_view must not be a web view event")
+		}
+	}
+}
