@@ -18,6 +18,7 @@ import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse, InstalledApp, 
 import type { StatusResponseData } from './vpn-types';
 import { transformStatus } from './status-transform';
 import { createCapacitorStorage } from './capacitor-storage';
+import { createKeychainBackedStorage } from './keychain-storage';
 import { mapInstalledApp, type AndroidInstalledApp } from './capacitor-app-map';
 import { withAppAttribution } from '../utils/site-link';
 import { buildCapacitorSocialSignIn } from './capacitor-social-signin';
@@ -375,6 +376,29 @@ export async function injectCapacitorGlobals(): Promise<void> {
   // declares them (see webapp/src/types/bridge-version.ts). Calling them on
   // iOS 0.4.8 would throw — beta there stays API-only subscription until then.
 
+  // Bridge v6 Keychain identity (iOS only): udid + auth tokens survive
+  // uninstall/reinstall. Capacitor's plugin Proxy hands back a wrapper for ANY
+  // prop on native, so the typeof check alone is not proof — a probe call that
+  // old shells reject ("not implemented") is the real capability test. Android
+  // and old iOS shells keep the plain file store, unchanged.
+  const fileStorage = createCapacitorStorage(K2Plugin);
+  let keychainIdentity = false;
+  if (platform === 'ios' && typeof (K2Plugin as any).secureGet === 'function') {
+    try {
+      await K2Plugin.secureGet({ key: 'device-udid' });
+      keychainIdentity = true;
+    } catch {
+      // Old shell without the Keychain methods — file-only storage.
+    }
+  }
+  const storage = keychainIdentity
+    ? createKeychainBackedStorage(fileStorage, {
+        get: async (key) => (await K2Plugin.secureGet({ key })).value ?? null,
+        set: async (key, value) => { await K2Plugin.secureSet({ key, value }); },
+        remove: async (key) => { await K2Plugin.secureRemove({ key }); },
+      })
+    : fileStorage;
+
   // Build _platform: mobile capabilities
   const capacitorPlatform: IPlatform = {
     os: platform,
@@ -383,7 +407,8 @@ export async function injectCapacitorGlobals(): Promise<void> {
     arch: 'arm64',
     commit: typeof __K2_BUILD_COMMIT__ !== 'undefined' ? __K2_BUILD_COMMIT__ : '',
 
-    storage: createCapacitorStorage(K2Plugin),
+    storage,
+    keychainIdentity,
 
     openExternal: async (url: string): Promise<void> => {
       await K2Plugin.openUrl({ url: withAppAttribution(url) });
