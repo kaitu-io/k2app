@@ -146,7 +146,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.26.10'
           cache-dependency-path: k2/go.sum
 
       - name: Cache Go tools (gomobile)
@@ -365,7 +365,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.26.10'
           cache-dependency-path: k2/go.sum
 
       - name: Setup Java
