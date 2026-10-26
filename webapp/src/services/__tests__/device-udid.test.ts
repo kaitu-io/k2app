@@ -100,3 +100,27 @@ describe('getDeviceUdid', () => {
     expect(udid).toMatch(/^[0-9a-f]{32}$/);
   });
 });
+
+describe('regenerateDeviceUdid', () => {
+  it('writes a new raw id, clears tokens, and replaces the cached udid', async () => {
+    let n = 0;
+    (globalThis.crypto as any).randomUUID = () => `uuid-${++n}-xxxxxxxxxxxxxxxx`;
+    mockStorage.get.mockResolvedValue('old-raw-id');
+    mockStorage.set.mockResolvedValue(undefined);
+    mockStorage.remove.mockResolvedValue(undefined);
+
+    const { getDeviceUdid, regenerateDeviceUdid } = await freshImport();
+    const before = await getDeviceUdid();
+    const regenerated = await regenerateDeviceUdid();
+    const after = await getDeviceUdid();
+
+    expect(mockStorage.set).toHaveBeenCalledWith('device-udid', 'uuid-1-xxxxxxxxxxxxxxxx');
+    expect(mockStorage.remove).toHaveBeenCalledWith('k2.auth.token');
+    expect(mockStorage.remove).toHaveBeenCalledWith('k2.auth.refresh');
+    expect(regenerated).toMatch(/^[0-9a-f]{32}$/);
+    expect(regenerated).not.toBe(before);
+    expect(after).toBe(regenerated);
+    // cached: no extra storage read after regenerate
+    expect(mockStorage.get).toHaveBeenCalledTimes(1);
+  });
+});

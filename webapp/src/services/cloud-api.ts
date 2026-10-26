@@ -46,6 +46,8 @@ const AUTH_TOKEN_PATHS = [
   '/api/auth/register',
   '/api/auth/refresh',
   '/api/auth/social/login',
+  '/api/auth/device-account',
+  '/api/auth/device-account/restore',
 ];
 
 /** Auth path where tokens + cache should be cleared on success */

@@ -682,6 +682,7 @@ export interface AppConfig {
   announcement?: Announcement; // 向后兼容：最高优先级公告
   announcements?: Announcement[]; // 全部活跃公告（按 priority DESC 排序）
   socialSignIn?: { apple: boolean; google: boolean }; // 联合登录开关（老服务端不下发 = 全关）
+  deviceAccount?: boolean; // 免登录设备账号开关（品牌级；老服务端不下发 = 关）
 }
 
 // 链接有效期选项
