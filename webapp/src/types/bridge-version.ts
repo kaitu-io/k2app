@@ -85,5 +85,17 @@
  * rejection as "no Play services". iOS / desktop bump only to stay current.
  * The Linux mirror (k2/webui) is not bumped: k2 is read-only from this repo
  * and the method is mobile-only. Zero effect on OTA eligibility — floor (1).
+ *
+ * v6 (2026-10-26): Capacitor gained `secureGet` / `secureSet` / `secureRemove`
+ * (iOS Keychain, this-device-only, survives reinstall — device accounts for the
+ * Apple free trial), plus optional IAP fields: `iapGetProducts` products may
+ * carry `introOffer` {paymentMode, periodUnit, periodValue, displayPrice} and
+ * `isEligibleForIntroOffer`, and `iapRestore` transactions may carry `jws`
+ * (`VerificationResult.jwsRepresentation`). Capability-gated as required:
+ * services/keychain-storage.ts reads a missing `secureGet` as "no Keychain"
+ * and services/trial-offer.ts reads a missing `introOffer` as "no trial", i.e.
+ * the pre-v6 UI (login required, "subscribe now"). Android implements none of
+ * it and bumps only to stay current; the Linux mirror (k2/webui) is not bumped
+ * (k2 read-only, methods mobile-only). Zero effect on OTA eligibility — floor (1).
  */
-export const BRIDGE_API_VERSION = 5;
+export const BRIDGE_API_VERSION = 6;

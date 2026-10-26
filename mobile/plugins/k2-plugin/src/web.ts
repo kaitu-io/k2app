@@ -91,6 +91,18 @@ export class K2PluginWeb extends WebPlugin implements K2PluginInterface {
     throw this.unavailable('K2Plugin is not available on web');
   }
 
+  async secureGet(_options: { key: string }): Promise<{ value: string | null }> {
+    throw this.unavailable('K2Plugin is not available on web');
+  }
+
+  async secureSet(_options: { key: string; value: string }): Promise<void> {
+    throw this.unavailable('K2Plugin is not available on web');
+  }
+
+  async secureRemove(_options: { key: string }): Promise<void> {
+    throw this.unavailable('K2Plugin is not available on web');
+  }
+
   async listInstalledApps(): Promise<{ apps: Array<{ packageName: string; label: string; iconUrl?: string }> }> {
     throw this.unavailable('K2Plugin is not available on web');
   }

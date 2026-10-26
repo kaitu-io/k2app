@@ -17,6 +17,20 @@ enum IapHelpers {
         }
     }
 
+    /// Map an introductory-offer payment-mode code to a stable JS string. The
+    /// codes (freeTrial=0, payAsYouGo=1, payUpFront=2, other=-1) are assigned
+    /// by the caller at the StoreKit boundary (`Product.SubscriptionOffer.PaymentMode`
+    /// is a struct of static values, not an enum), same pattern as
+    /// `periodUnitString`.
+    static func paymentModeString(code: Int) -> String {
+        switch code {
+        case 0: return "freeTrial"
+        case 1: return "payAsYouGo"
+        case 2: return "payUpFront"
+        default: return "unknown"
+        }
+    }
+
     /// Assemble the JS-facing product dictionary. Kept pure (primitives in,
     /// dictionary out) so the Go→JS camelCase contract is asserted in tests.
     static func productDict(
@@ -26,7 +40,9 @@ enum IapHelpers {
         displayPrice: String,
         price: Double,
         periodUnit: String?,
-        periodValue: Int?
+        periodValue: Int?,
+        introOffer: [String: Any]? = nil,
+        isEligibleForIntroOffer: Bool? = nil
     ) -> [String: Any] {
         var dict: [String: Any] = [
             "id": id,
@@ -38,6 +54,14 @@ enum IapHelpers {
         if let unit = periodUnit, let value = periodValue {
             dict["periodUnit"] = unit
             dict["periodValue"] = value
+        }
+        // Optional (bridge v6). Absent keys = old-shell behavior in the webapp
+        // (trial-offer.ts reads a missing introOffer as "no trial").
+        if let offer = introOffer {
+            dict["introOffer"] = offer
+        }
+        if let eligible = isEligibleForIntroOffer {
+            dict["isEligibleForIntroOffer"] = eligible
         }
         return dict
     }

@@ -116,13 +116,14 @@ actor StoreKitManager {
 
     /// Current entitlements (active subscriptions), retained unfinished so the
     /// webapp can re-verify each against Center. This is the StoreKit 2 restore
-    /// path — no deprecated receipt refresh.
-    func currentEntitlements() async -> [StoreKit.Transaction] {
-        var out: [StoreKit.Transaction] = []
+    /// path — no deprecated receipt refresh. The second element is the signed
+    /// transaction (`VerificationResult.jwsRepresentation`) for Center to verify.
+    func currentEntitlements() async -> [(StoreKit.Transaction, String)] {
+        var out: [(StoreKit.Transaction, String)] = []
         for await result in StoreKit.Transaction.currentEntitlements {
             guard case .verified(let transaction) = result else { continue }
             retain(transaction)
-            out.append(transaction)
+            out.append((transaction, result.jwsRepresentation))
         }
         return out
     }

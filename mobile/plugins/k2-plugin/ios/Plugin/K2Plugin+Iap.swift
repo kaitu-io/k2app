@@ -7,7 +7,7 @@ import StoreKit
 /// JS contract (camelCase, per cross-layer Go→JS convention):
 ///   iapGetProducts({ productIds: string[] }) -> { products: IapProduct[] }
 ///   iapPurchase({ productId, accountToken }) -> { result, transactionId?, ... }
-///   iapRestore() -> { transactions: [{ transactionId, productId }] }
+///   iapRestore() -> { transactions: [{ transactionId, productId, jws }] }
 ///   iapFinishTransaction({ transactionId }) -> void
 ///   event "iapTransactionUpdate" -> { transactionId, productId }
 extension K2Plugin {
@@ -39,38 +39,70 @@ extension K2Plugin {
         Task {
             do {
                 let products = try await StoreKitManager.shared.products(for: ids)
-                let mapped = products.map { product -> [String: Any] in
+                var mapped: [[String: Any]] = []
+                for product in products {
                     var periodUnit: String?
                     var periodValue: Int?
                     if let period = product.subscription?.subscriptionPeriod {
-                        // Product.SubscriptionPeriod.Unit is NOT raw-representable —
-                        // map it to a stable code here (the StoreKit boundary), then
-                        // let the pure helper name it.
-                        let unitCode: Int
-                        switch period.unit {
-                        case .day: unitCode = 0
-                        case .week: unitCode = 1
-                        case .month: unitCode = 2
-                        case .year: unitCode = 3
-                        @unknown default: unitCode = -1
-                        }
-                        periodUnit = IapHelpers.periodUnitString(rawValue: unitCode)
+                        periodUnit = IapHelpers.periodUnitString(rawValue: Self.iapUnitCode(period.unit))
                         periodValue = period.value
                     }
-                    return IapHelpers.productDict(
+                    // Introductory offer (bridge v6): trial length / price come
+                    // from StoreKit, never hard-coded in the webapp.
+                    var introOffer: [String: Any]?
+                    if let offer = product.subscription?.introductoryOffer {
+                        introOffer = [
+                            "paymentMode": IapHelpers.paymentModeString(code: Self.iapPaymentModeCode(offer.paymentMode)),
+                            "periodUnit": IapHelpers.periodUnitString(rawValue: Self.iapUnitCode(offer.period.unit)),
+                            "periodValue": offer.period.value,
+                            "displayPrice": offer.displayPrice,
+                        ]
+                    }
+                    var eligible: Bool?
+                    if let subscription = product.subscription {
+                        eligible = await subscription.isEligibleForIntroOffer
+                    }
+                    mapped.append(IapHelpers.productDict(
                         id: product.id,
                         displayName: product.displayName,
                         description: product.description,
                         displayPrice: product.displayPrice,
                         price: NSDecimalNumber(decimal: product.price).doubleValue,
                         periodUnit: periodUnit,
-                        periodValue: periodValue
-                    )
+                        periodValue: periodValue,
+                        introOffer: introOffer,
+                        isEligibleForIntroOffer: eligible
+                    ))
                 }
                 call.resolve(["products": mapped])
             } catch {
                 call.reject("getProducts failed: \(error.localizedDescription)")
             }
+        }
+    }
+
+    // Product.SubscriptionPeriod.Unit is NOT raw-representable — map it to a
+    // stable code here (the StoreKit boundary), then let the pure helper name it.
+    @available(iOS 15.0, *)
+    static func iapUnitCode(_ unit: Product.SubscriptionPeriod.Unit) -> Int {
+        switch unit {
+        case .day: return 0
+        case .week: return 1
+        case .month: return 2
+        case .year: return 3
+        @unknown default: return -1
+        }
+    }
+
+    // Product.SubscriptionOffer.PaymentMode is a struct of static values, not
+    // an enum — compare and map to a stable code for IapHelpers.paymentModeString.
+    @available(iOS 15.0, *)
+    static func iapPaymentModeCode(_ mode: Product.SubscriptionOffer.PaymentMode) -> Int {
+        switch mode {
+        case .freeTrial: return 0
+        case .payAsYouGo: return 1
+        case .payUpFront: return 2
+        default: return -1
         }
     }
 
@@ -122,11 +154,12 @@ extension K2Plugin {
             return
         }
         Task {
-            let transactions = await StoreKitManager.shared.currentEntitlements()
-            let mapped = transactions.map { transaction in
+            let entitlements = await StoreKitManager.shared.currentEntitlements()
+            let mapped = entitlements.map { (transaction, jws) in
                 return [
                     "transactionId": String(transaction.id),
                     "productId": transaction.productID,
+                    "jws": jws,
                 ]
             }
             call.resolve(["transactions": mapped])
