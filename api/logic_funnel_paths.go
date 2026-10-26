@@ -157,6 +157,21 @@ var funnelPathRegistry = []funnelPath{
 		},
 	},
 	{
+		// X 广告着陆页 /go/<码>：分组用 landing_path（= 归因码，A/B = /go/xa1 vs /go/xb1，扫码 = /go/xa1q）。
+		// 不要把 /go/ 加进 funnelCodePathPrefixes，否则码被折叠成 *、A/B 分不开。
+		// 首次打开 / 开始试用 / 付款只能靠推断归因接上，只是下限；A/B 胜负看确定性的上半段。
+		Key: "ad_landing", Title: "广告着陆", Question: "广告点进来的人里，有多少开始试用、最终付款？按 landing_path（= 归因码）分组看 A / B。",
+		Lane: funnelLaneWeb, Hop: "网页 → App 依赖推断归因（ip_os_v1，仅开途）；Mac 扫码者在手机上是新的 sid，以 <码>q 路径单独成组。",
+		Window: 14 * funnelDay,
+		Steps: []funnelStep{
+			{Label: "访问", Events: []string{"page_view"}, Surface: FunnelSurfaceWeb, PathPrefix: "/go/"},
+			{Label: "点获取 / 看到二维码", Events: []string{"install_click", "qr_view"}},
+			{Label: "首次打开", Events: []string{"app_first_open"}},
+			{Label: "开始试用", Events: []string{"trial_start"}},
+			{Label: "付款", Events: funnelPaidFacts},
+		},
+	},
+	{
 		Key: "app_activation", Title: "应用激活", Question: "装好应用的人里，有多少真正连上了？",
 		Lane:   funnelLaneApp,
 		Window: 7 * funnelDay,
