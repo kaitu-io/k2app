@@ -10,7 +10,7 @@ import i18n from '../../i18n/i18n';
 
 // --- Mock state objects ---
 
-const mockAuthState = { isAuthenticated: true };
+const mockAuthState = { isAuthenticated: true, sessionEpoch: 1 };
 const mockVPNState = { state: 'idle' as string };
 
 // --- Mocks ---
@@ -90,6 +90,7 @@ describe('CloudTunnelList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAuthState.isAuthenticated = true;
+    mockAuthState.sessionEpoch = 1;
     mockVPNState.state = 'idle';
     mockCacheGet.mockReturnValue(null);
     mockCloudApiGet.mockResolvedValue({ code: 0, data: freshResponse });
@@ -372,6 +373,27 @@ describe('CloudTunnelList', () => {
       expect(tunnelArg.domain).toBe(AUTO_TUNNEL_DOMAIN);
       // sentinel identity
       expect(tunnelArg).toBe(AUTO_TUNNEL_SENTINEL);
+    });
+  });
+
+  describe('new auth session while already authenticated', () => {
+    it('device account (402) → real account login refetches and lifts the revoked state', async () => {
+      mockCloudApiGet.mockResolvedValue({ code: 402, message: 'membership expired' });
+      const { rerender } = render(<CloudTunnelList {...defaultProps} />);
+      await waitFor(() => {
+        expect(useConnectionStore.getState().cloudAccessRevoked).toBe(true);
+      });
+
+      // Login tail: isAuthenticated stays true, only sessionEpoch moves.
+      mockCloudApiGet.mockResolvedValue({ code: 0, data: freshResponse });
+      const callsBefore = mockCloudApiGet.mock.calls.length;
+      mockAuthState.sessionEpoch = 2;
+      rerender(<CloudTunnelList {...defaultProps} />);
+
+      await waitFor(() => {
+        expect(mockCloudApiGet.mock.calls.length).toBeGreaterThan(callsBefore);
+        expect(useConnectionStore.getState().cloudAccessRevoked).toBe(false);
+      });
     });
   });
 

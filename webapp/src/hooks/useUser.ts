@@ -37,6 +37,17 @@ function syncDetectedProfile(user: DataUser): void {
   });
 }
 
+let userInfoInflight: ReturnType<typeof cloudApi.get<DataUser>> | null = null;
+
+function getUserInfoShared(): ReturnType<typeof cloudApi.get<DataUser>> {
+  if (!userInfoInflight) {
+    userInfoInflight = cloudApi.get<DataUser>('/api/user/info').finally(() => {
+      userInfoInflight = null;
+    });
+  }
+  return userInfoInflight;
+}
+
 interface UseUserReturn {
   user: DataUser | null;
   loading: boolean;
@@ -69,6 +80,8 @@ export function useUser(): UseUserReturn {
   const [user, setUser] = useState<DataUser | null>(null);
   const [loading, setLoading] = useState(true);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  // 新登录会话（含设备账号 → 真实账号，isAuthenticated 不翻转）也要重新加载
+  const sessionEpoch = useAuthStore((s) => s.sessionEpoch);
 
   // 加载用户数据。
   //
@@ -76,7 +89,7 @@ export function useUser(): UseUserReturn {
   // （Purchase 的 409 互斥兜底就要调它）。每次渲染都是新函数时，依赖它的 effect
   // 每次渲染都重跑——Purchase 的「套餐变化时重新预览」因此自激成死循环，0.4.9 起
   // 全平台停在购买页就持续打 POST /api/user/orders(preview)，一度占掉 Center 七成
-  // 流量。useCallback 只随 isAuthenticated 变，正好是函数行为真正会改变的时刻。
+  // 流量。useCallback 只随登录状态 / 登录会话变，正好是函数行为真正会改变的时刻。
   const fetchUser = useCallback(async (forceRefresh: boolean = false) => {
     if (!isAuthenticated) {
       setUser(null);
@@ -105,7 +118,12 @@ export function useUser(): UseUserReturn {
         }
       }
 
-      const response = await cloudApi.get<DataUser>('/api/user/info');
+      // 非强制加载共用同一个在途请求：换账号时缓存刚被清空，所有挂载的
+      // 实例会同时走到这里，不合并就是 N 个并发请求。强制刷新不合并——
+      // 它要的是「此刻之后」的数据，搭上更早发出的请求可能拿到旧值。
+      const response = forceRefresh
+        ? await cloudApi.get<DataUser>('/api/user/info')
+        : await getUserInfoShared();
 
       if (response.code === 0 && response.data) {
         setUser(response.data);
@@ -130,7 +148,7 @@ export function useUser(): UseUserReturn {
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, sessionEpoch]);
 
   // 初次加载。依赖写 fetchUser 而不是 isAuthenticated：以后给上面的 useCallback
   // 添依赖时，初次加载会跟着重跑，而不是静默停在旧闭包上。

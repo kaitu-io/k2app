@@ -23,6 +23,15 @@ interface AuthState {
   // 状态
   isAuthenticated: boolean;
   isAuthChecking: boolean;
+  /**
+   * 每次 setIsAuthenticated(true)（= 开始一个新的登录会话）+1。
+   *
+   * 免登录设备账号让 isAuthenticated 从启动起就是 true：设备账号 → 登录真实
+   * 账号时它不翻转，只盯 isAuthenticated 的 false→true 的刷新（用户信息、云端
+   * 节点列表）就不会发生，页面停在旧账号（「未开通」、402 空列表）直到重启。
+   * 换账号要刷新的地方盯这个值。
+   */
+  sessionEpoch: number;
 
   // Actions
   setIsAuthenticated: (value: boolean) => void;
@@ -37,9 +46,12 @@ export const useAuthStore = create<AuthState>()(
     // 初始状态
     isAuthenticated: false,
     isAuthChecking: true,
+    sessionEpoch: 0,
 
     // Actions
-    setIsAuthenticated: (value) => set({ isAuthenticated: value }),
+    setIsAuthenticated: (value) => set((state) => (value
+      ? { isAuthenticated: true, sessionEpoch: state.sessionEpoch + 1 }
+      : { isAuthenticated: false })),
     setIsAuthChecking: (value) => set({ isAuthChecking: value }),
 
     // 同步认证状态

@@ -32,7 +32,7 @@ import { useTranslation } from "react-i18next";
 import QRCode from "qrcode";
 
 import type { MyInviteCode } from "../services/api-types";
-import { useAlert, useAuth } from "../stores";
+import { useAlert, useAuth, useAuthStore } from "../stores";
 import { useUser } from "../hooks/useUser";
 import { useShareLink } from "../hooks/useShareLink";
 import { useInviteCodeActions } from "../hooks/useInviteCodeActions";
@@ -68,6 +68,8 @@ export default function Invite() {
   const { showAlert } = useAlert();
   const { user } = useUser();
   const { isAuthenticated } = useAuth();
+  // 换账号时 isAuthenticated 不翻转，见 auth.store sessionEpoch
+  const sessionEpoch = useAuthStore((s) => s.sessionEpoch);
   const { getShareLink, loading: shareLinkLoading } = useShareLink();
   const { shareInviteCode } = useInviteCodeActions();
   const { appConfig } = useAppConfig();
@@ -83,7 +85,7 @@ export default function Invite() {
     if (isAuthenticated) {
       loadLatestInviteCode();
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, sessionEpoch]);
 
   const loadLatestInviteCode = async () => {
     try {

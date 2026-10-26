@@ -33,6 +33,8 @@ export function usePrivateNodes(): UsePrivateNodesReturn {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  // 换账号（设备账号 → 登录账号）时 isAuthenticated 不翻转，见 auth.store sessionEpoch
+  const sessionEpoch = useAuthStore((s) => s.sessionEpoch);
 
   const refresh = useCallback(
     async (forceRefresh: boolean = false) => {
@@ -86,7 +88,7 @@ export function usePrivateNodes(): UsePrivateNodesReturn {
         setLoading(false);
       }
     },
-    [isAuthenticated]
+    [isAuthenticated, sessionEpoch]
   );
 
   useEffect(() => {

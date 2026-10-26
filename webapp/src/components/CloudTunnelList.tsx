@@ -108,10 +108,12 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
 
   // Subscribe to auth and service connection states for auto-refresh
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const sessionEpoch = useAuthStore((s) => s.sessionEpoch);
   const serviceConnected = useVPNMachineStore((s) => s.state !== 'serviceDown');
 
   // Track previous values to detect state transitions
   const prevAuthRef = useRef(isAuthenticated);
+  const prevSessionRef = useRef(sessionEpoch);
   const prevServiceConnectedRef = useRef(serviceConnected);
 
   // Sort by country code, then by recommendScore (highest first) within a
@@ -270,14 +272,18 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
   // Refresh when authentication state changes (login success)
   useEffect(() => {
     const wasAuthenticated = prevAuthRef.current;
+    const prevSession = prevSessionRef.current;
     prevAuthRef.current = isAuthenticated;
+    prevSessionRef.current = sessionEpoch;
 
-    // Refresh when user logs in (false -> true)
-    if (!wasAuthenticated && isAuthenticated) {
-      console.info('[CloudTunnelList] Auth state changed to authenticated, refreshing tunnels');
+    // Refresh when user logs in (false -> true), or when a new session starts
+    // while already authenticated (device account → real account login: the
+    // flag stays true, only sessionEpoch moves — see auth.store).
+    if (isAuthenticated && (!wasAuthenticated || prevSession !== sessionEpoch)) {
+      console.info('[CloudTunnelList] New auth session, refreshing tunnels');
       refresh();
     }
-  }, [isAuthenticated, refresh]);
+  }, [isAuthenticated, sessionEpoch, refresh]);
 
   // Refresh when service connection recovers
   useEffect(() => {
