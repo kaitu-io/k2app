@@ -101,10 +101,16 @@ describe('ConsumptionConsentSheet', () => {
     expect(screen.getByRole('button', { name: '不允许' })).toBeDefined();
   });
 
-  it('missing field (older server) also counts as never asked', () => {
+  it('missing field (server without the feature) never opens the sheet', () => {
     setUser({}); panelState();
     renderPanel();
-    expect(screen.getByText(TITLE)).toBeDefined();
+    expect(screen.queryByText(TITLE)).toBeNull();
+  });
+
+  it('field explicitly undefined also never opens the sheet', () => {
+    setUser({ appleConsumptionConsent: undefined }); panelState();
+    renderPanel();
+    expect(screen.queryByText(TITLE)).toBeNull();
   });
 
   it('consent already true or false does not open the sheet', () => {

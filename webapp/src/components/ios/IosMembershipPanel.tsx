@@ -57,13 +57,18 @@ export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPan
   const { openPortal } = useStripeCheckout();
   const { showAlert } = useAlert();
 
-  // 退款同意弹层（设计稿 ④）：状态驱动——用户有 Apple 订阅且从未回答过（null/缺省）时，
+  // 退款同意弹层（设计稿 ④）：状态驱动——用户有 Apple 订阅且从未回答过（null）时，
   // 本面板每次挂载最多弹一次。购买成功后 Purchase 会把订阅面板换成本面板，所以不能挂在
   // 订阅面板的「授予成功」事件上。回答后 PUT 回写用户缓存，不会再开；失败 / 点遮罩 = 不写状态。
+  // 只认「字段存在且恰为 null」= 服务端支持此功能且用户从未回答。字段缺省（还没部署该功能的
+  // 服务端）绝不弹——否则 PUT 失败、什么都存不下，弹层每次挂载都会重开。
   const [consentOpen, setConsentOpen] = useState(false);
   const consentAsked = useRef(false);
   const needsConsent =
-    !!user?.subscriptions?.some((s) => s.provider === 'apple') && user.appleConsumptionConsent == null;
+    !!user &&
+    !!user.subscriptions?.some((s) => s.provider === 'apple') &&
+    'appleConsumptionConsent' in user &&
+    user.appleConsumptionConsent === null;
   useEffect(() => {
     if (needsConsent && !consentAsked.current) {
       consentAsked.current = true;
