@@ -98,10 +98,10 @@ export default function AdLandingClient({ variant, appStoreHref, qrSvg }: AdLand
             fill
             priority
             sizes="(min-width: 1024px) 560px, 100vw"
-            className="object-cover object-[50%_35%]"
+            className="object-cover object-top"
           />
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#0d1813]/90 via-[#0d1813]/55 to-transparent px-6 pb-7 pt-28 lg:px-9 lg:pb-9">
-            <h1 className="m-0 text-[30px] font-bold leading-[1.25] tracking-[-0.01em] text-[#f4f1ea] lg:text-[36px]">
+          <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-white/35 to-transparent px-6 pb-6 pt-7 text-center lg:px-9 lg:pt-10">
+            <h1 className="m-0 text-[28px] font-bold leading-[1.3] tracking-[-0.01em] text-[#14231c] lg:text-[36px]">
               {t('adLanding.heroTitle')}
             </h1>
           </div>
