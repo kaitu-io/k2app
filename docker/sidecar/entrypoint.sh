@@ -23,7 +23,6 @@ node:
   name: "${K2_NODE_NAME:-}"
   region: "${K2_NODE_REGION:-}"
   brands: "${K2_NODE_BRANDS:-}"
-  pool: "${K2_NODE_POOL:-}"
 
 tunnel:
   enabled: true

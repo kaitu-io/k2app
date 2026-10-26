@@ -2,8 +2,6 @@ package center
 
 import (
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
 func TestDataRelayStructure(t *testing.T) {
@@ -36,19 +34,4 @@ func TestDataRelayListResponse(t *testing.T) {
 	if len(response.Relays) != 2 {
 		t.Errorf("Expected 2 relays, got %d", len(response.Relays))
 	}
-}
-
-// TestApiK2Relays_TrialUserSeesOnlyTrialPool —— /api/relays 下发节点 IP，同样受池限制。
-// Needs dev MySQL.
-func TestApiK2Relays_TrialUserSeesOnlyTrialPool(t *testing.T) {
-	testInitConfig()
-	skipIfNoConfig(t)
-	_, regular, trial := seedPoolFixture(t)
-
-	body := callHandlerAs(t, api_k2_relays, poolTrialUser(), "/api/relays", nil)
-	assert.Equal(t, 0, countPresentIP(body, regular...), "trial user must not receive regular-pool relay IPs")
-	assert.Equal(t, 1, countPresentIP(body, trial), "trial user must receive the trial-pool relay")
-
-	body = callHandlerAs(t, api_k2_relays, poolPaidUser(), "/api/relays", nil)
-	assert.Equal(t, 3, countPresentIP(body, append(regular, trial)...), "paid user sees all pools")
 }

@@ -31,7 +31,6 @@ type AdminNodeItem struct {
 	Brands             []string          `json:"brands"`                       // node-declared capability ceiling (K2_NODE_BRANDS)
 	VisibleKaitu       bool              `json:"visibleKaitu"`                 // ops kill switch × declaration → VisibleTo(kaitu)
 	VisibleOverleap    bool              `json:"visibleOverleap"`              // same for overleap
-	Pool               string            `json:"pool"`                         // '' = 会员节点；"trial" = 体验线路（spec §3.7）
 	UpdatedAt          int64             `json:"updatedAt"`
 	Tunnels            []AdminNodeTunnel `json:"tunnels"`
 }
@@ -93,7 +92,6 @@ func api_admin_list_nodes(c *gin.Context) {
 			Brands:             brandStrings(node.DeclaredBrands()),
 			VisibleKaitu:       node.VisibleTo(BrandKaitu),
 			VisibleOverleap:    node.VisibleTo(BrandOverleap),
-			Pool:               node.Pool,
 			UpdatedAt:          node.UpdatedAt.Unix(),
 			Tunnels:            tunnels,
 		})
@@ -130,12 +128,6 @@ type AdminUpdateNodeRequest struct {
 	// region 依然不可改（它随注册从节点 .env 同步，admin 改了下次注册就被覆盖）。
 	VisibleKaitu    *bool `json:"visibleKaitu"`
 	VisibleOverleap *bool `json:"visibleOverleap"`
-
-	// 节点池（spec §3.7）：'' = 会员节点，"trial" = 体验线路（免费试用用户只能
-	// 拿到、只能连这个池）。真相源是节点 .env 的 K2_NODE_POOL（与 K2_NODE_BRANDS 同机制，
-	// 每次注册重发、在 nodeDeclaredColumns 里）——这里改的值只撑到该节点下次注册（重启 /
-	// 重新部署）就会被节点声明覆盖；要持久，改节点 .env。保留此入口供临时调整 / 应急摘池。
-	Pool *string `json:"pool" example:"trial"`
 }
 
 func api_admin_update_node(c *gin.Context) {
@@ -179,13 +171,6 @@ func api_admin_update_node(c *gin.Context) {
 	}
 	if req.VisibleOverleap != nil {
 		updateData["visible_overleap"] = *req.VisibleOverleap
-	}
-	if req.Pool != nil {
-		if *req.Pool != "" && *req.Pool != NodePoolTrial {
-			Error(c, ErrorInvalidArgument, "pool must be \"\" or \""+NodePoolTrial+"\"")
-			return
-		}
-		updateData["pool"] = *req.Pool
 	}
 
 	if len(updateData) > 0 {
