@@ -1,0 +1,29 @@
+{
+  "adLanding": {
+    "metaTitle": "开途 — 别的断了，它还在",
+    "heroTitle": "别的断了，它还在。",
+    "heroAlt": "清晨阳光下的书桌：笔记本电脑、手机和一杯拿铁",
+    "subtitle": {
+      "stable": "开途一键连上，一直在线。",
+      "compare": "不用卸载你现在的，并排用 7 天，哪个更稳你自己比。"
+    },
+    "platforms": "一份订阅 5 台设备 · iPhone、Mac、Windows、安卓全平台",
+    "ctaAppStore": "在 App Store 免费获取",
+    "ctaAndroid": "下载开途",
+    "qrTitle": "用 iPhone 扫码开始",
+    "qrHint": "打开相机对准二维码 → App Store 免费获取。装好后在 Mac 上用同一账号登录即可",
+    "openOnPhone": "已经在用 iPhone 看？直接打开",
+    "why": {
+      "title": "为什么是开途",
+      "oneTapTitle": "打开就连上",
+      "oneTapBody": "没有节点、协议、订阅链接要你研究。",
+      "devicesTitle": "一份订阅，5 台设备，全平台",
+      "devicesBody": "iPhone、iPad、Mac、Windows、安卓、Linux 都能用——你的、家里的、公司的电脑，一份全包。",
+      "coexistTitle": "不用先卸载现在的",
+      "coexistBody": "先装上用着，哪个更稳，你自己判断。"
+    },
+    "trialNote": "新用户可免费试用 7 天，之后按 App Store 显示的年费自动续订；试用结束前在 iPhone 设置中取消，不会收费。",
+    "privacy": "隐私政策",
+    "terms": "服务条款"
+  }
+}
