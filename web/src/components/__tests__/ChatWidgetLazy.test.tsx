@@ -47,6 +47,8 @@ describe('ChatWidgetLazy', () => {
     ['probe says chat is off', '/zh-CN/pricing', false],
     ['probe fails', '/zh-CN/pricing', false],
     ['embedded page', '/zh-CN/pricing?chat=preview&embed=true', false],
+    // 广告着陆页不留多余出口：预览身份也不加载
+    ['ad landing page', '/zh-CN/go/xa1?chat=preview', false],
     ['brand has chat off', '/zh-CN/pricing', true],
   ])('renders nothing and never imports the widget chunk — %s', async (name, url, chatOff) => {
     visit(url);

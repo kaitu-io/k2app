@@ -51,7 +51,7 @@ func TestFunnelPaths_RegistryContent(t *testing.T) {
 		events         []string
 	}
 	// 只有指南转化的进入步带路径前缀；其余步骤一律不限路径。
-	pathPrefix := map[string]string{"guide_conversion/0": "/guides/"}
+	pathPrefix := map[string]string{"guide_conversion/0": "/guides/", "ad_landing/0": "/go/"}
 	// 只有「应用跳到网站」的进入步按 utm_source 过滤（App 打开官网时链接上带的标记）。
 	utmSource := map[string]string{"app_to_web/0": "app"}
 	views := []string{"page_view", "pricing_view", "checkout_view", "install_view", "welcome_view"}
@@ -79,6 +79,11 @@ func TestFunnelPaths_RegistryContent(t *testing.T) {
 		{"guide_conversion", 14 * day, []step{
 			{"读指南", "web", []string{"page_view"}},
 			{"注册 / 登录", "", []string{"signup", "auth_done"}}, {"付款", "", []string{"purchase", "renewal"}},
+		}},
+		{"ad_landing", 14 * day, []step{
+			{"访问", "web", []string{"page_view"}}, {"点获取 / 看到二维码", "", []string{"install_click", "qr_view"}},
+			{"首次打开", "", []string{"app_first_open"}}, {"开始试用", "", []string{"trial_start"}},
+			{"付款", "", []string{"purchase", "renewal"}},
 		}},
 		{"app_activation", 7 * day, []step{
 			{"首次打开", "", []string{"app_first_open"}}, {"建号或登录", "app", []string{"auth_done", "device_account_created"}},
@@ -218,6 +223,14 @@ var funnelStepEmitSites = map[string][][]string{
 		{"web/src/app/[locale]/purchase/PurchaseClient.tsx", "webapp/src/components/LoginDialog.tsx", "webapp/src/components/EmailLoginForm.tsx"},
 		nil, // 事实
 	},
+	"ad_landing": {
+		{"web/src/components/FunnelPageView.tsx"}, // 全站挂载即发（PathPrefix 限 /go/）
+		// 第 2 步按设备二选一：install_click（手机端唯一按钮）/ qr_view（桌面端二维码挂载即发）。
+		{"web/src/app/[locale]/go/[code]/AdLandingClient.tsx"},
+		{"webapp/src/main.tsx"}, // 启动即发（每设备一次）
+		nil, // 事实（trial_start）
+		nil, // 事实
+	},
 	"app_activation": {
 		{"webapp/src/main.tsx"}, // 启动即发（每设备一次）
 		// 登录成功；开途 iOS 新壳免登录建号由服务端在 /api/auth/device-account 成功时写（事件名常量在 logic_device_account.go）。
@@ -285,7 +298,7 @@ func TestFunnelPaths_EveryStepHasUnconditionalEmitSite(t *testing.T) {
 // 路线归属与跨面说明：每条路径都属于一条路线；跨面（中途换了网站 / App）的路径必须写明靠什么接上。
 func TestFunnelPaths_LaneAndHop(t *testing.T) {
 	wantLane := map[string]string{
-		"web_purchase": "web", "web_checkout_auth": "web", "web_install": "web", "web_to_app": "web", "guide_conversion": "web",
+		"web_purchase": "web", "web_checkout_auth": "web", "web_install": "web", "web_to_app": "web", "guide_conversion": "web", "ad_landing": "web",
 		"app_activation": "app", "app_purchase": "app", "app_to_web": "app", "post_purchase_activation": "app",
 	}
 	require.Len(t, wantLane, len(funnelPathRegistry))
@@ -307,7 +320,7 @@ func TestFunnelPaths_LaneAndHop(t *testing.T) {
 		}
 	}
 	// 推断归因的路径必须说出「推断」与它不覆盖的品牌。
-	for _, k := range []string{"web_to_app", "guide_conversion"} {
+	for _, k := range []string{"web_to_app", "guide_conversion", "ad_landing"} {
 		p, _ := funnelPathByKey(k)
 		assert.Contains(t, p.Hop, "推断", k)
 		assert.Contains(t, p.Hop, "仅开途", k)

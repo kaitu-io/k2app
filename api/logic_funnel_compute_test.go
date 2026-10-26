@@ -834,7 +834,12 @@ func genFunnelFixture(seed int64, p funnelPath) funnelFixture {
 			fnWithPlan(pick("", "p1", "p2")), fnWithChannel(pick("", "stripe", "apple")), fnWithSource(pick("", "quota", "banner")))
 		r.OS, r.Device, r.AppVersion = pick("", "ios", "macos"), pick("", "mobile", "desktop"), pick("", "0.4.9", "0.4.10")
 		// 路径由时间偏移派生、不消耗 rng：加这一维不改变其它维度的既有随机序列。
-		r.Path = []string{"/guides/a", "/guides/b", "/guides/a", "/guides/b", "/guides", ""}[off%6]
+		// 入口步带 PathPrefix 的路径用自己的前缀造路径（guide_conversion 的序列保持不变，/go/ 用 xa1 / xb1q 两个码）。
+		paths := []string{"/guides/a", "/guides/b", "/guides/a", "/guides/b", "/guides", ""}
+		if len(p.Steps) > 0 && p.Steps[0].PathPrefix == "/go/" {
+			paths = []string{"/go/xa1", "/go/xb1", "/go/xa1q", "/go/xb1", "/go/xb1q", ""}
+		}
+		r.Path = paths[off%6]
 		if funnelEventKind(ev) != FunnelKindFact && rng.Intn(4) == 0 {
 			r.Surface = pick(FunnelSurfaceWeb, FunnelSurfaceApp)
 		}
