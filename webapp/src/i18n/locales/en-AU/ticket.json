@@ -103,6 +103,7 @@
       "slow": "Slow speed",
       "crash": "App crash",
       "subscription": "Subscription issue"
-    }
+    },
+    "zeroIdentityHint": "This account has no email yet. Leave a contact email and we'll reply there (it won't be used for sign-in)."
   }
 }

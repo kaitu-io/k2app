@@ -127,6 +127,87 @@ describe('capacitor-k2', () => {
     });
   });
 
+  // Bridge v6 Keychain identity: the semantic flag `_platform.keychainIdentity`
+  // is true iff iOS AND secureGet exists AND a probe call succeeds. Capacitor's
+  // plugin Proxy returns a wrapper for ANY prop on native, so typeof alone is
+  // not enough — old shells reject the probe with "not implemented".
+  describe('keychain identity capability probe', () => {
+    const pluginAny = mockK2Plugin as any;
+    const fileStore = new Map<string, string>();
+
+    beforeEach(() => {
+      fileStore.clear();
+      pluginAny.storageGet = vi.fn(async ({ key }: { key: string }) => ({ value: fileStore.get(key) ?? null }));
+      pluginAny.storageSet = vi.fn(async ({ key, value }: { key: string; value: string }) => { fileStore.set(key, value); });
+      pluginAny.storageRemove = vi.fn(async ({ key }: { key: string }) => { fileStore.delete(key); });
+      pluginAny.secureGet = vi.fn().mockResolvedValue({ value: null });
+      pluginAny.secureSet = vi.fn().mockResolvedValue(undefined);
+      pluginAny.secureRemove = vi.fn().mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+      for (const k of ['storageGet', 'storageSet', 'storageRemove', 'secureGet', 'secureSet', 'secureRemove']) {
+        delete pluginAny[k];
+      }
+    });
+
+    it('iOS + working secureGet → keychainIdentity true and identity keys mirrored to Keychain', async () => {
+      (Capacitor.getPlatform as any).mockReturnValue('ios');
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      expect(pluginAny.secureGet).toHaveBeenCalledWith({ key: 'device-udid' });
+      expect(window._platform.keychainIdentity).toBe(true);
+
+      await window._platform.storage.set('k2.auth.token', 'tok');
+      expect(pluginAny.secureSet).toHaveBeenCalledWith({ key: 'k2.auth.token', value: JSON.stringify('tok') });
+      expect(fileStore.get('k2.auth.token')).toBe(JSON.stringify('tok'));
+    });
+
+    it('native secureGet resolving without `value` (undefined) is treated like null → file fallback', async () => {
+      (Capacitor.getPlatform as any).mockReturnValue('ios');
+      pluginAny.secureGet.mockResolvedValue({});
+      fileStore.set('device-udid', JSON.stringify('raw-file'));
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      expect(window._platform.keychainIdentity).toBe(true);
+      expect(await window._platform.storage.get('device-udid')).toBe('raw-file');
+      expect(pluginAny.secureSet).toHaveBeenCalledWith({ key: 'device-udid', value: JSON.stringify('raw-file') });
+    });
+
+    it('iOS old shell (probe rejects) → no flag, storage is file-only', async () => {
+      (Capacitor.getPlatform as any).mockReturnValue('ios');
+      pluginAny.secureGet.mockRejectedValue(new Error('"K2Plugin.secureGet()" is not implemented on ios'));
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      expect(window._platform.keychainIdentity).not.toBe(true);
+      await window._platform.storage.set('k2.auth.token', 'tok');
+      expect(pluginAny.secureSet).not.toHaveBeenCalled();
+    });
+
+    it('iOS shell without secureGet at all → no flag, no probe', async () => {
+      (Capacitor.getPlatform as any).mockReturnValue('ios');
+      delete pluginAny.secureGet;
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      expect(window._platform.keychainIdentity).not.toBe(true);
+    });
+
+    it('Android never probes or uses the Keychain path', async () => {
+      (Capacitor.getPlatform as any).mockReturnValue('android');
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      expect(pluginAny.secureGet).not.toHaveBeenCalled();
+      expect(window._platform.keychainIdentity).not.toBe(true);
+      await window._platform.storage.set('device-udid', 'raw');
+      expect(pluginAny.secureSet).not.toHaveBeenCalled();
+    });
+  });
+
   describe('isCapacitorNative', () => {
     it('test_isCapacitorNative_returns_true', async () => {
       const { isCapacitorNative } = await import('../capacitor-k2');

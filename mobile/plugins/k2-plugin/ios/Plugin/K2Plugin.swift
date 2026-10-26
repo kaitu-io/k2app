@@ -48,6 +48,9 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "storageGet", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "storageSet", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "storageRemove", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "secureGet", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "secureSet", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "secureRemove", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "iapGetProducts", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "iapPurchase", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "iapRestore", returnType: CAPPluginReturnPromise),
@@ -1147,6 +1150,35 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             saveStorageDict(dict)
             call.resolve()
         }
+    }
+
+    // MARK: - Secure storage (Keychain, bridge v6)
+
+    @objc func secureGet(_ call: CAPPluginCall) {
+        let key = call.getString("key") ?? ""
+        // nil must cross the bridge as JSON null — a nil Optional boxed as Any
+        // is not guaranteed to serialize, so resolve NSNull explicitly.
+        if let value = KeychainStore.get(key) {
+            call.resolve(["value": value])
+        } else {
+            call.resolve(["value": NSNull()])
+        }
+    }
+
+    @objc func secureSet(_ call: CAPPluginCall) {
+        let key = call.getString("key") ?? ""
+        let value = call.getString("value") ?? ""
+        if KeychainStore.set(key, value) {
+            call.resolve()
+        } else {
+            call.reject("keychain write failed")
+        }
+    }
+
+    @objc func secureRemove(_ call: CAPPluginCall) {
+        let key = call.getString("key") ?? ""
+        KeychainStore.remove(key)
+        call.resolve()
     }
 
     // MARK: - Private VPN Helpers

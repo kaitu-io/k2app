@@ -103,6 +103,7 @@
       "slow": "Velocidade lenta",
       "crash": "App travou",
       "subscription": "Problema de assinatura"
-    }
+    },
+    "zeroIdentityHint": "Esta conta ainda não tem e-mail. Deixe um e-mail de contato e responderemos por lá (ele não será usado para login)."
   }
 }

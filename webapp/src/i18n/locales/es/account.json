@@ -82,7 +82,14 @@
     "deleteFinalWarning": "Confirmación final: en cuanto toques el botón de abajo, tu cuenta se eliminará de forma permanente y al instante.",
     "deleteTypePrompt": "Escribe «{{word}}» para confirmar la eliminación permanente",
     "deleteConfirmWord": "ELIMINAR",
-    "deleteFinalButton": "Eliminar la cuenta permanentemente"
+    "deleteFinalButton": "Eliminar la cuenta permanentemente",
+    "bindBanner": "Vincula un correo o Iniciar sesión con Apple para usarlo en hasta {{count}} dispositivos",
+    "userId": "ID de usuario",
+    "copyUserId": "Copiar ID de usuario",
+    "loginOtherAccount": "Iniciar sesión con otra cuenta",
+    "loginOtherWarning": "La membresía de este dispositivo pertenece a la cuenta actual. Añade primero un correo; si no, no podrás recuperarla tras iniciar sesión con otra cuenta.",
+    "goSetEmail": "Añadir correo",
+    "loginAnyway": "Iniciar sesión igualmente"
   },
   "betaProgram": {
     "title": "Programa Beta",
@@ -151,5 +158,18 @@
     "removeFailed": "Error al eliminar, por favor intenta de nuevo",
     "currentHint": "En el pago puedes elegir \"Pedir a {{email}} que pague\" y le enviaremos un correo.",
     "savedToast": "Guardado"
+  },
+  "deviceBind": {
+    "title": "Vincula una cuenta para usarla en otros dispositivos",
+    "description": "Ahora solo este dispositivo puede usarla. Añade un correo o inicia sesión con Apple y una misma cuenta funcionará en hasta {{count}} dispositivos a la vez.",
+    "thisDevice": "Este dispositivo",
+    "appleButton": "Iniciar sesión con Apple",
+    "googleButton": "Iniciar sesión con Google",
+    "emailHeading": "Añadir correo",
+    "noCharge": "Vincular no afecta a tu suscripción ni a tu prueba actual, y no se te volverá a cobrar.",
+    "bound": "Inicia sesión con {{account}} en tus otros dispositivos, hasta {{count}}",
+    "bindFailed": "No se pudo vincular, inténtalo más tarde",
+    "emailConflict": "Este correo ya tiene una cuenta. Vincula otro correo; para fusionar cuentas, contacta con soporte.",
+    "socialConflict": "Este Apple ID / cuenta de Google ya está vinculado a otra cuenta. Vincula otro; para fusionar cuentas, contacta con soporte."
   }
 }

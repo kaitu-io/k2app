@@ -59,6 +59,15 @@ export interface K2PluginInterface {
   storageSet(options: { key: string; value: string }): Promise<void>;
   storageRemove(options: { key: string }): Promise<void>;
 
+  /**
+   * Keychain-backed string storage (iOS only, bridge v6). Survives app
+   * reinstall; this-device-only, never synced. Android / web reject as
+   * unimplemented — callers must probe `typeof fn === 'function'`.
+   */
+  secureGet(options: { key: string }): Promise<{ value: string | null }>;
+  secureSet(options: { key: string; value: string }): Promise<void>;
+  secureRemove(options: { key: string }): Promise<void>;
+
   listInstalledApps(): Promise<{ apps: Array<{ packageName: string; label: string; iconUrl?: string; installerPackageName?: string | null }> }>;
 
   /**
@@ -116,6 +125,15 @@ export interface K2PluginInterface {
       price: number;
       periodUnit?: 'day' | 'week' | 'month' | 'year' | 'unknown';
       periodValue?: number;
+      /** Bridge v6: introductory offer from StoreKit (absent on older shells / no offer). */
+      introOffer?: {
+        paymentMode: 'freeTrial' | 'payAsYouGo' | 'payUpFront' | 'unknown';
+        periodUnit: 'day' | 'week' | 'month' | 'year' | 'unknown';
+        periodValue: number;
+        displayPrice: string;
+      };
+      /** Bridge v6: StoreKit `isEligibleForIntroOffer` (absent on older shells / non-subscriptions). */
+      isEligibleForIntroOffer?: boolean;
     }>;
   }>;
   iapPurchase(options: { productId: string; accountToken: string }): Promise<{
@@ -124,7 +142,8 @@ export interface K2PluginInterface {
     originalTransactionId?: string;
     productId?: string;
   }>;
-  iapRestore(): Promise<{ transactions: Array<{ transactionId: string; productId: string }> }>;
+  /** `jws` (bridge v6): the signed transaction (`VerificationResult.jwsRepresentation`). */
+  iapRestore(): Promise<{ transactions: Array<{ transactionId: string; productId: string; jws?: string }> }>;
   iapFinishTransaction(options: { transactionId: string }): Promise<void>;
 
   addListener(eventName: 'vpnStateChange', handler: (data: { state: string }) => void): Promise<PluginListenerHandle>;

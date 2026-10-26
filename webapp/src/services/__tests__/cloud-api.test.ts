@@ -226,6 +226,62 @@ describe('Cloud API Client', () => {
     });
   });
 
+  describe('refresh failure only clears tokens on a definitive rejection', () => {
+    function setup401() {
+      mockedAuthService.getToken.mockResolvedValue('expired-token');
+      mockedAuthService.getRefreshToken.mockResolvedValue('refresh-token');
+      mockedAuthService.clearTokens.mockResolvedValue(undefined);
+    }
+
+    it('keeps tokens when the refresh times out', async () => {
+      setup401();
+      vi.useFakeTimers();
+      try {
+        mockedResolveAndFetch
+          .mockResolvedValueOnce(okTransport(401, { code: 401, message: 'Unauthorized' }))
+          .mockImplementationOnce(() => new Promise(() => {}) as any);
+        const p = cloudApi.request('GET', '/api/user/info');
+        await vi.advanceTimersByTimeAsync(20000);
+        const response = await p;
+        expect(response.code).toBe(401);
+      } finally {
+        vi.useRealTimers();
+      }
+      expect(mockedAuthService.clearTokens).not.toHaveBeenCalled();
+      expect(mockedAuthStore.setState).not.toHaveBeenCalledWith({ isAuthenticated: false });
+    });
+
+    it('keeps tokens when the refresh transport fails', async () => {
+      setup401();
+      mockedResolveAndFetch
+        .mockResolvedValueOnce(okTransport(401, { code: 401, message: 'Unauthorized' }))
+        .mockResolvedValueOnce({ transport: 'fail' } as any);
+      const response = await cloudApi.request('GET', '/api/user/info');
+      expect(response.code).toBe(401);
+      expect(mockedAuthService.clearTokens).not.toHaveBeenCalled();
+      expect(mockedAuthStore.setState).not.toHaveBeenCalledWith({ isAuthenticated: false });
+    });
+
+    it('keeps tokens when the refresh endpoint answers a server error', async () => {
+      setup401();
+      mockedResolveAndFetch
+        .mockResolvedValueOnce(okTransport(401, { code: 401, message: 'Unauthorized' }))
+        .mockResolvedValueOnce(okTransport(200, { code: 500, message: 'server error' }));
+      await cloudApi.request('GET', '/api/user/info');
+      expect(mockedAuthService.clearTokens).not.toHaveBeenCalled();
+    });
+
+    it('clears tokens when the refresh endpoint rejects the token (code 401, HTTP 200)', async () => {
+      setup401();
+      mockedResolveAndFetch
+        .mockResolvedValueOnce(okTransport(401, { code: 401, message: 'Unauthorized' }))
+        .mockResolvedValueOnce(okTransport(200, { code: 401, message: 'invalid token' }));
+      await cloudApi.request('GET', '/api/user/info');
+      expect(mockedAuthService.clearTokens).toHaveBeenCalled();
+      expect(mockedAuthStore.setState).toHaveBeenCalledWith({ isAuthenticated: false });
+    });
+  });
+
   // ==================== Antiblock Integration ====================
 
   describe('antiblock integration', () => {

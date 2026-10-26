@@ -4,6 +4,9 @@ import IosMembershipPanel from '../IosMembershipPanel';
 import { statsService } from '../../../services/stats';
 import type { DataSubscription } from '../../../services/api-types';
 
+vi.mock('../../../hooks/useAppLinks', () => ({
+  useAppLinks: () => ({ links: { privacyPolicyUrl: 'https://example.test/privacy' } }),
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
   initReactI18next: { type: '3rdParty', init: () => {} },
@@ -15,7 +18,8 @@ vi.mock('../../../services/stats', () => ({
   },
 }));
 vi.mock('../../../hooks/useIapPurchase', () => ({
-  useIapPurchase: () => ({ restore: vi.fn(), restoring: false, purchaseError: null, lastGrantedUser: null }),
+  IAP_PRODUCT_IDS: ['io.kaitu.sub.basic.1y'],
+  useIapPurchase: () => ({ products: [], loadProducts: vi.fn(), restore: vi.fn(), restoring: false, purchaseError: null, lastGrantedUser: null }),
 }));
 vi.mock('../../../hooks/useStripeCheckout', () => ({
   useStripeCheckout: () => ({ checkout: vi.fn(), openPortal: vi.fn(), loading: false, error: null, clearError: vi.fn() }),

@@ -10,7 +10,7 @@ vi.mock('../../../services/stats', () => ({
 }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback ?? key,
+    t: (key: string, opt?: unknown) => (typeof opt === 'string' ? opt : key),
   }),
 }));
 

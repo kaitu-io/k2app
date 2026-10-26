@@ -428,6 +428,8 @@ export interface DataSubscription {
   currentPeriodEnd: number; // unix 秒
   autoRenew: boolean;
   manage: ManageSurface;
+  isTrial: boolean; // Apple 免费试用链且尚未转付费（Stripe / 非试用恒 false）
+  trialEndsAt: number; // 试用结束 unix 秒；非试用为 0
 }
 
 export interface DataUser {
@@ -457,6 +459,8 @@ export interface DataUser {
   // StoreKit appAccountToken (uuidv5-derived). iOS purchase only — `omitempty`
   // in Go `api/type.go`, so optional. Bound to the Apple purchase for S2S verify.
   appleAccountToken?: string;
+  /** 是否同意退款时向 Apple 提供使用情况：true / false；null / 缺省 = 从未问过（服务端三态）。 */
+  appleConsumptionConsent?: boolean | null;
   /** 当前活跃的续订订阅（0..N）。驱动 iOS 购买入口决策；跨 provider，防永久双扣。 */
   subscriptions?: DataSubscription[];
 }
@@ -682,6 +686,7 @@ export interface AppConfig {
   announcement?: Announcement; // 向后兼容：最高优先级公告
   announcements?: Announcement[]; // 全部活跃公告（按 priority DESC 排序）
   socialSignIn?: { apple: boolean; google: boolean }; // 联合登录开关（老服务端不下发 = 全关）
+  deviceAccount?: boolean; // 免登录设备账号开关（品牌级；老服务端不下发 = 关）
 }
 
 // 链接有效期选项

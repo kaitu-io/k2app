@@ -196,6 +196,8 @@ func SetupRouter() *gin.Engine {
 			user.PUT("/language", AuthRequired(), EnforceDeviceClass(), api_update_user_language)
 			// 更新 beta channel 订阅状态
 			user.PUT("/beta-channel", AuthRequired(), EnforceDeviceClass(), api_update_user_beta_channel)
+			// Apple 退款 Consumption 应答的用户同意（spec 2026-10-08 §5）
+			user.PUT("/apple-consumption-consent", AuthRequired(), EnforceDeviceClass(), api_put_apple_consumption_consent)
 			// 创建工单
 			user.POST("/ticket", AuthOptional(), api_create_ticket)
 			// 注册设备日志元数据（S3 上传后调用）

@@ -80,7 +80,7 @@ function setupAuthenticatedUser() {
     const state = { isAuthenticated: true };
     return typeof selector === 'function' ? selector(state) : state;
   });
-  mockUseUser.mockReturnValue({ user: { loginIdentifies: [{ value: 'test@example.com' }] }, isLoading: false, error: null, mutate: vi.fn() } as any);
+  mockUseUser.mockReturnValue({ user: { loginIdentifies: [{ type: 'email', value: 'test@example.com' }] }, isLoading: false, error: null, mutate: vi.fn() } as any);
 }
 
 function setupAnonymousUser() {

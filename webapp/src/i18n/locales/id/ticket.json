@@ -103,6 +103,7 @@
       "slow": "Kecepatan lambat",
       "crash": "Kerusakan aplikasi",
       "subscription": "Masalah langganan"
-    }
+    },
+    "zeroIdentityHint": "Akun ini belum punya email. Tinggalkan email kontak dan kami akan membalas ke sana (tidak dipakai untuk masuk)."
   }
 }

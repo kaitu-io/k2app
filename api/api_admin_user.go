@@ -16,7 +16,6 @@ import (
 )
 
 // AdminUserDetailData 包含了后台用户详情页所需的所有信息
-//
 type AdminUserDetailData struct {
 	DataUser
 	Devices       []DataDevice       `json:"devices"`       // 用户设备列表
@@ -44,11 +43,12 @@ func adminUserScalars(u *User) DataUser {
 		AccessKeyCreatedAt: u.AccessKeyCreatedAt,
 		IsBlocked:          isUserBlocked(u),
 		Brand:              u.Brand,
+
+		AppleConsumptionConsent: u.AppleConsumptionConsent,
 	}
 }
 
 // api_admin_list_users 处理获取用户列表的请求（管理员）
-//
 func api_admin_list_users(c *gin.Context) {
 	pagination := PaginationFromRequest(c)
 	log.Infof(c, "Admin request for user list, page: %d, size: %d", pagination.Page, pagination.PageSize)
@@ -185,7 +185,6 @@ func api_admin_list_users(c *gin.Context) {
 }
 
 // api_admin_get_user_detail 处理获取单个用户详细信息的请求（管理员）
-//
 func api_admin_get_user_detail(c *gin.Context) {
 	uuid := c.Param("uuid")
 	var user User
@@ -277,15 +276,15 @@ func api_admin_get_user_detail(c *gin.Context) {
 					paidAt = order.PaidAt.Unix()
 				}
 				dataOrder = &DataOrder{
-					ID:        order.UUID,
-					UUID:      order.UUID,
-					Title:     order.Title,
-					PayAmount: order.PayAmount,
-					IsPaid:    order.IsPaid != nil && *order.IsPaid,
-					CreatedAt: order.CreatedAt.Unix(),
-					Plan:      plan,
-					Campaign:  campaign,
-					PayAt:     paidAt,
+					ID:         order.UUID,
+					UUID:       order.UUID,
+					Title:      order.Title,
+					PayAmount:  order.PayAmount,
+					IsPaid:     order.IsPaid != nil && *order.IsPaid,
+					CreatedAt:  order.CreatedAt.Unix(),
+					Plan:       plan,
+					Campaign:   campaign,
+					PayAt:      paidAt,
 					IsRefunded: order.IsRefunded != nil && *order.IsRefunded,
 					RefundedAt: func() int64 {
 						if order.RefundedAt != nil {
@@ -458,7 +457,6 @@ type UpdateUserRetailerStatusRequest struct {
 }
 
 // api_admin_update_user_retailer_status 更新用户分销商状态
-//
 func api_admin_update_user_retailer_status(c *gin.Context) {
 	uuid := c.Param("uuid")
 
@@ -499,7 +497,6 @@ type UpdateRetailerContactsRequest struct {
 }
 
 // api_admin_update_retailer_contacts 更新分销商联系方式
-//
 func api_admin_update_retailer_contacts(c *gin.Context) {
 	uuid := c.Param("uuid")
 
@@ -581,7 +578,6 @@ type HardDeleteUsersRequest struct {
 }
 
 // api_admin_add_user_membership 为用户添加会员时长
-//
 func api_admin_add_user_membership(c *gin.Context) {
 	uuid := c.Param("uuid")
 
@@ -675,7 +671,6 @@ type UpdateUserEmailRequest struct {
 }
 
 // api_admin_update_user_email 管理员更新用户邮箱（无需验证码）
-//
 func api_admin_update_user_email(c *gin.Context) {
 	uuid := c.Param("uuid")
 
@@ -784,7 +779,6 @@ func api_admin_update_user_email(c *gin.Context) {
 }
 
 // api_admin_hard_delete_users 硬删除用户（批量）
-//
 func api_admin_hard_delete_users(c *gin.Context) {
 	var req HardDeleteUsersRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

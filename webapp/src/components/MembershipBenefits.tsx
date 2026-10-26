@@ -15,9 +15,14 @@ interface MembershipBenefitsProps {
   maxLanClient?: number; // 0 = no LAN, -1 = unlimited, >0 = exact
 }
 
+/** App 设备上限：套餐的 maxDevice，0 / 缺省时为默认 5 台。 */
+export function resolveDeviceCount(maxDevice?: number): number {
+  return maxDevice && maxDevice > 0 ? maxDevice : 5;
+}
+
 export default function MembershipBenefits({ maxDevice, maxRouterDevice, maxLanClient }: MembershipBenefitsProps) {
   const { t } = useTranslation();
-  const deviceCount = (maxDevice && maxDevice > 0) ? maxDevice : 5;
+  const deviceCount = resolveDeviceCount(maxDevice);
   const hasRouter = (maxRouterDevice ?? 0) > 0;
   const lanClientLabel = maxLanClient === -1
     ? t('purchase:purchase.features.unlimited')

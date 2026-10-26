@@ -14,7 +14,6 @@ import (
 )
 
 // api_get_user_info 获取用户信息
-//
 func api_get_user_info(c *gin.Context) {
 	userID := ReqUserID(c)
 	log.Infof(c, "user %d requesting user info", userID)
@@ -76,14 +75,12 @@ func api_get_user_info(c *gin.Context) {
 }
 
 // UpdateLoginEmailRequest 更新登录邮箱请求数据结构
-//
 type UpdateLoginEmailRequest struct {
 	Email            string `json:"email" binding:"required,email" example:"newemail@example.com"` // 新邮箱地址
 	VerificationCode string `json:"verificationCode" binding:"required" example:"123456"`          // 验证码
 }
 
 // api_update_login_email 更新登录邮箱
-//
 func api_update_login_email(c *gin.Context) {
 	var req UpdateLoginEmailRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -189,13 +186,11 @@ func api_update_login_email(c *gin.Context) {
 }
 
 // SendVerificationEmailRequest 发送验证码邮箱请求数据结构
-//
 type SendVerificationEmailRequest struct {
 	Email string `json:"email" binding:"required,email" example:"user@example.com"` // 邮箱地址
 }
 
 // api_send_bind_email_verification 发送绑定邮箱验证码
-//
 func api_send_bind_email_verification(c *gin.Context) {
 	userID := ReqUserID(c)
 	user := ReqUser(c)
@@ -266,7 +261,6 @@ func api_send_bind_email_verification(c *gin.Context) {
 
 // api_delete_user_account 删除用户账号：硬删除登录标识 + 设备（释放邮箱与设备绑定），
 // 用户行本身软删除（保留订单 / 钱包 / 历史以备审计）。
-//
 func api_delete_user_account(c *gin.Context) {
 	userID := ReqUserID(c)
 	log.Infof(c, "user %d requesting to delete their account", userID)
@@ -325,7 +319,6 @@ func api_delete_user_account(c *gin.Context) {
 // DELETE /app/users/:uuid/access-key (撤销)
 
 // api_update_user_language 更新用户语言偏好
-//
 func api_update_user_language(c *gin.Context) {
 	userID := ReqUserID(c)
 	log.Infof(c, "user %d requesting to update language preference", userID)
@@ -534,25 +527,26 @@ func buildDataUserWithDevice(user *User, device *DataDevice) *DataUser {
 
 	q := user.Quota()
 	return &DataUser{
-		UUID:              user.UUID,
-		AppleAccountToken: deriveAppleAccountToken(user.UUID),
-		Subscriptions:     GetActiveSubscriptions(user.ID),
-		ExpiredAt:         user.ExpiredAt,
-		IsFirstOrderDone: user.IsFirstOrderDone != nil && *user.IsFirstOrderDone,
-		InvitedByCode:    inviteCode,
-		LoginIdentifies:  loginIdentifies,
-		Device:           device,
-		DeviceCount:      int64(len(user.Devices)),
-		Language:         user.Language,
-		IsRetailer:       user.IsRetailer != nil && *user.IsRetailer,
-		Roles:            user.Roles,
-		IsAdmin:          user.IsAdmin != nil && *user.IsAdmin,
-		HasPassword:      HasPasswordSet(user),
-		BetaOptedIn:      user.BetaOptedIn != nil && *user.BetaOptedIn,
-		Tier:             user.Tier,
-		MaxDevice:        q.MaxDevice,
-		MaxRouterDevice:  q.MaxRouterDevice,
-		MaxLanClient:     q.MaxLanClient,
+		UUID:                    user.UUID,
+		AppleAccountToken:       deriveAppleAccountToken(user.UUID),
+		Subscriptions:           GetActiveSubscriptions(user.ID),
+		ExpiredAt:               user.ExpiredAt,
+		IsFirstOrderDone:        user.IsFirstOrderDone != nil && *user.IsFirstOrderDone,
+		InvitedByCode:           inviteCode,
+		LoginIdentifies:         loginIdentifies,
+		Device:                  device,
+		DeviceCount:             int64(len(user.Devices)),
+		Language:                user.Language,
+		IsRetailer:              user.IsRetailer != nil && *user.IsRetailer,
+		Roles:                   user.Roles,
+		IsAdmin:                 user.IsAdmin != nil && *user.IsAdmin,
+		HasPassword:             HasPasswordSet(user),
+		BetaOptedIn:             user.BetaOptedIn != nil && *user.BetaOptedIn,
+		AppleConsumptionConsent: user.AppleConsumptionConsent,
+		Tier:                    user.Tier,
+		MaxDevice:               q.MaxDevice,
+		MaxRouterDevice:         q.MaxRouterDevice,
+		MaxLanClient:            q.MaxLanClient,
 
 		RegistrationCountry: user.RegistrationCountry,
 		CurrentCountry:      user.CurrentCountry,

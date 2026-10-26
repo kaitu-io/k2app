@@ -52,7 +52,7 @@ type User struct {
 	UUID             string           `gorm:"type:varchar(255);uniqueIndex;not null"`
 	DeletedAt        gorm.DeletedAt   `gorm:"index"`
 	ExpiredAt        int64            `gorm:"not null;index"`                                        // 过期时间戳（范围查询，索引有效）
-	InTrial          bool             `gorm:"column:in_trial;not null;default:false" json:"inTrial"` // 是否处于 Apple 免费试用期（试用线路隔离用）
+	InTrial          bool             `gorm:"column:in_trial;not null;default:false" json:"inTrial"` // 是否处于 Apple 免费试用期（会员页试用状态 / 统计 / 漏斗）
 	IsFirstOrderDone *bool            `gorm:"default:false"`                                         // 是否完成首单（bool索引选择性低，通过复合索引优化）
 	IsActivated      *bool            `gorm:"default:false"`                                         // 账号是否已激活（bool索引选择性低，通过复合索引优化）
 	ActivatedAt      int64            `gorm:"not null;default:0;index"`                              // 账号激活时间戳（Unix秒，0表示未激活）
@@ -89,6 +89,11 @@ type User struct {
 	// Beta channel subscription
 	BetaOptedIn *bool `gorm:"default:false"`            // 是否订阅 beta 更新通知
 	BetaOptedAt int64 `gorm:"not null;default:0;index"` // 订阅时间戳（关闭时保留历史）
+
+	// Apple 退款 Consumption 应答的用户同意（spec 2026-10-08 §5）。nil = 没问过；false = 拒绝 / 已撤回。
+	// 只有 true 才在 CONSUMPTION_REQUEST 时把消费信息发给 Apple（logic_apple_consumption.go）。
+	AppleConsumptionConsent   *bool `gorm:"column:apple_consumption_consent"`
+	AppleConsumptionConsentAt int64 `gorm:"column:apple_consumption_consent_at;not null;default:0"` // 最近一次表态时刻（unix 秒）
 
 	// Password authentication
 	PasswordHash           string `gorm:"type:varchar(255)"`  // bcrypt hashed password

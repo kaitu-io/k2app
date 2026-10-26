@@ -82,7 +82,14 @@
     "deleteFinalWarning": "Conferma finale: non appena tocchi il pulsante qui sotto, il tuo account viene eliminato subito e in modo definitivo.",
     "deleteTypePrompt": "Digita \"{{word}}\" per confermare l'eliminazione definitiva",
     "deleteConfirmWord": "ELIMINA",
-    "deleteFinalButton": "Elimina definitivamente l'account"
+    "deleteFinalButton": "Elimina definitivamente l'account",
+    "bindBanner": "Collega un’email o Accedi con Apple per usarlo su un massimo di {{count}} dispositivi",
+    "userId": "ID utente",
+    "copyUserId": "Copia ID utente",
+    "loginOtherAccount": "Accedi a un altro account",
+    "loginOtherWarning": "L'abbonamento su questo dispositivo appartiene all'account attuale. Aggiungi prima un'email, altrimenti non potrai recuperarlo dopo aver effettuato l'accesso a un altro account.",
+    "goSetEmail": "Aggiungi email",
+    "loginAnyway": "Accedi comunque"
   },
   "betaProgram": {
     "title": "Programma Beta",
@@ -151,5 +158,18 @@
     "removeFailed": "Impossibile rimuovere, per favore riprova",
     "currentHint": "Al checkout puoi scegliere \"Chiedi a {{email}} di pagare\" e noi gli invieremo un'email.",
     "savedToast": "Salvato"
+  },
+  "deviceBind": {
+    "title": "Collega un account per usarlo su altri dispositivi",
+    "description": "Al momento solo questo dispositivo può usarlo. Aggiungi un'email o accedi con Apple e lo stesso account funzionerà su un massimo di {{count}} dispositivi contemporaneamente.",
+    "thisDevice": "Questo dispositivo",
+    "appleButton": "Accedi con Apple",
+    "googleButton": "Accedi con Google",
+    "emailHeading": "Aggiungi email",
+    "noCharge": "Il collegamento non influisce sull'abbonamento o sulla prova in corso e non verrai addebitato di nuovo.",
+    "bound": "Accedi con {{account}} sugli altri dispositivi, fino a {{count}}",
+    "bindFailed": "Collegamento non riuscito, riprova più tardi",
+    "emailConflict": "Questa email ha già un account. Collega un'altra email; per unire gli account contatta l'assistenza.",
+    "socialConflict": "Questo ID Apple / account Google è già collegato a un altro account. Collegane un altro; per unire gli account contatta l'assistenza."
   }
 }

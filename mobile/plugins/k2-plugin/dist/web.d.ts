@@ -82,6 +82,18 @@ export declare class K2PluginWeb extends WebPlugin implements K2PluginInterface 
     storageRemove(_options: {
         key: string;
     }): Promise<void>;
+    secureGet(_options: {
+        key: string;
+    }): Promise<{
+        value: string | null;
+    }>;
+    secureSet(_options: {
+        key: string;
+        value: string;
+    }): Promise<void>;
+    secureRemove(_options: {
+        key: string;
+    }): Promise<void>;
     listInstalledApps(): Promise<{
         apps: Array<{
             packageName: string;

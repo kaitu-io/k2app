@@ -32,6 +32,25 @@ export async function getDeviceUdid(): Promise<string> {
   return cachedUdid;
 }
 
+/**
+ * Discard this device's udid and start over with a fresh one.
+ *
+ * Used when the device account behind the current udid can't be proven (403006)
+ * and there is no Apple transaction to restore it with: writes a new raw id,
+ * clears the auth tokens that belonged to the old udid, and replaces the cache.
+ * Goes through _platform.storage, so on iOS keychain shells both stores rotate.
+ */
+export async function regenerateDeviceUdid(): Promise<string> {
+  const storage = window._platform?.storage;
+  if (!storage) throw new Error('[DeviceUDID] Platform storage not available');
+
+  const raw = randomUUID();
+  await storage.set(STORAGE_KEY, raw);
+  await clearStaleAuthTokens(storage);
+  cachedUdid = await hashToUdid(raw);
+  return cachedUdid;
+}
+
 async function hashToUdid(raw: string): Promise<string> {
   const hash = await sha256(new TextEncoder().encode(raw));
   return Array.from(hash)

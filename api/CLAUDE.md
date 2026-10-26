@@ -342,7 +342,8 @@ Invariants from the 2026-08-10 sandbox-order incident (narrative: `docs/incident
 - **对账**（`worker_subscription_reconcile.go`）：Apple 生产订阅按 `id % 7` 每天巡检一桶（有效 / 近 120 天过期 / 带生效退款的任意状态），与 48h 临期扫描去重；先判 Apple Revoked → 只走收回（不做宽限延长）；revoked 行只允许复活入账与撤销探测（跳过续期与 Expired 分支）；撤销探测 48h 冷却、交易号与生产环境一致、证据时刻 = `RefundSignedAt+1ms`；Apple 仍报退款而本地已撤销 → `[APPLE-REFUND-CONFLICT]` 一次，不自动处理。
 - **退款后续共用 `onPaidOrderRefundedInTx`**（`logic_purchase_refund.go`，Apple 与后台网页退款都调）：被邀请首购奖励按 `InviteRewardGrant`（被邀请人唯一 = 一生一次；记触发购买 `apple_txn`/`order`）精确撤回双方，被邀请人仍持有合格购买（实付 >0、月数达门槛）则改锚不撤；后台退款可 `keepInviteRewards`（审批 params 留痕）。分销付费人数按 `Order.RetailerCountedID` 扣回或转移到买家其它有效单；L2 自动升级后跌破门槛只告警 `[RETAILER-COUNT-DROP]`，不自动降级。
 - **邀请奖励只发生产交易**（沙盒不发、不消耗首单资格；沙盒权益与 Tier 照发）。IAP 返现冻结 90 天（覆盖 Apple 退款窗口），网页 30 天；返现撤回致负余额 `[CASHBACK-NEGATIVE]`。
-- **告警**走 `alertBilling`（var，测试替换）：`[APPLE-REFUND]`（含该用户累计退款次数）、`[APPLE-REFUND-REVERSED]`（列手工步骤：订单退款标记、返现、分销计数不自动反转）、`[APPLE-REFUND-PCT]`、`[APPLE-REFUND-RATE]`（开途 30 天 ≥3 次 → 考虑上线 Consumption 应答）。
+- **告警**走 `alertBilling`（var，测试替换）：`[APPLE-REFUND]`（含该用户累计退款次数）、`[APPLE-REFUND-REVERSED]`（列手工步骤：订单退款标记、返现、分销计数不自动反转）、`[APPLE-REFUND-PCT]`、`[APPLE-REFUND-RATE]`（开途 30 天 ≥3 次）。
+- **Consumption 应答**（`logic_apple_consumption.go`）：webhook `CONSUMPTION_REQUEST` → 仅当 `users.apple_consumption_consent = true`（`PUT /api/user/apple-consumption-consent`）才 PUT v2 `/inApps/v2/transactions/consumption/{txn}`；两品牌一律 `GRANT_PRORATED`、不发 `consumptionPercentage`（自动续订带它 400）。发送失败 500 且不记 UUID，让 Apple 重投。
 
 Still open before overleap Play Billing / campaign sends:
 - **Overleap winback campaign codes**: `winbackCampaigns` (`worker_renewal_reminder.go`) has no overleap-scoped codes — `campaignVarsForBrand` returns an empty vars map for overleap recipients (silently no-op; verify intent once overleap runs campaigns).

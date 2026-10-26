@@ -77,6 +77,12 @@ export default function SubmitTicket() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const { user } = useUser();
 
+  // 已登录但账号没有邮箱身份（零身份设备账号、只绑了 Apple / Google）：服务端没有地址可回，
+  // 表单要一个联系邮箱，只用于回复、不绑定为登录身份（spec 2026-10-20 §4.6.1）。
+  const needsContactEmail =
+    isAuthenticated && !!user && !user.loginIdentifies?.some((i) => i.type === 'email');
+  const askEmail = !isAuthenticated || needsContactEmail;
+
   // Feedback mode - when navigating from FeedbackButton
   const isFeedbackMode = searchParams.get('feedback') === 'true';
   const feedbackIdRef = useRef<string | null>(null);
@@ -155,8 +161,8 @@ export default function SubmitTicket() {
       setSubmitResult({ success: false, message: t('ticket:ticket.validation.contentTooLong') });
       return;
     }
-    // Anonymous: require email
-    if (!isAuthenticated) {
+    // Anonymous / no email identity: require a contact email
+    if (askEmail) {
       if (!email.trim()) {
         setSubmitResult({ success: false, message: t('ticket:ticket.validation.emailRequired') });
         return;
@@ -185,6 +191,8 @@ export default function SubmitTicket() {
           : {}),
         // Anonymous: include email and source
         ...(!isAuthenticated ? { email: email.trim(), source: 'anonymous' } : {}),
+        // Signed in without an email identity: contact email only
+        ...(needsContactEmail ? { email: email.trim() } : {}),
         ...systemInfo,
       });
 
@@ -324,10 +332,10 @@ export default function SubmitTicket() {
                       ))}
                     </Box>
 
-                    {!isAuthenticated && (
+                    {askEmail && (
                       <>
                         <Alert severity="info" sx={{ mb: -1 }}>
-                          {t('ticket:ticket.anonymousHint')}
+                          {needsContactEmail ? t('ticket:ticket.zeroIdentityHint') : t('ticket:ticket.anonymousHint')}
                         </Alert>
                         <TextField
                           label={t('ticket:ticket.emailLabel')}

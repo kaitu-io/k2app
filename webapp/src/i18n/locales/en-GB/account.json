@@ -60,7 +60,14 @@
     "deleteFinalWarning": "Final confirmation: once you tap the button below, your account is permanently deleted at once.",
     "deleteTypePrompt": "Type \"{{word}}\" to confirm permanent deletion",
     "deleteConfirmWord": "DELETE",
-    "deleteFinalButton": "Permanently delete account"
+    "deleteFinalButton": "Permanently delete account",
+    "bindBanner": "Add an email or Sign in with Apple to use it on up to {{count}} devices",
+    "userId": "User ID",
+    "copyUserId": "Copy user ID",
+    "loginOtherAccount": "Sign in to another account",
+    "loginOtherWarning": "The membership on this device belongs to the current account. Add an email first, or you won't be able to get it back after signing in to another account.",
+    "goSetEmail": "Add email",
+    "loginAnyway": "Sign in anyway"
   },
   "developerModeActivated": "Developer mode enabled",
   "logLevel": "Log Level",
@@ -151,5 +158,18 @@
     "disableConfirm": "Switch to Stable",
     "downloading": "Downloading stable version...",
     "badge": "Beta"
+  },
+  "deviceBind": {
+    "title": "Link an account to use it on other devices",
+    "description": "Right now only this device can use it. Add an email or Sign in with Apple, and one account works on up to {{count}} devices at once.",
+    "thisDevice": "This device",
+    "appleButton": "Sign in with Apple",
+    "googleButton": "Sign in with Google",
+    "emailHeading": "Add email",
+    "noCharge": "Linking doesn't affect your current subscription or trial, and you won't be charged again.",
+    "bound": "Sign in with {{account}} on your other devices, up to {{count}} devices",
+    "bindFailed": "Couldn't link, please try again later",
+    "emailConflict": "This email already has an account. Please link a different email; to merge accounts, contact support.",
+    "socialConflict": "This Apple ID / Google account is already linked to another account. Please link a different one; to merge accounts, contact support."
   }
 }

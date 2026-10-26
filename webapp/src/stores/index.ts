@@ -75,6 +75,7 @@ import { useSelfHostedStore } from './self-hosted.store';
 import { useFeedbackStore } from './feedback.store';
 import { useAppRoutesStore } from './app-routes.store';
 import { useRouterStore } from './router.store';
+import { ensureDeviceAccount } from '../services/device-account';
 
 /**
  * 初始化所有 Store
@@ -97,6 +98,9 @@ export function initializeAllStores(): () => void {
   useAppRoutesStore.getState().load(); // fire-and-forget; runs legacy-key migration + hydrate
 
   const cleanupAuth = initializeAuthStore();
+  // iOS keychain shells: login-free device account when there's no token. Fire-and-forget —
+  // never blocks first paint; every failure leaves the normal login UI in place.
+  void ensureDeviceAccount();
   const cleanupVPNMachine = initializeVPNMachine();
   const cleanupConnection = initializeConnectionStore();
 

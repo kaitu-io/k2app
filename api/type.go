@@ -25,20 +25,20 @@ const (
 
 // RoleNames 角色名称映射（用于调试和日志）
 var RoleNames = map[uint64]string{
-	RoleUser:      "user",
-	RoleMarketing: "marketing",
+	RoleUser:         "user",
+	RoleMarketing:    "marketing",
 	RoleDevopsViewer: "devops_viewer",
 	RoleDevopsEditor: "devops_editor",
-	RoleSupport:   "support",
+	RoleSupport:      "support",
 }
 
 // RoleByName 角色名称到位掩码的反向映射（用于 CLI 和 API 赋权）
 var RoleByName = map[string]uint64{
-	"user":       RoleUser,
-	"marketing":  RoleMarketing,
+	"user":          RoleUser,
+	"marketing":     RoleMarketing,
 	"devops_viewer": RoleDevopsViewer,
 	"devops_editor": RoleDevopsEditor,
-	"support":    RoleSupport,
+	"support":       RoleSupport,
 }
 
 // HasRole 检查是否拥有指定角色
@@ -119,31 +119,33 @@ type DataStripeRedirect struct {
 
 // DataUser API 用户数据结构
 type DataUser struct {
-	UUID             string               `json:"uuid"`
-	AppleAccountToken string              `json:"appleAccountToken,omitempty"` // StoreKit appAccountToken（uuidv5 派生），iOS 购买时下发以绑定账号
+	UUID              string `json:"uuid"`
+	AppleAccountToken string `json:"appleAccountToken,omitempty"` // StoreKit appAccountToken（uuidv5 派生），iOS 购买时下发以绑定账号
 	// Subscriptions 是用户当前活跃的续订型订阅（0..N）。驱动 iOS 购买入口决策；
 	// 跨 provider 列表，防止"多续订源永久双扣"。一次性叠加权益仅由 ExpiredAt 体现。
-	Subscriptions []DataSubscription `json:"subscriptions,omitempty"`
-	ExpiredAt        int64                `json:"expiredAt"`
-	IsFirstOrderDone bool                 `json:"isFirstOrderDone"`
-	InvitedByCode    *DataInviteCode      `json:"inviteCode"`
-	LoginIdentifies  []DataLoginIdentify  `json:"loginIdentifies"` // 登录身份列表
-	Device           *DataDevice          `json:"device"`
-	DeviceCount      int64                `json:"deviceCount"`
-	Language         string               `json:"language"`                 // 用户语言偏好
-	IsRetailer       bool                 `json:"isRetailer,omitempty"`     // 是否为分销商（仅管理员可见）
-	RetailerConfig   *DataRetailerConfig  `json:"retailerConfig,omitempty"` // 分销商配置（仅管理员可见）
-	Wallet           *DataWallet          `json:"wallet,omitempty"`         // 钱包信息（仅管理员可见）
-	Roles            uint64               `json:"roles"`                    // 角色位掩码
-	IsAdmin            bool                 `json:"isAdmin,omitempty"`            // 是否超级管理员
-	HasPassword        bool                 `json:"hasPassword"`                  // 是否已设置密码
-	HasAccessKey       bool                 `json:"hasAccessKey,omitempty"`       // 是否有 Access Key
-	AccessKeyCreatedAt int64                `json:"accessKeyCreatedAt,omitempty"` // Access Key 创建时间
-	BetaOptedIn        bool                 `json:"betaOptedIn"`                  // 是否订阅 beta
-	Tier               string               `json:"tier,omitempty"`               // 当前功能等级
-	MaxDevice          int                  `json:"maxDevice"`                    // app 设备数量上限
-	MaxRouterDevice    int                  `json:"maxRouterDevice"`              // 路由器登录数量上限
-	MaxLanClient       int                  `json:"maxLanClient"`                 // LAN 接入数量上限
+	Subscriptions      []DataSubscription  `json:"subscriptions,omitempty"`
+	ExpiredAt          int64               `json:"expiredAt"`
+	IsFirstOrderDone   bool                `json:"isFirstOrderDone"`
+	InvitedByCode      *DataInviteCode     `json:"inviteCode"`
+	LoginIdentifies    []DataLoginIdentify `json:"loginIdentifies"` // 登录身份列表
+	Device             *DataDevice         `json:"device"`
+	DeviceCount        int64               `json:"deviceCount"`
+	Language           string              `json:"language"`                     // 用户语言偏好
+	IsRetailer         bool                `json:"isRetailer,omitempty"`         // 是否为分销商（仅管理员可见）
+	RetailerConfig     *DataRetailerConfig `json:"retailerConfig,omitempty"`     // 分销商配置（仅管理员可见）
+	Wallet             *DataWallet         `json:"wallet,omitempty"`             // 钱包信息（仅管理员可见）
+	Roles              uint64              `json:"roles"`                        // 角色位掩码
+	IsAdmin            bool                `json:"isAdmin,omitempty"`            // 是否超级管理员
+	HasPassword        bool                `json:"hasPassword"`                  // 是否已设置密码
+	HasAccessKey       bool                `json:"hasAccessKey,omitempty"`       // 是否有 Access Key
+	AccessKeyCreatedAt int64               `json:"accessKeyCreatedAt,omitempty"` // Access Key 创建时间
+	BetaOptedIn        bool                `json:"betaOptedIn"`                  // 是否订阅 beta
+	// AppleConsumptionConsent 是否同意把消费信息提供给 Apple 用于退款审核；null = 没问过。
+	AppleConsumptionConsent *bool  `json:"appleConsumptionConsent"`
+	Tier                    string `json:"tier,omitempty"`  // 当前功能等级
+	MaxDevice               int    `json:"maxDevice"`       // app 设备数量上限
+	MaxRouterDevice         int    `json:"maxRouterDevice"` // 路由器登录数量上限
+	MaxLanClient            int    `json:"maxLanClient"`    // LAN 接入数量上限
 
 	// 地理位置 & 推荐 routing profile（feat/globalization #19）
 	RegistrationCountry string `json:"registrationCountry"` // 注册时检测到的国家代码（空=未知）
@@ -191,13 +193,13 @@ type DataWallet struct {
 
 // DataWalletChange 钱包变更记录数据结构
 type DataWalletChange struct {
-	ID           uint64 `json:"id"`                     // 变更记录ID
-	Type         string `json:"type"`                   // 类型（income/expense）
-	Amount       int64  `json:"amount"`                 // 变更金额（美分，正负表示增减）
-	BalanceAfter int64  `json:"balanceAfter"`           // 变更后余额（美分）
-	Description  string `json:"description,omitempty"`  // 描述
-	FrozenUntil  *int64 `json:"frozenUntil,omitempty"`  // 冻结至（Unix时间戳）
-	CreatedAt    int64  `json:"createdAt"`              // 创建时间（Unix时间戳）
+	ID           uint64 `json:"id"`                    // 变更记录ID
+	Type         string `json:"type"`                  // 类型（income/expense）
+	Amount       int64  `json:"amount"`                // 变更金额（美分，正负表示增减）
+	BalanceAfter int64  `json:"balanceAfter"`          // 变更后余额（美分）
+	Description  string `json:"description,omitempty"` // 描述
+	FrozenUntil  *int64 `json:"frozenUntil,omitempty"` // 冻结至（Unix时间戳）
+	CreatedAt    int64  `json:"createdAt"`             // 创建时间（Unix时间戳）
 }
 
 // DataDevice API 设备数据结构
@@ -343,7 +345,6 @@ type CreateOrderForUsersRequest struct {
 	TargetUsers  []uint64 `json:"targetUsers" binding:"required"`              // 为哪些用户购买
 }
 
-
 // DataTunnelAuthRequest 节点认证请求数据结构
 type DataTunnelAuthRequest struct {
 	UDID     string `json:"udid" binding:"required"`     // 设备唯一标识
@@ -361,15 +362,15 @@ type DataTunnelAuthResult struct {
 // DataSlaveNode API 物理节点数据结构
 // Note: All nodes in DB are active by design - no IsAlive field needed.
 type DataSlaveNode struct {
-	ID        uint64 `json:"id"`        // 节点ID
-	Name      string `json:"name"`      // 节点名称
-	Country   string `json:"country"`   // 国家代码
-	Region    string `json:"region"`    // 服务器区域
-	Ipv4      string `json:"ipv4"`      // IPv4地址
-	Ipv6      string `json:"ipv6"`      // IPv6地址
+	ID        uint64 `json:"id"`               // 节点ID
+	Name      string `json:"name"`             // 节点名称
+	Country   string `json:"country"`          // 国家代码
+	Region    string `json:"region"`           // 服务器区域
+	Ipv4      string `json:"ipv4"`             // IPv4地址
+	Ipv6      string `json:"ipv6"`             // IPv6地址
 	IPType    string `json:"ipType,omitempty"` // residential|non_residential|unknown
-	Load      int    `json:"load"`      // Deprecated: to be removed. Use DataTunnelInstance.BudgetScore instead.
-	UpdatedAt int64  `json:"updatedAt"` // 最后更新时间（Unix 秒）
+	Load      int    `json:"load"`             // Deprecated: to be removed. Use DataTunnelInstance.BudgetScore instead.
+	UpdatedAt int64  `json:"updatedAt"`        // 最后更新时间（Unix 秒）
 
 	// Evaluation fields for tunnel scoring
 	TrafficUsagePercent   float64 `json:"trafficUsagePercent"`   // Traffic quota usage (0-100)
@@ -389,18 +390,18 @@ type DataTunnelInstance struct {
 
 // DataSlaveTunnel API tunnel data structure
 type DataSlaveTunnel struct {
-	ID             uint64              `json:"id"`                    // Tunnel ID
-	Domain         string              `json:"domain"`                // Tunnel domain
-	Name           string              `json:"name"`                  // Tunnel name
-	Protocol       TunnelProtocol      `json:"protocol"`              // Tunnel protocol (k2v4, k2v5, k2wss)
-	Port           int64               `json:"port"`                  // Tunnel port
-	HopPortStart   int64               `json:"hopPortStart"`          // Port hopping range start (0 = disabled)
-	HopPortEnd     int64               `json:"hopPortEnd"`            // Port hopping range end (0 = disabled)
-	IPType         string              `json:"ipType,omitempty"`      // residential|non_residential|unknown (admin/新接口填充; v1 不填, omitempty 保持冻结)
-	Node           DataSlaveNode       `json:"node"`                  // Associated physical node
-	Instance       *DataTunnelInstance `json:"instance,omitempty"`    // Cloud instance data (if linked via IP)
-	RecommendScore float64             `json:"recommendScore"`        // Canonical [0,1] recommendation signal — present for both cloud and non-cloud (default 0.5) nodes, so consumers don't need instance-level null checks.
-	ServerUrl      string              `json:"serverUrl,omitempty"`   // Computed k2v5 connection URL (only for GET /tunnels/k2v5)
+	ID             uint64              `json:"id"`                  // Tunnel ID
+	Domain         string              `json:"domain"`              // Tunnel domain
+	Name           string              `json:"name"`                // Tunnel name
+	Protocol       TunnelProtocol      `json:"protocol"`            // Tunnel protocol (k2v4, k2v5, k2wss)
+	Port           int64               `json:"port"`                // Tunnel port
+	HopPortStart   int64               `json:"hopPortStart"`        // Port hopping range start (0 = disabled)
+	HopPortEnd     int64               `json:"hopPortEnd"`          // Port hopping range end (0 = disabled)
+	IPType         string              `json:"ipType,omitempty"`    // residential|non_residential|unknown (admin/新接口填充; v1 不填, omitempty 保持冻结)
+	Node           DataSlaveNode       `json:"node"`                // Associated physical node
+	Instance       *DataTunnelInstance `json:"instance,omitempty"`  // Cloud instance data (if linked via IP)
+	RecommendScore float64             `json:"recommendScore"`      // Canonical [0,1] recommendation signal — present for both cloud and non-cloud (default 0.5) nodes, so consumers don't need instance-level null checks.
+	ServerUrl      string              `json:"serverUrl,omitempty"` // Computed k2v5 connection URL (only for GET /tunnels/k2v5)
 }
 
 // DataSlaveTunnelListResponse 节点列表响应数据结构
@@ -469,32 +470,32 @@ type DataMyInviteCode struct {
 }
 
 type DataOrder struct {
-	ID                   string     `json:"id"`
-	UUID                 string     `json:"uuid"`
-	Title                string     `json:"title"`
-	OriginAmount         uint64     `json:"originAmount"`
-	CampaignReduceAmount uint64     `json:"campaignReduceAmount"`
-	PayAmount            uint64     `json:"payAmount"`
-	IsPaid               bool       `json:"isPaid"`
-	CreatedAt            int64      `json:"createdAt"`
-	Campaign             *Campaign  `json:"campaign"`
-	Plan                 *Plan      `json:"plan"`
-	PayAt                int64      `json:"payAt"`
+	ID                   string    `json:"id"`
+	UUID                 string    `json:"uuid"`
+	Title                string    `json:"title"`
+	OriginAmount         uint64    `json:"originAmount"`
+	CampaignReduceAmount uint64    `json:"campaignReduceAmount"`
+	PayAmount            uint64    `json:"payAmount"`
+	IsPaid               bool      `json:"isPaid"`
+	CreatedAt            int64     `json:"createdAt"`
+	Campaign             *Campaign `json:"campaign"`
+	Plan                 *Plan     `json:"plan"`
+	PayAt                int64     `json:"payAt"`
 	// 退款字段（2026-04 引入）
-	IsRefunded   bool   `json:"isRefunded"`
-	RefundedAt   int64  `json:"refundedAt,omitempty"`
-	RefundAmount uint64 `json:"refundAmount,omitempty"`
-	RefundReason string `json:"refundReason,omitempty"`
-	ForUsers             []DataUser `json:"forUsers"`
-	ForMyself            bool       `json:"forMyself"`
+	IsRefunded   bool       `json:"isRefunded"`
+	RefundedAt   int64      `json:"refundedAt,omitempty"`
+	RefundAmount uint64     `json:"refundAmount,omitempty"`
+	RefundReason string     `json:"refundReason,omitempty"`
+	ForUsers     []DataUser `json:"forUsers"`
+	ForMyself    bool       `json:"forMyself"`
 }
 
 type DataProHistory struct {
 	Type      VipChangeType `json:"type"`
-	Days      int        `json:"days"`
-	Reason    string     `json:"reason"`
-	CreatedAt int64      `json:"createdAt"`
-	Order     *DataOrder `json:"order"`
+	Days      int           `json:"days"`
+	Reason    string        `json:"reason"`
+	CreatedAt int64         `json:"createdAt"`
+	Order     *DataOrder    `json:"order"`
 }
 
 // AdminOrderListRequest 管理员订单列表请求
@@ -528,10 +529,10 @@ type ResourceCashback struct {
 
 // ResourceWithdrawAccount 提现账户资源
 type ResourceWithdrawAccount struct {
-	AccountType string `json:"accountType"`           // 渠道类型: tron, polygon, bsc, arbitrum, paypal, alipay
-	AccountID   string `json:"accountId"`             // 收款标识（钱包地址/PayPal邮箱/支付宝账号明文）
-	Currency    string `json:"currency,omitempty"`    // 币种: usdt, usdc, usd, cny
-	RealName    string `json:"realName,omitempty"`    // 收款人真实姓名（仅支付宝，管理端打款用）
+	AccountType string `json:"accountType"`        // 渠道类型: tron, polygon, bsc, arbitrum, paypal, alipay
+	AccountID   string `json:"accountId"`          // 收款标识（钱包地址/PayPal邮箱/支付宝账号明文）
+	Currency    string `json:"currency,omitempty"` // 币种: usdt, usdc, usd, cny
+	RealName    string `json:"realName,omitempty"` // 收款人真实姓名（仅支付宝，管理端打款用）
 }
 
 // ResourceTransaction 交易凭证资源
@@ -566,14 +567,14 @@ type ResourceDevice struct {
 
 // AdminOrderListItem 管理员订单列表项
 type AdminOrderListItem struct {
-	UUID                 string            `json:"uuid"`
-	Title                string            `json:"title"`
-	OriginAmount         uint64            `json:"originAmount"`
-	CampaignReduceAmount uint64            `json:"campaignReduceAmount"`
-	PayAmount            uint64            `json:"payAmount"`
-	IsPaid               bool              `json:"isPaid"`
-	CreatedAt            int64             `json:"createdAt"`
-	PaidAt               int64             `json:"paidAt"`
+	UUID                 string `json:"uuid"`
+	Title                string `json:"title"`
+	OriginAmount         uint64 `json:"originAmount"`
+	CampaignReduceAmount uint64 `json:"campaignReduceAmount"`
+	PayAmount            uint64 `json:"payAmount"`
+	IsPaid               bool   `json:"isPaid"`
+	CreatedAt            int64  `json:"createdAt"`
+	PaidAt               int64  `json:"paidAt"`
 	// 退款字段（2026-04 引入）
 	IsRefunded   bool   `json:"isRefunded"`
 	RefundedAt   int64  `json:"refundedAt,omitempty"`
@@ -582,11 +583,11 @@ type AdminOrderListItem struct {
 	// Channel 来源渠道（空串 = 历史/网页订单，"apple_iap" = iOS 内购）。后台必须能看见它：
 	// IAP 订单的退款语义与网页订单不同——钱包打款不会取消 Apple 侧订阅，下期照样扣款建新单，
 	// 管理员点退款前需要知道自己在退哪种单。
-	Channel              string            `json:"channel,omitempty"`
+	Channel string `json:"channel,omitempty"`
 	// Brand 订单品牌 = 购买用户的出生品牌（Order 自身无 brand 列）
-	Brand                string            `json:"brand"`
-	User                 ResourceUser      `json:"user"`               // 购买用户
-	Cashback             *ResourceCashback `json:"cashback,omitempty"` // 分销返现信息（可选）
+	Brand    string            `json:"brand"`
+	User     ResourceUser      `json:"user"`               // 购买用户
+	Cashback *ResourceCashback `json:"cashback,omitempty"` // 分销返现信息（可选）
 }
 
 // AdminWithdrawListItem 管理员提现请求列表项
@@ -652,9 +653,9 @@ type DataPrivateNodeNode struct {
 // DataPrivateNodeSubscription 用户视角的专属节点订阅只读视图。
 type DataPrivateNodeSubscription struct {
 	ID                uint64               `json:"id"`
-	Status            string               `json:"status"`            // pending|provisioning|active|grace|suspended|deprovisioned|failed
-	IsServiceable     bool                 `json:"isServiceable"`     // 当前是否在服务（含宽限期）
-	Region            string               `json:"region"`            // 选定地区（开通前即知）
+	Status            string               `json:"status"`        // pending|provisioning|active|grace|suspended|deprovisioned|failed
+	IsServiceable     bool                 `json:"isServiceable"` // 当前是否在服务（含宽限期）
+	Region            string               `json:"region"`        // 选定地区（开通前即知）
 	IPType            string               `json:"ipType"`
 	TrafficTotalBytes int64                `json:"trafficTotalBytes"` // 配额（订阅快照）
 	TrafficUsedBytes  int64                `json:"trafficUsedBytes"`  // 已用（来自 CloudInstance，未开通=0）
@@ -730,19 +731,18 @@ type Response_ResolveDomainResponse struct {
 
 // EmailTemplateRequest 邮件模板请求
 type EmailTemplateRequest struct {
-	Name        string  `json:"name" binding:"required"`        // 模板名称
-	Slug        string  `json:"slug"`                          // 可读唯一标识（可选）
-	Language    string  `json:"language" binding:"required"`    // BCP 47 语言标签
-	Subject     string  `json:"subject" binding:"required"`     // 邮件主题
-	Content     string  `json:"content" binding:"required"`     // 邮件内容
-	Description string  `json:"description"`                     // 模板描述
-	IsActive    bool    `json:"isActive"`                        // 是否启用
-	OriginID    *uint64 `json:"originId"`                        // 源模板ID，null表示这是原始模板
+	Name        string  `json:"name" binding:"required"`     // 模板名称
+	Slug        string  `json:"slug"`                        // 可读唯一标识（可选）
+	Language    string  `json:"language" binding:"required"` // BCP 47 语言标签
+	Subject     string  `json:"subject" binding:"required"`  // 邮件主题
+	Content     string  `json:"content" binding:"required"`  // 邮件内容
+	Description string  `json:"description"`                 // 模板描述
+	IsActive    bool    `json:"isActive"`                    // 是否启用
+	OriginID    *uint64 `json:"originId"`                    // 源模板ID，null表示这是原始模板
 	// Brand 归属品牌：创建时必填（BrandRequired）；更新时忽略（品牌创建后不可变）。
 	// 发信按收件人品牌 + slug 选模板，slug 在品牌内唯一。
 	Brand string `json:"brand"`
 }
-
 
 // EmailTemplateResponse 邮件模板响应
 type EmailTemplateResponse struct {
@@ -756,9 +756,9 @@ type EmailTemplateResponse struct {
 	Content     string  `json:"content"`
 	Description string  `json:"description"`
 	IsActive    bool    `json:"isActive"`
-	OriginID    *uint64 `json:"originId"`    // 源模板ID，null表示这是原始模板
-	IsOriginal  bool    `json:"isOriginal"`  // 是否为原始模板（计算字段）
-	Brand       string  `json:"brand"`       // 归属品牌；发送时按收件人品牌选模板
+	OriginID    *uint64 `json:"originId"`   // 源模板ID，null表示这是原始模板
+	IsOriginal  bool    `json:"isOriginal"` // 是否为原始模板（计算字段）
+	Brand       string  `json:"brand"`      // 归属品牌；发送时按收件人品牌选模板
 }
 
 // SendTemplatedEmailsHTTPRequest 通用邮件发送HTTP请求（需审批）
@@ -766,7 +766,7 @@ type SendTemplatedEmailsHTTPRequest struct {
 	BatchID string `json:"batchId" binding:"required"`
 	// Brand 批次品牌：任一条目缺 userId（按邮箱找收件人）时必填；见 SendEmailsRequest.Brand。
 	Brand string `json:"brand"`
-	Items   []struct {
+	Items []struct {
 		Email  string            `json:"email" binding:"required"`
 		UserID uint64            `json:"userId"`
 		Slug   string            `json:"slug" binding:"required"`
@@ -774,22 +774,20 @@ type SendTemplatedEmailsHTTPRequest struct {
 	} `json:"items" binding:"required,min=1"`
 }
 
-
-
 // =================== Campaign 相关类型定义 ===================
 
 // CampaignRequest 优惠活动请求
 type CampaignRequest struct {
-	Code          string `json:"code" binding:"required"`                        // 活动代码
-	Name          string `json:"name" binding:"required"`                        // 活动名称
-	Type          string `json:"type" binding:"required"`                        // discount, coupon
-	Value         uint64 `json:"value" binding:"required"`                       // 优惠值
-	StartAt       int64  `json:"startAt" binding:"required"`                     // 开始时间
-	EndAt         int64  `json:"endAt" binding:"required"`                       // 结束时间
-	Description   string `json:"description"`                                     // 活动描述
-	IsActive      bool   `json:"isActive"`                                        // 是否启用
-	MatcherType   string `json:"matcherType" binding:"required"`                 // first_order=新客(未完成首单), vip=老客(已付费), all, paid_before, paid_before_active
-	MaxUsage      int64  `json:"maxUsage"`                                        // 最大使用次数（0=无限制）
+	Code          string `json:"code" binding:"required"`        // 活动代码
+	Name          string `json:"name" binding:"required"`        // 活动名称
+	Type          string `json:"type" binding:"required"`        // discount, coupon
+	Value         uint64 `json:"value" binding:"required"`       // 优惠值
+	StartAt       int64  `json:"startAt" binding:"required"`     // 开始时间
+	EndAt         int64  `json:"endAt" binding:"required"`       // 结束时间
+	Description   string `json:"description"`                    // 活动描述
+	IsActive      bool   `json:"isActive"`                       // 是否启用
+	MatcherType   string `json:"matcherType" binding:"required"` // first_order=新客(未完成首单), vip=老客(已付费), all, paid_before, paid_before_active
+	MaxUsage      int64  `json:"maxUsage"`                       // 最大使用次数（0=无限制）
 	MatcherParams string `json:"matcherParams"`
 	// Brand 归属品牌：kaitu | overleap，仅创建时生效，HTTP 创建必填（空或非法→ErrorInvalidArgument，见 BrandRequired；审批回调兜底 BrandForCreate 空→kaitu）；更新时忽略（品牌创建后不可变）。
 	Brand string `json:"brand" example:"kaitu"`
@@ -870,7 +868,6 @@ type UserFilter struct {
 	BetaOptedIn *bool `json:"betaOptedIn,omitempty"` // true=仅beta用户, nil=不筛选
 }
 
-
 // ========================= 用户语言偏好相关类型定义 =========================
 
 // UpdateLanguageRequest 更新用户语言偏好请求
@@ -937,13 +934,13 @@ type EmailSendLogResponse struct {
 
 // ListEmailSendLogsRequest 邮件发送日志列表请求
 type ListEmailSendLogsRequest struct {
-	BatchID    *string `json:"batchId" form:"batchId"`         // 按批次ID筛选（asynq任务ID）
-	TemplateID *uint64 `json:"templateId" form:"templateId"`   // 按模板ID筛选
-	UserID     *uint64 `json:"userId" form:"userId"`           // 按用户ID筛选
-	Status     *string `json:"status" form:"status"`           // 按状态筛选 (pending/sent/failed/skipped)
-	Email      *string `json:"email" form:"email"`             // 按邮箱筛选（模糊匹配）
-	Page       int     `json:"page" form:"page"`               // 页码
-	PageSize   int     `json:"pageSize" form:"pageSize"`       // 每页数量（默认100，最大200）
+	BatchID    *string `json:"batchId" form:"batchId"`       // 按批次ID筛选（asynq任务ID）
+	TemplateID *uint64 `json:"templateId" form:"templateId"` // 按模板ID筛选
+	UserID     *uint64 `json:"userId" form:"userId"`         // 按用户ID筛选
+	Status     *string `json:"status" form:"status"`         // 按状态筛选 (pending/sent/failed/skipped)
+	Email      *string `json:"email" form:"email"`           // 按邮箱筛选（模糊匹配）
+	Page       int     `json:"page" form:"page"`             // 页码
+	PageSize   int     `json:"pageSize" form:"pageSize"`     // 每页数量（默认100，最大200）
 }
 
 // ListEmailSendLogsResponse 邮件发送日志列表响应
@@ -966,18 +963,18 @@ type EmailSendLogStats struct {
 
 // CreateTicketRequest 创建工单请求
 type CreateTicketRequest struct {
-	Subject    string `json:"subject,omitempty"`                          // Deprecated: 老客户端仍会发送，优先使用
+	Subject    string `json:"subject,omitempty"`                         // Deprecated: 老客户端仍会发送，优先使用
 	Content    string `json:"content" binding:"required,min=1,max=5000"` // Ticket content
 	FeedbackID string `json:"feedbackId,omitempty"`                      // Feedback ID for log correlation
 	Email      string `json:"email,omitempty"`                           // Guest email (when not logged in)
 	Source     string `json:"source,omitempty"`                          // Submission source: "anonymous" for unauthenticated users
 	// System info (auto-attached by client)
-	OS         string `json:"os,omitempty"`
-	AppVersion string `json:"app_version,omitempty"`
-	Commit     string `json:"commit,omitempty"` // client git commit sha (build-time)
-	Channel    string `json:"channel,omitempty"`
-	SubmitTime string `json:"submit_time,omitempty"`
-	VPNState   string `json:"vpn_state,omitempty"`
+	OS            string `json:"os,omitempty"`
+	AppVersion    string `json:"app_version,omitempty"`
+	Commit        string `json:"commit,omitempty"` // client git commit sha (build-time)
+	Channel       string `json:"channel,omitempty"`
+	SubmitTime    string `json:"submit_time,omitempty"`
+	VPNState      string `json:"vpn_state,omitempty"`
 	Language      string `json:"language,omitempty"`
 	AutoGenerated bool   `json:"auto_generated,omitempty"`
 }
@@ -989,7 +986,7 @@ type RegisterDeviceLogRequest struct {
 	UDID       string `json:"udid" binding:"required"`
 	FeedbackID string `json:"feedbackId,omitempty"`
 	S3Keys     []struct {
-		Name  string `json:"name" binding:"required"`  // log type: service/crash/desktop/system
+		Name  string `json:"name" binding:"required"` // log type: service/crash/desktop/system
 		S3Key string `json:"s3Key" binding:"required"`
 	} `json:"s3Keys" binding:"required,min=1"`
 	Reason string         `json:"reason" binding:"required"`

@@ -64,4 +64,48 @@ class IapHelpersTests: XCTestCase {
         XCTAssertNil(dict["periodUnit"])
         XCTAssertNil(dict["periodValue"])
     }
+
+    // MARK: - paymentModeString
+
+    func testPaymentModeString_allKnownModes() {
+        XCTAssertEqual(IapHelpers.paymentModeString(code: 0), "freeTrial")
+        XCTAssertEqual(IapHelpers.paymentModeString(code: 1), "payAsYouGo")
+        XCTAssertEqual(IapHelpers.paymentModeString(code: 2), "payUpFront")
+        XCTAssertEqual(IapHelpers.paymentModeString(code: -1), "unknown")
+    }
+
+    // MARK: - introOffer / isEligibleForIntroOffer
+
+    func testProductDictIncludesIntroOfferWhenPresent() {
+        let offer: [String: Any] = [
+            "paymentMode": "freeTrial",
+            "periodUnit": "day",
+            "periodValue": 7,
+            "displayPrice": "US$0.00",
+        ]
+        let dict = IapHelpers.productDict(
+            id: "io.kaitu.sub.1y", displayName: "Yearly", description: "",
+            displayPrice: "US$39.99", price: 39.99, periodUnit: "year", periodValue: 1,
+            introOffer: offer, isEligibleForIntroOffer: true
+        )
+        let got = dict["introOffer"] as? [String: Any]
+        XCTAssertNotNil(got)
+        XCTAssertEqual(got?["paymentMode"] as? String, "freeTrial")
+        XCTAssertEqual(got?["periodUnit"] as? String, "day")
+        XCTAssertEqual(got?["periodValue"] as? Int, 7)
+        XCTAssertEqual(got?["displayPrice"] as? String, "US$0.00")
+        XCTAssertEqual(dict["isEligibleForIntroOffer"] as? Bool, true)
+    }
+
+    func testProductDictOmitsIntroOfferWhenNil() {
+        // Old-shell parity: no offer → neither key exists, so the webapp keeps
+        // the pre-v6 "subscribe now" UI.
+        let dict = IapHelpers.productDict(
+            id: "io.kaitu.sub.1y", displayName: "Yearly", description: "",
+            displayPrice: "US$39.99", price: 39.99, periodUnit: "year", periodValue: 1,
+            introOffer: nil, isEligibleForIntroOffer: nil
+        )
+        XCTAssertNil(dict["introOffer"])
+        XCTAssertNil(dict["isEligibleForIntroOffer"])
+    }
 }

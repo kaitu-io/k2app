@@ -5,6 +5,12 @@
  * /api/auth/social/login → authenticated); the parent only reacts to success
  * and shows errors in its own Alert. Renders nothing when no provider is
  * usable, so old shells, the router UI and switched-off brands see no change.
+ *
+ * `mode="bind"`: the user is already signed in (a zero-identity device account
+ * on 【其他设备安装】) and adds this provider as a login identity via
+ * /api/user/social/bind. Not a login — no auth_done, no isAuthenticated change,
+ * no device fields in the body. The "or" divider goes below the buttons there,
+ * because the email bind form follows them.
  */
 import { useEffect, useState } from 'react';
 import { Button, CircularProgress, Divider, Stack, Typography, useTheme } from '@mui/material';
@@ -17,7 +23,7 @@ import { cacheStore } from '../services/cache-store';
 import { getDeviceUdid } from '../services/device-udid';
 import { statsService } from '../services/stats';
 import { createNonce, resolveSocialProviders, sha256Hex } from '../services/social-sign-in';
-import { handleResponseError } from '../utils/errorCode';
+import { ERROR_CODES, handleResponseError } from '../utils/errorCode';
 import type { AuthResult } from '../services/api-types';
 import type { ISocialSignIn, SocialCredential, SocialProvider } from '../types/kaitu-core';
 
@@ -26,6 +32,8 @@ export interface SocialSignInButtonsProps {
   onError: (message: string) => void;
   /** Parent is mid-request (e.g. sending a code) — don't start a second one. */
   disabled?: boolean;
+  /** 'login' (default): sign in. 'bind': add the identity to the signed-in account. */
+  mode?: 'login' | 'bind';
 }
 
 /** Google's multi-colour "G" (brand guidelines forbid a monochrome mark). */
@@ -40,7 +48,7 @@ function GoogleGlyph() {
   );
 }
 
-function SocialSignInInner({ bridge, onSuccess, onError, disabled }: SocialSignInButtonsProps & { bridge: ISocialSignIn }) {
+function SocialSignInInner({ bridge, onSuccess, onError, disabled, mode = 'login' }: SocialSignInButtonsProps & { bridge: ISocialSignIn }) {
   const { t, i18n } = useTranslation();
   const isDark = useTheme().palette.mode === 'dark';
   const { appConfig } = useAppConfig();
@@ -79,6 +87,26 @@ function SocialSignInInner({ bridge, onSuccess, onError, disabled }: SocialSignI
       }
       if (!credential) return; // user cancelled
 
+      if (mode === 'bind') {
+        // api/type.go DataSocialBindRequest: provider, idToken, nonce, authorizationCode.
+        const response = await cloudApi.post('/api/user/social/bind', {
+          provider,
+          idToken: credential.idToken,
+          nonce,
+          authorizationCode: credential.authorizationCode,
+        });
+        // Identity already owned by another account: never steer toward signing in to it —
+        // that strands this device account's membership (spec §4.4).
+        if (response.code === ERROR_CODES.SOCIAL_IDENTITY_TAKEN || response.code === ERROR_CODES.EMAIL_ALREADY_IN_USE) {
+          throw new Error(t('account:deviceBind.socialConflict'));
+        }
+        handleResponseError(response.code, response.message, t, t('account:deviceBind.bindFailed'));
+        // The identity list on /api/user/info changed; drop cached copies.
+        cacheStore.clear();
+        onSuccess();
+        return;
+      }
+
       const response = await cloudApi.post<AuthResult>('/api/auth/social/login', {
         provider,
         idToken: credential.idToken,
@@ -105,13 +133,21 @@ function SocialSignInInner({ bridge, onSuccess, onError, disabled }: SocialSignI
 
   if (providers.length === 0) return null;
 
+  const divider = (
+    <Divider sx={{ my: 0.5 }}>
+      <Typography variant="caption" color="text.secondary">
+        {t('common:common.or', 'OR')}
+      </Typography>
+    </Divider>
+  );
+  const label = (provider: SocialProvider) =>
+    mode === 'bind'
+      ? provider === 'apple' ? t('account:deviceBind.appleButton') : t('account:deviceBind.googleButton')
+      : provider === 'apple' ? t('auth:auth.continueWithApple') : t('auth:auth.continueWithGoogle');
+
   return (
     <Stack spacing={1.5} sx={{ '& > *': { flexShrink: 0 } }}>
-      <Divider sx={{ my: 0.5 }}>
-        <Typography variant="caption" color="text.secondary">
-          {t('common:common.or', 'OR')}
-        </Typography>
-      </Divider>
+      {mode === 'login' && divider}
       {providers.map((provider) => (
         <Button
           key={provider}
@@ -144,9 +180,10 @@ function SocialSignInInner({ bridge, onSuccess, onError, disabled }: SocialSignI
                   { bgcolor: '#000', color: '#fff', '&:hover': { bgcolor: '#1a1a1a' } }
           }
         >
-          {provider === 'apple' ? t('auth:auth.continueWithApple') : t('auth:auth.continueWithGoogle')}
+          {label(provider)}
         </Button>
       ))}
+      {mode === 'bind' && divider}
     </Stack>
   );
 }

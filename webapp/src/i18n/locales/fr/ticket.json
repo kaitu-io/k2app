@@ -103,6 +103,7 @@
       "slow": "Vitesse lente",
       "crash": "Application plantée",
       "subscription": "Problème d'abonnement"
-    }
+    },
+    "zeroIdentityHint": "Ce compte n'a pas encore d'e-mail. Indiquez un e-mail de contact pour notre réponse (il ne servira pas à la connexion)."
   }
 }

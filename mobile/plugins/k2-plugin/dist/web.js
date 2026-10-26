@@ -66,6 +66,15 @@ export class K2PluginWeb extends WebPlugin {
     async storageRemove(_options) {
         throw this.unavailable('K2Plugin is not available on web');
     }
+    async secureGet(_options) {
+        throw this.unavailable('K2Plugin is not available on web');
+    }
+    async secureSet(_options) {
+        throw this.unavailable('K2Plugin is not available on web');
+    }
+    async secureRemove(_options) {
+        throw this.unavailable('K2Plugin is not available on web');
+    }
     async listInstalledApps() {
         throw this.unavailable('K2Plugin is not available on web');
     }

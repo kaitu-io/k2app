@@ -12,6 +12,7 @@ import { useLayout } from "../stores";
 import { useRouterStore, routerSlots } from "../stores/router.store";
 import { getCurrentAppConfig } from "../config/apps";
 import LoginRequiredGuard from "./LoginRequiredGuard";
+import BindDevicesBanner from "./BindDevicesBanner";
 
 // Lazy load Tab pages for code splitting, but keep them mounted once loaded
 const Dashboard = lazy(() => import("../pages/Dashboard"));
@@ -143,6 +144,11 @@ export default function Layout() {
       {isDesktop && <SideNavigation />}
 
       <Main isDesktop={isDesktop}>
+        {/* 零身份设备账号的常驻绑定横幅（所有 tab 可见；条件不满足时不占位） */}
+        <Box sx={{ flexShrink: 0, px: 2, pt: 1.5, '&:empty': { display: 'none' } }}>
+          <BindDevicesBanner />
+        </Box>
+
         {/* Tab Pages - Keep Alive (cached, hidden when not active) */}
         {tabPages.map((tabPage) => {
           const isMounted = mountedTabs[tabPage.path];

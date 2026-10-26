@@ -966,7 +966,7 @@ export default function Purchase() {
         />
       );
     }
-    // 单一 basic 商品的权益上限（各时长一致）；缺数据时 MembershipBenefits 走默认值。
+    // 单一 basic 商品的设备上限（各时长一致）；缺数据时面板走默认值。
     const iapPlan =
       plans.find((p) => p.tier === 'basic') ??
       plans.find((p) => p.pid === plan) ??
@@ -978,8 +978,6 @@ export default function Purchase() {
         isMembership={isMembership}
         isExpired={isExpired}
         maxDevice={iapPlan?.maxDevice}
-        maxRouterDevice={iapPlan?.maxRouterDevice}
-        maxLanClient={iapPlan?.maxLanClient}
       />
     );
   }

@@ -135,6 +135,17 @@ export interface IapProduct {
   price: number;
   periodUnit?: 'day' | 'week' | 'month' | 'year' | 'unknown';
   periodValue?: number;
+  /** Bridge v6: StoreKit 首期优惠（如免费试用）。旧壳 / 无优惠时 undefined。
+   *  试用天数从这里读，不写死；展示价一律用 displayPrice。 */
+  introOffer?: {
+    paymentMode: 'freeTrial' | 'payAsYouGo' | 'payUpFront' | 'unknown';
+    periodUnit: 'day' | 'week' | 'month' | 'year' | 'unknown';
+    periodValue: number;
+    displayPrice: string;
+  };
+  /** Bridge v6: StoreKit `isEligibleForIntroOffer`。所有订阅商品都会带（即使没有优惠），
+   *  须与 introOffer 同时存在才代表可试用。旧壳 undefined。 */
+  isEligibleForIntroOffer?: boolean;
 }
 
 /** 购买结果。result='success' 时携带 transactionId 供 Center 复核 */
@@ -158,7 +169,7 @@ export interface IIap {
   /** 发起购买。accountToken = Center 派生的 RFC UUID（绑定开途账号） */
   purchase(productId: string, accountToken: string): Promise<IapPurchaseResult>;
   /** 恢复购买（Apple 强制要件）→ 当前权益交易，逐笔交 Center 复核 */
-  restore(): Promise<Array<{ transactionId: string; productId: string }>>;
+  restore(): Promise<Array<{ transactionId: string; productId: string; jws?: string }>>;
   /** Center 入账成功后调用，标记交易完成 */
   finishTransaction(transactionId: string): Promise<void>;
   /** 后台续订/中断补单/Ask-to-Buy 批准的交易更新。返回取消订阅函数 */
@@ -213,6 +224,11 @@ export interface IPlatform {
   // ====== 核心能力 ======
 
   storage: ISecureStorage;
+
+  /** Bridge v6 语义 flag：true 当且仅当 iOS 壳实现了 Keychain 身份存储（secureGet 探测成功）——
+   *  udid 与登录 token 跨卸载重装保留。旧壳 / Android / 桌面 / web 为 false 或 undefined。
+   *  由 capacitor-k2.ts 唯一供给；组件读这个 flag，不探测方法。 */
+  keychainIdentity?: boolean;
 
   // ====== 跨平台能力 ======
 

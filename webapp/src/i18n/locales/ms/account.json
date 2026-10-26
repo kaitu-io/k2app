@@ -82,7 +82,14 @@
     "deleteFinalWarning": "Pengesahan terakhir: sebaik sahaja anda mengetik butang di bawah, akaun anda dipadam secara kekal serta-merta.",
     "deleteTypePrompt": "Taip \"{{word}}\" untuk mengesahkan pemadaman kekal",
     "deleteConfirmWord": "PADAM",
-    "deleteFinalButton": "Padam akaun secara kekal"
+    "deleteFinalButton": "Padam akaun secara kekal",
+    "bindBanner": "Pautkan e-mel atau Log masuk dengan Apple untuk guna pada sehingga {{count}} peranti",
+    "userId": "ID pengguna",
+    "copyUserId": "Salin ID pengguna",
+    "loginOtherAccount": "Log masuk akaun lain",
+    "loginOtherWarning": "Keahlian pada peranti ini milik akaun semasa. Tambah e-mel dahulu, jika tidak ia tidak boleh dipulihkan selepas log masuk akaun lain.",
+    "goSetEmail": "Tambah e-mel",
+    "loginAnyway": "Log masuk juga"
   },
   "betaProgram": {
     "title": "Program Beta",
@@ -151,5 +158,18 @@
     "removeFailed": "Gagal membuang, sila cuba semula",
     "currentHint": "Semasa pembayaran anda boleh memilih \"Minta {{email}} untuk membayar\" dan kami akan menghantar e-mel kepada mereka.",
     "savedToast": "Disimpan"
+  },
+  "deviceBind": {
+    "title": "Pautkan akaun untuk digunakan pada peranti lain",
+    "description": "Buat masa ini hanya peranti ini boleh menggunakannya. Tambah e-mel atau log masuk dengan Apple, dan satu akaun boleh digunakan pada sehingga {{count}} peranti serentak.",
+    "thisDevice": "Peranti ini",
+    "appleButton": "Log masuk dengan Apple",
+    "googleButton": "Log masuk dengan Google",
+    "emailHeading": "Tambah e-mel",
+    "noCharge": "Memautkan tidak menjejaskan langganan atau percubaan semasa, dan anda tidak akan dicaj semula.",
+    "bound": "Log masuk dengan {{account}} pada peranti lain, sehingga {{count}} peranti",
+    "bindFailed": "Gagal memautkan, sila cuba lagi kemudian",
+    "emailConflict": "E-mel ini sudah mempunyai akaun. Sila pautkan e-mel lain; untuk menggabungkan akaun, hubungi sokongan.",
+    "socialConflict": "Apple ID / akaun Google ini sudah dipautkan ke akaun lain. Sila pautkan yang lain; untuk menggabungkan akaun, hubungi sokongan."
   }
 }

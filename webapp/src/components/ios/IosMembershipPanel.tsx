@@ -3,6 +3,7 @@
  *
  * 组合（容器只编排，每个模块独立文件）：
  *   RenewalStatusCard  — 续订状态 + 到期倒计时（P0 核心，防流失）
+ *   TrialStatusCard    — 订阅处于 Apple 免费试用期（isTrial）时取代上一项（设计稿 ②）
  *   MembershipBenefits — 权益回顾（复用，数据取自 user 配额）
  *   InviteRewardCard   — 免费增长闭环（Apple 合规，仅 inviteReward 存在时）
  *   MembershipActions  — 付费记录 + 恢复购买（Restore 两态常驻，Apple 强制）
@@ -12,12 +13,12 @@
  * 保持本面板对 iOS 会员态自洽。
  */
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Box, Stack, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import type { DataSubscription } from '../../services/api-types';
-import { useIapPurchase } from '../../hooks/useIapPurchase';
+import { useIapPurchase, IAP_PRODUCT_IDS } from '../../hooks/useIapPurchase';
 import { useStripeCheckout } from '../../hooks/useStripeCheckout';
 import { useUser } from '../../hooks/useUser';
 import { useAppConfig } from '../../hooks/useAppConfig';
@@ -26,8 +27,10 @@ import { useAlert } from '../../stores/alert.store';
 import { statsService } from '../../services/stats';
 import MembershipBenefits from '../MembershipBenefits';
 import RenewalStatusCard from './RenewalStatusCard';
+import TrialStatusCard from './TrialStatusCard';
 import InviteRewardCard from './InviteRewardCard';
 import MembershipActions from './MembershipActions';
+import ConsumptionConsentSheet from './ConsumptionConsentSheet';
 
 interface IosMembershipPanelProps {
   /** affordance 模式（仅 manage/status 渲染此面板；subscribe 走 IosSubscribePanel）。 */
@@ -43,9 +46,35 @@ export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPan
   const navigate = useNavigate();
   const { user, fetchUser } = useUser();
   const { appConfig } = useAppConfig();
-  const { restore, restoring, purchaseError, lastGrantedUser } = useIapPurchase();
+  const { products, loadProducts, restore, restoring, purchaseError, lastGrantedUser } = useIapPurchase();
+  const isTrial = activeSub?.isTrial === true;
+
+  // 试用卡的总天数 / 续订价格来自 StoreKit 商品——只在试用态才去取。
+  useEffect(() => {
+    if (isTrial) void loadProducts();
+  }, [isTrial, loadProducts]);
+  const trialProduct = products.find((p) => p.id === IAP_PRODUCT_IDS[0]) ?? products[0];
   const { openPortal } = useStripeCheckout();
   const { showAlert } = useAlert();
+
+  // 退款同意弹层（设计稿 ④）：状态驱动——用户有 Apple 订阅且从未回答过（null）时，
+  // 本面板每次挂载最多弹一次。购买成功后 Purchase 会把订阅面板换成本面板，所以不能挂在
+  // 订阅面板的「授予成功」事件上。回答后 PUT 回写用户缓存，不会再开；失败 / 点遮罩 = 不写状态。
+  // 只认「字段存在且恰为 null」= 服务端支持此功能且用户从未回答。字段缺省（还没部署该功能的
+  // 服务端）绝不弹——否则 PUT 失败、什么都存不下，弹层每次挂载都会重开。
+  const [consentOpen, setConsentOpen] = useState(false);
+  const consentAsked = useRef(false);
+  const needsConsent =
+    !!user &&
+    !!user.subscriptions?.some((s) => s.provider === 'apple') &&
+    'appleConsumptionConsent' in user &&
+    user.appleConsumptionConsent === null;
+  useEffect(() => {
+    if (needsConsent && !consentAsked.current) {
+      consentAsked.current = true;
+      setConsentOpen(true);
+    }
+  }, [needsConsent]);
 
   // 恢复成功后：提示 + 刷新用户，使 affordance 重算（未绑定的 Apple 订阅被绑定后
   // status → manage 自动翻转）。
@@ -83,14 +112,23 @@ export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPan
           {t('purchase:purchase.iap.membershipTitle')}
         </Typography>
 
-        {/* 续订状态 + 到期倒计时 */}
-        <RenewalStatusCard
-          mode={mode}
-          autoRenew={activeSub?.autoRenew}
-          periodEndSec={activeSub?.currentPeriodEnd}
-          expiredAtSec={user?.expiredAt ?? 0}
-          onManage={openManage}
-        />
+        {/* 试用中：试用卡；否则续订状态 + 到期倒计时 */}
+        {isTrial ? (
+          <TrialStatusCard
+            trialEndsAtSec={activeSub?.trialEndsAt ?? 0}
+            product={trialProduct}
+            autoRenew={activeSub?.autoRenew}
+            onManage={openManage}
+          />
+        ) : (
+          <RenewalStatusCard
+            mode={mode}
+            autoRenew={activeSub?.autoRenew}
+            periodEndSec={activeSub?.currentPeriodEnd}
+            expiredAtSec={user?.expiredAt ?? 0}
+            onManage={openManage}
+          />
+        )}
 
         {/* 权益回顾 — 配额取自用户档（tier quota） */}
         <MembershipBenefits
@@ -125,6 +163,7 @@ export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPan
           </Typography>
         )}
       </Stack>
+      <ConsumptionConsentSheet open={consentOpen} onClose={() => setConsentOpen(false)} />
     </Box>
   );
 }
