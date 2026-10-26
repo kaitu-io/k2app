@@ -157,10 +157,10 @@ var funnelPathRegistry = []funnelPath{
 		},
 	},
 	{
-		// X 广告着陆页 /go/<码>：分组用 landing_path（= 归因码，A/B = /go/xa1 vs /go/xb1，扫码 = /go/xa1q）。
+		// X 广告着陆页 /go/<码>：分组用 landing_path（= 归因码，A/B = /go/xa1 vs /go/xb1，扫码 = /go/xa1q；Mac 组 xa1m / xb1m，扫码 xa1mq / xb1mq）。
 		// 不要把 /go/ 加进 funnelCodePathPrefixes，否则码被折叠成 *、A/B 分不开。
 		// 首次打开 / 开始试用 / 付款只能靠推断归因接上，只是下限；A/B 胜负看确定性的上半段。
-		Key: "ad_landing", Title: "广告着陆", Question: "广告点进来的人里，有多少开始试用、最终付款？按 landing_path（= 归因码）分组看 A / B。",
+		Key: "ad_landing", Title: "广告着陆", Question: "广告点进来的人里，有多少开始试用、最终付款？按 landing_path（= 归因码）分组；A / B 只在同一设备组内比较（iPhone 组 xa1 vs xb1，Mac 组 xa1m(+xa1mq) vs xb1m(+xb1mq)）。",
 		Lane: funnelLaneWeb, Hop: "网页 → App 依赖推断归因（ip_os_v1，仅开途）；Mac 扫码者在手机上是新的 sid，以 <码>q 路径单独成组。",
 		Window: 14 * funnelDay,
 		Steps: []funnelStep{

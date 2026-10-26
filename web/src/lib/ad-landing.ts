@@ -3,6 +3,9 @@
  *
  * 码语义不可变，换素材就发新码；码只做归因，不做门禁
  * （未知码照常渲染稳定版，只是归因里保留原码）。
+ *
+ * 广告组按设备拆分：iPhone 组用 xa1 / xb1，Mac 组用 xa1m / xb1m
+ * （避免漏斗第 2 步混入 Mac 自动触发的 qr_view）；A/B 只在同一设备组内比较。
  */
 export type AdVariant = 'stable' | 'compare';
 
@@ -17,6 +20,10 @@ export const AD_CODES: Readonly<Record<string, AdCode>> = {
   xb1: { variant: 'compare', channel: 'x' },
   xa1q: { variant: 'stable', channel: 'x', via: 'qr' },
   xb1q: { variant: 'compare', channel: 'x', via: 'qr' },
+  xa1m: { variant: 'stable', channel: 'x' },
+  xb1m: { variant: 'compare', channel: 'x' },
+  xa1mq: { variant: 'stable', channel: 'x', via: 'qr' },
+  xb1mq: { variant: 'compare', channel: 'x', via: 'qr' },
 };
 
 /** App Store Connect 的 provider token；为空时 App Store 链接不带归因参数 */

@@ -27,6 +27,12 @@ describe('appStoreUrl', () => {
 describe('qrCodeFor', () => {
   it('appends q', () => expect(qrCodeFor('xa1')).toBe('xa1q'));
   it('does not double the suffix for a registered qr code', () => expect(qrCodeFor('xa1q')).toBe('xa1q'));
+  it('mac code gets mq', () => expect(qrCodeFor('xb1m')).toBe('xb1mq'));
+  it('mac qr code unchanged', () => expect(qrCodeFor('xb1mq')).toBe('xb1mq'));
+  it('mac codes resolve to compare', () => {
+    expect(resolveAdCode('xb1m').entry.variant).toBe('compare');
+    expect(resolveAdCode('xb1mq').entry.variant).toBe('compare');
+  });
 });
 describe('qrTargetUrl', () => {
   it('keeps only utm_* and adds the q code', () =>
