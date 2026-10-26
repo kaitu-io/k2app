@@ -1,0 +1,30 @@
+{
+  "adLanding": {
+    "metaTitle": "開途 — 別的斷了，它還在",
+    "heroTitle": "別的斷了，它還在。",
+    "heroAlt": "開途廣告配圖",
+    "subtitle": {
+      "stable": "開途一鍵連上，一直在線。",
+      "compare": "不用解除安裝你現在的，並排用 7 天，哪個更穩你自己比。"
+    },
+    "oneTap": "一鍵連線，不用任何設定",
+    "platforms": "一份訂閱 5 台裝置 · iPhone、Mac、Windows、Android 全平台",
+    "ctaAppStore": "在 App Store 免費取得",
+    "ctaAndroid": "下載開途",
+    "qrTitle": "用 iPhone 掃碼開始",
+    "qrHint": "打開相機對準 QR 碼 → App Store 免費取得。裝好後在 Mac 上用同一帳號登入即可",
+    "openOnPhone": "已經在用 iPhone 看？直接打開",
+    "why": {
+      "title": "為什麼是開途",
+      "oneTapTitle": "打開就連上",
+      "oneTapBody": "沒有節點、協定、訂閱連結要你研究。",
+      "devicesTitle": "一份訂閱，5 台裝置，全平台",
+      "devicesBody": "iPhone、iPad、Mac、Windows、Android、Linux 都能用——你的、家裡的、公司的電腦，一份全包。",
+      "coexistTitle": "不用先解除安裝現在的",
+      "coexistBody": "先裝上用著，哪個更穩，你自己判斷。"
+    },
+    "trialNote": "新用戶可免費試用 7 天，之後按 App Store 顯示的年費自動續訂；試用結束前在 iPhone 設定中取消，不會收費。",
+    "privacy": "私隱政策",
+    "terms": "服務條款"
+  }
+}
