@@ -103,6 +103,7 @@
       "slow": "Yavaş hız",
       "crash": "Uygulama çökmesi",
       "subscription": "Abonelik sorunu"
-    }
+    },
+    "zeroIdentityHint": "Bu hesabın henüz e-postası yok. Yanıt için bir iletişim e-postası bırakın (giriş için kullanılmaz)."
   }
 }

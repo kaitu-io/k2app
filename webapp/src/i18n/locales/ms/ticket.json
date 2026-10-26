@@ -103,6 +103,7 @@
       "slow": "Kecepatan perlahan",
       "crash": "Apl ranap",
       "subscription": "Isu langganan"
-    }
+    },
+    "zeroIdentityHint": "Akaun ini belum mempunyai e-mel. Berikan e-mel hubungan dan kami akan membalas ke situ (tidak digunakan untuk log masuk)."
   }
 }

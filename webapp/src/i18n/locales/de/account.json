@@ -83,7 +83,13 @@
     "deleteTypePrompt": "Gib „{{word}}“ ein, um die endgültige Löschung zu bestätigen",
     "deleteConfirmWord": "DELETE",
     "deleteFinalButton": "Konto endgültig löschen",
-    "bindBanner": "E-Mail oder „Mit Apple anmelden“ verknüpfen und auf bis zu {{count}} Geräten nutzen"
+    "bindBanner": "E-Mail oder „Mit Apple anmelden“ verknüpfen und auf bis zu {{count}} Geräten nutzen",
+    "userId": "Benutzer-ID",
+    "copyUserId": "Benutzer-ID kopieren",
+    "loginOtherAccount": "Bei anderem Konto anmelden",
+    "loginOtherWarning": "Die Mitgliedschaft auf diesem Gerät gehört zum aktuellen Konto. Füge zuerst eine E-Mail hinzu, sonst kannst du sie nach der Anmeldung bei einem anderen Konto nicht wiederherstellen.",
+    "goSetEmail": "E-Mail hinzufügen",
+    "loginAnyway": "Trotzdem anmelden"
   },
   "betaProgram": {
     "title": "Beta-Programm",
@@ -152,5 +158,16 @@
     "removeFailed": "Fehler beim Entfernen. Bitte versuchen Sie es erneut",
     "currentHint": "Bei der Kasse können Sie \"{{email}} fragen, ob er bezahlt\" wählen und wir senden ihm eine E-Mail.",
     "savedToast": "Gespeichert"
+  },
+  "deviceBind": {
+    "title": "Konto verknüpfen und auf anderen Geräten nutzen",
+    "description": "Derzeit kann nur dieses Gerät es nutzen. Füge eine E-Mail hinzu oder melde dich mit Apple an – dann funktioniert ein Konto auf bis zu {{count}} Geräten gleichzeitig.",
+    "thisDevice": "Dieses Gerät",
+    "appleButton": "Mit Apple anmelden",
+    "googleButton": "Mit Google anmelden",
+    "emailHeading": "E-Mail hinzufügen",
+    "noCharge": "Die Verknüpfung ändert nichts an deinem aktuellen Abo oder Test und es wird nichts erneut abgebucht.",
+    "bound": "Melde dich auf deinen anderen Geräten mit {{account}} an, bis zu {{count}} Geräte",
+    "bindFailed": "Verknüpfen fehlgeschlagen, bitte später erneut versuchen"
   }
 }

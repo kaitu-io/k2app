@@ -103,6 +103,7 @@
       "slow": "Langsam",
       "crash": "App-Absturz",
       "subscription": "Abonnementproblem"
-    }
+    },
+    "zeroIdentityHint": "Dieses Konto hat noch keine E-Mail. Gib eine Kontakt-E-Mail an, wir antworten dorthin (sie wird nicht zur Anmeldung verwendet)."
   }
 }

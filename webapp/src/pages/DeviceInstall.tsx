@@ -5,6 +5,7 @@ import {
   Button,
   Stack,
   Chip,
+  Alert,
   alpha,
   SvgIcon,
 } from "@mui/material";
@@ -24,6 +25,11 @@ import type { AppConfig } from "../services/api-types";
 import BackButton from "../components/BackButton";
 import { cloudApi } from '../services/cloud-api';
 import { brandConfig } from '../brands';
+import { useUser } from "../hooks/useUser";
+import SocialSignInButtons from "../components/SocialSignInButtons";
+import BindEmailForm from "../components/BindEmailForm";
+import { resolveDeviceCount } from "../components/MembershipBenefits";
+import { maskEmail } from "../utils/email";
 
 // 默认的下载链接
 const DEFAULT_INSTALL_URL = `${brandConfig.baseURL}/install`;
@@ -50,6 +56,101 @@ function WindowsIcon(props: React.ComponentProps<typeof SvgIcon>) {
     <SvgIcon {...props} viewBox="0 0 24 24">
       <path d="M3 12V6.75l6-1.32v6.48L3 12zm17-9v8.75l-10 .08V5.21L20 3zM3 13l6 .09v6.81l-6-1.15V13zm17 .25V22l-10-1.91V13.1l10 .15z" />
     </SvgIcon>
+  );
+}
+
+/**
+ * 绑定区 / 已绑定提示（设计稿 ③，设备账号 spec §4.3）。只在 Keychain 身份新壳上挂载
+ * （零身份设备账号只存在于那里），其他平台不多打 /api/user/info、页面保持原样。
+ */
+function DeviceAccountSection() {
+  const { t } = useTranslation();
+  const { user, fetchUser } = useUser();
+  const [error, setError] = useState("");
+
+  if (!user) return null;
+
+  const identities = user.loginIdentifies ?? [];
+  const count = resolveDeviceCount(user.maxDevice);
+  const onBound = () => {
+    setError("");
+    void fetchUser(true);
+  };
+
+  if (identities.length > 0) {
+    const email = identities.find((i) => i.type === 'email')?.value;
+    const provider = identities.find((i) => i.type === 'apple' || i.type === 'google')?.type;
+    const account = email ? maskEmail(email) : provider === 'google' ? 'Google' : 'Apple';
+    return (
+      <Alert severity="success" sx={{ mb: 2, borderRadius: 2 }}>
+        {t('account:deviceBind.bound', { account, count })}
+      </Alert>
+    );
+  }
+
+  return (
+    <Box
+      data-testid="device-bind-section"
+      sx={{ mb: 2, p: 2, borderRadius: 3, bgcolor: 'background.paper' }}
+    >
+      <Stack spacing={2}>
+        <Box>
+          <Typography variant="h5" component="h1" sx={{ fontWeight: 700, lineHeight: 1.3, mb: 1 }}>
+            {t('account:deviceBind.title')}
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+            {t('account:deviceBind.description', { count })}
+          </Typography>
+        </Box>
+
+        {/* 设备示意：本机 + 其余空位 */}
+        <Box
+          aria-hidden="true"
+          sx={{ display: 'grid', gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))`, gap: 1 }}
+        >
+          {Array.from({ length: count }, (_, i) => (
+            <Box
+              key={i}
+              sx={i === 0 ? {
+                height: 40,
+                borderRadius: 2,
+                bgcolor: 'primary.main',
+                color: 'primary.contrastText',
+                fontSize: 12,
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+              } : {
+                height: 40,
+                borderRadius: 2,
+                border: '1px dashed',
+                borderColor: 'divider',
+              }}
+            >
+              {i === 0 ? t('account:deviceBind.thisDevice') : null}
+            </Box>
+          ))}
+        </Box>
+
+        {error && (
+          <Alert severity="error" onClose={() => setError("")}>{error}</Alert>
+        )}
+
+        <SocialSignInButtons mode="bind" onSuccess={onBound} onError={setError} />
+
+        <Typography variant="subtitle2" component="div" sx={{ fontWeight: 600 }}>
+          {t('account:deviceBind.emailHeading')}
+        </Typography>
+        <BindEmailForm onBound={onBound} />
+
+        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+          {t('account:deviceBind.noCharge')}
+        </Typography>
+      </Stack>
+    </Box>
   );
 }
 
@@ -167,6 +268,8 @@ export default function DeviceInstall() {
             width: "100%",
           }}
         >
+          {window._platform?.keychainIdentity === true && <DeviceAccountSection />}
+
           {/* 安卓 USB 安装入口 - 仅桌面端，置顶 */}
           {isDesktop && (
             <Box

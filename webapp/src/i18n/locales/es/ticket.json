@@ -103,6 +103,7 @@
       "slow": "Velocidad lenta",
       "crash": "Bloqueo de aplicación",
       "subscription": "Problema de suscripción"
-    }
+    },
+    "zeroIdentityHint": "Esta cuenta aún no tiene correo. Deja un correo de contacto y te responderemos allí (no se usará para iniciar sesión)."
   }
 }

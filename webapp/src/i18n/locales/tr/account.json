@@ -83,7 +83,13 @@
     "deleteTypePrompt": "Kalıcı silme işlemini onaylamak için \"{{word}}\" yazın",
     "deleteConfirmWord": "DELETE",
     "deleteFinalButton": "Hesabı kalıcı olarak sil",
-    "bindBanner": "E-posta veya Apple ile Giriş bağlayın, {{count}} cihaza kadar kullanın"
+    "bindBanner": "E-posta veya Apple ile Giriş bağlayın, {{count}} cihaza kadar kullanın",
+    "userId": "Kullanıcı kimliği",
+    "copyUserId": "Kullanıcı kimliğini kopyala",
+    "loginOtherAccount": "Başka bir hesapla giriş yap",
+    "loginOtherWarning": "Bu cihazdaki üyelik mevcut hesaba ait. Önce bir e-posta ekleyin; aksi halde başka bir hesapla giriş yaptıktan sonra geri alamazsınız.",
+    "goSetEmail": "E-posta ekle",
+    "loginAnyway": "Yine de giriş yap"
   },
   "betaProgram": {
     "title": "Beta Programı",
@@ -152,5 +158,16 @@
     "removeFailed": "Kaldırılamadı, lütfen tekrar deneyin",
     "currentHint": "Ödeme sırasında \"{{email}} adresine ödeme yapmasını iste\" seçeneğini seçebilirsiniz ve onlara e-posta göndereceğiz.",
     "savedToast": "Kaydedildi"
+  },
+  "deviceBind": {
+    "title": "Diğer cihazlarda kullanmak için hesap bağlayın",
+    "description": "Şu anda yalnızca bu cihaz kullanabilir. E-posta ekleyin veya Apple ile giriş yapın; tek hesap aynı anda en fazla {{count}} cihazda çalışır.",
+    "thisDevice": "Bu cihaz",
+    "appleButton": "Apple ile giriş yap",
+    "googleButton": "Google ile giriş yap",
+    "emailHeading": "E-posta ekle",
+    "noCharge": "Bağlamak mevcut aboneliğinizi veya denemenizi etkilemez ve yeniden ücret alınmaz.",
+    "bound": "Diğer cihazlarda {{account}} ile giriş yapın, en fazla {{count}} cihaz",
+    "bindFailed": "Bağlanamadı, lütfen daha sonra tekrar deneyin"
   }
 }

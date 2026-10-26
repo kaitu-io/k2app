@@ -15,6 +15,11 @@ import {
   Card,
   CardContent,
   Stack,
+  Dialog,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+  IconButton,
   useTheme as useMuiTheme,
 } from "@mui/material";
 import {
@@ -36,10 +41,12 @@ import {
   Lock as LockIcon,
   Dns as DnsIcon,
   ExpandMore as ExpandMoreIcon,
+  Badge as UserIdIcon,
+  ContentCopy as CopyIcon,
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { useAuth } from "../stores";
+import { useAuth, useAlert } from "../stores";
 import { useUser } from "../hooks/useUser";
 import { languages, changeLanguage, normalizeLanguageCode, type LanguageCode } from "../i18n/i18n";
 import LanguageDialog from "../components/LanguageDialog";
@@ -61,22 +68,10 @@ import { brandConfig } from '../brands';
 import { getCurrentAppConfig } from '../config/apps';
 import { purchaseSurfaceAvailable } from '../utils/purchase-surface';
 import SubscriptionStatusOnly from '../components/SubscriptionStatusOnly';
+import { maskEmail } from '../utils/email';
 
-/**
- * 掩码登录邮箱。星号数固定为 3，不随用户名长度增长——等长掩码会生成一个
- * 没有断行机会的长星号串，撑破手机窄屏下的行宽（且泄露用户名长度）。
- */
-export function maskEmail(email: string): string {
-  const at = email.lastIndexOf("@");
-  if (at <= 0) return email;
-  const username = email.slice(0, at);
-  const domain = email.slice(at + 1);
-  // 用户名不足 3 字符时只保留首字符，避免掩码后仍能还原
-  const masked = username.length <= 2
-    ? `${username.charAt(0)}***`
-    : `${username.charAt(0)}***${username.charAt(username.length - 1)}`;
-  return `${masked}@${domain}`;
-}
+// maskEmail 移到 utils/email（【其他设备安装】也用）；这里保留导出给既有调用方。
+export { maskEmail };
 
 export default function Account() {
   const { user, loading, isMembership, isExpired, fetchUser } = useUser();
@@ -99,6 +94,15 @@ export default function Account() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [loginOtherDialogOpen, setLoginOtherDialogOpen] = useState(false);
+  const { showAlert } = useAlert();
+  // 零身份设备账号（spec 2026-10-20 §4.4 / §4.6）：只存在于 Keychain 身份新壳，已登录但没有
+  // 任何登录身份。没有普通退出（退出 = 账号丢失），邮箱 / 密码项换成可复制的用户 ID。
+  const zeroIdentity =
+    window._platform?.keychainIdentity === true &&
+    isAuthenticated &&
+    !!user &&
+    !(user.loginIdentifies?.length > 0);
   useEffect(() => {
     let version = window._platform!.version;
     // iOS App Store 审核要求：版本号不能包含 beta 后缀（如 0.4.0-beta.4），
@@ -118,6 +122,29 @@ export default function Account() {
       console.info(t('common:messages.logoutSuccess'));
     } catch (err) {
       console.error(t('common:messages.logoutFailed'), err);
+    }
+  };
+
+  const openLoginDialog = () => {
+    useLoginDialogStore.getState().open({ trigger: 'account:login-other' });
+  };
+
+  // 「登录其他账号」：设备账号有会员时先提醒设置邮箱（spec §4.4），否则登录后找不回。
+  const handleLoginOther = () => {
+    if (isMembership) {
+      setLoginOtherDialogOpen(true);
+      return;
+    }
+    openLoginDialog();
+  };
+
+  const handleCopyUserId = async () => {
+    if (!user?.uuid) return;
+    try {
+      await window._platform?.writeClipboard?.(user.uuid);
+      showAlert(t('common:messages.copySuccess'), "success");
+    } catch {
+      showAlert(t('common:messages.copyFailed'), "error");
     }
   };
 
@@ -491,6 +518,39 @@ export default function Account() {
         })}
       >
           <List>
+            {zeroIdentity ? (
+            <ListItem sx={{ py: 1.5 }} data-testid="account-user-id">
+              <ListItemIcon>
+                <UserIdIcon />
+              </ListItemIcon>
+              <ListItemText
+                sx={{ minWidth: 0 }}
+                primary={
+                  <Typography variant="body2" component="span" sx={{ fontWeight: 500, fontSize: '0.9rem' }}>
+                    {t('account:account.userId')}
+                  </Typography>
+                }
+                secondary={
+                  <Typography
+                    variant="caption"
+                    component="span"
+                    color="text.secondary"
+                    sx={{ fontFamily: 'monospace', overflowWrap: 'anywhere', userSelect: 'text' }}
+                  >
+                    {user!.uuid}
+                  </Typography>
+                }
+              />
+              <IconButton
+                size="small"
+                onClick={handleCopyUserId}
+                aria-label={t('account:account.copyUserId')}
+                sx={{ ml: 1, flexShrink: 0 }}
+              >
+                <CopyIcon fontSize="small" />
+              </IconButton>
+            </ListItem>
+            ) : (<>
             <ListItem
               disabled={!isMembership}
               sx={{
@@ -644,6 +704,7 @@ export default function Account() {
                 <ChevronRightIcon color="action" />
               </ListItemSecondaryAction>
             </ListItem>
+            </>)}
 
             <Divider />
 
@@ -844,8 +905,55 @@ export default function Account() {
           </List>
       </Box>
 
+      {/* 零身份：没有普通退出，换成【其他设备安装】和「登录其他账号」（spec §4.4） */}
+      {zeroIdentity && (
+        <Box sx={{ mt: 1, display: "flex", justifyContent: "center", gap: 1.5, flexWrap: 'wrap' }}>
+          <Button
+            variant="contained"
+            data-testid="zero-identity-device-install"
+            startIcon={<PhoneAndroidIcon />}
+            onClick={() => navigate("/device-install")}
+            sx={{ px: 2.5, py: 0.75, borderRadius: 2, textTransform: 'none', fontWeight: 500, fontSize: '0.85rem' }}
+          >
+            {t('nav:layout.deviceInstall')}
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={handleLoginOther}
+            sx={{ px: 2.5, py: 0.75, borderRadius: 2, textTransform: 'none', fontWeight: 500, fontSize: '0.85rem' }}
+          >
+            {t('account:account.loginOtherAccount')}
+          </Button>
+        </Box>
+      )}
+
+      <Dialog open={loginOtherDialogOpen} onClose={() => setLoginOtherDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogContent>
+          <DialogContentText>{t('account:account.loginOtherWarning')}</DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setLoginOtherDialogOpen(false);
+              openLoginDialog();
+            }}
+          >
+            {t('account:account.loginAnyway')}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              setLoginOtherDialogOpen(false);
+              navigate("/device-install");
+            }}
+          >
+            {t('account:account.goSetEmail')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* 切换账号按钮 - 仅登录状态显示 */}
-      {isAuthenticated && (
+      {isAuthenticated && !zeroIdentity && (
         <Box sx={{ mt: 1, display: "flex", justifyContent: "center", gap: 1.5 }}>
           <Button
             variant="outlined"

@@ -83,7 +83,13 @@
     "deleteTypePrompt": "Digite \"{{word}}\" para confirmar a exclusão permanente",
     "deleteConfirmWord": "EXCLUIR",
     "deleteFinalButton": "Excluir conta permanentemente",
-    "bindBanner": "Vincule um e-mail ou Iniciar sessão com a Apple para usar em até {{count}} dispositivos"
+    "bindBanner": "Vincule um e-mail ou Iniciar sessão com a Apple para usar em até {{count}} dispositivos",
+    "userId": "ID do usuário",
+    "copyUserId": "Copiar ID do usuário",
+    "loginOtherAccount": "Entrar em outra conta",
+    "loginOtherWarning": "A assinatura deste dispositivo pertence à conta atual. Adicione um e-mail primeiro, senão você não conseguirá recuperá-la depois de entrar em outra conta.",
+    "goSetEmail": "Adicionar e-mail",
+    "loginAnyway": "Entrar mesmo assim"
   },
   "betaProgram": {
     "title": "Programa Beta",
@@ -152,5 +158,16 @@
     "removeFailed": "Falha ao remover, tente novamente",
     "currentHint": "No checkout você pode escolher \"Pedir {{email}} para pagar\" e enviaremos um email para eles.",
     "savedToast": "Salvo"
+  },
+  "deviceBind": {
+    "title": "Vincule uma conta para usar em outros dispositivos",
+    "description": "No momento, só este dispositivo pode usar. Adicione um e-mail ou entre com a Apple e a mesma conta funciona em até {{count}} dispositivos ao mesmo tempo.",
+    "thisDevice": "Este dispositivo",
+    "appleButton": "Entrar com a Apple",
+    "googleButton": "Entrar com o Google",
+    "emailHeading": "Adicionar e-mail",
+    "noCharge": "Vincular não afeta sua assinatura ou teste atual, e você não será cobrado novamente.",
+    "bound": "Entre com {{account}} nos seus outros dispositivos, até {{count}}",
+    "bindFailed": "Não foi possível vincular, tente novamente mais tarde"
   }
 }

@@ -83,7 +83,13 @@
     "deleteTypePrompt": "Saisissez « {{word}} » pour confirmer la suppression définitive",
     "deleteConfirmWord": "SUPPRIMER",
     "deleteFinalButton": "Supprimer définitivement le compte",
-    "bindBanner": "Associez un e-mail ou « Se connecter avec Apple » pour l’utiliser sur {{count}} appareils"
+    "bindBanner": "Associez un e-mail ou « Se connecter avec Apple » pour l’utiliser sur {{count}} appareils",
+    "userId": "ID utilisateur",
+    "copyUserId": "Copier l'ID utilisateur",
+    "loginOtherAccount": "Se connecter à un autre compte",
+    "loginOtherWarning": "L'abonnement de cet appareil appartient au compte actuel. Ajoutez d'abord un e-mail, sinon vous ne pourrez plus le récupérer après vous être connecté à un autre compte.",
+    "goSetEmail": "Ajouter un e-mail",
+    "loginAnyway": "Se connecter quand même"
   },
   "betaProgram": {
     "title": "Programme bêta",
@@ -152,5 +158,16 @@
     "removeFailed": "Échec de la suppression, veuillez réessayer",
     "currentHint": "À la caisse, vous pouvez choisir « Demander à {{email}} de payer » et nous lui enverrons un e-mail.",
     "savedToast": "Enregistré"
+  },
+  "deviceBind": {
+    "title": "Associez un compte pour l'utiliser sur d'autres appareils",
+    "description": "Pour l'instant, seul cet appareil peut l'utiliser. Ajoutez un e-mail ou connectez-vous avec Apple : un même compte fonctionne alors sur {{count}} appareils simultanément.",
+    "thisDevice": "Cet appareil",
+    "appleButton": "Se connecter avec Apple",
+    "googleButton": "Se connecter avec Google",
+    "emailHeading": "Ajouter un e-mail",
+    "noCharge": "L'association n'affecte ni votre abonnement ni votre essai en cours, et vous ne serez pas débité à nouveau.",
+    "bound": "Connectez-vous avec {{account}} sur vos autres appareils, jusqu'à {{count}}",
+    "bindFailed": "Échec de l'association, réessayez plus tard"
   }
 }

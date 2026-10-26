@@ -103,6 +103,7 @@
       "slow": "Tốc độ chậm",
       "crash": "Sự cố ứng dụng",
       "subscription": "Vấn đề đăng ký"
-    }
+    },
+    "zeroIdentityHint": "Tài khoản này chưa có email. Hãy để lại email liên hệ, chúng tôi sẽ trả lời qua đó (không dùng để đăng nhập)."
   }
 }

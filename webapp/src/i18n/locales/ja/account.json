@@ -61,7 +61,13 @@
     "deleteTypePrompt": "完全削除を確認するには「{{word}}」と入力してください",
     "deleteConfirmWord": "削除",
     "deleteFinalButton": "アカウントを完全に削除",
-    "bindBanner": "メールまたは Apple でサインインを設定すると、{{count}} 台のデバイスで使えます"
+    "bindBanner": "メールまたは Apple でサインインを設定すると、{{count}} 台のデバイスで使えます",
+    "userId": "ユーザー ID",
+    "copyUserId": "ユーザー ID をコピー",
+    "loginOtherAccount": "別のアカウントでログイン",
+    "loginOtherWarning": "この端末のメンバーシップは現在のアカウントに属しています。先にメールを設定してください。設定しないと、別のアカウントでログインした後に復元できません。",
+    "goSetEmail": "メールを設定",
+    "loginAnyway": "このままログイン"
   },
   "developerModeActivated": "開発者モードが有効になりました",
   "logLevel": "ログレベル",
@@ -152,5 +158,16 @@
     "disableConfirm": "安定版に切り替える",
     "downloading": "安定版をダウンロード中...",
     "badge": "Beta"
+  },
+  "deviceBind": {
+    "title": "アカウントを連携して他の端末でも使う",
+    "description": "現在はこの端末でのみ利用できます。メールまたは Apple でサインインを連携すると、1 つのアカウントで最大 {{count}} 台の端末で同時に使えます。",
+    "thisDevice": "この端末",
+    "appleButton": "Apple でサインイン",
+    "googleButton": "Google でサインイン",
+    "emailHeading": "メールを連携",
+    "noCharge": "連携しても現在のサブスクリプションやトライアルには影響せず、再度請求されることもありません。",
+    "bound": "他の端末では {{account}} でログインしてください（最大 {{count}} 台）",
+    "bindFailed": "連携に失敗しました。しばらくしてからもう一度お試しください"
   }
 }

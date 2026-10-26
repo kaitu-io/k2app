@@ -83,7 +83,13 @@
     "deleteTypePrompt": "Nhập \"{{word}}\" để xác nhận xóa vĩnh viễn",
     "deleteConfirmWord": "DELETE",
     "deleteFinalButton": "Xóa vĩnh viễn tài khoản",
-    "bindBanner": "Liên kết email hoặc Đăng nhập bằng Apple để dùng trên tối đa {{count}} thiết bị"
+    "bindBanner": "Liên kết email hoặc Đăng nhập bằng Apple để dùng trên tối đa {{count}} thiết bị",
+    "userId": "ID người dùng",
+    "copyUserId": "Sao chép ID người dùng",
+    "loginOtherAccount": "Đăng nhập tài khoản khác",
+    "loginOtherWarning": "Gói thành viên trên thiết bị này thuộc tài khoản hiện tại. Hãy thêm email trước, nếu không bạn sẽ không thể lấy lại sau khi đăng nhập tài khoản khác.",
+    "goSetEmail": "Thêm email",
+    "loginAnyway": "Vẫn đăng nhập"
   },
   "betaProgram": {
     "title": "Chương trình Beta",
@@ -152,5 +158,16 @@
     "removeFailed": "Không thể xóa, vui lòng thử lại",
     "currentHint": "Khi thanh toán, bạn có thể chọn \"Yêu cầu {{email}} thanh toán\" và chúng tôi sẽ gửi email cho họ.",
     "savedToast": "Đã lưu"
+  },
+  "deviceBind": {
+    "title": "Liên kết tài khoản để dùng trên thiết bị khác",
+    "description": "Hiện chỉ thiết bị này dùng được. Thêm email hoặc đăng nhập bằng Apple, một tài khoản sẽ dùng được đồng thời trên tối đa {{count}} thiết bị.",
+    "thisDevice": "Thiết bị này",
+    "appleButton": "Đăng nhập bằng Apple",
+    "googleButton": "Đăng nhập bằng Google",
+    "emailHeading": "Thêm email",
+    "noCharge": "Liên kết không ảnh hưởng đến gói đăng ký hay bản dùng thử hiện tại và bạn sẽ không bị tính phí lại.",
+    "bound": "Đăng nhập bằng {{account}} trên các thiết bị khác, tối đa {{count}} thiết bị",
+    "bindFailed": "Liên kết không thành công, vui lòng thử lại sau"
   }
 }

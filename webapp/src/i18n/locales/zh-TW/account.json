@@ -61,7 +61,13 @@
     "deleteTypePrompt": "請輸入「{{word}}」以確認永久註銷",
     "deleteConfirmWord": "註銷",
     "deleteFinalButton": "永久註銷帳號",
-    "bindBanner": "綁定電子郵件或 Apple 登入，就能在 {{count}} 台裝置上使用"
+    "bindBanner": "綁定電子郵件或 Apple 登入，就能在 {{count}} 台裝置上使用",
+    "userId": "使用者 ID",
+    "copyUserId": "複製使用者 ID",
+    "loginOtherAccount": "登入其他帳號",
+    "loginOtherWarning": "這台裝置上的會員屬於目前帳號，請先設定信箱，否則登入別的帳號後將無法找回",
+    "goSetEmail": "去設定信箱",
+    "loginAnyway": "仍然登入"
   },
   "developerModeActivated": "開發者模式已開啟",
   "logLevel": "日誌級別",
@@ -152,5 +158,16 @@
     "disableConfirm": "切回穩定版",
     "downloading": "正在下載穩定版...",
     "badge": "Beta"
+  },
+  "deviceBind": {
+    "title": "先綁定，再在其他裝置上使用",
+    "description": "目前只有這台裝置能用。綁定信箱或 Apple 登入後，同一個帳號最多 {{count}} 台裝置同時使用。",
+    "thisDevice": "本機",
+    "appleButton": "透過 Apple 登入",
+    "googleButton": "透過 Google 登入",
+    "emailHeading": "綁定信箱",
+    "noCharge": "綁定不影響目前的訂閱和試用，也不會重新扣款。",
+    "bound": "在其他裝置上用 {{account}} 登入即可，最多 {{count}} 台",
+    "bindFailed": "綁定失敗，請稍後再試"
   }
 }

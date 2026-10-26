@@ -83,7 +83,13 @@
     "deleteTypePrompt": "Type \"{{word}}\" to confirm permanent deletion",
     "deleteConfirmWord": "DELETE",
     "deleteFinalButton": "Permanently delete account",
-    "bindBanner": "Add an email or Sign in with Apple to use it on up to {{count}} devices"
+    "bindBanner": "Add an email or Sign in with Apple to use it on up to {{count}} devices",
+    "userId": "User ID",
+    "copyUserId": "Copy user ID",
+    "loginOtherAccount": "Sign in to another account",
+    "loginOtherWarning": "The membership on this device belongs to the current account. Add an email first, or you won't be able to get it back after signing in to another account.",
+    "goSetEmail": "Add email",
+    "loginAnyway": "Sign in anyway"
   },
   "betaProgram": {
     "title": "Beta Program",
@@ -152,5 +158,16 @@
     "removeFailed": "Failed to remove, please try again",
     "currentHint": "At checkout you can choose \"Ask {{email}} to pay\" and we'll email them.",
     "savedToast": "Saved"
+  },
+  "deviceBind": {
+    "title": "Link an account to use it on other devices",
+    "description": "Right now only this device can use it. Add an email or Sign in with Apple, and one account works on up to {{count}} devices at once.",
+    "thisDevice": "This device",
+    "appleButton": "Sign in with Apple",
+    "googleButton": "Sign in with Google",
+    "emailHeading": "Add email",
+    "noCharge": "Linking doesn't affect your current subscription or trial, and you won't be charged again.",
+    "bound": "Sign in with {{account}} on your other devices, up to {{count}} devices",
+    "bindFailed": "Couldn't link, please try again later"
   }
 }

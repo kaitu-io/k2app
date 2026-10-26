@@ -83,7 +83,13 @@
     "deleteTypePrompt": "Ketik \"{{word}}\" untuk mengonfirmasi penghapusan permanen",
     "deleteConfirmWord": "HAPUS",
     "deleteFinalButton": "Hapus akun secara permanen",
-    "bindBanner": "Tautkan email atau Masuk dengan Apple untuk memakainya di hingga {{count}} perangkat"
+    "bindBanner": "Tautkan email atau Masuk dengan Apple untuk memakainya di hingga {{count}} perangkat",
+    "userId": "ID pengguna",
+    "copyUserId": "Salin ID pengguna",
+    "loginOtherAccount": "Masuk ke akun lain",
+    "loginOtherWarning": "Keanggotaan di perangkat ini milik akun saat ini. Tambahkan email dulu, jika tidak keanggotaan tidak bisa dipulihkan setelah masuk ke akun lain.",
+    "goSetEmail": "Tambahkan email",
+    "loginAnyway": "Tetap masuk"
   },
   "betaProgram": {
     "title": "Program Beta",
@@ -152,5 +158,16 @@
     "removeFailed": "Gagal menghapus, silakan coba lagi",
     "currentHint": "Saat checkout Anda dapat memilih \"Minta {{email}} untuk membayar\" dan kami akan mengiriminya email.",
     "savedToast": "Disimpan"
+  },
+  "deviceBind": {
+    "title": "Tautkan akun untuk dipakai di perangkat lain",
+    "description": "Saat ini hanya perangkat ini yang bisa memakainya. Tambahkan email atau masuk dengan Apple, lalu satu akun bisa dipakai di hingga {{count}} perangkat sekaligus.",
+    "thisDevice": "Perangkat ini",
+    "appleButton": "Masuk dengan Apple",
+    "googleButton": "Masuk dengan Google",
+    "emailHeading": "Tambahkan email",
+    "noCharge": "Menautkan tidak memengaruhi langganan atau uji coba saat ini, dan Anda tidak akan ditagih lagi.",
+    "bound": "Masuk dengan {{account}} di perangkat lain, hingga {{count}} perangkat",
+    "bindFailed": "Gagal menautkan, coba lagi nanti"
   }
 }
