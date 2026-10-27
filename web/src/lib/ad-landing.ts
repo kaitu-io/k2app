@@ -27,7 +27,7 @@ export const AD_CODES: Readonly<Record<string, AdCode>> = {
 };
 
 /** App Store Connect 的 provider token；为空时 App Store 链接不带归因参数 */
-export const APP_STORE_PROVIDER_TOKEN = '';
+export const APP_STORE_PROVIDER_TOKEN = '126732450';
 
 const FALLBACK: AdCode = { variant: 'stable', channel: 'x' };
 
