@@ -1,8 +1,8 @@
 /**
  * 【我的】零身份设备账号（设备账号 spec §4.4 / §4.6 / §4.6.1）：
- * - 不提供普通退出：换成【其他设备安装】和「登录其他账号」。
- * - 有会员时「登录其他账号」先弹 MUI Dialog 引导设置邮箱，不直接打开登录框。
- * - 显示可复制的用户 ID，隐藏邮箱相关项。
+ * - 不提供普通退出：换成【其他设备安装】；登录入口「已有账号？登录」在会员卡里（不再藏在页面底部）。
+ * - 有会员时点登录入口先弹 MUI Dialog 引导设置邮箱，不直接打开登录框。
+ * - 不显示用户 ID（用户拿它做不了任何事），隐藏邮箱相关项。
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, within } from '@testing-library/react';
@@ -72,26 +72,26 @@ describe('Account — 零身份设备账号', () => {
     delete (window as any)._platform;
   });
 
-  it('没有退出 / 切换账号按钮，换成【其他设备安装】和「登录其他账号」', () => {
+  it('没有退出 / 切换账号按钮；有【其他设备安装】，登录入口在会员卡里', () => {
     render(<Account />);
     expect(screen.queryByText(i18n.t('account:account.switchAccount'))).toBeNull();
     expect(screen.getByTestId('zero-identity-device-install')).toBeInTheDocument();
-    expect(screen.getByText(i18n.t('account:account.loginOtherAccount'))).toBeInTheDocument();
+    expect(screen.getByTestId('account-have-account-login')).toHaveTextContent(i18n.t('purchase:purchase.iap.haveAccountLogin'));
+    expect(screen.queryByText(i18n.t('account:account.loginOtherAccount'))).toBeNull();
   });
 
-  it('显示可复制的用户 ID，隐藏邮箱相关项', () => {
+  it('不显示用户 ID，隐藏邮箱相关项', () => {
     render(<Account />);
-    expect(screen.getByText(UUID)).toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText(i18n.t('account:account.copyUserId')));
-    expect((window as any)._platform.writeClipboard).toHaveBeenCalledWith(UUID);
+    expect(screen.queryByText(UUID)).toBeNull();
+    expect(screen.queryByText(i18n.t('account:account.userId'))).toBeNull();
     expect(screen.queryByText(i18n.t('account:account.setEmail'))).toBeNull();
     expect(screen.queryByText(i18n.t('account:account.loginEmail'))).toBeNull();
     expect(screen.queryByText(i18n.t('account:account.multiDeviceWarning'))).toBeNull();
   });
 
-  it('有会员：点「登录其他账号」先弹 Dialog，不直接打开登录框', () => {
+  it('有会员：点登录入口先弹 Dialog，不直接打开登录框', () => {
     render(<Account />);
-    fireEvent.click(screen.getByText(i18n.t('account:account.loginOtherAccount')));
+    fireEvent.click(screen.getByTestId('account-have-account-login'));
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByText(i18n.t('account:account.loginOtherWarning'))).toBeInTheDocument();
     expect(m.openLogin).not.toHaveBeenCalled();
@@ -102,7 +102,7 @@ describe('Account — 零身份设备账号', () => {
 
   it('Dialog「去设置邮箱」进【其他设备安装】', () => {
     render(<Account />);
-    fireEvent.click(screen.getByText(i18n.t('account:account.loginOtherAccount')));
+    fireEvent.click(screen.getByTestId('account-have-account-login'));
     fireEvent.click(within(screen.getByRole('dialog')).getByText(i18n.t('account:account.goSetEmail')));
     expect(m.navigate).toHaveBeenCalledWith('/device-install');
     expect(m.openLogin).not.toHaveBeenCalled();
@@ -111,7 +111,7 @@ describe('Account — 零身份设备账号', () => {
   it('无会员：直接打开登录框', () => {
     setUser({ uuid: UUID, expiredAt: 0, loginIdentifies: [], deviceCount: 1 }, false);
     render(<Account />);
-    fireEvent.click(screen.getByText(i18n.t('account:account.loginOtherAccount')));
+    fireEvent.click(screen.getByTestId('account-have-account-login'));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(m.openLogin).toHaveBeenCalledTimes(1);
   });
@@ -141,11 +141,11 @@ describe('Account — 零身份设备账号', () => {
     expect(screen.getByText(i18n.t('account:account.switchAccount'))).toBeInTheDocument();
   });
 
-  it('有邮箱身份：保持原样（切换账号按钮在，无用户 ID 行）', () => {
+  it('有邮箱身份：保持原样（切换账号按钮在，无登录入口）', () => {
     setUser({ uuid: UUID, expiredAt: 4102444800, loginIdentifies: [{ type: 'email', value: 'a@b.com' }] }, true);
     render(<Account />);
     expect(screen.getByText(i18n.t('account:account.switchAccount'))).toBeInTheDocument();
     expect(screen.queryByText(UUID)).toBeNull();
-    expect(screen.queryByText(i18n.t('account:account.loginOtherAccount'))).toBeNull();
+    expect(screen.queryByTestId('account-have-account-login')).toBeNull();
   });
 });

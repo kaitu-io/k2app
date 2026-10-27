@@ -20,7 +20,7 @@ import {
   DialogContent,
   DialogContentText,
   DialogActions,
-  IconButton,
+  Link,
   useTheme as useMuiTheme,
 } from "@mui/material";
 import {
@@ -43,12 +43,10 @@ import {
   Lock as LockIcon,
   Dns as DnsIcon,
   ExpandMore as ExpandMoreIcon,
-  Badge as UserIdIcon,
-  ContentCopy as CopyIcon,
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { useAuth, useAlert } from "../stores";
+import { useAuth } from "../stores";
 import { useUser } from "../hooks/useUser";
 import { languages, changeLanguage, normalizeLanguageCode, type LanguageCode } from "../i18n/i18n";
 import LanguageDialog from "../components/LanguageDialog";
@@ -98,7 +96,6 @@ export default function Account() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [loginOtherDialogOpen, setLoginOtherDialogOpen] = useState(false);
-  const { showAlert } = useAlert();
   // 零身份设备账号（spec 2026-10-20 §4.4 / §4.6）：只存在于 Keychain 身份新壳，已登录但没有
   // 任何登录身份。没有普通退出（退出 = 账号丢失），邮箱 / 密码项换成可复制的用户 ID。
   const zeroIdentity =
@@ -161,15 +158,6 @@ export default function Account() {
     openLoginDialog();
   };
 
-  const handleCopyUserId = async () => {
-    if (!user?.uuid) return;
-    try {
-      await window._platform?.writeClipboard?.(user.uuid);
-      showAlert(t('common:messages.copySuccess'), "success");
-    } catch {
-      showAlert(t('common:messages.copyFailed'), "error");
-    }
-  };
 
   const handleDeleteAccount = async () => {
     setDeleteLoading(true);
@@ -488,6 +476,20 @@ export default function Account() {
                   {t(neverSubscribed ? 'account:account.subscribeNow' : 'account:account.renewNow')}
                 </Button>
               )}
+              {/* 零身份设备账号：已有账号的用户从这里登录（原入口在页面底部，太隐蔽） */}
+              {zeroIdentity && (
+                <Link
+                  component="button"
+                  type="button"
+                  variant="body2"
+                  underline="hover"
+                  data-testid="account-have-account-login"
+                  onClick={handleLoginOther}
+                  sx={{ alignSelf: 'center' }}
+                >
+                  {t('purchase:purchase.iap.haveAccountLogin')}
+                </Link>
+              )}
               {!isNotLoggedIn && !hasError && !purchaseSurfaceAvailable() && window._platform?.os === 'android' && (
                 <SubscriptionStatusOnly isPro={!isExpired} expiresText={displayTime} />
               )}
@@ -550,39 +552,7 @@ export default function Account() {
         })}
       >
           <List>
-            {zeroIdentity ? (
-            <ListItem sx={{ py: 1.5 }} data-testid="account-user-id">
-              <ListItemIcon>
-                <UserIdIcon />
-              </ListItemIcon>
-              <ListItemText
-                sx={{ minWidth: 0 }}
-                primary={
-                  <Typography variant="body2" component="span" sx={{ fontWeight: 500, fontSize: '0.9rem' }}>
-                    {t('account:account.userId')}
-                  </Typography>
-                }
-                secondary={
-                  <Typography
-                    variant="caption"
-                    component="span"
-                    color="text.secondary"
-                    sx={{ fontFamily: 'monospace', overflowWrap: 'anywhere', userSelect: 'text' }}
-                  >
-                    {user!.uuid}
-                  </Typography>
-                }
-              />
-              <IconButton
-                size="small"
-                onClick={handleCopyUserId}
-                aria-label={t('account:account.copyUserId')}
-                sx={{ ml: 1, flexShrink: 0 }}
-              >
-                <CopyIcon fontSize="small" />
-              </IconButton>
-            </ListItem>
-            ) : (<>
+            {!zeroIdentity && (<>
             <ListItem
               disabled={!isMembership}
               sx={{
@@ -736,9 +706,9 @@ export default function Account() {
                 <ChevronRightIcon color="action" />
               </ListItemSecondaryAction>
             </ListItem>
-            </>)}
 
             <Divider />
+            </>)}
 
             <ListItem
               button={true}
@@ -960,7 +930,7 @@ export default function Account() {
           </List>
       </Box>
 
-      {/* 零身份：没有普通退出，换成【其他设备安装】和「登录其他账号」（spec §4.4） */}
+      {/* 零身份：没有普通退出，换成【其他设备安装】；登录入口在会员卡里（spec §4.4） */}
       {zeroIdentity && (
         <Box sx={{ mt: 1, display: "flex", justifyContent: "center", gap: 1.5, flexWrap: 'wrap' }}>
           <Button
@@ -971,13 +941,6 @@ export default function Account() {
             sx={{ px: 2.5, py: 0.75, borderRadius: 2, textTransform: 'none', fontWeight: 500, fontSize: '0.85rem' }}
           >
             {t('nav:layout.deviceInstall')}
-          </Button>
-          <Button
-            variant="outlined"
-            onClick={handleLoginOther}
-            sx={{ px: 2.5, py: 0.75, borderRadius: 2, textTransform: 'none', fontWeight: 500, fontSize: '0.85rem' }}
-          >
-            {t('account:account.loginOtherAccount')}
           </Button>
         </Box>
       )}
