@@ -11,13 +11,13 @@
 #   4. Clean old Docker versions
 #   5. Ensure iptables is installed
 #   6. Configure official Docker apt source
-#   7. Install Docker CE + plugins + docker group + disable unattended-upgrades
+#   7. Install Docker CE + plugins + docker group + security-only unattended-upgrades
 #   8. Create docker-compose compatibility wrapper
 #   9. Enable IPv6 kernel params (sysctl)
 #  10. Enable BBR congestion control (sysctl)
 #  11. Configure Docker daemon (IPv6 + log rotation)
 #  12. Install UFW-Docker security patch (if UFW active)
-#  13. Harden SSH: switch to port 1022 only (with rollback on failure)
+#  13. Harden SSH: switch to port 1022 only (with rollback on failure), key-only login
 #  14. Configure journald persistence + k2s crash monitor
 #  15. Deploy auto-update cron (daily 04:00 Beijing time)
 #  16. Verify everything works
@@ -278,11 +278,24 @@ if id "ubuntu" &>/dev/null; then
     ok "User 'ubuntu' added to docker group."
 fi
 
-# Disable unattended-upgrades (prevents surprise reboots)
-if dpkg -l unattended-upgrades &>/dev/null 2>&1; then
-    apt-get remove -y unattended-upgrades >/dev/null 2>&1 || true
-    ok "unattended-upgrades removed."
+# Security-only unattended-upgrades, never rebooting and never restarting
+# services (needrestart would bounce containerd/docker and drop every tunnel).
+# Library/kernel fixes take effect at the next planned reboot.
+# Removing unattended-upgrades instead left the fleet 100-200 security
+# updates behind (2026-10-27 audit).
+apt-get install -y unattended-upgrades >/dev/null 2>&1 || warn "unattended-upgrades install issue"
+cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+EOF
+cat > /etc/apt/apt.conf.d/52kaitu-unattended <<'EOF'
+Unattended-Upgrade::Automatic-Reboot "false";
+EOF
+if [ -d /etc/needrestart ]; then
+    mkdir -p /etc/needrestart/conf.d
+    echo "\$nrconf{restart} = 'l';" > /etc/needrestart/conf.d/50-kaitu.conf
 fi
+ok "unattended-upgrades: security-only, no reboot, no service restarts."
 
 # ===================================================================
 # [8/16] Create docker-compose compatibility wrapper
@@ -483,6 +496,24 @@ else
         cp /etc/ssh/sshd_config.bak_provision /etc/ssh/sshd_config
         restart_ssh || true
     fi
+fi
+
+# Key-only login. Vultr/BWH images ship root password login enabled and see
+# ~10k password guesses per week. Drop-in 00-* wins over the image's
+# 50-cloud-init.conf (sshd takes the first value). Skipped when no
+# authorized_keys exists, so a password-only box is never locked out.
+if cat /root/.ssh/authorized_keys /home/*/.ssh/authorized_keys 2>/dev/null | grep -qE '^(ssh-|ecdsa-)'; then
+    printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin prohibit-password\n' \
+        > /etc/ssh/sshd_config.d/00-kaitu-hardening.conf
+    if sshd -t 2>/dev/null; then
+        systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+        ok "SSH password login disabled (key-only)."
+    else
+        rm -f /etc/ssh/sshd_config.d/00-kaitu-hardening.conf
+        warn "sshd -t failed with key-only drop-in; left password login unchanged."
+    fi
+else
+    warn "No authorized_keys found; left SSH password login enabled."
 fi
 
 # ===================================================================
