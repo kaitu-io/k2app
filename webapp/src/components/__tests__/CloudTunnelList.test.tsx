@@ -434,6 +434,29 @@ describe('CloudTunnelList', () => {
       expect(screen.queryByText(/自部署|Self-Deployed/i)).not.toBeInTheDocument();
     });
 
+    it('zero-identity device account: offers "have an account? log in" under subscribe', async () => {
+      mockCacheGet.mockReturnValue(null);
+      mockCloudApiGet.mockResolvedValue({ code: 402, message: 'membership expired' });
+      const onLoginExisting = vi.fn();
+
+      render(<CloudTunnelList {...defaultProps} neverSubscribed onLoginExisting={onLoginExisting} />);
+
+      const link = await screen.findByTestId('tunnel-have-account-login');
+      fireEvent.click(link);
+      expect(onLoginExisting).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(/^(开通会员|Subscribe)$/i)).toBeInTheDocument();
+    });
+
+    it('accounts with an identity get no login link in the 402 state', async () => {
+      mockCacheGet.mockReturnValue(null);
+      mockCloudApiGet.mockResolvedValue({ code: 402, message: 'membership expired' });
+
+      render(<CloudTunnelList {...defaultProps} neverSubscribed />);
+
+      await screen.findByText(/尚未开通会员|No membership yet/i);
+      expect(screen.queryByTestId('tunnel-have-account-login')).not.toBeInTheDocument();
+    });
+
     it('on iOS WITHOUT IAP, shows the expired state WITHOUT a renew CTA (Apple 3.1.1: /purchase unregistered)', async () => {
       (window as any)._platform = { os: 'ios' };
       try {

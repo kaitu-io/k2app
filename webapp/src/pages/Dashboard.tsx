@@ -230,6 +230,13 @@ export default function Dashboard() {
   const cloudAccessRevoked = useConnectionStore((s) => s.cloudAccessRevoked);
   // 从未开通（如免登录新建的设备账号）≠ 已过期；user 未加载时两边都按「过期」处理，保持一致
   const neverSubscribed = !!user && !user.expiredAt;
+  // 零身份设备账号（与 Account 同一判定）：节点列表的开通按钮下给「已有账号？登录」
+  const zeroIdentity = window._platform?.keychainIdentity === true && isAuthenticated
+    && !!user && !(user.loginIdentifies?.length > 0);
+  const handleLoginExisting = useCallback(
+    () => openLoginDialog({ trigger: 'dashboard:tunnel-locked' }),
+    [openLoginDialog],
+  );
   const upsellLocked = isAuthenticated && serverMode === 'manual' && cloudAccessRevoked
     && !hasTunnelSelected && purchaseSurfaceAvailable();
   const upsellHint = upsellLocked
@@ -286,6 +293,7 @@ export default function Dashboard() {
       onTunnelsLoaded={handleTunnelsLoaded}
       hideHeader
       neverSubscribed={neverSubscribed}
+      onLoginExisting={zeroIdentity ? handleLoginExisting : undefined}
     />
   );
 

@@ -10,6 +10,7 @@ import {
   ListItemText,
   Radio,
   Stack,
+  Link,
   IconButton,
   Tooltip,
   Button,
@@ -51,6 +52,8 @@ interface CloudTunnelListProps {
   hideHeader?: boolean;
   /** 账号从未开通过会员（不是过期）——402 空状态改用「开通」文案 */
   neverSubscribed?: boolean;
+  /** 零身份设备账号：在开通按钮下给「已有账号？登录」入口 */
+  onLoginExisting?: () => void;
 }
 
 /**
@@ -71,7 +74,7 @@ export interface CloudTunnelListHandle {
 }
 
 export const CloudTunnelList = forwardRef<CloudTunnelListHandle, CloudTunnelListProps>(
-function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, hideHeader, neverSubscribed = false }, ref) {
+function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, hideHeader, neverSubscribed = false, onLoginExisting }, ref) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const theme = useTheme();
@@ -317,14 +320,30 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
             ? 'dashboard:dashboard.noMembershipHint'
             : membershipExpiredHintKey(canRenew, SELF_HOSTED_ENABLED))}
           action={
-            canRenew ? (
-              <Button
-                onClick={() => navigate('/purchase', { state: { from: 'tunnel_locked' } })}
-                variant="contained"
-                size="small"
-              >
-                {t(neverSubscribed ? 'dashboard:dashboard.subscribeMembership' : 'dashboard:dashboard.renewMembership')}
-              </Button>
+            canRenew || onLoginExisting ? (
+              <Stack spacing={1} alignItems="center">
+                {canRenew && (
+                  <Button
+                    onClick={() => navigate('/purchase', { state: { from: 'tunnel_locked' } })}
+                    variant="contained"
+                    size="small"
+                  >
+                    {t(neverSubscribed ? 'dashboard:dashboard.subscribeMembership' : 'dashboard:dashboard.renewMembership')}
+                  </Button>
+                )}
+                {onLoginExisting && (
+                  <Link
+                    component="button"
+                    type="button"
+                    variant="body2"
+                    underline="hover"
+                    data-testid="tunnel-have-account-login"
+                    onClick={onLoginExisting}
+                  >
+                    {t('purchase:purchase.iap.haveAccountLogin')}
+                  </Link>
+                )}
+              </Stack>
             ) : undefined
           }
           minHeight={150}
