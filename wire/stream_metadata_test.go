@@ -42,7 +42,7 @@ func TestMetadataFrame_EmptyCookieOmitted(t *testing.T) {
 
 func TestWriteMetadataResponse_WithCookie(t *testing.T) {
 	var buf bytes.Buffer
-	if err := WriteMetadataResponse(&buf, "ck-1"); err != nil {
+	if err := WriteMetadataResponse(&buf, "ck-1", false); err != nil {
 		t.Fatal(err)
 	}
 	br := bufio.NewReader(&buf)
@@ -50,7 +50,8 @@ func TestWriteMetadataResponse_WithCookie(t *testing.T) {
 	if err != nil || !ok || code != 0 || msg != "" {
 		t.Fatalf("status: ok=%v code=%d msg=%q err=%v", ok, code, msg, err)
 	}
-	cookie, err := ReadMetadataResponse(br)
+	resp, err := ReadMetadataResponse(br)
+	cookie := resp.Cookie
 	if err != nil || cookie != "ck-1" {
 		t.Fatalf("cookie=%q err=%v, want \"ck-1\", nil", cookie, err)
 	}
@@ -58,7 +59,7 @@ func TestWriteMetadataResponse_WithCookie(t *testing.T) {
 
 func TestWriteMetadataResponse_EmptyCookieIsEmptyKV(t *testing.T) {
 	var buf bytes.Buffer
-	if err := WriteMetadataResponse(&buf, ""); err != nil {
+	if err := WriteMetadataResponse(&buf, "", false); err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(buf.Bytes(), []byte{0x00, 0x00}) { // [status 0x00][field_count 0]
@@ -68,7 +69,8 @@ func TestWriteMetadataResponse_EmptyCookieIsEmptyKV(t *testing.T) {
 	if ok, _, _, err := ReadStreamResponse(br); err != nil || !ok {
 		t.Fatal("status parse failed")
 	}
-	cookie, err := ReadMetadataResponse(br)
+	resp, err := ReadMetadataResponse(br)
+	cookie := resp.Cookie
 	if err != nil || cookie != "" {
 		t.Fatalf("cookie=%q err=%v, want \"\", nil", cookie, err)
 	}
@@ -82,7 +84,8 @@ func TestReadMetadataResponse_BareOKFromOldServer(t *testing.T) {
 	if ok, _, _, err := ReadStreamResponse(br); err != nil || !ok {
 		t.Fatal("status parse failed")
 	}
-	cookie, err := ReadMetadataResponse(br)
+	resp, err := ReadMetadataResponse(br)
+	cookie := resp.Cookie
 	if err != nil || cookie != "" {
 		t.Fatalf("old-server bare OK: cookie=%q err=%v, want \"\", nil", cookie, err)
 	}

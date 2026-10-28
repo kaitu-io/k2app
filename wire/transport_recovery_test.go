@@ -192,7 +192,7 @@ func serveHalfDeadConn(conn *quic.Conn) {
 		return
 	}
 	_ = WriteStreamResponse(stream, nil)
-	_ = WriteMetadataResponse(stream, "")
+	_ = WriteMetadataResponse(stream, "", false)
 	stream.Close()
 	// Deliberately do not accept any further streams — echo probes black-hole.
 }

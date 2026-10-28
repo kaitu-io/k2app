@@ -75,6 +75,8 @@ type Session struct {
 
 	goAway int32 // flag id exhausted
 
+	halfClose int32 // peer keeps reading after its first FIN (SetPeerHalfClose)
+
 	deadline atomic.Value
 
 	shaper chan writeRequest // a shaper for writing
@@ -326,6 +328,20 @@ func (s *Session) RemoteAddr() net.Addr {
 	}
 	return nil
 }
+
+// SetPeerHalfClose records whether the peer supports half-close (k2 patch 2):
+// whether its first FIN on a stream leaves it reading. smux has no handshake
+// of its own, so the caller learns this out of band. Until it is set, a
+// peer's first FIN ends our writes on that stream, as in upstream.
+func (s *Session) SetPeerHalfClose(v bool) {
+	var n int32
+	if v {
+		n = 1
+	}
+	atomic.StoreInt32(&s.halfClose, n)
+}
+
+func (s *Session) peerHalfClose() bool { return atomic.LoadInt32(&s.halfClose) == 1 }
 
 // notify the session that a stream has closed
 func (s *Session) streamClosed(sid uint32) {

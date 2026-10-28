@@ -54,17 +54,17 @@ func runFakeMetaServer(t *testing.T, server net.Conn, expectH3 bool, respond fun
 func TestSendMetadata_SuccessWithCookie(t *testing.T) {
 	client, server := net.Pipe()
 	runFakeMetaServer(t, server, true, func(w io.Writer) {
-		WriteMetadataResponse(w, "server-cookie")
+		WriteMetadataResponse(w, "server-cookie", false)
 	})
 	client.SetReadDeadline(time.Now().Add(2 * time.Second))
 
-	cookie, err := sendMetadata(context.Background(), fakeMetaTransport{stream: client, h3: true},
+	resp, err := sendMetadata(context.Background(), fakeMetaTransport{stream: client, h3: true},
 		MetadataFrame{UDID: "d", Token: "t"})
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
-	if cookie != "server-cookie" {
-		t.Fatalf("cookie = %q, want server-cookie", cookie)
+	if resp.Cookie != "server-cookie" {
+		t.Fatalf("cookie = %q, want server-cookie", resp.Cookie)
 	}
 }
 
@@ -77,10 +77,10 @@ func TestSendMetadata_OldServerBareOK(t *testing.T) {
 	})
 	client.SetReadDeadline(time.Now().Add(2 * time.Second))
 
-	cookie, err := sendMetadata(context.Background(), fakeMetaTransport{stream: client, h3: false},
+	resp, err := sendMetadata(context.Background(), fakeMetaTransport{stream: client, h3: false},
 		MetadataFrame{UDID: "d", Token: "t"})
-	if err != nil || cookie != "" {
-		t.Fatalf("cookie=%q err=%v, want \"\", nil", cookie, err)
+	if err != nil || resp.Cookie != "" {
+		t.Fatalf("cookie=%q err=%v, want \"\", nil", resp.Cookie, err)
 	}
 }
 

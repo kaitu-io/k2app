@@ -52,45 +52,46 @@ const metaReadTimeout = 5 * time.Second
 //
 // On success returns the server-issued cookie — "" when the server sent none
 // (old server, or Phase 1 servers before cookie issuance lands in Phase 2).
-func sendMetadata(ctx context.Context, t metadataTransport, meta MetadataFrame) (newCookie string, err error) {
+func sendMetadata(ctx context.Context, t metadataTransport, meta MetadataFrame) (resp MetadataFrame, err error) {
 	stream, err := t.openMetaStream(ctx)
 	if err != nil {
-		return "", fmt.Errorf("open stream: %w", err)
+		return MetadataFrame{}, fmt.Errorf("open stream: %w", err)
 	}
 	defer stream.Close()
 
 	if t.writesH3FrameType() {
 		if err := WriteH3ProxyFrameType(stream); err != nil {
-			return "", fmt.Errorf("write frame type: %w", err)
+			return MetadataFrame{}, fmt.Errorf("write frame type: %w", err)
 		}
 	}
 	if err := WriteStreamHeader(stream, StreamTypeMeta, ""); err != nil {
-		return "", fmt.Errorf("write stream header: %w", err)
+		return MetadataFrame{}, fmt.Errorf("write stream header: %w", err)
 	}
 	if err := WriteMetadataFrame(stream, meta); err != nil {
-		return "", fmt.Errorf("write metadata: %w", err)
+		return MetadataFrame{}, fmt.Errorf("write metadata: %w", err)
 	}
 
 	br := bufio.NewReader(stream)
 	ok, errCode, errMsg, err := ReadStreamResponse(br)
 	if err != nil {
-		return "", fmt.Errorf("read response: %w", err)
+		return MetadataFrame{}, fmt.Errorf("read response: %w", err)
 	}
 	if !ok {
 		if errCode > 0 {
-			return "", &StreamError{Code: errCode, Message: errMsg}
+			return MetadataFrame{}, &StreamError{Code: errCode, Message: errMsg}
 		}
-		return "", fmt.Errorf("%w: %s", ErrStreamRejected, errMsg)
+		return MetadataFrame{}, fmt.Errorf("%w: %s", ErrStreamRejected, errMsg)
 	}
-	cookie, err := ReadMetadataResponse(br)
+	resp, err = ReadMetadataResponse(br)
 	if err != nil {
-		// Malformed kv after a clean OK: log and treat as "no cookie" — the
+		// Malformed kv after a clean OK: log and treat as "no kv" — the
 		// auth verdict (OK) already arrived intact.
 		slog.Debug("wire: metadata response kv malformed", "err", err)
-		return "", nil
+		return MetadataFrame{}, nil
 	}
-	slog.Debug("wire: metadata auth OK", "mode", meta.Mode, "hasCookie", cookie != "")
-	return cookie, nil
+	hasCookie := resp.Cookie != ""
+	slog.Debug("wire: metadata auth OK", "mode", meta.Mode, "hasCookie", hasCookie)
+	return resp, nil
 }
 
 // isMetadataReject reports whether a sendMetadata error is the server's

@@ -84,11 +84,13 @@ func (c *smuxStreamConn) Read(b []byte) (int, error) {
 	return c.Stream.Read(b)
 }
 
-// CloseWrite closes only the write direction (sends FIN).
-// smux Stream.Close() is inherently write-only, so this is a direct delegate.
+// CloseWrite closes only the write direction (sends FIN); the stream stays
+// readable (third_party/smux K2 patch 2). Whether the peer may keep writing
+// after it depends on the peer's half-close capability, negotiated by the
+// metadata "smux_hc" key (SetPeerHalfClose on each side's session).
 // Used by pipe() for half-close; full cleanup is the caller's defer Close().
 func (c *smuxStreamConn) CloseWrite() error {
-	return c.Stream.Close()
+	return c.Stream.CloseWrite()
 }
 
 // Close closes the stream. Idempotent via sync.Once — safe to call after CloseWrite().
@@ -258,12 +260,14 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 		// transport errors; an explicit rejection fails the connect — TCP-WS
 		// used to drop ok/errCode entirely, which is the divergence the shared
 		// sendMetadata removes.
-		cookie, mdErr := sendMetadata(ctx, smuxMetaTransport{sess: sess}, MetadataFrame{
+		mdResp, mdErr := sendMetadata(ctx, smuxMetaTransport{sess: sess}, MetadataFrame{
 			UDID:    c.cfg.UDID,
 			Token:   c.cfg.Token,
 			Mode:    c.cfg.Mode,
 			Version: c.cfg.Version,
 			Cookie:  c.jar.Get(c.cfg.Pin), // nil-safe; "" = cold auth
+
+			SmuxHalfClose: true,
 		})
 		if mdErr != nil {
 			if isMetadataReject(mdErr) {
@@ -280,7 +284,10 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 		// newCookie is non-empty only right after a Center cold auth (spec
 		// §6.3); jar.Put is a no-op on empty. Never log cookie/newCookie/
 		// meta.Token (spec §6.2/§9).
-		c.jar.Put(c.cfg.Pin, cookie)
+		c.jar.Put(c.cfg.Pin, mdResp.Cookie)
+		// Old servers don't advertise it, and a failed metadata stream leaves
+		// it unknown: both keep upstream FIN semantics for this session.
+		sess.SetPeerHalfClose(mdResp.SmuxHalfClose)
 
 		// --- Store result under lock ---
 		// concurrency:allow — closing locally-owned sess not yet stored in struct
@@ -1007,6 +1014,11 @@ func (s *TCPWSServer) handleMetadataStream(sess *smux.Session, stream *smux.Stre
 	}
 
 	connLog.Info("TCPWSServer: metadata stream", "udid", meta.UDID, "mode", meta.Mode, "version", meta.Version)
+	if meta.SmuxHalfClose {
+		// Set before any verdict: the client opens proxy streams only after
+		// our response, so none of them predate it.
+		sess.SetPeerHalfClose(true)
+	}
 
 	// Single decision point shared verbatim with QUIC (spec §9 two-transport
 	// consistency): a valid cookie short-circuits the validator chain entirely
@@ -1038,14 +1050,14 @@ func (s *TCPWSServer) handleMetadataStream(sess *smux.Session, stream *smux.Stre
 			return
 		}
 		// Permissive: accept, no attribution (empty-udid bucket), never block.
-		WriteMetadataResponse(stream, "")
+		WriteMetadataResponse(stream, "", true)
 		stream.Close()
 		return
 	}
 
 	// newCookie is non-empty ONLY after a Center cold auth (spec §6.3) — a
 	// cookie hit answers with an empty kv and the client keeps its copy.
-	WriteMetadataResponse(stream, st.newCookie)
+	WriteMetadataResponse(stream, st.newCookie, true)
 	stream.Close()
 	if as != nil {
 		as.markAuthed(st.udid, st.token, st.mode, st.authAt, st.svcExp)

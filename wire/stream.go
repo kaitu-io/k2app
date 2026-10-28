@@ -246,6 +246,11 @@ type MetadataFrame struct {
 	Mode    string // "gateway" or "" (normal)
 	Version string // client app version (e.g. "0.4.8"); "" = legacy/unknown. Observation only — never an auth-exemption signal (self-reported, spoofable).
 	Cookie  string // node-issued connection cookie (Phase 2); kv key "cookie". Empty = cold auth.
+	// SmuxHalfClose: the sender's smux keeps a stream readable after its
+	// first FIN (third_party/smux K2 patch 2); kv key "smux_hc" = "1". Sent
+	// by TCP-WS clients in the request and TCP-WS servers in the response;
+	// each side enables half-close only for a peer that advertised it.
+	SmuxHalfClose bool
 }
 
 // WriteMetadataFrame writes a metadata frame payload to w.
@@ -267,6 +272,9 @@ func WriteMetadataFrame(w io.Writer, meta MetadataFrame) error {
 	}
 	if meta.Cookie != "" {
 		fields = append(fields, [2]string{"cookie", meta.Cookie})
+	}
+	if meta.SmuxHalfClose {
+		fields = append(fields, [2]string{"smux_hc", "1"})
 	}
 
 	buf = AppendVarint(buf, uint64(len(fields)))
@@ -342,6 +350,8 @@ func readMetadataFields(r interface {
 			meta.Version = string(valBuf)
 		case "cookie":
 			meta.Cookie = string(valBuf)
+		case "smux_hc":
+			meta.SmuxHalfClose = string(valBuf) == "1"
 		}
 	}
 	return meta, nil
@@ -353,23 +363,28 @@ func readMetadataFields(r interface {
 // ============================================================================
 
 // WriteMetadataResponse writes a successful metadata-stream response: the
-// 0x00 status byte followed by a MetadataFrame-format kv (cookie only, or an
-// empty kv when there is no cookie). 0x02 is already taken by the coded
+// 0x00 status byte followed by a MetadataFrame-format kv (cookie and/or
+// smux_hc, or an empty kv when there is neither). 0x02 is already taken by the coded
 // error format, so success-with-payload rides BEHIND 0x00 instead of using a
 // new status byte. Old clients read the single 0x00 and Close(): on QUIC the
 // unread kv stays in the receive buffer until the stream is released; on
 // smux Close() discards it. Neither surfaces an error — pinned by
 // TestMetadataResponse_OldClientSafe_{QUIC,TCPWS}.
-func WriteMetadataResponse(w io.Writer, cookie string) error {
+func WriteMetadataResponse(w io.Writer, cookie string, smuxHalfClose bool) error {
+	var fields [][2]string
+	if cookie != "" {
+		fields = append(fields, [2]string{"cookie", cookie})
+	}
+	if smuxHalfClose {
+		fields = append(fields, [2]string{"smux_hc", "1"})
+	}
 	buf := []byte{0x00}
-	if cookie == "" {
-		buf = AppendVarint(buf, 0)
-	} else {
-		buf = AppendVarint(buf, 1)
-		buf = AppendVarint(buf, uint64(len("cookie")))
-		buf = append(buf, "cookie"...)
-		buf = AppendVarint(buf, uint64(len(cookie)))
-		buf = append(buf, cookie...)
+	buf = AppendVarint(buf, uint64(len(fields)))
+	for _, f := range fields {
+		buf = AppendVarint(buf, uint64(len(f[0])))
+		buf = append(buf, f[0]...)
+		buf = AppendVarint(buf, uint64(len(f[1])))
+		buf = append(buf, f[1]...)
 	}
 	_, err := w.Write(buf)
 	return err
@@ -379,22 +394,19 @@ func WriteMetadataResponse(w io.Writer, cookie string) error {
 // status. The caller must already have consumed the status byte (via
 // ReadStreamResponse). An old server sends a bare [0x00] and closes, so ANY
 // failure to read the leading field count (EOF, reset, deadline) means
-// "no kv" and returns ("", nil). A malformed kv after a successful
-// field-count read is a protocol error.
+// "no kv" and returns a zero MetadataFrame. A malformed kv after a successful
+// field-count read is a protocol error. Only Cookie and SmuxHalfClose are
+// meaningful in a response.
 func ReadMetadataResponse(r interface {
 	io.Reader
 	io.ByteReader
-}) (cookie string, err error) {
+}) (MetadataFrame, error) {
 	fieldCount, _, err := ReadVarint(r)
 	if err != nil {
-		return "", nil // old server: nothing after the bare [0x00]
+		return MetadataFrame{}, nil // old server: nothing after the bare [0x00]
 	}
 	if fieldCount > 16 {
-		return "", fmt.Errorf("wire: metadata response field count %d exceeds max 16", fieldCount)
+		return MetadataFrame{}, fmt.Errorf("wire: metadata response field count %d exceeds max 16", fieldCount)
 	}
-	meta, err := readMetadataFields(r, fieldCount)
-	if err != nil {
-		return "", err
-	}
-	return meta.Cookie, nil
+	return readMetadataFields(r, fieldCount)
 }

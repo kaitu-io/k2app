@@ -106,8 +106,8 @@ func TestTCPWSMetadata_PermissiveAlwaysOK(t *testing.T) {
 			if err != nil || !ok {
 				t.Fatalf("permissive must answer OK: ok=%v err=%v", ok, err)
 			}
-			if cookie, err := ReadMetadataResponse(br); err != nil || cookie != "" {
-				t.Fatalf("kv after OK: cookie=%q err=%v", cookie, err)
+			if resp, err := ReadMetadataResponse(br); err != nil || resp.Cookie != "" {
+				t.Fatalf("kv after OK: cookie=%q err=%v", resp.Cookie, err)
 			}
 		})
 	}

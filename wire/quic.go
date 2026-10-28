@@ -614,7 +614,7 @@ serialize:
 	// authority; but an EXPLICIT server rejection (only possible under
 	// enforce — permissive servers always answer OK) must fail connect() with
 	// the structured code instead of limping into a closed connection.
-	cookie, mdErr := sendMetadata(ctx, quicMetaTransport{conn: conn}, MetadataFrame{
+	mdResp, mdErr := sendMetadata(ctx, quicMetaTransport{conn: conn}, MetadataFrame{
 		UDID:    c.cfg.UDID,
 		Token:   c.cfg.Token,
 		Mode:    c.cfg.Mode,
@@ -636,7 +636,7 @@ serialize:
 	// newCookie is non-empty only right after a Center cold auth (spec §6.3);
 	// jar.Put is a no-op on empty. Never log cookie/newCookie/meta.Token
 	// (spec §6.2/§9).
-	c.jar.Put(c.cfg.Pin, cookie)
+	c.jar.Put(c.cfg.Pin, mdResp.Cookie)
 
 	// --- Store result under lock ---
 	// concurrency:allow — closing locally-owned conn/transport not yet stored in struct;
@@ -1599,14 +1599,14 @@ func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream,
 			return
 		}
 		// Permissive: accept, no attribution (empty-udid bucket), never block.
-		WriteMetadataResponse(stream, "")
+		WriteMetadataResponse(stream, "", false) // no smux on QUIC
 		stream.Close()
 		return
 	}
 
 	// newCookie is non-empty ONLY after a Center cold auth (spec §6.3) — a
 	// cookie hit answers with an empty kv and the client keeps its copy.
-	WriteMetadataResponse(stream, st.newCookie)
+	WriteMetadataResponse(stream, st.newCookie, false) // no smux on QUIC
 	stream.Close()
 	if ctx.sess != nil {
 		ctx.sess.markAuthed(st.udid, st.token, st.mode, st.authAt, st.svcExp)

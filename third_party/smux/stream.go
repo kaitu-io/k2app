@@ -27,9 +27,19 @@ type Stream struct {
 	die     chan struct{}
 	dieOnce sync.Once
 
-	// FIN command
-	chFinEvent   chan struct{}
-	finEventOnce sync.Once
+	// FIN command. A stream ends with two FINs from each side (k2 patch 2):
+	// the first closes that side's write direction, the second its read
+	// direction. Upstream sent a single FIN, from Close.
+	chFinEvent    chan struct{} // peer's first FIN: peer stopped writing
+	chPeerClosed  chan struct{} // peer's second FIN: peer stopped reading too
+	peerCloseOnce sync.Once
+	finsRecv      uint32 // FINs received; written only by recvLoop
+
+	// our write direction (CloseWrite)
+	writeClosed     chan struct{}
+	writeClosedOnce sync.Once
+	finMu           sync.Mutex
+	finsSent        int // guarded by finMu
 
 	// deadlines
 	readDeadline  atomic.Value
@@ -56,6 +66,8 @@ func newStream(id uint32, frameSize int, sess *Session) *Stream {
 	s.sess = sess
 	s.die = make(chan struct{})
 	s.chFinEvent = make(chan struct{})
+	s.chPeerClosed = make(chan struct{})
+	s.writeClosed = make(chan struct{})
 	s.peerWindow = initialPeerWindow // set to initial window size
 	return s
 }
@@ -239,7 +251,20 @@ func (s *Stream) Write(b []byte) (n int, err error) {
 	select {
 	case <-s.die:
 		return 0, io.ErrClosedPipe
+	case <-s.writeClosed:
+		return 0, io.ErrClosedPipe
+	case <-s.chPeerClosed:
+		return 0, io.EOF
 	default:
+	}
+
+	// A peer that supports half-close keeps reading after its first FIN, so
+	// only its second FIN (chPeerClosed) ends our writes. Any other peer's
+	// single FIN is a full close and must still end them, as upstream did:
+	// that peer will never send another window update.
+	peerFin := s.chFinEvent
+	if s.sess.peerHalfClose() {
+		peerFin = nil
 	}
 
 	// create write deadline timer
@@ -300,8 +325,12 @@ func (s *Stream) Write(b []byte) (n int, err error) {
 		// this blocking behavior will inform upper layer to do flow control
 		if len(b) > 0 {
 			select {
-			case <-s.chFinEvent: // if fin arrived, future window update is impossible
-				return 0, io.EOF
+			case <-peerFin: // peer fully closed, future window update is impossible
+				return sent, io.EOF
+			case <-s.chPeerClosed:
+				return sent, io.EOF
+			case <-s.writeClosed:
+				return sent, io.ErrClosedPipe
 			case <-s.die:
 				return sent, io.ErrClosedPipe
 			case <-deadline:
@@ -317,22 +346,56 @@ func (s *Stream) Write(b []byte) (n int, err error) {
 	}
 }
 
-// Close implements net.Conn
+// CloseWrite closes the write direction: it sends FIN and leaves the stream
+// readable until Close. Calling it more than once is a no-op.
+func (s *Stream) CloseWrite() error {
+	select {
+	case <-s.die:
+		return io.ErrClosedPipe
+	default:
+	}
+	s.writeClosedOnce.Do(func() { close(s.writeClosed) })
+	return s.sendFINs(1)
+}
+
+// Close implements net.Conn. It closes both directions, so it brings the FINs
+// sent for this stream to two: the peer's reads end at the first and its
+// writes at the second. A peer running upstream smux treats every FIN after
+// the first as a no-op.
 func (s *Stream) Close() error {
 	var once bool
-	var err error
 	s.dieOnce.Do(func() {
 		close(s.die)
 		once = true
 	})
 
 	if once {
-		_, err = s.sess.writeFrame(newFrame(cmdFIN, s.id))
+		s.writeClosedOnce.Do(func() { close(s.writeClosed) })
+		err := s.sendFINs(2)
 		s.sess.streamClosed(s.id)
 		return err
 	} else {
 		return io.ErrClosedPipe
 	}
+}
+
+// sendFINs sends FINs until want have been sent for this stream. The count
+// is claimed under finMu and the frames are written outside it.
+func (s *Stream) sendFINs(want int) error {
+	s.finMu.Lock()
+	n := want - s.finsSent
+	if n > 0 {
+		s.finsSent = want
+	}
+	s.finMu.Unlock()
+
+	var err error
+	for i := 0; i < n; i++ {
+		if _, e := s.sess.writeFrame(newFrame(cmdFIN, s.id)); e != nil && err == nil {
+			err = e
+		}
+	}
+	return err
 }
 
 // GetDieCh returns a readonly chan which can be readable
@@ -437,9 +500,12 @@ func (s *Stream) update(consumed uint32, window uint32) {
 	}
 }
 
-// mark this stream has been closed in protocol
+// fin records a FIN from the peer: the first closes the peer's write
+// direction, any later one its read direction. Called only from recvLoop.
 func (s *Stream) fin() {
-	s.finEventOnce.Do(func() {
+	if atomic.AddUint32(&s.finsRecv, 1) == 1 {
 		close(s.chFinEvent)
-	})
+		return
+	}
+	s.peerCloseOnce.Do(func() { close(s.chPeerClosed) })
 }
