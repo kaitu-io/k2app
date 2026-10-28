@@ -303,6 +303,16 @@ var installCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
+		// 应用日志由 log.path（app.log，lumberjack 轮转）负责。stdout 不进 journald：
+		// qtoolkit 在 log.level=debug 时把每行再写一份到 stdout，进 journald 后又被
+		// rsyslog 转进 /var/log/syslog，同一份日志落盘三次。stdout 因此丢弃；stderr
+		// 只剩 Go 运行时 panic 等少量输出，追加到日志目录下的 console.log。
+		consoleLog := workDir + "/logs/console.log"
+		if err := os.MkdirAll(workDir+"/logs", 0755); err != nil {
+			fmt.Printf("创建日志目录失败: %v\n", err)
+			os.Exit(1)
+		}
+
 		// 创建 systemd service 文件（自动尝试 AWS SSM，失败则提示输入）
 		serviceContent := fmt.Sprintf(`[Unit]
 Description=Kaitu Center Service
@@ -317,13 +327,13 @@ ExecStart=%s start -f -c %s
 Restart=always
 RestartSec=10s
 LimitNOFILE=999999
-StandardOutput=journal
-StandardError=journal
+StandardOutput=null
+StandardError=append:%s
 SyslogIdentifier=kaitu-center
 
 [Install]
 WantedBy=multi-user.target
-`, workDir, cfgFile, execPath, cfgFile)
+`, workDir, cfgFile, execPath, cfgFile, consoleLog)
 
 		servicePath := "/etc/systemd/system/kaitu-center.service"
 		err = os.WriteFile(servicePath, []byte(serviceContent), 0644)
