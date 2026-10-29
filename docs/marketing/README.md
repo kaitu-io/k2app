@@ -45,14 +45,14 @@ Kaitu / Overleap 的营销档案统一放在这个目录。
 
 - 中国面（kaitu.io、国内社交、中国区 App Store、分销）= **开途** —— 中文正文禁用 "Kaitu" 裸词，"kaitu" 只作域名 / bundle id
 - 海外面（overleap.io、全球 App Store / Play、英文社交、技术社区）= **Overleap**
-- **两边互不提及，没有衔接句。** 唯一例外是法务文书署名 **Overleap LLC**
+- **两边互不提及，没有衔接句。** 法务文书两边都署运营公司 **Wordgate LLC**（公司名，不是品牌名）
 - 协议层（k2 / k2cc / k2s / k2r）不属于任一品牌，全球共享
 
 **已作废（2026-04-21 → 2026-07-14 被推翻）**：~~Overleap 母品牌 / Kaitu 中国产品 层级结构~~、~~跨语境衔接句 "Kaitu by Overleap"~~、~~跨市场信任迁移策略~~（隔离前提下不成立）。
 
 **连带更新**（2026-07-15 同步）：`brand-naming-strategy.md`、`.agents/product-marketing-context.md`（Brand Architecture / Glossary / Strategic Open Questions / Changelog）、`content-calendar-2026-Q2.md`、根 `CLAUDE.md` 全部改为隔离口径。`audits/2026-04-21-aso.md` 无需改动（本就无层级表述，快照按原样保留）。
 
-**Open Question**：Overleap 法律实体注册 —— 法务已按 Overleap LLC 署名，但司法辖区（美国 / 新加坡 / 香港 / 开曼）与形态均未定。GitHub org 已定 `getoverleap`。
+**已定（2026-10-29）**：法律实体统一为运营公司 Wordgate LLC，不另设 Overleap 实体。GitHub org 已定 `getoverleap`。
 
 ### ✅ 冲突 #2：Kaitu↔kaitai 歧义 — Resolved (2026-04-21)
 

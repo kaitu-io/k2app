@@ -65,19 +65,16 @@ describe.each(SHARED_DOCS)('%s', (doc) => {
     expect(out).toMatch(zh ? /\*\*最后更新：/ : /\*\*Last updated: /);
 
     // The reader sees this brand and never the other one.
-    // Legal-signature exception (root CLAUDE.md, 法务文书署名): legal documents
-    // sign as Overleap LLC, so strip exactly that string first — the same
-    // scoping tests/brand-leak-ssr.test.tsx uses — and assert separately that it
-    // is present, so the exception can't widen into a general free pass.
+    // Legal documents sign as the operating company (Wordgate LLC), not a brand
+    // name — so nothing is stripped before scanning.
     expect(out).toContain(brand.legalName);
-    const body = out.replaceAll(brand.legalName, '');
-    expect(body).toMatch(KAITU_WORDS);
-    expect(body.match(OVERLEAP_WORDS)).toBeNull();
+    expect(out).toMatch(KAITU_WORDS);
+    expect(out.match(OVERLEAP_WORDS)).toBeNull();
 
     // Root CLAUDE.md: the latin form is banned in Chinese user-facing copy
     // (开途, never "Kaitu"). Without this the brand-word assertion above passes
     // on either form, since both are "this brand's words".
-    if (zh) expect(body).not.toMatch(/\bKaitu\b/);
+    if (zh) expect(out).not.toMatch(/\bKaitu\b/);
   });
 });
 
@@ -117,7 +114,7 @@ describe('delete-account satisfies the Play Data safety URL requirements', () =>
 describe('renderLegalDoc edge cases', () => {
   it('returns a document with no language markers whole, still substituted', () => {
     const out = renderLegalDoc('Operated by {{legalName}}.', 'zh-CN', KAITU);
-    expect(out).toBe('Operated by Overleap LLC.');
+    expect(out).toBe('Operated by Wordgate LLC.');
   });
 
   it('leaves an unknown placeholder visible rather than blanking it', () => {

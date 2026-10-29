@@ -65,11 +65,10 @@ export const KAITU: Brand = {
   id: 'kaitu',
   displayName: 'Kaitu',
   wordmark: '开途',
-  // Both brands are operated by the same legal entity; legal documents on BOTH
-  // deployments sign "Overleap LLC". This is the ONLY approved cross-brand
-  // appearance (root CLAUDE.md: 法务文书署名 Overleap LLC 除外) and is scoped
-  // to legal-signature surfaces by tests/brand-guard.test.ts.
-  legalName: 'Overleap LLC',
+  // Both brands are operated by the same company; legal documents on BOTH
+  // deployments sign "Wordgate LLC" (also the Stripe merchant). It is a company
+  // name, not a brand, so kaitu.io carries no cross-brand mention at all.
+  legalName: 'Wordgate LLC',
   baseUrl: 'https://kaitu.io',
   defaultLocale: 'zh-CN',
   allowedLocales: ['zh-CN', 'zh-TW', 'zh-HK'],

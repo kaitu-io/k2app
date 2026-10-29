@@ -11,11 +11,9 @@
  * contact address was assembled from string fragments that no regex could
  * match. Only running the code shows them.
  *
- * Legal-signature exception (decision 2026-07-15): legal documents sign as
- * "Overleap LLC" — root CLAUDE.md permits exactly one cross-brand appearance,
- * 法务文书署名. The assertions therefore strip that signature
- * before scanning, and a dedicated test pins that it is actually rendered, so
- * the exception stays scoped to the legal line instead of silently widening.
+ * Legal signature: documents sign as the operating company "Wordgate LLC"
+ * (2026-10-29; it used to be "Overleap LLC", stripped before scanning). It is
+ * not a brand name, so nothing is stripped — the whole render is scanned.
  */
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
@@ -147,14 +145,12 @@ async function renderPage(
 }
 
 describe('rendered chrome never names the other brand', () => {
-  it.each(ALL_LOCALES)('%s renders the Overleap LLC legal signature (the one approved cross-brand appearance)', (locale) => {
-    expect(renderChrome(locale)).toContain('Overleap LLC');
+  it.each(ALL_LOCALES)('%s renders the Wordgate LLC legal signature', (locale) => {
+    expect(renderChrome(locale)).toContain('Wordgate LLC');
   });
 
-  it.each(ALL_LOCALES)('%s: zero overleap words outside the legal signature', (locale) => {
-    // Remove ONLY the legal signature; any other Overleap mention must fail.
-    const html = renderChrome(locale).replaceAll('Overleap LLC', '');
-    expect(html).not.toMatch(OVERLEAP_WORDS);
+  it.each(ALL_LOCALES)('%s: zero overleap words anywhere', (locale) => {
+    expect(renderChrome(locale)).not.toMatch(OVERLEAP_WORDS);
   });
 });
 
@@ -201,6 +197,6 @@ describe('rendered pages never name the other brand', () => {
     const html = await renderPage(HomePage, 'zh-CN');
 
     expect(html).not.toBeNull();
-    expect(html!.replaceAll('Overleap LLC', '')).not.toMatch(OVERLEAP_WORDS);
+    expect(html!).not.toMatch(OVERLEAP_WORDS);
   });
 });

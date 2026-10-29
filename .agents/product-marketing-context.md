@@ -42,7 +42,7 @@
 - 中国面**只**出现「开途」。中文用户面向语境**禁用 "Kaitu" 裸词** —— "kaitu" 只作为域名 / bundle id（kaitu.io、`io.kaitu`）出现，不进正文。
 - 海外面**只**出现 "Overleap"，**禁用 "Kaitu" 裸词** —— 英文用户无背景，且 Google 会把 "Kaitu" 纠错成 "kaitai"（Kaitai Struct 二进制解析器）。
 - **两边互不提及。** 没有衔接句、没有 footer 关联、没有 About 页交叉引用。~~"Kaitu by Overleap"~~ / ~~"Kaitu, a product of Overleap"~~ **已作废，禁止使用**。
-- **唯一例外：法务文书署名。** ToS / 隐私政策 / footer 的法律实体署名两边都是 **Overleap LLC**。这是刻意收窄的单点例外，不要扩大到叙事层。
+- **法务文书署名：运营公司 Wordgate LLC。** ToS / 隐私政策 / footer 的法律实体署名两边都是 **Wordgate LLC**（Stripe 收单主体，美国怀俄明州；2026-10-29 起，此前署 Overleap LLC）。它是公司名不是品牌名，不构成互相提及；也不要把它写进叙事层。
 
 详细用词规则、禁用组合、SEO 关键词矩阵见 `docs/marketing/brand-naming-strategy.md`。
 
@@ -50,7 +50,7 @@
 
 不阻塞本文档使用，但需要单独决策与执行：
 
-- **Overleap 法律实体的司法辖区未定** —— 美国 / 新加坡 / 香港 / 开曼均在考虑，Inc. / LLC / Ltd. 形态待定。法务文书已按 **Overleap LLC** 署名，但实体注册尚未落地；过渡期商户收款由现有运营主体承接，不硬绑 "Overleap Inc."。
+- ~~Overleap 法律实体司法辖区未定~~ —— **已定（2026-10-29）**：两品牌法务文书与收款统一由运营公司 **Wordgate LLC** 承接，不另设 Overleap 实体。
 - **Overleap 侧数据为空** —— 付费主力画像 / 主要渠道 / 支付方式都还是 TBD，等首批付费用户数据回来再精修（见下面 Market Positioning Matrix）。
 
 ### Market Positioning Matrix
@@ -285,7 +285,7 @@
 | 开途 | 中国市场的独立品牌（读音 kāi tú）—— 中文语境的唯一写法 |
 | Kaitu | 「开途」的英文拼写。**仅用于域名 / bundle id（kaitu.io、`io.kaitu`）**；中文正文与海外面均禁用裸词 |
 | ~~Kaitu by Overleap~~ | **已作废**（2026-07-14）—— 两品牌完全隔离，无衔接写法 |
-| Overleap LLC | 法务文书署名主体；两品牌唯一共用的跨品牌元素（ToS / 隐私政策 / footer） |
+| Wordgate LLC | 两品牌共同的运营公司：法务文书署名（ToS / 隐私政策 / footer）、Stripe 收单、代码签名证书主体。公司名，不是品牌 |
 | k2 | 隧道协议名（ECH + QUIC/TCP-WS + k2cc） |
 | k2cc | 拥塞控制算法（congestion control） |
 | k2s | 可自部署的服务端二进制 |
@@ -405,3 +405,4 @@
 - **2026-07-14** — **品牌架构再次翻转，推翻上一条**：放弃母品牌 / 子产品层级，改为 **开途（中国）与 Overleap（海外）两个完全隔离的对等品牌** —— 各自独立的用户池、支付渠道、叙事，任何面向用户的语境都不互相提及。衔接句 "Kaitu by Overleap" / "Kaitu, a product of Overleap" 作废；"跨市场信任迁移" 作为策略取消（隔离前提下不成立）。唯一保留的跨品牌元素是法务文书署名 **Overleap LLC**。连带更新 Brand Architecture / Glossary / Strategic Open Questions。
 - **2026-09-30** — Overleap 定位：英国优先 + 安全信任 + 闭源自成一体；官网移除 k2 协议文档 / GitHub / 自部署入口（spec `2026-09-30-overleap-site-app-design.md` §4）。开源 / 透明类信任论据此后只属于协议层与开途，不用于 Overleap。
 - **2026-07-15** — 修复文档漂移：本文档、`docs/marketing/{README,brand-naming-strategy,content-calendar-2026-Q2}.md` 与根 `CLAUDE.md` 此前全部停留在 2026-04-21 的层级架构，07-14 的决策只存在于品牌拆分代码分支中，导致每次 `marketing-skills:*` 启动都加载已被推翻的架构。五处口径已统一到"完全隔离"。
+- **2026-10-29** — 法务署名改为运营公司 **Wordgate LLC**（两品牌统一，此前 kaitu.io 署 Overleap LLC、overleap.io 已是 Wordgate LLC）。公司名不是品牌名，kaitu.io 因此不再有任何跨品牌字样；web 品牌守卫去掉了 "Overleap LLC" 剥离豁免。

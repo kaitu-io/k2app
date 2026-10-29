@@ -1,6 +1,7 @@
 /**
  * Brand-leak guard (root CLAUDE.md: the two brands never mention each other in
- * any user-facing context — the legal signature "Overleap LLC" excepted).
+ * any user-facing context; legal documents sign as the operating company
+ * "Wordgate LLC", which is not a brand name).
  *
  * This site serves kaitu only (overleap.io is sites/overleap/). Message files may
  * carry the kaitu wordmark literally; they must never carry the other brand.

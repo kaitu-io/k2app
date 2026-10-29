@@ -4,13 +4,13 @@
 
 ## 品牌架构
 
-Overleap 与 开途 / Kaitu 是**两个完全隔离的对等产品品牌**（2026-07-14 双品牌拆分决策）——不是母子层级，也没有公司层 / 产品层之分：Overleap 面向海外市场，开途 / Kaitu 面向中国市场，任何面向用户的语境都不互相提及。法务文书署名统一 Overleap LLC（公司实体落款，不构成产品名衔接）。协议层 k2 / k2cc 与硬件产品线 k2r 不属于任一品牌，在两个品牌下全球共享。
+Overleap 与 开途 / Kaitu 是**两个完全隔离的对等产品品牌**（2026-07-14 双品牌拆分决策）——不是母子层级，也没有公司层 / 产品层之分：Overleap 面向海外市场，开途 / Kaitu 面向中国市场，任何面向用户的语境都不互相提及。法务文书署名统一运营公司 Wordgate LLC（公司实体落款，不是品牌名，不构成互相提及；2026-10-29 前署 Overleap LLC）。协议层 k2 / k2cc 与硬件产品线 k2r 不属于任一品牌，在两个品牌下全球共享。
 
 | 层 | 名称 | 适用场景 |
 |------|------|---------|
 | **中国品牌** | 开途（kaitu.io） | kaitu.io · 小红书 / 知乎 / 微博 · 中国区 App Store · 国内分销 / 客服 |
 | **海外品牌** | Overleap（overleap.io） | overleap.io · 英文 Twitter / Reddit / HN · 英文 press · 全球 App Store / Google Play · 多语种文档 |
-| **法务实体（跨品牌）** | Overleap LLC | ToS / 隐私政策公司落款 · 合同署名（仅实体名，不带产品名衔接） |
+| **法务实体（两品牌共用）** | Wordgate LLC | ToS / 隐私政策公司落款 · 合同署名 · Stripe 收单（仅实体名，不带产品名衔接） |
 | **协议层（不属于任一品牌）** | k2（隧道协议）· k2cc（拥塞控制） | 技术白皮书 · GitHub · 开发者内容 · benchmark |
 | **硬件产品线（不属于任一品牌）** | k2r（OpenWrt 路由器） | 家用硬件销售（预售期） |
 
@@ -23,7 +23,7 @@ Overleap 与 开途 / Kaitu 是**两个完全隔离的对等产品品牌**（202
 - **中国面**（kaitu.io / 小红书 / 知乎 / 中国区 App Store / 分销素材）：只出现「**开途**」，不提 Overleap。中文正文**禁用 "Kaitu" 裸词** —— "kaitu" 仅作为域名 / bundle id（kaitu.io、`io.kaitu`）存在。
 - **海外面**（overleap.io / 英文 Twitter / Reddit / HN / 全球 App Store / Google Play）：只出现 "Overleap"，不提 Kaitu / 开途（英文用户无背景）。
 - **没有跨语境衔接。** ~~"Kaitu by Overleap"~~ / ~~"Kaitu, a product of Overleap"~~ **已作废，禁止使用**（2026-07-14）。英文 press、跨市场技术博客、招聘页一律选定一个品牌叙事，不做关联。**这不是风格偏好，是工程事实的推论**：`users.brand` 是终身不变的出生属性，两品牌用户 / 数据 / 支付 / 邮件全链路隔离，不存在"同一用户看两个品牌"的场景，故也不需要衔接叙事。
-- **唯一例外：法务文书署名。** ToS / 隐私政策 / footer 的法律实体落款两边都是 **Overleap LLC** —— 仅实体名，不出现 "Kaitu by Overleap" 式的产品名衔接。这是刻意收窄的单点例外，不要据此在叙事层重建关联。
+- **法务文书署名是运营公司 Wordgate LLC。** ToS / 隐私政策 / footer 的法律实体落款两边都是 **Wordgate LLC** —— 仅实体名，不出现 "Kaitu by Overleap" 式的产品名衔接，也不要在叙事层借它重建关联。
 
 ### 2. 不回避 "VPN" 品类词
 
@@ -92,7 +92,7 @@ k2 / k2cc / k2s / k2r 是协议与产品线的技术名称，全球统一。不�
 | 海外品牌站（英文） | overleap.io | 独立站，W1 起建设；不与 kaitu.io 互链、不做 301 |
 | 中国品牌站 | kaitu.io | 保留；国内流量入口 |
 | GitHub org | **`getoverleap`**（github.com/getoverleap）| 2026-04-21 创建并确认可用；当前 0 repos，过渡期保持私仓，未来开源内容迁入此 org。协议层归属，不构成品牌关联 |
-| 法律实体 | 法务文书署名 **Overleap LLC**（两品牌共用，唯一跨品牌例外）| 实体注册尚未落地 —— 司法辖区（美国 / 新加坡 / 香港 / 开曼）与形态 Inc. / LLC / Ltd. 均待定；过渡期商户收款由现有运营主体承接，不硬绑 "Overleap Inc." |
+| 法律实体 | 法务文书署名 **Wordgate LLC**（两品牌共用的运营公司）| 已定（2026-10-29）：不另设 Overleap 实体 |
 | iOS App Store（中国区） | 开途（bundle `io.kaitu`，逐步替代 `com.allnationconnect.anc.wgios`）| 不显示 Overleap |
 | iOS App Store（全球区） | Overleap VPN（新建 listing / bundle） | 独立 listing，不复用 Kaitu 评价 |
 | Google Play（全球） | Overleap VPN（待上架） | 中国无 Play，不涉及 |

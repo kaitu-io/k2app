@@ -46,10 +46,10 @@ describe('brand configs', () => {
     expect(OVERLEAP.id).toBe('overleap');
   });
 
-  // Legal-signature decision (2026-07-15): legal documents sign as "Overleap LLC"
-  // — the single approved cross-brand appearance (root CLAUDE.md).
-  it('legal documents sign as Overleap LLC', () => {
-    expect(KAITU.legalName).toBe('Overleap LLC');
+  // Legal documents sign as the operating company (2026-10-29: Wordgate LLC,
+  // same as overleap.io) — not the other brand's name.
+  it('legal documents sign as Wordgate LLC', () => {
+    expect(KAITU.legalName).toBe('Wordgate LLC');
   });
 
   it('GA + in-house chat are configured', () => {

@@ -88,7 +88,7 @@ async function renderPage(mod: string, locale: Locale): Promise<string> {
   const { container } = render(
     <NextIntlClientProvider locale={locale} messages={loadMessages(locale)}>{element}</NextIntlClientProvider>,
   );
-  return container.innerHTML.replaceAll('github.com/getoverleap', '').replaceAll('Overleap LLC', '');
+  return container.innerHTML.replaceAll('github.com/getoverleap', '');
 }
 
 describe('/pricing', () => {
