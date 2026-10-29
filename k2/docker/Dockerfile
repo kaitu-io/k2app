@@ -1,10 +1,14 @@
 FROM golang:1.26-bookworm AS builder
 
+# Build context is the k2app root: k2's go.mod replaces kuic and smux with
+# ../third_party/*, so both trees must be in the image at the same layout.
 WORKDIR /src
-COPY go.mod go.sum ./
+COPY third_party third_party
+COPY k2/go.mod k2/go.sum k2/
+WORKDIR /src/k2
 RUN go mod download
 
-COPY . .
+COPY k2 .
 
 # Build all binaries
 RUN CGO_ENABLED=0 go build -o /k2s ./cmd/k2s

@@ -183,12 +183,6 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: |
-            ${{ secrets.KUIC_DEPLOY_KEY }}
-      - name: Init kuic submodule (k2/third_party/kuic)
-        run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.10'
@@ -251,30 +245,12 @@ jobs:
       # once; on a clean workspace this is a no-op.
       - name: Remove legacy k2 submodule checkout (self-hosted workspace)
         shell: bash
-        run: if [ -f k2/.git ]; then rm -rf k2 .git/modules/k2; fi
+        run: |
+          if [ -f k2/.git ]; then rm -rf k2 .git/modules/k2; fi
+          if [ -e k2/third_party/kuic/.git ]; then rm -rf k2/third_party .git/modules/kuic; fi
 
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Load kuic deploy key
-        # GitHub-hosted legs only (macOS/Linux); the Windows leg is self-hosted.
-        # On the self-hosted runner (this Mac, running as the machine owner)
-        # webfactory writes into the OWNER's ~/.gitconfig (a url.<key-alias>
-        # .insteadOf for every deploy key whose comment names a repo)
-        # and appends a Host block to ~/.ssh/config — and never removes them. Once
-        # the job's agent is gone, every later `git` on the machine routes kuic
-        # through a key that no longer exists: new worktrees fail
-        # `make init-submodules` with "Permission denied". The runner user's own
-        # SSH key already reads k2 and kuic, so self-hosted needs no deploy key.
-        if: runner.environment == 'github-hosted'
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: |
-            ${{ secrets.KUIC_DEPLOY_KEY }}
-
-      - name: Init kuic submodule (k2/third_party/kuic)
-        shell: bash
-        run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
 
       - name: Setup Node.js
         # Both macOS (Tauri bundle) and Linux (Go embed) need yarn for

@@ -253,15 +253,6 @@ jobs:
       - name: Test macOS minos gate
         run: bash scripts/test-check-macos-minos.sh
 
-      - name: Setup SSH for private kuic submodule
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: |
-            ${{ secrets.KUIC_DEPLOY_KEY }}
-
-      - name: Init kuic submodule (k2/third_party/kuic)
-        run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -417,21 +408,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup SSH for private kuic submodule
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: |
-            ${{ secrets.KUIC_DEPLOY_KEY }}
-
-      - name: Init kuic submodule (k2/third_party/kuic)
-        run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
-
       # The committed k2/rule/embed/krs.tar.gz must stay the ~66 KB cn-baseline
       # placeholder: `make pre-build` overwrites the working copy with the ~2 MB
       # CDN archive on every build, so the only thing stopping that file from
       # being committed into k2 (and shipped in every binary forever) is this
       # check of the k2 HEAD blob. It reads git objects only, so it belongs in
-      # the one Linux job that already has the submodule checked out.
+      # the one Linux job that already runs repo-level checks.
       - name: Check committed rule embed is the placeholder
         run: bash scripts/check-embed-size.sh
 
@@ -471,11 +453,11 @@ jobs:
         run: go test ./gateway/... ./webui/... ./daemon/... -count=1
         working-directory: k2
 
-      # k2/third_party/smux is a vendored, patched copy (see its K2_PATCHES.md) and its own Go
+      # third_party/smux is a vendored, patched copy (see its K2_PATCHES.md) and its own Go
       # module, so k2's `go test ./...` never reaches it — a flaky test there went unseen.
       - name: Vendored smux tests (nested module, race)
         run: go test -race -count=2 ./...
-        working-directory: k2/third_party/smux
+        working-directory: third_party/smux
 
       - name: Gateway soft-router UAT (data plane required)
         run: K2R_UAT_REQUIRE_DATAPLANE=1 make gateway-uat
@@ -489,16 +471,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Setup SSH for private kuic submodule
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: |
-            ${{ secrets.KUIC_DEPLOY_KEY }}
-
-      - name: Init kuic submodule (k2/third_party/kuic)
-        shell: bash
-        run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -824,7 +796,9 @@ jobs:
       # once; on a clean workspace this is a no-op.
       - name: Remove legacy k2 submodule checkout (self-hosted workspace)
         shell: bash
-        run: if [ -f k2/.git ]; then rm -rf k2 .git/modules/k2; fi
+        run: |
+          if [ -f k2/.git ]; then rm -rf k2 .git/modules/k2; fi
+          if [ -e k2/third_party/kuic/.git ]; then rm -rf k2/third_party .git/modules/kuic; fi
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -846,25 +820,6 @@ jobs:
         shell: bash
         run: |
           echo "K2_SIGN_LOG=$RUNNER_TEMP/k2-sign-${{ github.run_id }}-${{ github.run_attempt }}.log" >> "$GITHUB_ENV"
-
-      - name: Setup SSH for private kuic submodule
-        # GitHub-hosted only. On the self-hosted runner (this Mac, running as the
-        # machine owner) webfactory writes into the OWNER's ~/.gitconfig (a
-        # url.<key-alias>.insteadOf for every deploy key whose comment names a repo)
-        # and appends a Host block to ~/.ssh/config — and never removes them. Once
-        # the job's agent is gone, every later `git` on the machine routes kuic
-        # through a key that no longer exists: new worktrees fail
-        # `make init-submodules` with "Permission denied". The runner user's own
-        # SSH key already reads k2 and kuic, so self-hosted needs no deploy key.
-        if: runner.environment == 'github-hosted'
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: |
-            ${{ secrets.KUIC_DEPLOY_KEY }}
-
-      - name: Init kuic submodule (k2/third_party/kuic)
-        shell: bash
-        run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
 
       - name: Setup Node.js (self-hosted)
         # The runner's .path file already pins a working node onto PATH

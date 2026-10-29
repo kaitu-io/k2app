@@ -1,5 +1,20 @@
 # Maintaining kuic
 
+## Where it lives (since 2026-10-29)
+
+kuic is in-tree in k2app at `third_party/kuic`, imported as a git subtree with
+its full history; the standalone `kaitu-io/kuic` repo is archived. k2 (and any
+other module, e.g. `overleap/box`) consumes it through its own `go.mod`
+`replace github.com/kaitu-io/kuic => …/third_party/kuic`.
+
+- Change kuic with an ordinary k2app commit; the labtest `k2` suite covers it.
+- Take upstream changes with `git subtree pull --prefix=third_party/kuic
+  https://github.com/apernet/quic-go <tag>` (kuic shares apernet's history, so
+  this is a merge, not a rebase), then re-check every item in the next section.
+- kuic's own `.github/` workflows came along with the import but do not run from
+  a subdirectory. Its full test suite is not part of k2app CI; run
+  `go test ./...` inside `third_party/kuic` on k2ci when you change it.
+
 kuic is a thin fork of [apernet/quic-go](https://github.com/apernet/quic-go)
 (itself a fork of quic-go, carrying pluggable congestion control) whose only
 purpose is to let the **client** shape its TLS ClientHello to a chosen

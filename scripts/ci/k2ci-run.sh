@@ -85,7 +85,7 @@ suite_k2() {
   ( cd k2 && go test ./... -count=1 -short -timeout=600s -skip 'SOMark|SoMark' ) &&
   ( cd k2 && go build -tags=deadlock_disable ./... ) &&
   # Nested module: `go test ./...` above never enters it (ci.yml "Vendored smux tests").
-  ( cd k2/third_party/smux && go test -race -count=2 ./... ) &&
+  ( cd third_party/smux && go test -race -count=2 ./... ) &&
   # krs.tar.gz is an outer-repo file since k2 went in-tree: a `git commit -a` after
   # any `make` would carry the 2 MB build archive. labtest ships the worktree without
   # .git, so check the shipped file (scripts/check-embed-size.sh reads HEAD after push).

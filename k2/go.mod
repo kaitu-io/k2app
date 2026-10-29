@@ -67,6 +67,6 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 
-replace github.com/kaitu-io/kuic => ./third_party/kuic
+replace github.com/kaitu-io/kuic => ../third_party/kuic
 
-replace github.com/xtaci/smux/v2 => ./third_party/smux
+replace github.com/xtaci/smux/v2 => ../third_party/smux

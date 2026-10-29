@@ -101,16 +101,7 @@ fetch-rules-embed:
 fetch-embedded-seed:
 	@node scripts/gen-embedded-seed.js || echo "fetch-embedded-seed: skipped (CDN/dist unreachable) — using committed floor"
 
-# k2 is in-tree (imported 2026-10-29 as a git subtree); the only submodule left
-# is the private k2/third_party/kuic — a go.mod `replace` target inside k2, so an
-# empty kuic dir dies at `go build` with "no required module provides package
-# github.com/kaitu-io/kuic". Nothing else in the build inits it (CI does it in
-# the workflow, by hand). Guarded on a sentinel file so a populated checkout is
-# never touched.
-init-submodules:
-	@test -f k2/third_party/kuic/go.mod || git submodule update --init k2/third_party/kuic
-
-pre-build: init-submodules sync-version fetch-rules-embed fetch-embedded-seed
+pre-build: sync-version fetch-rules-embed fetch-embedded-seed
 	mkdir -p webapp/public
 	echo '{"version":"$(VERSION)","commit":"$(K2_COMMIT)"}' > webapp/public/version.json
 

@@ -1,16 +1,16 @@
 services:
   init:
     build:
-      context: ../..
-      dockerfile: docker/bench/Dockerfile
+      context: ../../..
+      dockerfile: k2/docker/bench/Dockerfile
     entrypoint: ["gen-bench-config", "-out", "/etc/bench", "-host", "server", "-brutal-mbps", "${BRUTAL_MBPS:-1000}"]
     volumes:
       - bench-config:/etc/bench
 
   server:
     build:
-      context: ../..
-      dockerfile: docker/bench/Dockerfile
+      context: ../../..
+      dockerfile: k2/docker/bench/Dockerfile
     entrypoint: ["/entrypoint-server.sh"]
     depends_on:
       init:
@@ -20,8 +20,8 @@ services:
 
   client:
     build:
-      context: ../..
-      dockerfile: docker/bench/Dockerfile
+      context: ../../..
+      dockerfile: k2/docker/bench/Dockerfile
     entrypoint: ["/entrypoint-client.sh"]
     depends_on:
       server:

@@ -119,17 +119,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Load kuic deploy key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: |
-            ${{ secrets.KUIC_DEPLOY_KEY }}
-
-      - name: Init kuic submodule (k2/third_party/kuic)
-        run: |
-          git config --global url."git@github.com:".insteadOf "https://github.com/"
-          git submodule update --init --recursive
-
       - name: Select Xcode 26
         uses: maxim-lobanov/setup-xcode@v1
         with:
@@ -341,17 +330,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Load kuic deploy key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: |
-            ${{ secrets.KUIC_DEPLOY_KEY }}
-
-      - name: Init kuic submodule (k2/third_party/kuic)
-        run: |
-          git config --global url."git@github.com:".insteadOf "https://github.com/"
-          git submodule update --init --recursive
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
