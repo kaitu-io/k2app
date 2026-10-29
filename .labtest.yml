@@ -39,7 +39,7 @@ suites:
   k2:
     run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG k2
     paths: [k2/**]
-    mem: 1G
+    mem: 2G                     # vendored smux `go test -race` peaks past 1G
     cpus: 4
   rust:
     run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG rust
