@@ -1,6 +1,6 @@
 # Center Service
 
-Central API service for authentication, user management, payments, tunnel management, and cloud infrastructure.
+Central API service for authentication, user management, payments, tunnel management, and cloud infrastructure. 本文件只留"改 api 必须知道、违反了不会报错"的规则 + 指向 `docs/api/` 的指针；细节用到时再读。
 
 ## Commands
 
@@ -14,131 +14,71 @@ cd api/cmd && ./kaitu-center start -f -c ../config.yml     # Start foreground (d
 ./kaitu-center user add|set-admin -e user@example.com -c ../config.yml   # also del-admin / set-retailer / del-retailer / set-roles / send-email
 ./kaitu-center health-check -c ../config.yml               # other subcommands: stop, status, version, install, uninstall, unred create|delete
 make deploy-api                                            # Build (go mod tidy in api/ AND api/cmd/) + deploy
-# MySQL + Redis are the shared dev containers (dev-mariadb / dev-redis, managed via mysql-dev / redis-dev MCP):
-#   MySQL  127.0.0.1:3306  root:dev   database `kaitu`
-#   Redis  127.0.0.1:6379  pw=dev     db=1
-# No project docker-compose any more (retired → api/docker-compose.yml.deprecated).
+# Dev MySQL (127.0.0.1:3306, database `kaitu`) + Redis (127.0.0.1:6379) are served by the `devdb` MCP:
+#   devdb_status = which side serves the ports now (pve ssh tunnel / local colima); devdb_switch flips it.
+#   Credentials / redis db: read center/config.yml. No project docker-compose (retired → api/docker-compose.yml.deprecated).
 ```
 
 **`api/cmd` is a separate Go module** (`cmd/go.mod` with `replace github.com/kaitu-io/k2app/api => ../`, no `go.work`): `cd api && go test ./...` / `go vet ./...` never compile `cmd/`. Build, vet, and tidy it from `api/cmd`.
 
-## AI Behavior Rules
-
-### Hard Rules
+## Hard Rules
 
 ```
 Prohibited:
   Swagger/Swag annotations
   GORM raw SQL string queries (use struct queries only)
+  Ad-hoc numeric error codes (use the constants in response.go)
+  Manual status="deleted" on a model with gorm.DeletedAt (use db.Delete(); two sources of truth)
 
 Required:
-  Follow file naming: api_*.go, logic_*.go, model.go, worker_*.go
-  Use predefined error code constants from response.go
-  HTTP status always 200 — error state in JSON code field
+  File naming: api_*.go, logic_*.go, model*.go, worker_*.go (flat package — no domain subdirectories)
+  HTTP status always 200 — error state in JSON code field (exceptions below)
+  GORM `column:` tag whenever name derivation differs (DeviceUDID → device_ud_id, DB has device_udid)
+  Route prefixes: business /api/, admin /app/, slave /slave/, CSR /csr/ — test routers use the production prefixes
+  Credential / PII routes in a *Sensitive group (see Request Logging)
 ```
+
+**Always-200 exceptions**: **webhooks** (`api_webhook.go`, `api_stripe_webhook.go`, …) return HTTP status directly because providers retry on status — comment it at the handler top; `/api/antiblock/seed` returns real 503/401 so CI `curl -fsS` fails loudly; **asynqmon** returns HTML; **`MiddleRecovery`** turns a panic into HTTP 500 with an empty body + Slack alert.
+
+### Request Logging — 静默泄漏凭证的头号来源
+
+普通组挂 `log.MiddlewareRequestLog(true)`：它把 POST/PUT/PATCH **请求体**和 JSON **响应体**原样写进 app.log。**请求或响应里带凭证（密码、验证码、idToken、access/refresh token）或个人敏感信息（收款账号、真实姓名、解密后的字段）的新路由，必须挂进 `*Sensitive` 组**（`route.go`：`walletSensitive` / `socialSensitive` / `adminSensitive`，用 `requestLogWithoutBodies()` 只记方法 / 路由 / 状态 / 耗时），并加一个 `*_NotBodyLogged` 接线守卫测试（范本 `TestSocialTokenRoutes_NotBodyLogged`、`TestAlipayRoutes_NotBodyLogged`）。挂错组不报错、测试全绿，只有翻 app.log 才看得见。`/webhook/slack/events` 刻意不挂任何请求日志（验签前会整体读入 body）。
 
 ## Tech Stack
 
-**Go 1.25** + Gin | **GORM** (MySQL/MariaDB) | **Redis** | **Asynq** (task queue) | **qtoolkit** (logging, DB, mail, slack)
+**Go 1.26** (`go.mod` `go 1.26.0`) + Gin | **GORM** (MySQL/MariaDB) | **Redis** | **Asynq** (task queue) | **qtoolkit** (logging, DB, mail, slack)
 
 ## File Layout
 
 | Pattern | Purpose | Example |
 |---------|---------|---------|
-| `api_*.go` | HTTP handlers | `api_auth.go`, `api_user.go`, `api_tunnel.go` |
-| `api_admin_*.go` | Admin API handlers | `api_admin_order.go`, `api_admin_cloud.go` |
+| `api_*.go` / `api_admin_*.go` | HTTP handlers / admin handlers | `api_auth.go`, `api_admin_order.go` |
 | `logic_*.go` | Business logic | `logic_auth.go`, `logic_order.go`, `logic_wallet.go` |
 | `handler_*.go` | Helpers shared by Asynq handlers — **not** the handlers themselves | `handler_edm.go` (EDM send-log helpers only) |
-| `worker_*.go` | Asynq task handlers (`handle*`) + cron; wired by `asynq.Handle` / `asynq.Cron` in `worker_integration.go InitWorker()` | `worker_cloud.go`, `worker_ech.go`, `worker_diagnosis.go` |
+| `worker_*.go` | Asynq task handlers (`handle*`) + cron | `worker_cloud.go`, `worker_chat.go` |
 | `slave_api*.go` | Internal slave node APIs | `slave_api.go`, `slave_api_node.go` |
-| `model*.go` | GORM data models | `model.go`, `model_wallet.go`, `model_push.go` |
+| `model*.go` | GORM data models | `model.go`, `model_wallet.go`, `model_chat.go` |
 | `type.go` | Request/response types | Role bitmask, API DTOs |
-| `response.go` | Response helpers + error codes | `Success()`, `Error()`, `ListWithData()` |
-| `middleware.go` | All middleware except `BrandResolver` (lives in `brand.go`) | Auth, roles, CORS, recovery |
-| `route.go` | Route registration | All endpoint wiring |
+| `response.go` | Response helpers + error codes | see below |
+| `middleware.go` | All middleware except `BrandResolver` / `BrandRequired` (in `brand.go`) | Auth, roles, CORS, recovery |
+| `route.go` | Route registration (chat routes via `registerChatRoutes` / `registerAdminChatRoutes`) | All endpoint wiring |
+| `cmd/` | CLI entry point, separate Go module | start/stop/status/migrate/… |
+| `cloudprovider/` | Multi-cloud VPS management | see Cloud Provider |
 
-## Architecture
-
-```
-cmd/                 CLI entry point, separate Go module (start/stop/status/migrate/health-check/version/install/uninstall, user *, unred *)
-cloudprovider/       Multi-cloud VPS management (6 cloud providers + SSH standalone)
-```
-
-### Flat Package Pattern
-
-All handlers, logic, and models live in the root `center` package. No internal subdirectories for domain entities. Convention is enforced by file naming, not directory structure.
-
-## Dedicated Line (专属线路): entitlement ↔ node ↔ k2subs
-
-**A `PrivateNodeSubscription` is an entitlement, not a node topology.** It models tier / quota (`TrafficTotalBytes`) / independent clock (`ExpiresAt`) — **not** "how many nodes" or "which nodes". Provisioning, binding, count, and lifecycle of the backing VPS nodes are an **ops responsibility** (NodeOperation queue + provisioning agent), invisible to the subscription and pricing model.
-
-**A router consumes its line(s) through the k2subs URL — not through any node binding on the subscription.** `/api/subs` → `ResolveGatewayPrivateTunnels` (`entitlement_resolver.go`) gathers all of a user's *serviceable* private subscriptions and resolves them into a list of `k2v5://` tunnels. **Multi-node = multiple tunnels in that list**; the router Picks/switches among them. There is no "one subscription → N nodes" schema — multiple nodes surface as multiple k2subs tunnels.
-
-Implications:
-- A tier like "4T = 2×2T (two nodes, two IPs)" is purely an **ops provisioning choice** (provision N nodes for the user). It needs **no** subscription-model or schema change — the extra node just appears as another k2subs tunnel. Do not conflate it with the deferred "multi-node subscription" work — k2subs already delivers multi-node.
-- `PrivateNodeSubscription.SlaveNodeID` is the **per-line metering/quota anchor**: the node self-meters to `/slave/usage`, Center mirrors it into `NodeUsage` (1:1 by `NodeID`), and `isNodeOverQuota` (剩余 ≤ 500MB) drops the line from `/api/subs`. `CloudInstanceID` (nullable) is now display-only (IP/Region). Neither is the multi-node mechanism.
-- Router admission gate = `HasActivePrivateLines` (owning ≥1 serviceable private line), fully decoupled from App `tier`/`MaxRouterDevice`.
-
-## Router Control Key (k2r headless app-control)
-
-`User.RouterControlKey` (`*string`, `varchar(80)`, stored **plaintext** — accepted risk, it only controls a home router) is an account-level bearer credential every app instance on the account shares to talk to a headless k2r; k2r itself only ever holds the sha256. `POST /api/user/router-control-key` mints-or-returns idempotently (`EnsureRouterControlKey`, conditional `UPDATE … WHERE router_control_key IS NULL OR ''`, concurrent losers converge on the winner); `…/reset` rotates unconditionally (old holders get 401 from k2r and re-fetch). `/api/subs` injects `control_key_hash` for k2r's own refresh channel: the **gateway branch mints on serve** (`ensureAndInjectControlKeyHash`, closes the TOFU window for legacy routers), the **shared branch is read-only** (`injectControlKeyHash`) so a phone never silently provisions a router key. Files: `api_router_control_key.go`, `logic_router_control_key.go`, `api_subs.go`; client side: `webapp/CLAUDE.md` "Router Tab". The two `User` columns hit the "manual migrate" trap in Test Convention.
-
-## Router Edition (开途路由器版): one product, internal line
-
-**The customer buys `Product=router`; the dedicated line is an implementation detail.** Two plans: `router-std-1y` (`HardwareSKU=redmi-ax6s`, hardware + first year, $399) and `router-svc-1y` (`HardwareSKU=""`, renewal only, $299 — self-supplied new purchases are discontinued; existing BYO ledger rows and their code paths stay). Both carry a `PrivateNodePlanSpec` identical to `pn-dc-2t`; `pn-*` plans stay `is_active=false` and are never sold directly.
-
-- **Order → line**: `applyOrderToBuyer` (`logic_member.go`) forks on `isLineProduct` (`private_node` | `router`). `applyRouterOrder` (`logic_router_order.go`): hardware plan, or a service plan with no renewable line → `createPrivateNodeSubscription` + `RouterFulfillment(stage=paid)`; service plan with an active/grace/suspended line → `extendPrivateLine` (stack from current expiry if unexpired, else from now; grace/suspended → active, open stop/destroy canceled). **Renewal never provisions and never creates a fulfillment**, but it re-syncs (`syncRouterFulfillment`, same tx) every fulfillment on the renewed line so a stored `expired` doesn't linger. A service plan that falls through to a *new* line (old line deprovisioned) inherits `HardwareSKU` / `ShippedAt` / `GatewayDeviceID` / `CredentialMintedAt` from the user's newest hardware fulfillment — a hardware customer must not get a BYO-shaped ledger row; `advanceRouterFulfillment` then jumps `paid/provisioning → shipped` (not `ready`) when `!IsBYO() && ShippedAt>0`. Both `applyOrderToBuyer` and `applyRouterOrder` take a `pc *OrderPostCommit{ProvisionSubIDs, RenewedRouterSubIDs []uint64}` (`OrderPostCommit` / `MarkOrderAsPaid` in `logic_order.go`) — a tx-only accumulator so a later rollback (cashback/invite-reward failure) can't leave an already-enqueued job or already-sent notification behind (Bug #4). The renewal Slack fires from the payment webhook handlers (`handleNextpayOrderPaid`, `api_nextpay_webhook.go` — the live channel; `handleWordgateOrderPaidEvent`, `api_webhook.go` — in-flight legacy orders) *after* commit via `onRouterLineRenewed(ctx, subID)`; both drain the same two `OrderPostCommit` slices. `findRenewablePrivateLine` takes a `FOR UPDATE` row lock on the line and is scoped to **router-owned lines only** (`routerLineIDs` — the line has a `RouterFulfillment` row; ledger and line are created in the same tx, so ledger existence *is* the "this line is router edition" predicate).
-- **`Order.RouterShipping` is `*string`** (nil → SQL NULL under both Create and any full-row UPDATE; a written `""` trips the `json_valid` CHECK — the GORM `default` tag only elides the column on Create) — read via `order.GetRouterShipping()`. It is its own column, not `Order.Meta`: `SetOrderMeta` / `SetOrderCheckout` rewrite `Meta` wholesale and make no promise to preserve foreign keys stored there.
-- **Fulfillment stages** (`model_router.go` `advanceRouterFulfillment`): `paid → provisioning → ready → shipped → online`, plus `expired`. Only `ready→shipped` is manual (`POST /app/router/fulfillments/:id/stage`, requires a tracking number); every other transition is derived from sub status + gateway device activity and persisted lazily on every read (`syncRouterFulfillment`) and on node self-register activation (`reconcilePrivateIdentity`, `slave_api_node.go`). BYO (`HardwareSKU==""`) skips `shipped`. Recovery from `expired`: when the line returns to `active`, stage goes back to the pre-expiry shipping milestone (`shipped` if `ShippedAt>0`, else `ready`) — not unconditionally `ready`, because stage is a milestone, not a live online flag.
-- **Online signal** = `Device.TokenLastUsedAt` of the fulfillment's own gateway device (`RouterFulfillment.GatewayDeviceID` — never a "most recent gateway device for this user" lookup), written by `touchGatewayDeviceSeen` in `/api/subs` (k2r's only Center touchpoint). Window `routerOnlineWindowSeconds` = 65 min; per its own code comment this assumes a ~30 min k2r refresh cadence ×2 + 5 min margin — the real k2r refresh interval lives in `k2/` and wasn't independently checked here. `online` requires device activity **strictly after** a threshold: BYO = `CredentialMintedAt`; hardware = `max(CredentialMintedAt, ShippedAt)` — the technician mints and runs `k2r setup` in the warehouse (that hits `/api/subs` and records activity), so comparing to mint alone flipped a just-shipped router to `online` while still in transit. Minting sets the new device's `TokenLastUsedAt` to the mint instant, so a stale pre-mint timestamp can't false-positive.
-- **Credentials**: `mintGatewayCredential(ctx, user)` (`logic_gateway_credential.go`; rotation — deletes the user's existing gateway device(s) first — then `attachCredentialToFulfillment`) backs both `POST /api/user/gateway-credential` and the admin `POST /app/router/fulfillments/:id/credential`. Admission is `checkDeviceLimitOrKick(isGateway=true)` (`logic_auth.go`): holds ≥1 serviceable private line, cap 1 router device per account. Before selecting, the mint tx syncs every non-`online` fulfillment of the user (`syncUserRouterFulfillments`) — the stored stage can be stale (`expired` persisted while the line lapsed, line renewed since), and a stale row would be skipped while rotation has already deleted the old device, leaving the row pointing at a dead device forever. `attachCredentialToFulfillment` then only relinks the caller's **newest** fulfillment with `stage ∈ {ready,shipped,online}`; the admin mint endpoint rejects an `expired` row with `ErrorInvalidOperation` (other not-ready stages `ErrorTooEarly`) and pre-checks `:id` is that same newest row, else `ErrorInvalidOperation` (otherwise the credential would attach to a different fulfillment than the one being minted for). The install command is composed **client-side** (`wget -qO- <site>/i/k2r | sh -s '<url>'`) from the `url` the mint endpoint returns; Center never stores the k2subs URL.
-- **`CanMintCredential` = `HasActivePrivateLines(userID)`**, the same gate used on `GET /api/user/router` and the admin fulfillment DTO — deliberately **not** derived from fulfillment stage, since the two can diverge (e.g. the line just expired but `syncRouterFulfillment` hasn't run yet to flip the fulfillment to `expired`).
-- **Order-time** (`api_order.go`): `CreateOrderRequest.Shipping` required for hardware plans (`HardwareSKU != ""`) on real (non-preview) orders. **One router per account** is enforced there too: a real hardware order is rejected with `ErrorInvalidOperation` if `userHasRouter` (`logic_router_order.go`) finds a non-`expired` fulfillment (after a sync, so a stale stage over a dead line doesn't block) or a renewable **router** line (active/grace/suspended **and** carrying a ledger row — same `routerLineIDs` scope as `findRenewablePrivateLine`, unlocked read); previews pass so the site can quote. **"Any dedicated line" is the wrong predicate and was a real two-sided bug** (found by the local UAT, 2026-09-23): a 定制线路 customer (`Product=private_node`, `pn-*`) has a renewable line and no ledger row, so the old gate both let them renew a $599 line with the $299 router service plan *and* refused to sell them a router at all ("该账户已有开途路由器"). Pinned by `TestRouterGates_*` (`logic_router_gates_test.go`) plus the `(定制线路)` subtests in `api_order_router_test.go`; any test that seeds a router line **must** seed its ledger row too, or it is seeding a 定制线路. **服务套餐仅续费，无路由器用户下单被拒**: a real service-plan order (`HardwareSKU == ""`) is rejected with `ErrorInvalidOperation` unless `userCanBuyRouterService` passes — `userHasRouter`, or any hardware fulfillment (`hardware_sku <> ''`, any stage; the deprovisioned-line hardware customer whose new row inherits hardware fields). A user whose only history is expired BYO rows is rejected; previews pass. Line products (`private_node` | `router`) bypass the App `tier` gate (`validatePurchase`) and the active-subscription one-off-purchase gate; `region` validation applies to both line products.
-- **Shared DTOs** (`api_user_router.go`): `buildPrivateNodeSubDTO(c, sub, now)` and `routerDeviceDTO(dev, now)` back both the user account page and the admin ledgers (`api_admin_router.go`).
-- **Endpoints**: user `GET /api/user/router` (account-page aggregate) + `POST /api/user/gateway-credential`; admin (`opsAdmin` group, `RoleRequired`) `GET /app/router/fulfillments` (primary ledger), `POST /app/router/fulfillments/:id/stage`, `POST /app/router/fulfillments/:id/credential`, `GET /app/private-node-subscriptions`, `GET /app/router-devices`, `GET /app/router/stats`（看板；统计前同步非终态台账）; superadmin (`admin` group, `AdminRequired`) `POST /app/private-node-subscriptions/:id/extend`（手工延期，复用 `extendPrivateLine` 并同步台账）。
-
-## UAT: NextPay + Router Edition (真实服务端到端)
-
-仓库里**所有** checkout 测试都替换 `createNextpayCheckoutFn`，所以从不接触 NextPay 的真实 HTTP 契约；
-线上 `plans` 里 `product=router` 的行数为 0，所以路由器版那 4000 行在常规环境下等于未执行代码。
-这两个盲区由 `scripts/uat/` 下的 UAT 覆盖：
-
-```bash
-scripts/uat/nextpay-router-env.sh up          # 一次性 MariaDB+Redis + 真实 NextPay + 真实 Center（~45s）
-eval "$(scripts/uat/nextpay-router-env.sh env)"
-NEXTPAY_UAT=1 go test -count=1 -run TestUAT ./...   # 在 api/ 下：真实 createNextpayCheckout / ensureOrderCheckout
-python3 scripts/uat/nextpay_router_e2e.py     # HTTP 层全链路 55 项断言
-scripts/uat/nextpay-router-env.sh down
-```
-
-- **唯一被模拟的外部动作**是「Stripe 投递 `checkout.session.completed`」（用 NextPay 自己的 stripe webhook
-  secret 签名打它真实的 `/webhooks/stripe`）。NextPay 的结算与出站 webhook、Center 的验签与入账全是真的。
-- **Stripe 用测试模式**（`sk_test_*`，脚本硬拒 live key），账号与生产 NextPay 同一个
-  （`acct_1RjVqKDe0r2BKV9U`），所以 `payment_method` 的行为可以外推到生产。
-- `uat_nextpay_live_test.go` **不带 build tag**，每次普通 `go test` 都参与编译（生产签名一改就编译失败），
-  没有 `NEXTPAY_UAT=1` 时跳过。它读 Stripe 密钥走配置文件而**不走 viper** —— 本包共享 viper，
-  `logic_stripe_test.go` 的 cleanup 会把 `stripe.secret_key` 置空，依赖 viper 会单跑绿、全量红。
-- 环境脚本会**掐断所有对外出口**（Slack webhooks / bot token 清空、`mail.dev_mode`、删掉 `aws` 段防止
-  AWS SDK 默认凭证链摸到 `~/.aws/credentials`）。改脚本时不要放宽这几条。
-- **`up` 会就地改写 `center/config.yml`**（`center` 是指向 `api` 的符号链接，所以在主仓跑 `up` 改的
-  就是你本机那份带真实 slack webhooks / aws 凭证的开发配置，且它 gitignored、git 恢复不了）。
-  `render_uat_configs.py` 会先存一份 `center/config.yml.pre-uat.bak`，`down` 负责还原并删除备份——
-  **所以跑完必须 `down`**，直接 `pkill` 会把 UAT 版配置永久留在原地。2026-09-23 在主仓跑 `up`
-  真的毁过一次（靠生产 `/data/app-configs/kaitu/config.yml` 重建）。
-
-## API Response Format
+## Response & Error Codes
 
 ```go
-Success(c, &user)                    // Single object
-ListWithData(c, items, pagination)   // List with pagination
-Error(c, ErrorCode, "message")       // Error
+Success(c, &user)                    // single object
+List(c, items, pagination)           // paginated list (nil pagination → ItemsAll + warning)
+ItemsAll(c, items)                   // unpaginated list
+SuccessEmpty(c)                      // void success
+PendingApproval(c, approvalID)       // code 202 — submitted for approval
+Error(c, ErrorCode, "message")       // error; ErrorE(c, e(...)) for rich logic-layer errors (rerr pattern)
 ```
 
-### Error Codes
+`ListWithData` is only a backward-compat alias of `List` — new code calls `List`.
 
-Base codes are HTTP-aligned (`0` none, `202` pending approval, `400`/`401`/`402`/`403`/`404`/`405`/`406`/`409`/`422`/`425`/`429`/`500`/`503`) — the constants and their meanings are in `response.go`; read it, this section only records the shape.
-
-**Business-specific codes** — each is prefixed by the HTTP-aligned base whose semantics it refines. Pick the matching base; don't default everything to `400xxx`:
+Base codes are HTTP-aligned (`0` none, `202` pending approval, `400`/`401`/`402`/`403`/`404`/`405`/`406`/`409`/`422`/`425`/`429`/`500`/`503`) — constants and meanings in `response.go`. **Business-specific codes** are prefixed by the HTTP-aligned base whose semantics they refine; pick the matching base, don't default everything to `400xxx`:
 
 | Range | Constants | Refines |
 |-------|-----------|---------|
@@ -146,251 +86,172 @@ Base codes are HTTP-aligned (`0` none, `202` pending approval, `400`/`401`/`402`
 | `400014`–`400015` | `ErrorSocialTokenInvalid` / `ErrorSocialEmailUnverified` | Bad request (联合登录) |
 | `402001` | `ErrorPlanNoRouter` | Payment required |
 | `403001`–`403003` | `ErrorRouterDeviceLimit` / `ErrorDeviceClassMismatch` / **`ErrorBrandMismatch`** | Forbidden |
+| `403004`–`403006` | `ErrorDeviceAccountDisabled`（品牌不支持设备账号）/ `ErrorDeviceAccountLoginRequired`（该设备属有身份用户，需登录）/ `ErrorDeviceAccountProofRequired`（属设备账号，需 Keychain token 或 Apple 恢复） | Forbidden (设备账号) |
 | `405001` | `ErrorPaymentChannelUnavailable` | Not supported (brand gate) |
 | `405002` | `ErrorSocialProviderDisabled` | Not supported (provider 未配置) |
 | `409001`–`409003` | `ErrorEmailAlreadyInUse` / `ErrorSocialIdentityTaken` / `ErrorSocialProviderAlreadyBound` | Conflict |
+| `409004` | `ErrorAppleSubscriptionOwnedElsewhere`（Apple 订阅属于另一台设备的账号） | Conflict |
 | `422001`–`422003` | `ErrorTierMismatch` / `ErrorProxyPurchaseDeprecated` / `ErrorInvalidClientClass` | Invalid argument |
 
-> **Constitution**: Every error code added to `response.go` MUST be mirrored in `webapp/src/utils/errorCatalog.ts` (`errorCode.ts` is only the rendering shell). See `webapp/CLAUDE.md` "API Error Code Constitution" for the full checklist.
+> **Constitution**: Every error code added to `response.go` MUST be mirrored in `webapp/src/utils/errorCatalog.ts` (`errorCode.ts` is only the rendering shell). See `webapp/CLAUDE.md` "API Error Code Constitution".
 
 ## Middleware (middleware.go)
 
-### Auth Chain (priority order)
-
-1. **HttpOnly Cookie** `access_token` (with CSRF check: `X-CSRF-Token` must match `csrf_token` cookie for non-GET)
-2. **`X-Access-Key` header** (retailer API key auth, no device context)
-3. **`Authorization: Bearer <token>`** header
-4. **`?token=` query param** (WebSocket cross-domain)
-
-Sliding expiration: cookie auth auto-renews token if remaining lifetime < 7 days.
-
-### Middleware Functions
+**Auth chain** (priority): ① HttpOnly cookie `access_token` (non-GET: `X-CSRF-Token` must match `csrf_token` cookie) ② `X-Access-Key` (retailer API key, no device context) ③ `Authorization: Bearer` ④ `?token=` (WebSocket cross-domain). Cookie auth slides: renews if remaining lifetime < 7 days.
 
 | Middleware | Purpose |
 |-----------|---------|
-| `AuthRequired()` | Aborts 401 without valid auth; **403003 `ErrorBrandMismatch`** if a non-admin user's brand ≠ `ReqBrand(c)`; 403 if the user is blocked |
-| `AuthOptional()` | Tries auth — but **still aborts 403003 on brand mismatch** (a cross-brand half-login must not leak into anonymous-allowed endpoints); blocked users degrade to anonymous |
-| `ProRequired()` | Checks membership expiry, aborts 402 |
-| `DeviceAuthRequired()` | Requires device context in auth |
-| `EnforceDeviceClass()` | Validates the `X-K2-Client` class token — 422003 unknown token, 403002 class mismatch |
-| `RouterRequired()` | 402001 `ErrorPlanNoRouter` unless `HasActivePrivateLines` |
+| `AuthRequired()` | `/api/*` auth. 401 without auth; **403003** if a non-admin user's brand ≠ `ReqBrand(c)` (only `IsAdmin` exempt); 403 if blocked |
+| `StaffAuthRequired()` | `/app/*` auth (`opsAdmin`, approvals). Same as `AuthRequired` but brand exemption covers `IsAdmin` **or any non-`RoleUser` role bit** (`isCrossBrandStaff`). Real permission still comes from `RoleRequired` / `AdminRequired` |
+| `AuthOptional()` | Tries auth — **still aborts 403003 on brand mismatch** (no cross-brand half-login on anonymous endpoints); blocked users degrade to anonymous |
+| `ProRequired()` | Membership expiry, aborts 402 |
+| `DeviceAuthRequired()` | Requires device context |
+| `EnforceDeviceClass()` | `X-K2-Client` class token — 422003 unknown, 403002 mismatch |
+| `RouterRequired()` | 402001 unless `HasActivePrivateLines` |
+| `WalletRequired()` | Brand gate on **every** `/api/wallet*` route; mount **after** `AuthRequired()` — reads the **user's** brand (`BrandConfig.Wallet`), not the request brand. Missing it → `TestWalletRoutes_AllGatedForBrandsWithoutWallet` (enumerates production `SetupRouter`) goes red |
 | `AdminRequired()` | Superadmin only (`users.is_admin`) |
 | `RoleRequired(bitmask)` | Per-route role check (`type.go` `Role*` bits, OR-combinable); `is_admin` bypasses |
-| `RetailerRequired()` | Checks retailer role |
+| `RetailerRequired()` | Retailer role |
 | `SlaveAuthRequired()` | Basic Auth (IPv4:NodeSecret) for slave nodes |
-| `MiddleRecovery()` | Panic → **HTTP 500, empty body** + Slack alert — the one place a business route returns non-200 |
-| `ApiCORSMiddleware()` | CORS for `/api/*` — allows localhost, loopback, RFC1918, capacitor:// |
-| `CORSMiddleware()` | CORS for `/app/*` — union of every brand's `WebOrigins` + the local dev origin (`corsAllowedOrigins()`, sourced from `brandRegistry`) |
-| `BrandResolver()` | In `brand.go` — see Brand section |
+| `MiddleRecovery()` | Panic → HTTP 500, empty body + Slack alert |
+| `requestLogWithoutBodies()` | Metadata-only request log for `*Sensitive` groups |
+| `ApiCORSMiddleware()` / `CORSMiddleware()` | `/api/*`: localhost, loopback, RFC1918, capacitor:// · `/app/*`: union of every brand's `WebOrigins` + local dev origin (`corsAllowedOrigins()`) |
+| `BrandResolver()` | In `brand.go` — see Brand |
 
-## Route Groups
+## Route Groups (route.go)
 
-| Group | Auth | Purpose |
-|-------|------|---------|
-| `/api/auth/*` | None | Login (OTP, password), refresh, logout |
-| `/api/tunnels`, `/api/v20260717/tunnels` | Auth + DeviceClass + Pro + Device | VPN server list |
-| `/api/relays` | Auth + DeviceClass + Pro + Device | Relay node list |
-| `/api/subs` | None (Basic `udid:token` parsed in handler) | k2subs:// wire endpoint |
-| `/api/user/*` | Auth (+ DeviceClass on most) | Profile, devices, orders, Stripe/IAP, email, members, delegate, router key |
-| `POST /api/user/ticket`, `POST /api/user/device-log` | AuthOptional | Feedback ticket submission, device-log upload registration |
-| `/api/user/tickets/*` | Auth | Own tickets: list / unread / detail / reply |
-| `/api/invite/*` | Mixed | Invite codes CRUD |
-| `/api/plans`, `/api/tiers`, `/api/app/config`, `/api/ech/config`, `/api/ca`, `/api/geo` | None | Public config |
-| `GET /api/orders/:uuid/pay` | None | 代付邮件耐久支付链接 → 302 Stripe Checkout（uuid 即凭证，见 NextPay 段） |
-| `/api/wallet/*` | Auth | Wallet, withdrawals |
-| `/api/retailer/*` | Auth + Retailer | Retailer stats |
-| `/api/strategy/*`, `/api/diagnosis/*` | Auth + DeviceClass + Device | Routing strategy rules, outbound-route diagnosis |
-| `/api/router/*` | Auth + DeviceClass + Router | Router quota |
-| `/api/telemetry/rule_miss` | **None** | Rule-miss telemetry |
-| `/api/telemetry/batch` | Auth + DeviceClass + Device | Client telemetry batch |
-| `/api/push/*`, `/api/survey/*` | Auth | Push tokens, survey |
-| `/api/pair/*`, `/api/stats/*` | None (discover: Auth) | Pairing beacon, stats ingest |
-| `/app/*` (group `admin`) | `AdminRequired()` — superadmin | Plans, users, wallets… (37 routes) |
-| `/app/*` (group `opsAdmin`) | `AuthRequired()` + per-route `RoleRequired(bitmask)` | Tunnels, nodes, EDM, device-logs (`allOpsRoles`), feedback-tickets (list `allOpsRoles`; resolve/close/reply `RoleSupport`)… (76 routes) |
-| `/app/approvals` list/detail/cancel | `AuthRequired()` only | Any role user sees own approvals; approve/reject are `AdminRequired()` |
-| `/app/asynqmon` | `asynqmonAuthMiddleware()` (superadmin) | Asynq UI (HTML) |
-| `/webhook/{wordgate,appstore,stripe,nextpay}` | None | Payment callbacks (HTTP-status exception, see Response Convention) |
-| `/slave/*` | `SlaveAuthRequired()` — **except `PUT /slave/nodes/:ipv4`** (registration), which is unauthenticated and validates `secretToken` from the body | Node management, status, usage, per-user device-traffic increments |
-| `/csr/*` | None | Certificate signing requests |
+| Group | Logging | Auth | Purpose |
+|-------|---------|------|---------|
+| `/api/auth/*` | body | None (`/logout`: Auth) | OTP / password login, web-login, refresh, OTT exchange, device-account |
+| `/api/tunnels`, `/api/v20260717/tunnels`, `/api/relays` | body | Auth + DeviceClass + Pro + Device | VPN server / relay list |
+| `/api/subs` | body | None (Basic `udid:token` parsed in handler) | k2subs:// wire endpoint |
+| `/api/user/*` | body | Auth (+ DeviceClass on most; `gateway-credential` / `router-control-key` deliberately without) | Profile, devices, orders, Stripe/IAP, email, members, delegate, router, password, tickets |
+| `POST /api/user/ticket`, `POST /api/user/device-log` | body | AuthOptional | Feedback ticket, device-log registration |
+| `/api/invite/*` | body | Mixed | Invite codes |
+| `/api/plans`, `/api/products/:product/plans`, `/api/tiers`, `/api/app/config`, `/api/ech/config`, `/api/ca`, `/api/geo`, `GET /api/license-keys/code/:code` | body | None | Public config |
+| `/api/antiblock/seed` | body | in-handler shared secret | Antiblock relay seed (real HTTP codes) |
+| `GET /api/orders/:uuid/pay` | body | None (uuid is the credential) | 代付邮件耐久支付链接 → 302 checkout |
+| `/api/wallet/*` | body | Auth + Wallet | Wallet, withdrawals |
+| `/api/retailer/*` | body | Auth + Retailer | Retailer stats |
+| `/api/strategy/*`, `/api/diagnosis/*`, `POST /api/telemetry/batch` | body | Auth + DeviceClass + Device | Rules, outbound diagnosis, telemetry |
+| `/api/router/*` | body | Auth + DeviceClass + Router | Router quota |
+| `POST /api/telemetry/rule_miss`, `/api/stats/*`, `/api/px*`, `POST /api/pair/beacon` | body | **None** | Rule-miss, stats ingest, funnel pixel, pairing beacon (`/pair/discover`: Auth) |
+| `/api/push/*`, `/api/survey/*` | body | Auth | Push tokens, survey |
+| `/api/chat/*` | body | None（登录用户自动识别；`/ws` 品牌取自令牌） | 访客客服聊天 — see Chat |
+| `walletSensitive` `POST /api/wallet/withdraw-accounts` | **no bodies** | Auth + Wallet | 支付宝账号 + 真实姓名 |
+| `socialSensitive` `POST /api/auth/social/{login,web-login}`, `POST /api/user/social/bind` | **no bodies** | None / Auth + DeviceClass | idToken + rawNonce in, tokens out |
+| `adminSensitive` `GET /app/wallet/withdraws` | **no bodies** | `AdminRequired()` | 响应含解密后的收款信息 |
+| `/app/*` (group `admin`) | body | `AdminRequired()` — superadmin | Plans, users, wallets, refunds… |
+| `/app/*` (group `opsAdmin`) | body | **`StaffAuthRequired()`** + per-route `RoleRequired` | Tunnels, nodes, EDM, device-logs, tickets, chat conversations (`RoleSupport`), enterprise, funnel stats… |
+| `/app/approvals` list/detail/cancel · approve/reject | body | `StaffAuthRequired()` · `AdminRequired()` | Approvals |
+| `/app/asynqmon` | body | `asynqmonAuthMiddleware()` (superadmin) | Asynq UI (HTML) |
+| `/webhook/{wordgate,appstore,stripe,nextpay}` | body | None (signature in handler) | Payment callbacks (HTTP-status exception) |
+| `/webhook/slack/events` | **none** | Slack signature, no `BrandResolver` | 客服在 Slack 会话频道回复访客 |
+| `/slave/*` | body | `SlaveAuthRequired()` — **except `PUT /slave/nodes/:ipv4`** (registration, validates body `secretToken`) | Node management, status, usage, device traffic |
+| `/csr/*`, `GET /cron/execute`, `/version`, `/healthy` | body | None | CSR, external cron trigger, health |
+
+`TestRouteWiring_AppGroupsUseStaffAuth` fails if any `/app` group mounts `AuthRequired()`.
 
 ## Cloud Provider (cloudprovider/)
 
-Unified `Provider` interface (`provider.go`); constants `Provider*` there, one `<provider>.go` per provider (both Tencent variants share `tencent_lighthouse.go`):
+Unified `Provider` interface (`provider.go`), one `<provider>.go` per provider: `aliyun_swas` (domestic) · `alibaba_swas` (international) · `aws_lightsail` (the only one that keeps billing past quota — `worker_cloud_overage.go`) · `tencent_lighthouse` (**international**) / `qcloud_lighthouse` (**domestic**, both in `tencent_lighthouse.go`) · `bandwagon` (VEID/APIKey) · `ssh_standalone` (no cloud API).
 
-| Provider | Cloud |
-|----------|-------|
-| `aliyun_swas` | Aliyun SWAS — domestic regions |
-| `alibaba_swas` | Alibaba Cloud SWAS — international regions |
-| `aws_lightsail` | AWS Lightsail multi-region (the only provider that keeps billing past quota — see `worker_cloud_overage.go`) |
-| `tencent_lighthouse` | Tencent Lighthouse — **international** regions |
-| `qcloud_lighthouse` | Tencent Lighthouse — **domestic** regions |
-| `bandwagon` | BandwagonHost (VEID/APIKey) |
-| `ssh_standalone` | No cloud API, direct SSH |
+## Workers (Asynq)
 
-## Background Workers (Asynq)
-
-| Worker | Purpose |
-|--------|---------|
-| `worker_integration.go` | `InitWorker()` — `asynq.Handle(TaskType…, handle…)` for every handler, `asynq.Cron` schedules, approval-callback registry |
-| `worker_cloud.go` | Cloud instance sync, change-IP, create, delete |
-| `worker_cloud_overage.go` | AWS Lightsail overage guard, tail step of `syncAccount` per instance (three layers, provider-reported usage is authoritative) |
-| `worker_ech.go` | ECH key rotation |
-| `worker_diagnosis.go` | Route diagnosis aggregation |
-| `worker_renewal_reminder.go` | Membership renewal reminders + winback campaigns (daily 02:30) |
-| `worker_abandoned_order.go` | Unpaid-order recall emails (hourly + daily) |
-| `worker_retailer_followup.go` | Retailer follow-up notifications (every minute) |
-| `worker_ticket_notify.go` | Aggregates un-notified admin ticket replies → email |
-| `worker_private_node.go` | Private-node provisioning task + provisioning-timeout sweep (30 min tolerance, every 10 min) |
-| `worker_private_node_lifecycle.go` | Daily private-node subscription lifecycle labels, grace→suspended cutover, renewal reclaim (`IsServiceable` timestamps stay authoritative) |
-| `worker_private_node_traffic_warning.go` | Tiered private-line traffic warnings, per-tier dedupe (every 30 min) |
-| `worker_subscription_reconcile.go` | Daily Apple/Stripe subscription reconcile — the fallback when webhooks are lost (spec 2026-08-22) |
-| `worker_traffic_abuse.go` | 每小时聚合当月 per-user 流量，超阈值（`traffic.abuse_monthly_gb`，缺省 100GB）Slack 告警 + 用户警告邮件（模板 `traffic-abuse-warning`，月度去重）+ 60 天保留清理（隐私政策承诺 2 个月） |
-| `worker_stats_retention.go` | 每日分批清扫无界时序表：`slave_node_loads` >30d（读取端只取每节点最新一条）、`stat_*`/`connection_ratings` >120d（admin 报表最大回看 90d）；stat 表按 `reported_at`（服务端权威，`created_at` 是客户端时钟含脏数据） |
-| `handler_edm.go` | `createEmailSendLog` / `updateEmailSendLogStatus` helpers — not an Asynq handler despite the prefix |
-
-Asynqmon UI available at `/app/asynqmon` (admin auth required).
-
-## Funnel (转化漏斗 / 留存)
-
-- **两类数据**：行为事件（客户端上报，落 `funnel_events`，`funnel_identities` 把匿名 sid/did 关联到用户）与事实（signup/purchase/renewal/refund —— **不落事件表**，查询时由 `logic_funnel_facts.go` 从 users / orders / subscription_credits 现场投影；任何客户端上报的事实名一律丢弃）。
-- **注册表**：事件 `funnelEventRegistry`（`logic_funnel_events.go`），路径 `funnelPathRegistry`（`logic_funnel_paths.go`）；计算是纯函数 `computeFunnel`（`logic_funnel_compute.go`），留存是 `computePaidCohorts` / `computeActiveCohorts`（`logic_funnel_retention.go`）。
-- **路线与跨面（`Lane` / `Hop`）**：每条路径标 `Lane`（web / app = 从哪个面进入），管理端「转化路线」页（`/manager/funnel-routes`）按它分两列；每步的发生面 `stepWhere` 由 `funnelStep.where()` 从面过滤与事件注册表推出（web / app / any / facts），不手写。中途跨面（网站 ↔ App）的路径必须写 `Hop`：那一跳靠什么接上、是确定性还是推断、漏算谁——管理端原样显示（`TestFunnelPaths_LaneAndHop` 强制）。**App → 官网**靠链接上的 `utm_source=app`（webapp `utils/site-link.ts` 在各平台 `openExternal` 里统一加，`funnelUtmSourceApp` 与其 `APP_UTM_SOURCE` 由测试锁成同一值），路径 `app_to_web` 以带标记的那次访问进入。App 内下单后跳外部支付页（NextPay / Stripe）**不经我方域名**，那一跳不可观测，`app_purchase` 只能从「发起支付」直接到「付款」事实。
-- **加行为事件**：`funnelEventRegistry` 加一行（名字 / 可上报的面 / kind）+ 对应客户端埋点。**加路径**：`funnelPathRegistry` 加一项（key 不含品牌词），管理端列表与 dashboard 自动出现。**加事实**：在 `loadFunnelFacts` 加一段投影并在事件注册表登记为 fact。
-- **管理端**（`api_admin_funnel.go`，`opsAdmin` + `RoleMarketing`）：`GET /app/stats/funnels`、`/app/stats/funnels/:key?brand=&from=&to=&groupBy=`、`/app/stats/retention?metric=paid|active`。`from`/`to` 是 UTC 日且 `to` 含当日，最多 90 天；后续步骤以「进入时刻 + Window」为界，所以装载区间是 `[from, to+Window)`；行为事件数超过 `funnelQueryMaxEvents` 直接拒绝。品牌只是 `?brand=` 参数，结构上不分叉。
-- **付费留存按付款记录推算，不读 `users.expired_at`**（它还会被赠送 / 试用 / 人工发放推动）：每笔付款从 `max(上段到期, 付款时刻)` 起叠加时长（订单 = 套餐快照月数，入账行 = `credited_seconds`，退款订单不算），检查点 = 首付满 N 个月 + 7 天宽限（`paidRetentionGrace`，订阅续费入账总比周期结束晚一点），覆盖到期**严格晚于**检查点才算留存；月份运算一律 `addMonthsClamped`。
-- **保留期**：`funnel_events` 按 `received_at` 留 120 天（`worker_stats_retention.go`）；活跃留存读 `stat_app_opens.brand`——该列上线前的历史行品牌为空，带品牌筛选时不计入打开，但仍用来识别老设备。
-- **总开关**：viper `funnel.enabled`（未设置 = 开）只管采集；采集永不阻塞或弄坏产品路径（入队即返回，队列满就丢）。
-- **推断归因（网页点下载 → App 首开，`logic_funnel_attr.go`，method `ip_os_v1`）**：sid 与 did 之间没有确定性联系，按「同品牌 + 同出口（IPv4 全地址 / IPv6 /64）+ install_click 的 `p` == App os」在 24h 窗内配对，窗内去重后**恰好一个** sid 才写 `funnel_inferred_links`（多个 = ambiguous 丢弃，宁漏不误）。点击侧只存 Redis `fattr:c:<HMAC(当日盐,…)>`（盐 `fattr:salt:<日>` 49h 过期，**原始 IP 不落任何存储**）；GPC/optout 没有 sid → 不写。首开须在发生后 5 分钟内送达（迟到的可能已在隧道里，看到的是节点 IP）；同品牌同 did 只处理第一次（`fattr:open:*` 25h，重发 / 重装不重复计数）；出口命中 `slave_nodes` 的 IPv4 / IPv6 /64 时两侧都不参与（开着开途浏览的老用户会和同节点出口、含 k2r 路由器下的新设备误配），首开侧记 `outcome=node`。**推断关联绝不写 `funnel_identities`**，只在 `?inferred=1` 时由 `applyFunnelInferredLinks` 并入、确定性身份优先，响应带 `inferred` 摘要（`conflicts/(conflicts+confirmed)` = 实测误配率，`outcomes` = 每日 matched/ambiguous/none/late/noip/node 计数）。表随 `funnel_events` 同寿（retention worker），删号两处入口先于 `funnel_identities` 删它。为什么不能用 UA 判系统：网页事件经 Amplify/CloudFront 回源后 UA 已丢（全部 os=other），只能用用户点的平台。ClientIP 取 XFF 最左项、可伪造——只污染推断报表，不授予任何东西。
+- Every handler/cron is wired in `worker_integration.go` `InitWorker()` (`asynq.Handle(TaskType…, handle…)` + `asynq.Cron`), including the approval-callback registry; domain registrars like `RegisterChatWorker()` are called from there. A `handle*` not wired there never runs — no error.
+- `handler_edm.go` is helpers only despite the prefix. Asynqmon UI at `/app/asynqmon`.
+- Non-obvious: `worker_subscription_reconcile.go` is the fallback when Apple/Stripe webhooks are lost; `worker_stats_retention.go` sweeps stat tables by `reported_at` (server-authoritative; `created_at` is client clock); `worker_cloud_overage.go` runs as the tail step of `syncAccount`.
+- Full table: **`docs/api/workers.md`** — read when looking for which file owns a job or adding a worker.
 
 ## Approval Workflow (Maker-Checker)
 
-Critical admin operations (EDM, campaigns, plans, withdrawals, hard delete, license key batches, order refunds) require dual approval via `SubmitApproval()`. Superadmin (`is_admin`) bypasses approval and executes synchronously. Non-superadmin creates a pending record requiring another admin's approval.
+Critical admin operations (EDM, campaigns, plans, withdrawals, hard delete, license key batches, order refunds, Stripe withdrawal) go through `SubmitApproval()`. Superadmin bypasses and executes synchronously; others create a pending record another admin approves.
 
-- **Core files**: `logic_approval.go` (service), `logic_approval_callbacks.go` (12 callbacks: `edm_send`, `campaign_{create,update,delete}`, `license_key_batch_{create,invalidate}`, `user_hard_delete`, `plan_{update,delete}`, `withdraw_{approve,complete}`, `order_refund`), `api_admin_approval.go` (handlers)
-- **Pattern**: Handler validates → `approvalID, executed, err := SubmitApproval(c, action, params, summary)` → `!executed` ⇒ `PendingApproval(c, approvalID)` (202); superadmin path continues to `Success`
-- **Callback registry**: `RegisterApprovalCallback(action, cb)` in `InitWorker()`. Each callback re-validates preconditions before executing.
-- **Concurrency**: Atomic `UPDATE WHERE status='pending'` + `RowsAffected` check prevents double-approve
-- **Notifications**: Slack DM via `qtoolkit/slack.SendDM(email, message)` — best-effort, never blocks main flow
+- **Files**: `logic_approval.go` (service + action labels), `logic_approval_callbacks.go`, `api_admin_approval.go`. Callbacks are registered by `RegisterApprovalCallback(action, cb)` in `InitWorker()` — that list is the source of truth for actions.
+- **Pattern**: validate → `approvalID, executed, err := SubmitApproval(c, action, params, summary)` → `!executed` ⇒ `PendingApproval(c, approvalID)`; superadmin path continues to `Success`. **Each callback re-validates preconditions** (state may have changed since submission).
+- **Concurrency**: atomic `UPDATE WHERE status='pending'` + `RowsAffected` check prevents double-approve. Slack DM notifications are best-effort.
 
 ## Brand (双品牌拆分: kaitu / overleap)
 
-**Spec**: `docs/superpowers/specs/2026-07-14-brand-split-design.md`. `Brand` (`brand.go`) is a registry-backed enum (`BrandKaitu` / `BrandOverleap`), not a config flag — `brandRegistry` holds per-brand hosts, CORS origins, OTT redirect root domain, base URL, support email, EDM sender name, payment channels.
+Spec `docs/superpowers/specs/2026-07-14-brand-split-design.md`. `Brand` (`brand.go`) is a registry-backed enum (`brandRegistry`: hosts, CORS origins, base URL, support email, EDM sender, payment channels, wallet, device-account, social client IDs, chat AI store…), not a config flag. Details (EDM / mail sender mechanics, admin list coverage, node-visibility admin fields, history): **`docs/api/brand.md`** — read before touching brand gates, admin brand filters, node visibility or branded mail.
 
-- **Cross-layer contract gate — regenerate after touching any brand data**: `cd api && UPDATE_CONTRACT=1 go test -count=1 -run TestExportContract ./...`. The golden `contracts/api-contract.json` is exported from Go live values by `contract_export_test.go`; it lives outside the module so `-count=1` is mandatory (the go test cache never rechecks it — a hand-edited golden returns a stale `ok (cached)`); the golden is read-only (never auto-rewritten without the env var) and must be committed with the code.
-- **Request brand resolution** (`resolveRequestBrand`, `BrandResolver()` middleware, mounted first on `/api`, `/app`, webhook groups): `Host` → `X-K2-Brand` header → default `kaitu`. Legacy clients (no header, any host) always resolve to kaitu — zero-breakage requirement. Read it downstream via `ReqBrand(c)`; stored in gin context under key `"brand"`.
-- **`users.brand` is a birth attribute** — set at registration, immutable after. Both `AuthRequired()` and `AuthOptional()` enforce it: a non-admin user's brand must match `ReqBrand(c)` or the request is rejected with **403003 `ErrorBrandMismatch`**. Admins are exempt — they are the legitimate cross-brand view.
-- **`/app/*` is the cross-brand admin surface** (single entry: kaitu.io `/manager`; overleap.io 404s `/app/*` and has no manager). Its role-gated groups (`opsAdmin`, approvals) use **`StaffAuthRequired()`**, whose brand exemption covers `IsAdmin` **or any non-`RoleUser` role bit** (`isCrossBrandStaff`) — an overleap-account support/marketing/devops staffer must not get 403003 in the manager. Plain users are still brand-rejected, and `/api/*` keeps `AuthRequired()` (IsAdmin-only exemption). `TestRouteWiring_AppGroupsUseStaffAuth` fails if any `/app` group mounts `AuthRequired()`.
-- **`ScopeBrand(b)`** (`brand.go`) is the *only* legitimate brand filter for user-facing queries — a GORM scope that does `WHERE brand = ?`. Admin (`/app/*`) is the sole legitimate cross-brand view: it does **not** use `ScopeBrand`, instead takes an explicit `?brand=` query param parsed by `parseBrandFilter` (empty/invalid = no filter, i.e. all brands). Apply it with **`adminBrandScope(c, "brand")`** on tables with a brand column, or **`adminUserBrandScope(c, "user_id")`** on tables whose brand is inherited from the owning user (orders, devices — subquery, not JOIN). Lists honouring `?brand=`: users, orders, campaigns, announcements, license-keys, license-key-batches, feedback-tickets, edm/templates, plans, devices/statistics, users/statistics, orders/statistics, nodes; their rows carry `brand` (`DataUser.brand` is filled only by admin endpoints; an order's brand = its user's). `/app/users?email=` returns **every** brand's account for that email (never `First()`). Pinned by `TestAdminLists_BrandFilterAndBrandField`.
-- **Admin writes carry an explicit brand**: the create HTTP handlers (Plan, Campaign, Announcement, LicenseKeyBatch, EDM template) use **`BrandRequired(s)`** — empty or invalid → **`ErrorInvalidArgument`**, never a silent kaitu default. **`BrandForCreate(s)`** (empty → `BrandKaitu`, invalid → error) survives only in approval callbacks / logic (`executeApprovalCampaignCreate`, `CreateLicenseKeyBatch`) so approvals submitted before the switch still execute. Brand is immutable after create (updates ignore it). Writes that act on an existing user take the **user's** brand (admin email change: uniqueness scoped to `user.Brand`, new `LoginIdentify.Brand = user.Brand`). Plan payment IDs must match the brand's channels (`validatePlanPaymentIDs`: `stripePriceId` only on a stripe brand) — checked on create, update handler and the `plan_update` callback. Do not confuse any of these with `Brand.Config()`'s own fallback (unknown brand → kaitu config), a read-path rule.
-- **Node visibility**: 生效可见性 = **节点自声明该品牌**（`SlaveNode.Brands`，来自节点 `.env` 的 `K2_NODE_BRANDS`，每次注册重发；空 = 只声明 kaitu） **∧ 运营没下架**（`VisibleKaitu` / `VisibleOverleap` `*bool`，**都默认 `true`** —— 语义是下架用的 kill switch，不是上架许可；nil = 未下架）。判定唯一入口是 `(*SlaveNode) VisibleTo(b Brand) bool`（`DeclaresBrand(b) ∧ 开关`）——只翻 admin 的 `visibleOverleap` 开关**不能**把节点放上 Overleap，节点必须同时自声明 `overleap`。Enforced in 4 user endpoints: `api_tunnel.go`, `api_tunnel_v20260717.go`, `api_subs.go`, `api_relay.go` — admin bypasses the filter — plus the **antiblock seed** (`api_antiblock.go`: kaitu anti-blocking channel, drops any node with `!VisibleTo(kaitu)`). The admin list (`api_admin_list_nodes`) exposes `brands` (declared ceiling), `visibleKaitu` / `visibleOverleap` (effective `VisibleTo`, never `omitempty`), and honours `?brand=` (in-memory `VisibleTo` filter after the 500-row page load, `pagination.Total` = filtered length) — the web admin renders these as lowercase brand ids only (`tests/brand-guard.test.ts` bans display names in `src`).
-- **Verification code cache key** is brand-scoped: `auth:code:email:<brand>:<hash>` (`VerificationCodePrefix` in `logic_auth.go`). A binary deploy that adds/changes the brand segment invalidates in-flight codes (TTL is minutes) — see deploy checklist.
-- **Payment channel gate**: `Brand.Config().AllowsPayment(channel)` — kaitu allows `nextpay` + `wordgate`（过渡期，见 NextPay 段）+ `apple_iap`; overleap allows `stripe` + `apple_iap` (Phase A; google_play lands with the Android release). Handlers reject a disallowed channel with **405001 `ErrorPaymentChannelUnavailable`** (`api_order.go`, `api_apple_iap.go`, `api_stripe.go`). The wordgate webhook, `creditAppleTransaction`, and `creditStripeInvoice` all carry a brand-mismatch sentinel that alerts (**`alertPaymentBrandMismatch`** in `brand.go`: error log + `slack.Send("alert", ...)`) and refuses to credit — fail-loud by design (persistent mismatch retry-storms from the provider's webhook retries), not a transient condition to silence.
-- **viper legacy keys are kaitu-only**: `frontend_config.app_links.base_url`, `frontend_config.web_base_url`, `support.email` etc. continue to serve kaitu only (backward compat with existing config.yml). Overleap always resolves the equivalent value from `BrandConfig` in the registry — never from viper. See `api_app_config.go`, `logic_config.go`, `api_ticket.go`.
-- **EDM dual sender**: `logic_email_task.go` picks `edmSenderOverleap` (`mail.Config("edm_overleap")`) when `brand == BrandOverleap` **and** `viper.GetString("edm.overleap_from_email")` is non-empty; otherwise falls back to the kaitu sender. Both keys (`edm.overleap_from_email` gate + `edm_overleap.*` qtoolkit sender block) must be set together — drift between them means the wrong From-address ships. 8 system email templates (verification code, new-device login, web login confirm, device transfer, password login code, password changed, device kick, admin password reset) have branded English variants via `brandedEmailTemplate[T]`. Only two stay kaitu-only, and the test is **who receives the mail**, never who triggers the code path: delegate-pay invite (recipient is a third-party payer on a wordgate order overleap cannot create; `emailTo` pins `BrandKaitu`) and private-node quota warnings (kaitu-exclusive product; `emailToUserSingleBrand`). Full list + the reachability arguments live in `email_templates_overleap.go`'s header comment.
-- **System mail sender per brand** (`logic_email.go`): `systemSenderForBrand(b)` returns `mail.Config("mail_overleap")` only when `b == overleap` **and** `mail_overleap.send_from` is non-empty; otherwise `nil` = global `mail.Send` (kaitu always; overleap falls back fail-open with a one-shot `Warnf` until SES verifies overleap.io — registration codes must not stop). `sendSystemEmailAs(ctx, b, to, subject, body)` is the single plain-text entry; `emailTo(ctx, b, ...)` takes the brand explicitly and `SendSystemEmail` (CLI) is pinned to kaitu. `MailSendWith(ctx, sender, msg)` checks `mail.dev_mode` **before** touching the sender, so both identities are inert in dev. **`emailToUser` takes a `brandedEmailTemplate[T]`, not an `EmailTemplate[T]`** — it resolves the recipient's brand once (`brandOfUser`) and uses it for *both* copy and From, so handing it a single-brand template is a compile error. That gate exists because copy and sender used to be independent knobs and the admin-password-reset mail drifted: overleap users got a Chinese 「Kaitu 账号密码已被管理员重置」. The deliberate escape hatch is `emailToUserSingleBrand` — for notifications whose *feature* is single-brand; callers must state why the other brand cannot reach it.
-- **Ticket reply notification is brand-aware**: `FeedbackTicket.Brand` (varchar 16, default `kaitu`, stamped from `ReqBrand(c)` in `api_ticket.go`; onboarding/auto tickets take the column default) → `ticketBrand(ticket)` (invalid/empty → kaitu) → `ticketReplyNotification(b, id, replies)` in `email_templates_overleap.go` (kaitu strings are the historical `worker_ticket_notify.go` literals, byte-for-byte) → `sendSystemEmailAs(ctx, b, ...)`. Deploy runbook: `docs/ops/overleap-api-deploy.md`.
-- **EDM lazy-translation row now copies Brand**: `getTemplateForLanguage`'s auto-translation path (`logic_email_task.go`) builds the new `EmailMarketingTemplate` row via `buildTranslatedTemplate`, which copies `Brand` from the source template. This was a gap found in final review — the inline construction used to omit `Brand`, so every auto-translated template silently fell back to the GORM column default (`kaitu`), regardless of the source template's real brand. `TestBuildTranslatedTemplate_PreservesBrand` (`logic_email_task_test.go`) pins the fix.
-- **EDM never creates users; the batch brand travels with the job**: `SendEmailsRequest.Brand` (from `/app/edm/send`'s top-level `brand`, required when any item lacks `userId`) rides the Asynq payload. `UserID == 0` items are resolved by `findUserByEmailInBrand` — lookup only; unknown → `skipped`, no batch brand → `failed`; items whose user's brand ≠ batch brand → `failed`. History: this used to call `FindOrCreateUserByEmail(ctx)` with the task's plain context, whose brand fell back to kaitu and minted phantom kaitu users for overleap emails. **`FindOrCreateUserByEmail(ctx, brand, email, ...)` now takes the brand as a required argument** — no ctx inference, no silent fallback (the anonymous-ticket path had the same bug via `c.Request.Context()`).
-- **EDM template slugs are unique per brand**: composite unique index `idx_emt_slug_brand (slug, brand)` (migrate drops the legacy single-column `idx_email_marketing_templates_slug` once). Workers mail both brands with fixed slugs (`renewal-7d`, …) and `sendSingleTemplatedEmail` picks the template by the recipient's brand, so each brand needs its own row per slug.
-- **`X-K2-Brand` is spoofable — by design, and safe**: header wins only when Host doesn't resolve to a known brand, and even then it only decides which *public, unauthenticated* config/response a request gets back (e.g. `/api/app/config`, `/api/plans` for a non-brand host) — data that's equally public on the real brand's own site. The authenticated surface doesn't trust it: `AuthRequired()` / `AuthOptional()` compare the token's immutable `users.brand` against `ReqBrand(c)` and hard-reject a mismatch with **403003 `ErrorBrandMismatch`** (admins exempt). Host-priority-over-header is intentional, not an oversight to "harden" later.
+**跨层契约门（唯一事实源就是这一条）**：改任一层的品牌数据（`brandRegistry` 或 webapp / web 的品牌注册表）后必须重生成 `cd api && UPDATE_CONTRACT=1 go test -count=1 -run TestExportContract ./...`，产物与代码一起提交。
+- `contracts/api-contract.json` 由 `contract_export_test.go` 从 **Go 活值**导出（不是手写清单），锁住 api / webapp / web 三层品牌注册表的交集。
+- **必须带 `-count=1`**：golden 在 api/ 模块外，go test 缓存不 recheck 模块外文件 → 手改 golden 迁就代码会拿到陈旧的 `ok (cached)`。
+- golden **只读**：不带 env 变量绝不自动重写（自动重写 = CI 永远绿）。
+- 契约文件**必须进 git**（gitignore 掉 = 本地绿、CI 瞎）。
+- 跨层不变量是**宿主归属**（`host(各层 baseURL) ∈ api.Hosts[该品牌]`），不是字符串相等——api/webapp 用 `www.`、web 用裸域是合法漂移。
 
-### NextPay (kaitu 一次性购买渠道, 2026-09-22 起)
+Hard rules:
+- **Resolution** (`BrandResolver()`, first on `/api`, `/app`, webhooks): `Host` → `X-K2-Brand` → default `kaitu`; read via `ReqBrand(c)`. Legacy clients always resolve to kaitu. The header is spoofable **by design**: it only picks which public config a non-brand host gets; the authenticated surface compares the token's `users.brand`. Don't "harden" host-over-header.
+- **`users.brand` is a birth attribute**, immutable. `AuthRequired` / `AuthOptional` / `StaffAuthRequired` enforce it (403003) — exemptions in the Middleware table.
+- **User-facing queries filter with `ScopeBrand(b)` only.** Admin (`/app/*`) is the sole cross-brand view: explicit `?brand=` via `adminBrandScope(c, "brand")` / `adminUserBrandScope(c, "user_id")` (orders, devices inherit the user's brand). `/app/users?email=` returns **every** brand's account — never `First()`.
+- **Admin creates take an explicit brand**: handlers use `BrandRequired(s)` (empty/invalid → `ErrorInvalidArgument`, never a silent kaitu default); `BrandForCreate` survives only in approval callbacks / logic for pre-switch approvals. Writes on an existing user take the **user's** brand. Plan payment IDs must match the brand's channels (`validatePlanPaymentIDs`).
+- **Node visibility** has one entry: `(*SlaveNode) VisibleTo(b)` = node self-declares the brand (`K2_NODE_BRANDS`) ∧ ops kill switch not set (`VisibleKaitu`/`VisibleOverleap`, default true). Enforced in `api_tunnel.go`, `api_tunnel_v20260717.go`, `api_subs.go`, `api_relay.go`, `api_antiblock.go`. Flipping the admin switch alone cannot put a node on Overleap.
+- **Payment channel gate**: `Brand.Config().AllowsPayment(channel)` → 405001; brand-mismatch sentinels in the wordgate webhook / `creditAppleTransaction` / `creditStripeInvoice` (`alertPaymentBrandMismatch`) alert and refuse to credit — fail-loud by design, don't silence.
+- **viper legacy keys** (`frontend_config.*`, `support.email` …) are kaitu-only; overleap values come from `BrandConfig`, never viper.
+- **Mail**: `emailToUser` takes a `brandedEmailTemplate[T]` (recipient's brand drives copy **and** From); `emailToUserSingleBrand` is the escape hatch and callers must state why the other brand can't reach it. `FindOrCreateUserByEmail(ctx, brand, email, …)` takes the brand explicitly — never infer it from ctx. EDM never creates users; EDM template slugs are unique per `(slug, brand)`.
+- **Verification-code cache key is brand-scoped** (`VerificationCodePrefix`) — a deploy that changes the segment invalidates in-flight codes.
 
-- **Spec**: `docs/superpowers/specs/2026-09-22-payment-nextpay-migration-design.md`。取代 WordGate 托管收银台：`POST /api/user/orders` 经 `ensureOrderCheckout`（`logic_nextpay_checkout.go`）在 NextPay 建单 + confirm，`payUrl` **直接是 `checkout.stripe.com` 链接**——客户端只 `openExternal` 不解析，所以此迁移零 OTA 依赖。
-- **Config**: viper `nextpay.endpoint`（同机 `http://127.0.0.1:5900`）/ `access_key` / `timeout` 由 `qtoolkit/nextpay` 读；`nextpay.webhook_secret` / `nextpay.payment_method`（缺省 `more`）由 `configNextpay` 读。缺 key/secret 时渠道不可用（下单 405001 / webhook 503 / 302 端点回 purchase），不 panic。`Ready()` 检查放在 preview 之后——预览只算价，不依赖支付渠道。
-- **Single credit point**: `/webhook/nextpay` 的 `order.paid` → 既有 `MarkOrderAsPaid`。关联键 `ObjectID == orders.uuid`；`orders.nextpay_order_id` 只做对账/双付判定。金额/币种错配与品牌错配都 fail-loud（Slack `[PAYMENT-AMOUNT-MISMATCH]` / `[PAYMENT-BRAND-MISMATCH]` + 5xx 让 NextPay 重投）；已付订单被另一 NextPay 订单再付 → `[DOUBLE-PAY]` 告警 + ack，人工退款。
-- **耐久链接**: `Order.Meta.payUrl` 是 `{BaseURL}/api/orders/{uuid}/pay`（代付邮件唯一读者），不是 Stripe URL——Stripe session 24h 过期、NextPay 订单 30 分钟后拒 confirm。`Meta.checkoutUrl/checkoutAt` 缓存最近 session，复用窗口按 `Meta.checkoutMode` 区分（`reuseWindowFor`：Stripe Checkout 23h / 支付页 25min；无该字段的老订单按 Stripe Checkout），超出则整单重建。
-- **两条 checkout 路径（灰度）**: viper `nextpay.payment_page_percent`（0–100，缺省 0）按用户 UUID 哈希固定分组（`nextpayPaymentPageBucket`，放量单调）。命中者 `createNextpayCheckout` **只建单不 confirm**，`payUrl` 是 NextPay 自有支付页 `pay.arbella.group/pay/<nextpay订单>`（用户在页上选支付宝 / 卡；支付宝回跳先回支付页，只有 paid 才转发 successUrl `?order_id=`）；其余仍 confirm(more) 拿 `checkout.stripe.com`。两路都由同一个 `order.paid` 入账，webhook 不区分。对比两组付款率读 `orders.meta` 的 `checkoutMode` + `is_paid`；`[PayFunnel]` 的 checkout 行也带 `mode=`。
-- **WordGate 现状**: 只切断了下单路径；`/webhook/wordgate`、`configWordgate`、SDK 依赖保留到在途订单清零（Phase B 清理）。`Order.Channel` 空串 = 历史 WordGate 订单，`nextpay` = 新订单。
+## Payments — 违反了就出钱的事故
 
-### Stripe (overleap 官网支付渠道, Phase 6)
+Full mechanics (NextPay config / 灰度 / 耐久链接, Stripe Checkout / 撤回执行器 / 结账同意 / 多币种, Apple bundle split, Apple 退款算法 / 对账, open overleap seams): **`docs/api/payments.md`** — read before touching any order / credit / refund / revoke / reconcile path.
 
-- **Routes**: `POST /api/user/stripe/checkout` (Checkout Session, `mode=subscription`, returns `{url}`), `POST /api/user/stripe/portal` (Billing Portal `{url}`), `POST /webhook/stripe`. Files: `api_stripe.go` / `api_stripe_webhook.go` / `logic_stripe.go` (spec 提到的 `payment_stripe.go` 按本仓库命名铁律拆分).
-- **Config**: viper `stripe.secret_key` / `stripe.webhook_secret` / `stripe.success_url` / `stripe.cancel_url` / `stripe.portal_return_url` — overleap 专用；URL 缺省回退 `BrandConfig(overleap).BaseURL`。缺 key/secret 时渠道自动不可用（handler 405001 / webhook 503），不 panic。
-- **Single credit point**: `creditStripeInvoice` (`logic_stripe.go`) — `invoice.paid` 是唯一 bind+credit 事件；`subscription_data.metadata`(`user_uuid`/`plan_pid`/`brand`) 随每张 invoice 回传，事件自足。INV1 幂等键 `SubscriptionCredit(provider="stripe", transaction_id=invoice id)`；INV9 绑定键 = Stripe subscription id；INV3 叠加走 `applyGiftCredit`/`applyRenewalCredit`。入账 plan 查找用 `planByPIDForCredit`（不过滤 `is_active`——下架不停续费入账）。
-- **Event-level idempotency**: `stripe_webhook_events` 表按 event id 去重（check → process → record）。
-- **SDK-shape adapter**: `extractStripeInvoiceFacts` 是 stripe-go(v82/basil) invoice 形态的唯一适配点（`invoice.parent.subscription_details.*`、period 取 invoice line）。升 SDK 只改它。
-- **Manage surface**: `DataSubscription.Manage.Kind == "stripe_portal"` → 客户端调 portal 端点换 URL 再跳转。
-- **多币种展示价**: `DataPlan.CurrencyPrices`（`logic_stripe_price.go`）—— Stripe 套餐的 `/api/plans` 附带 `{币种→最小单位}`（主币 + `currency_options` 全部币种），从 Stripe Price 取（`expand=currency_options`）、进程内缓存 1h、失败只记日志字段省略（客户端回落 `Price` 美元）。Price 主币 **USD**（账号结算币；只有主币=结算币 Adaptive Pricing 才生效），GBP/EUR 为固定本币价，Checkout 按属地自动选币——建价只走 `scripts/stripe-setup-overleap.sh`（spec `2026-09-04-overleap-site-decoupling-and-uk-positioning-design.md` §4）。
-- **Reminders**: `processRenewalReminders` 跳过 `usersWithLiveAutoRenew`（apple/stripe 活跃自动续订用户不收"手动续费"邮件）。
-- **收回（spec `2026-10-07-overleap-payment-phase-a-design.md`）**: `charge.refunded` **全额**与 `charge.dispute.created`（任一张 invoice，含询问）→ `revokeStripeForChargeLoss`：收回会员 + 取消 Stripe 订阅 + 告警（"全额退款 = 终止合作"；想补偿又保留服务就做部分退款，部分退款只告警）。归属靠 PI → Invoice Payments → 订阅；本地无行建 **revoked 墓碑**。**Stripe 账户（Wordgate LLC）与 NextPay / WordGate 等业务共用**，本端点会收到别家的 checkout / 退款 / 拒付事件：`revokeStripeSubscription` 返回 `ours`（本地有行或墓碑建成），非 ours 的订阅原样放过、**绝不取消**；非订阅收款只记日志。账户级设置（公开详情的 ToS URL、Portal 默认配置、收据邮件）同样波及别家，改前先想清楚。`subscription.deleted` 提前结束（`ended_at` 早于事件自身周期末 >1h）按差值截断。
-- **扣减量只看 `Subscription.PaidThrough`**（已发放的付费时长覆盖到的时刻，入账 / 对账 cover-through 按实际发放累加，扣减后回收）：**不要**用 `CurrentPeriodEnd`（对账会推到未付的下一期 → 扣掉赠送时长）（Apple 同口径，见下方 Apple 退款段）。PaidThrough 为 0 的老行退回 `CurrentPeriodEnd`（fail-closed）。
-- **revoked 是终态，四道门**：`creditStripeInvoice` 不加时长、对账 cover-through 锁内跳过、`subscription.updated` 写带 `status<>revoked`、`subscription.deleted` 短路。新增任何改 Stripe 订阅 / 用户到期的路径都要过这四道门的同款检查。
-- **14 天撤回执行器**（`logic_stripe_withdrawal.go`；预览 `GET /app/users/:uuid/stripe-withdrawal` 在 staff 组，客服可报价；执行 `POST` / 作废只给超管；MCP `quote_stripe_withdrawal` / `withdraw_stripe_subscription`）：一次请求 = primary（`notice_at` 前最近一笔付款，按天折算，含付款当天；首付或周期 ≥360 天的续费才合格，按 `billing_reason` 判）+ 通知后扣的款（全额，从 Stripe 已付 invoice 枚举）。顺序 退款 → 收回 → 取消 → 完成；以 `StatutoryRefund` pending 行续跑（不重判资格），退款先按 metadata 查自家退款（幂等键只留 24h）；primary 行 `LockedUntil` 是请求占位锁；`ActiveInvoiceID` 唯一（作废置 NULL 释放）。**客服不要在 Stripe 后台手工部分退款**——会员不会被收回。
-- **结账同意**：Checkout 带 `consent_collection` + `custom_text`（`stripeConsentMessage`，改文案必改 `consentTextVersion`），`checkout.session.completed` 落 `SubscriptionConsent`。无同意记录的订阅撤回时全额退（没有折算依据）。**部署前置**：Stripe Dashboard 必须先填 Terms of service URL，否则 Checkout 创建直接报错。
-- **钱包**：`BrandConfig.Wallet`（overleap false，进契约）；`WalletRequired()` 挂全部 `/api/wallet*`（`AuthRequired` 之后，读用户品牌），`ProcessOrderRefund` / `api_admin_refund_order` / `addCashbackIncomeInTx` 按品牌拒绝。新钱包路由忘挂门，`TestWalletRoutes_AllGatedForBrandsWithoutWallet`（枚举生产 `SetupRouter`）会红。
+- **One credit point per channel**: NextPay `/webhook/nextpay` `order.paid` → `MarkOrderAsPaid` (key `ObjectID == orders.uuid`); Stripe `creditStripeInvoice` on `invoice.paid` only (idempotent on `SubscriptionCredit(provider, transaction_id)` + `stripe_webhook_events`); Apple `creditAppleTransaction`. Amount/currency/brand mismatch is fail-loud (Slack + 5xx so the provider retries) — never ack-and-ignore. Credit plan lookup `planByPIDForCredit` ignores `is_active` (下架不停续费入账).
+- **Post-commit side effects go through `OrderPostCommit`** (`logic_order.go`): `applyOrderToBuyer` / `applyRouterOrder` only accumulate provisioning / renewal IDs inside the tx; jobs and notifications fire after commit — a later rollback must not leave an enqueued job behind.
+- **Apple sandbox transactions grant entitlement but never create an `Order`** (`PayAmount` feeds cashback / revenue / wallet refunds). Incident: `docs/incidents/2026-08-10-apple-iap-sandbox-order.md`.
+- **`channel=apple_iap` orders never take the admin wallet refund** (`ProcessOrderRefund`, `api_admin_refund_order`, approval callback → `appleIAPWalletRefundMsg`): only Apple refunds Apple money; wallet + Apple = double refund. Legacy cases are caught by `alreadyWalletRefunded` (`[DOUBLE-REFUND]`).
+- **Deduction uses `Subscription.PaidThrough`**, never `CurrentPeriodEnd` (reconcile pushes it to the unpaid next period → you'd cut gifted time). Stripe and Apple share this rule; PaidThrough 0 falls back to `CurrentPeriodEnd` (fail-closed).
+- **Stripe `revoked` is terminal — four gates**: `creditStripeInvoice` adds no time, reconcile cover-through skips it under lock, `subscription.updated` writes carry `status<>revoked`, `subscription.deleted` short-circuits. Any new path that changes a Stripe subscription or user expiry needs the same check. Apple: `applyRenewalInfo` / `setSubStatus` SQL carry `status<>'revoked'`; a refunded transaction that was never credited is never credited (`errAppleTxnRevoked`).
+- **The Stripe account is shared with other businesses** (NextPay / WordGate): `revokeStripeSubscription` only touches subscriptions that are `ours` — never cancel a non-ours one; account-level settings affect the others too. Don't partial-refund by hand in the Stripe dashboard (membership is not revoked) — use the 14-day withdrawal executor.
+- **Wallet is brand-gated** (`BrandConfig.Wallet`, overleap false): `WalletRequired()` on routes, plus `ProcessOrderRefund` / `api_admin_refund_order` / `addCashbackIncomeInTx` refuse by brand.
+- **Apple bundle id per brand** (`appleBundleIDForBrand`): empty = verify refuses; never fall back to kaitu's bundle. `planByAppleProductID` is `ScopeBrand`-filtered.
 
-### Apple IAP brand split (Phase A) + remaining seams
+## Dedicated Line / Router Edition / Router Control Key
 
-Phase A opened `apple_iap` for overleap with bundle-level isolation:
+Full detail (fulfillment stages, online signal, credential mint flow, order-time gates and their history, DTOs, endpoints, control-key mint semantics): **`docs/api/router-edition.md`** — read before touching private lines, router orders, fulfillments, gateway credentials or `RouterControlKey`.
 
-- **`planByAppleProductID`** (`logic_apple_iap.go`) is **brand-scoped** — `ScopeBrand` filter applied, preventing cross-brand product ID collisions.
-- **`appstore.bundleIds.<brand>`** (viper): per-brand Apple bundle id for IAP verify. kaitu keeps legacy `appstore.bundleId`; other brands read `appstore.bundleIds.<brand>` via `appleBundleIDForBrand` — empty = fail-loud (verify refuses, no silent fallback to kaitu's bundle). `verifyAndGrantTransaction` loads the user's brand and sends that brand's bundle id to Apple, so a kaitu-app transaction can never credit an overleap account (e2e #09 pins this).
-
-Invariants from the 2026-08-10 sandbox-order incident (narrative: `docs/incidents/2026-08-10-apple-iap-sandbox-order.md`):
-
-- **Sandbox transactions grant entitlement but never create an `Order`** — `creditAppleTransaction` returns before order creation when `info.Environment == appstore.Environment_Sandbox`. Orders are financial entities: `PayAmount` feeds cashback, revenue stats, and wallet refunds. `iapOrderFixture` defaults to `Environment_Production` for the same reason — flipping it tests a path the gate cuts off.
-- **App Store orders never go through the admin wallet refund** — `ProcessOrderRefund` / `api_admin_refund_order` / the approval callback reject `channel=apple_iap` (`appleIAPWalletRefundMsg`): Apple took the money and only Apple refunds it; a withdrawable wallet refund plus a later Apple refund is a double refund. Legacy wallet-refunded IAP orders are still recognised by `alertIfAlreadyWalletRefunded` (`[DOUBLE-REFUND]`) and skip the entitlement cut.
-
-### Apple 退款收回（spec `2026-10-08-apple-refund-design.md`，两品牌同一规则）
-
-- **规则**：收回被退交易自身尚未消耗的付费时长；不碰赠送；不追讨已消耗的旧期；退款被撤销就还回去。入口 `applyAppleRefund`（webhook `REFUND`/`REVOKE`、对账发现 Revoked）/ `reverseAppleRefund`（`REFUND_REVERSED`、对账探测）——`logic_apple_refund.go`。**不写品牌分支**：开途特有风险挂在开途独有功能上（邀请、钱包、分销），Overleap 这三项关闭。
-- **`PaidThrough` 现在 Apple 也维护**（`creditAppleTransaction` 入账后单独 `Update`）。扣减量 = `min(PaidThrough−now, 到期−now, 本期长度)`；更新的一期已入账（`CurrentPeriodEnd > tExp`：Apple 提前 24h 扣续费 / 迟到处理）时只收 `tExp−now`。宽限期 cover-through 不动 `PaidThrough`。
-- **退款不改 `current_period_end`，只置 revoked**；退款之后的新付款（同 otx）按**首购口径**入账（`revival`：整期、从 `max(到期, 购买时刻)` 起叠、覆盖周期末），离开 revoked 只走 `deriveActiveOrExpired`——`deriveVerifiedStatus` 对 revoked 恒返回 revoked。被退交易从未入账则**永不入账**（`errAppleTxnRevoked`：verify 报"已退款"，webhook/对账视为已处理）。revoked 守卫：`applyRenewalInfo` 与 `setSubStatus` 的 SQL 带 `status<>'revoked'`。
-- **先后按 Apple 签名时刻（毫秒）判定，不按到达顺序**：`AppleRefund`（每笔交易一行）的 `RefundSignedAt` / `ReversedSignedAt` / `Active`。撤销先到建占位行；已在退款状态时只用 Apple 给出的时刻推后证据（now 兜底不推后——否则撤销探测冷却永不到期）；再次退款封顶 `CutSeconds − (now − RestoredAt)`，仅当上一轮确实收过也还过。
-- **webhook 信任边界**：通知与交易的 bundleId 必须是该订阅品牌的 bundle（Apple 根证书签所有 app 的通知）；`REFUND_REVERSED` 恢复前经 `fetchAppleTransaction` 复核（授予动作都过第二层）。`appleRootCAPEM` 是 var 仅供端到端测试注入。
-- **对账**（`worker_subscription_reconcile.go`）：Apple 生产订阅按 `id % 7` 每天巡检一桶（有效 / 近 120 天过期 / 带生效退款的任意状态），与 48h 临期扫描去重；先判 Apple Revoked → 只走收回（不做宽限延长）；revoked 行只允许复活入账与撤销探测（跳过续期与 Expired 分支）；撤销探测 48h 冷却、交易号与生产环境一致、证据时刻 = `RefundSignedAt+1ms`；Apple 仍报退款而本地已撤销 → `[APPLE-REFUND-CONFLICT]` 一次，不自动处理。
-- **退款后续共用 `onPaidOrderRefundedInTx`**（`logic_purchase_refund.go`，Apple 与后台网页退款都调）：被邀请首购奖励按 `InviteRewardGrant`（被邀请人唯一 = 一生一次；记触发购买 `apple_txn`/`order`）精确撤回双方，被邀请人仍持有合格购买（实付 >0、月数达门槛）则改锚不撤；后台退款可 `keepInviteRewards`（审批 params 留痕）。分销付费人数按 `Order.RetailerCountedID` 扣回或转移到买家其它有效单；L2 自动升级后跌破门槛只告警 `[RETAILER-COUNT-DROP]`，不自动降级。
-- **邀请奖励只发生产交易**（沙盒不发、不消耗首单资格；沙盒权益与 Tier 照发）。IAP 返现冻结 90 天（覆盖 Apple 退款窗口），网页 30 天；返现撤回致负余额 `[CASHBACK-NEGATIVE]`。
-- **告警**走 `alertBilling`（var，测试替换）：`[APPLE-REFUND]`（含该用户累计退款次数）、`[APPLE-REFUND-REVERSED]`（列手工步骤：订单退款标记、返现、分销计数不自动反转）、`[APPLE-REFUND-PCT]`、`[APPLE-REFUND-RATE]`（开途 30 天 ≥3 次）。
-- **Consumption 应答**（`logic_apple_consumption.go`）：webhook `CONSUMPTION_REQUEST` → 仅当 `users.apple_consumption_consent = true`（`PUT /api/user/apple-consumption-consent`）才 PUT v2 `/inApps/v2/transactions/consumption/{txn}`；两品牌一律 `GRANT_PRORATED`、不发 `consumptionPercentage`（自动续订带它 400）。发送失败 500 且不记 UUID，让 Apple 重投。
-
-Still open before overleap Play Billing / campaign sends:
-- **Overleap winback campaign codes**: `winbackCampaigns` (`worker_renewal_reminder.go`) has no overleap-scoped codes — `campaignVarsForBrand` returns an empty vars map for overleap recipients (silently no-op; verify intent once overleap runs campaigns).
-- **`SavingsText` is hardcoded Chinese** (`worker_renewal_reminder.go`): leaks Chinese copy into English winback email the moment overleap gets a campaign code in `winbackCampaigns` — needs an English variant gated on `brand` before that happens.
-- **Overleap lifecycle EDM templates** (`renewal-Nd` / `winback-Nd` slugs, brand=overleap) don't exist yet — reminder/winback sends to overleap users skip with a Slack alert until ops creates them.
+- **`PrivateNodeSubscription` is an entitlement** (tier / `TrafficTotalBytes` / own `ExpiresAt`), not a node topology. Multi-node = multiple `k2v5://` tunnels in `/api/subs` (`ResolveGatewayPrivateTunnels`) — no schema change needed. `SlaveNodeID` is the per-line metering anchor; `isNodeOverQuota` drops the line. Router admission = `HasActivePrivateLines`, decoupled from App tier.
+- **One router per account**; "is this a router line" = the line has a `RouterFulfillment` ledger row (`routerLineIDs`). A 定制线路 (`pn-*`, no ledger row) is **not** a router line — tests that seed a router line must seed its ledger row.
+- **Renewal (`router-svc-1y`) never provisions and never creates a fulfillment** — it extends (`extendPrivateLine`) and re-syncs; service plans are renewal-only (users without a router are rejected).
+- `User.RouterControlKey` is plaintext by accepted risk; `/api/subs` gateway branch mints-on-serve, shared branch is read-only (a phone must never provision a router key).
 
 ## Social Sign-In (Google / Apple)
 
-- **Spec**: `docs/superpowers/specs/2026-10-20-social-sign-in-design.md`。文件：`api_social*.go` / `logic_social_*.go`（config / apple）/ `logic_login_complete.go`（验证码登录与社交登录共用的登录事务，不含密码登录）。
-- **端点**（`route.go`；HTTP 永远 200，错误看 code）:
+Endpoints, nonce scheme, matching order, conflict codes, `social_auth` yaml, deploy check: **`docs/api/social-login.md`**.
 
-| Method Path | Auth | 用途 |
-|---|---|---|
-| `POST /api/auth/social/login` | 无 | 原生 App 提交 idToken + rawNonce，登录/建号 |
-| `POST /api/auth/social/web-login` | 无 | 官网浏览器登录 |
-| `GET /api/user/social` | `AuthRequired` | 已绑定的提供方列表 |
-| `POST /api/user/social/bind` | `AuthRequired` | 绑定（仅原生 token / 官网账号页） |
-| `DELETE /api/user/social/:provider` | `AuthRequired` | 解绑（Apple 同时撤销 refresh token） |
+- **`aud` is the second brand lock** (first is `users.brand`): exactly one `aud`, in `BrandConfig.Social.Audiences(provider)`. Client IDs are in the cross-layer contract — regenerate it (Brand section) after changing them. All identity lookups scope to `ReqBrand(c)`.
+- **Untrusted / missing email (Google unverified, Apple no email) never matches by email and never creates an account** (400015).
+- **Any new user-deletion path must call `loadAppleRevocations` before deleting `LoginIdentify` rows and `revokeAppleTokensAsync` after commit** (App Review requirement; forgetting it errors nowhere — Apple authorization lingers forever). Existing points: unbind, self-delete, admin hard delete.
+- Network calls (JWKS, Apple token/revoke) are package-level `var` funcs swapped in tests — tests never hit the network.
 
-- **nonce**：客户端生成 `rawNonce`，给提供方 `sha256hex(rawNonce)`、给我方 `rawNonce`；服务端要求 `token.nonce == sha256hex(rawNonce)`。
-- **aud**：token 必须**恰好一个** `aud` 且在 `BrandConfig.Social.Audiences(provider)`（`brand.go` `SocialClientIDs`）内——品牌隔离的第二道锁（第一道是 `users.brand`）。client ID 是公开值、进跨层契约（`brands.<id>.social`），改动后按根 CLAUDE.md 重生成 `contracts/api-contract.json`。所有身份查找限定 `ReqBrand(c)`。
-- **匹配顺序**：provider `sub`（`LoginIdentify`，Apple 键 `hash("apple:"+sub)`）→ 已验证邮箱命中同品牌用户 → 建号。**任何不可信 / 缺失的邮箱（Google 未验证、Apple 无邮箱）永不按邮箱匹配、不建号**（400015）。身份键 = `hash(provider+":"+sub)`（Google / Apple 同形）。绑定冲突：该第三方账号已绑他人 409002；本账号已绑同类另一个 409003；**仅当本账号尚无 email 身份（绑定会写 email 行）时**，可信邮箱已属本品牌别的用户 → 409001（不合并账号）；已有 email 身份则不查邮箱。
-- **桌面 / Linux / Android-Apple**：App 经系统浏览器（127.0.0.1 回环或官网 Apple 回调页转交）自取 idToken，再调 `/social/login`；绑定走官网账号页（原生 token 才走 `/user/social/bind`）。
-- **Config**（viper；缺省 = 功能关；`logic_social_config.go`）:
+## Funnel (转化漏斗 / 留存)
 
-```yaml
-social_auth:
-  apple_team_id: NJT954Q3RH            # 两品牌同一开发者账号，可省略
-  kaitu:
-    google: { enabled: true }          # Google 无秘密，靠显式开关上线
-    apple:
-      key_id: "XXXXXXXXXX"
-      private_key: |                   # 内联 .p8 PEM 字符串
-        -----BEGIN PRIVATE KEY-----
-        <placeholder>
-        -----END PRIVATE KEY-----
-  overleap: { google: { enabled: true }, apple: { key_id: "...", private_key: "..." } }
-```
+Registries, lanes/hops, retention math, inferred attribution: **`docs/api/funnel.md`**.
+- **Facts (signup / purchase / renewal / refund) never go into `funnel_events`** — projected at query time by `logic_funnel_facts.go`; client-reported fact names are dropped.
+- Add events / paths only via `funnelEventRegistry` (`logic_funnel_events.go`) / `funnelPathRegistry` (`logic_funnel_paths.go`); collection never blocks the product path.
+- **Raw IP never reaches any store** (inferred attribution keeps a daily-salted HMAC in Redis only); inferred links never write `funnel_identities`.
 
-  Google Ready = `enabled`；Apple Ready = `key_id` 与 `private_key` 均非空。未就绪 = 提供方关：`/api/app/config` 的 `socialSignIn` 对应 flag 为 false，login / bind 直调端点均回 405002，不 panic。私钥来源 `~/.config/kaitu-secrets/`，**绝不进仓库**；社交代码自身不记 idToken / refresh token，邮箱用 `hideEmail`（请求日志中间件会记请求 / 响应 body，既有问题，未处理）。
-- **Apple refresh token**：`LoginIdentify.ProviderClientID` + `ProviderRefreshToken`（经 `secretEncryptString`，该函数目前直通 = 库中明文；无 .p8 私钥不可用；默认空串）。撤销点：① 解绑（`api_social.go`）② 用户自助注销（`api_user.go`）③ 管理员硬删（`logic_approval_callbacks.go`）。**新增任何删用户入口必须在删 `LoginIdentify` 行之前调 `loadAppleRevocations`，事务提交后调 `revokeAppleTokensAsync`**（审核要求；漏了不报错，Apple 侧授权永远残留）。
-- **网络调用**（JWKS、Apple token / revoke）全经包级 `var` 函数，测试替换，测试不打外网。
-- **部署核对**：两台 center 都写好 `social_auth` → `make deploy-api` → `curl -s https://www.kaitu.io/api/app/config` 与 overleap 域各一次，确认 `socialSignIn` 对应 flag 为 `true`。
+## Chat (访客客服聊天 + AI)
+
+Spec `docs/superpowers/specs/2026-10-01-support-chat-design.md`. Entry: `api_chat.go` (`/api/chat/*`), `api_chat_slack_events.go`, `api_admin_chat.go`, `logic_chat_*.go`, `model_chat.go` (`Guest`, `GuestIdentity`, …), `worker_chat.go`.
+- Gates: viper `chat.enabled` + `chat.preview_enabled` (both false = hard off, even for existing cookies) and `chat.brands` allow-list (empty = all brands off).
+- Slack is the agent's primary UI: one private channel per conversation, every message mirrored in id order; `slack_mirrored_at` is an outbox marker backfilled by the `chat:slack-sweep` cron. Slack failures only log — they never fail `appendMessage`.
+- AI replies via `qtoolkit/openai/filesearch` against the brand's `BrandConfig.ChatAIStore` (KB sources in `docs/customer-service/<brand>/`, synced by `scripts/sync-kb.sh`); errors / empty / cap (`chatAIMaxReplies`) hand off to a human.
+
+## Device Account (零身份设备账号)
+
+Spec `docs/superpowers/specs/2026-10-20-ios-device-account-design.md`. `POST /api/auth/device-account`, `/device-account/restore` (`api_device_account.go`, `logic_device_account.go`). Gated by `BrandConfig.DeviceAccount` (kaitu only → else 403004); router (gateway) clients are refused.
+- "零身份" is decided **only** by `userHasIdentity` (no `login_identifies` row) — don't hand-count elsewhere.
+- **A udid is not a secret**: an existing device row never gets a token by udid — 403005 (owner has an identity → log in) / 403006 (device account → Keychain token or Apple-transaction restore).
+
+## Enterprise (企业路由器多 SSID)
+
+Spec `docs/superpowers/specs/2026-07-22-enterprise-router-multi-ssid-design.md`. Admin `/app/enterprise/*` (`api_admin_enterprise.go`, opsAdmin: read `RoleDevopsViewer|Editor`, write `RoleDevopsEditor`); models `EnterpriseCustomer` / `EnterpriseLine` / `EnterpriseRouterBinding` (`model.go`). `/api/subs` adds `slot_bindings` via `resolveSlotBindings` (`logic_enterprise.go`) — snake_case wire contract with k2 `config.SlotBinding`, `tunnel_index` indexes the same response's `tunnels`. **Deliberately health-blind**: quota cutoff / node death never remove a slot; only a human rebind does.
 
 ## Campaign Matcher Semantics (single source of truth)
 
-Campaign `matcherType` gates who may redeem a code (`logic_campaign.go getCampaignMatcherWithDB`). The names are **audience labels, not order-state checks** — read them as "who is this code for":
+Campaign `matcherType` gates who may redeem a code (`logic_campaign.go getCampaignMatcherWithDB`). The names are **audience labels, not order-state checks**:
 
 | matcherType | matches | use for |
 |-------------|---------|---------|
@@ -400,76 +261,42 @@ Campaign `matcherType` gates who may redeem a code (`logic_campaign.go getCampai
 | `paid_before` | first paid before `matcherParams.beforeDate` | 时间窗定向 |
 | `paid_before_active` | `paid_before` AND membership still active | 时间窗定向且在期 |
 
-**`LicenseKeyBatch` is a different thing — don't fold it into campaigns.** 授权码批次是独立于活动码的分发单位：batch 自己存渠道标签 (`sourceTag`)、兑换条件 (`recipientMatcher`)、过期时间，统计维度包含兑换率和兑换→付费转化率。创建需走审批（见上面 Approval Workflow）。
+`first_order` and `vip` are exact mirrors and must never collapse into the same meaning — `logic_campaign_matcher_test.go` pins both. **History (do not repeat):** `first_order` once meant "已付费" while every author read it as "new customer" — all 5 `first_order` campaigns (FIRST_ORDER_20, READY4U, STAYFREE, SMOOTHDAY, KEEPGOING) silently rejected 100% of recipients with `ErrorInvalidCampaignCode` (fixed 2026-06-06). Keep new matcher names describing the **audience**, and mirror the admin UI label in `web/.../manager/campaigns/page.tsx`.
 
-`first_order` and `vip` are exact mirrors and must never collapse into the same meaning — `logic_campaign_matcher_test.go` pins both. **History (do not repeat):** `first_order` once meant "已付费" (duplicating `vip`) while every campaign author read the name/label as "new customer" — all 5 `first_order` campaigns (FIRST_ORDER_20, READY4U, STAYFREE, SMOOTHDAY, KEEPGOING) silently rejected 100% of recipients with `ErrorInvalidCampaignCode`. Fixed 2026-06-06 by aligning the code to the name. When adding a matcher, keep the name describing the **audience**, and mirror the admin UI label in `web/.../manager/campaigns/page.tsx`.
+**`LicenseKeyBatch` is a different thing — don't fold it into campaigns**: 授权码批次自带渠道标签 (`sourceTag`)、兑换条件 (`recipientMatcher`)、过期时间，统计兑换率与兑换→付费转化；创建走审批。
 
-## Constitution (Coding Conventions)
+## Tunnel Scoring
 
-### Tunnel Scoring
+- **Model = time-gated usage-sensitivity**: `score = 1 − trafficRatio · w(timeRatio)`, `w(t) = 0.15 + 0.85·t²` — generous early in the cycle, strict late. **Not an exhaustion check**: exhaustion is the hard cutoff / hide path (`isNodeOverQuota`), never score 0. Replaced an earlier `trafficRatio − timeRatio` pacing model plus warmup/headroom terms; don't reintroduce those.
+- **Single authority**: `ComputeRecommendScore(inst *DataTunnelInstance) float64` (`logic_tunnel_score.go`); `/api/tunnels` and `/api/subs` both call it — never inline a formula.
+- **Nil instance = 0.5** (non-cloud nodes neutral; 0 would blacklist them from `pickWeighted` / `Subscription.Pick`).
+- **Dual-emit**: `/api/subs` emits `recommendScore` and legacy `weight = round(score*100)` for pre-e210564 daemons; drop `weight` one release after rollout is confirmed.
+- **No Redis penalty layer** (`subsPenalty*` / `applyPenaltyWeights` removed in `9e12d0b`) — no request-side rate-limiting in the subscription response; compute a score server-side instead.
 
-- **The model is time-gated usage-sensitivity**: `score = 1 − trafficRatio · w(timeRatio)` where `w(t) = 0.15 + 0.85·t²`. The usage penalty's weight `w` climbs from a 0.15 floor at cycle start to 1.0 at cycle end, so early cycle is generous (a heavily-used node still scores high) and late cycle is strict (near-cap nodes get steered away). **The score is not an exhaustion check** — true exhaustion is handled by the hard cutoff / hide path (`isNodeOverQuota`), never by driving the score to 0. This replaced an earlier `trafficRatio − timeRatio` pacing model plus warmup/headroom terms; don't reintroduce those.
-- **Single authority**: `ComputeRecommendScore(inst *DataTunnelInstance) float64` in `logic_tunnel_score.go` is the ONLY place that derives a tunnel's recommendation score `[0,1]` from its budget. `/api/tunnels` and `/api/subs` both call this helper — never inline a score formula elsewhere.
-- **Nil instance = 0.5**: Non-cloud nodes get neutral 0.5, not 0. Zero would blacklist them from client-side `pickWeighted` / daemon `Subscription.Pick`.
-- **Dual-emit**: `/api/subs` emits both `recommendScore: float` and legacy `weight: int = round(score*100)` for backward compat with pre-e210564 daemons. Drop `weight` one release after rollout is confirmed.
-- **No Redis penalty layer**: The old Redis-based penalty scheme (`subsPenalty*` + `applyPenaltyWeights`) was removed in commit `9e12d0b` — it was patching the absence of real scoring, not solving it. Do not reintroduce request-side rate-limiting in the subscription response; if needed, compute a score server-side and expose it through `recommendScore`.
+## Logging Convention
 
-### Response Convention
+`log.Errorf/Warnf/Debugf(c, ...)` from `qtoolkit/log`, always passing `c` first (request-scoped tracing). No `[ERROR]`-style prefixes (the level carries it). No `Tracef` for app debug — Trace is for wire dumps.
 
-- Use `Success(c, data)` for single objects, `List(c, items, pagination)` for paginated lists, `ItemsAll(c, items)` for unpaginated lists, `SuccessEmpty(c)` for void success.
-- Use `Error(c, ErrorCode, "message")` for errors. Use predefined constants from `response.go` (e.g., `ErrorNotFound`, `ErrorInvalidArgument`). Never invent ad-hoc numeric codes.
-- For rich error returns from logic layer, use `ErrorE(c, e(...))` with the `rerr` pattern.
-- **Exceptions to the always-200 rule** (Hard Rules): **webhooks** (`api_webhook.go`, `api_stripe_webhook.go`, …) return HTTP status directly because providers retry on status — comment it at the handler top; **asynqmon** (`/app/asynqmon`) returns HTML; **`MiddleRecovery`** turns a panic into HTTP 500 with an empty body + Slack alert.
+## Test Convention
 
-### Logging Convention
+| Tier | DB | Config | Guard |
+|------|-----|--------|-------|
+| Unit | None | None | None |
+| Mock DB | `SetupMockDB(t)` (`mock_db_test.go`: `SkipInitializeWithVersion`, `QueryMatcherRegexp`) — always use it | `testInitConfig()` — called by `SetupTestRouter()` / `skipIfNoConfig()`, **not** by `SetupMockDB` | None |
+| Integration | Real MySQL | `../center/config.yml` (repo-root `center/`) | `skipIfNoConfig(t)` at the top of each test |
 
-- Use `log.Errorf(c, ...)`, `log.Warnf(c, ...)`, `log.Debugf(c, ...)` from `qtoolkit/log`.
-- **No redundant prefixes**: Write `log.Errorf(c, "failed to get tunnels: %v", err)`, NOT `log.Errorf(c, "[ERROR] failed to get tunnels: %v", err)`. The log level already carries the severity.
-- **No Tracef for debug info**: Use `log.Debugf`, not `log.Tracef`. Trace is for protocol-level wire dumps, not application debug messages.
-- Always pass `c` (gin.Context) as first arg to enable request-scoped tracing.
+- **Silent skip is the default — a green `go test ./...` proves nothing about the DB half.** `skipIfNoConfig` looks for `../center/config.yml` while `start`/`migrate` read `api/config.yml`; both gitignored (in the main checkout `center` is a local symlink to `api`, so they are the same file there; a fresh worktree has neither). `.github/ci/center-config.yml` is the only in-repo template. The CI mock job silently skipped **256 of 1085** tests at 0.4.8 and reported green; the `test-api-db` job (`scripts/ci/api-db-test.sh`: throwaway MariaDB + real `migrate`) **fails on any config-skip**. Locally the discriminator is `-v` showing 0 `config.yml not available` skips.
+- **Restore viper keys to their original value, never to a literal**: one shared viper; `center/config.yml` sets `mail.dev_mode: true`. `defer viper.Set("mail.dev_mode", false)` makes every later worker test really send — capture `viper.Get(key)` and restore in `t.Cleanup` (`restoreViper` in `logic_email_sender_test.go`).
+- **Tests never touch real Redis**: `testInitConfig()` (`testutil_test.go`) starts miniredis, overrides `redis.*` before and after the config load, sets `EnableMockVerificationCode = true`. `testInitOnce` is a plain bool, not `sync.Once` — unsafe under `t.Parallel`. Never panic on missing config (`testConfigAvailable = false`).
+- **New GORM columns need a manual migrate before integration tests see them**: the long-lived test DB is migrated out-of-band (`testInitConfig`/`skipIfNoConfig` never `AutoMigrate`). After adding a field to a model in `migrate.go`'s list, run `cd api/cmd && go run . migrate --config ../../center/config.yml` once, or integration tests fail with `Unknown column`. Production runs `center.Migrate()` on start.
+- **Avoid zero-value assertions**: `assert.Equal(t, 0, resp.Code)` passes trivially on unmarshal failure — verify the positive case.
+- **File naming**: `api_*_test.go` handler tests, `db_mock_test.go` shared mock utilities, `mock_db_test.go` MockDB struct, `testutil_test.go` `testInitConfig` / `skipIfNoConfig` / `SetupTestRouter`.
 
-### Test Convention
+## UAT (NextPay + Router Edition, real services)
 
-**Three test tiers:**
-
-| Tier | DB | Config | Guard | Example |
-|------|-----|--------|-------|---------|
-| Unit | None | None | None | Pure function tests |
-| Mock DB | `SetupMockDB(t)` | `testInitConfig()` — called by `SetupTestRouter()` / `skipIfNoConfig()`, **not** by `SetupMockDB` | None | Handler tests with go-sqlmock |
-| Integration | Real MySQL | `../center/config.yml` (repo-root `center/`) | `skipIfNoConfig(t)` | Full DB round-trip tests |
-
-**Rules:**
-
-- **Silent skip is the default — a green `go test ./...` proves nothing about the DB half.** `skipIfNoConfig` looks for `../center/config.yml` (repo-root `center/`, gitignored) while `start`/`migrate` read `api/config.yml` (also gitignored) — two different files, neither in git; `.github/ci/center-config.yml` is the only in-repo template. The CI mock job (`go test ./... -count=1`) silently skipped **256 of 1085** tests at 0.4.8 and reported green; the separate `test-api-db` job (`scripts/ci/api-db-test.sh`: throwaway MariaDB + real `migrate`) **fails on any config-skip**. Locally the discriminator is `-v` showing 0 `config.yml not available` skips.
-- **Restore viper keys to their original value, never to a literal**: the package shares one viper instance, and `center/config.yml` sets `mail.dev_mode: true`. A test that `defer viper.Set("mail.dev_mode", false)`s silently makes every later worker test really send (`TestProcessPrivateNodeRenewalReminders` was the first casualty) — capture `viper.Get(key)` and put it back in `t.Cleanup` (`restoreViper` in `logic_email_sender_test.go`).
-- **Tests never touch real Redis**: `testInitConfig()` (`testutil_test.go`) starts miniredis and overrides `redis.*` viper keys before and after the config load, and sets `EnableMockVerificationCode = true`. `testInitOnce` is a plain bool, not `sync.Once` — unsafe under `t.Parallel` (currently unused anywhere).
-- **Always use `SetupMockDB(t)`** for mock DB tests. This is the canonical helper in `mock_db_test.go`. It uses `SkipInitializeWithVersion: true` and `QueryMatcherRegexp`.
-- **Guard integration tests with `skipIfNoConfig(t)`** at the top of each test function. This allows tests to run in CI without `config.yml`.
-- **New GORM model columns need a manual migrate before integration tests see them**: the long-lived test DB is pre-migrated out-of-band — `testInitConfig()`/`skipIfNoConfig()` never call `AutoMigrate`. After adding a field to a model already in `migrate.go`'s `AutoMigrate(...)` list, run `cd api/cmd && go run . migrate --config ../../center/config.yml` once against the test DB, or integration tests fail with `Unknown column` (not a skip — a real DB error). Production doesn't need this: `center.Migrate()` runs automatically on service start.
-- **Never panic on missing config**. `testInitConfig()` gracefully sets `testConfigAvailable = false` when `config.yml` is absent. Tests that need config must call `skipIfNoConfig(t)`.
-- **Use `t.Cleanup()`** for teardown, not `defer` in test body.
-- **Use `t.Helper()`** in all test helper functions.
-- **Use testify `assert`/`require`** for assertions, not raw `if` checks.
-- **Avoid zero-value assertions**: `assert.Equal(t, 0, resp.Code)` passes trivially on unmarshal failure. Always verify the positive case.
-- **Test file naming**: `api_*_test.go` for handler tests, `db_mock_test.go` for shared mock utilities, `mock_db_test.go` for MockDB struct, `testutil_test.go` for `testInitConfig` / `skipIfNoConfig` / `SetupTestRouter`.
-
-### GORM Model Convention
-
-- Always specify `column:` tag when Go field name auto-derivation differs from DB column. Example: `DeviceUDID` → GORM derives `device_ud_id`, but DB has `device_udid`. Fix: `gorm:"column:device_udid"`.
-- Use struct-based queries, not raw SQL strings.
-- **Soft delete: use `db.Delete()`, not manual status field**. When model has `DeletedAt gorm.DeletedAt`, GORM auto-filters on `deleted_at`. A manual `status = "deleted"` field creates conflicting sources of truth — records appear in queries despite being "deleted".
-- Soft delete via `gorm.DeletedAt` field with index.
-- Timestamps: `CreatedAt`/`UpdatedAt` auto-managed by GORM.
-
-### Route Convention
-
-- All business routes under `/api/` prefix.
-- Admin routes under `/app/` prefix.
-- Slave node routes under `/slave/` prefix.
-- CSR routes under `/csr/` prefix.
-- Test routers must match production route prefixes. Use `/api/strategy/rules`, not `/api/k2v4/strategy/rules`.
+`scripts/uat/nextpay-router-env.sh up` **rewrites `center/config.yml` in place** (backup `center/config.yml.pre-uat.bak`) — **always finish with `down`**; `pkill` leaves the UAT config there permanently (it is gitignored, git can't restore it). Full procedure, egress lockdown, why the live test avoids viper: **`docs/api/uat.md`**.
 
 ## Related Docs
 
-- [Client Architecture](../CLAUDE.md)
-- [Webapp Frontend](../webapp/CLAUDE.md)
+- [Client Architecture](../CLAUDE.md) · [Webapp Frontend](../webapp/CLAUDE.md)
+- `docs/api/`: [brand](../docs/api/brand.md) · [payments](../docs/api/payments.md) · [router-edition](../docs/api/router-edition.md) · [social-login](../docs/api/social-login.md) · [funnel](../docs/api/funnel.md) · [workers](../docs/api/workers.md) · [uat](../docs/api/uat.md)
