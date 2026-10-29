@@ -219,6 +219,9 @@ func (s *Stream) WriteTo(w io.Writer) (n int64, err error) {
 				n += int64(nw)
 			}
 
+			if ew == nil && nw < len(buf) {
+				ew = io.ErrShortWrite // the rest of buf would be lost silently
+			}
 			if ew != nil {
 				return n, ew
 			}

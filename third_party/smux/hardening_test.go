@@ -246,3 +246,76 @@ func TestHardening_DeadlineWakesBlockedCalls(t *testing.T) {
 		t.Fatalf("Write: err=%v; want ErrTimeout", err)
 	}
 }
+
+// shortWriter accepts at most max bytes per Write and reports no error,
+// breaking the io.Writer contract the way a buggy sink might.
+type shortWriter struct {
+	max int
+	n   int
+}
+
+func (w *shortWriter) Write(p []byte) (int, error) {
+	if len(p) > w.max {
+		p = p[:w.max]
+	}
+	w.n += len(p)
+	return len(p), nil
+}
+
+// WriteTo must not drop the rest of a buffer its destination only partly
+// took without an error (upstream 9374ca7).
+func TestHardening_WriteToReportsShortWrite(t *testing.T) {
+	cs, ss := halfClosePair(t)
+	go func() {
+		st, err := acceptAfterFirstByte(ss)
+		if err != nil {
+			return
+		}
+		st.Write(make([]byte, 4096))
+		st.Close()
+	}()
+	st, err := cs.OpenStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	st.Write([]byte("x"))
+	st.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := st.WriteTo(&shortWriter{max: 100}); err != io.ErrShortWrite {
+		t.Fatalf("WriteTo into a short writer: err=%v; want io.ErrShortWrite", err)
+	}
+}
+
+// shortConn wraps a conn whose Write silently writes only part of a frame.
+type shortConn struct {
+	net.Conn
+}
+
+func (c shortConn) Write(p []byte) (int, error) {
+	if len(p) > headerSize+1 {
+		c.Conn.Write(p[:headerSize+1])
+		return headerSize + 1, nil
+	}
+	return c.Conn.Write(p)
+}
+
+// A conn write that comes back short without an error left a partial frame
+// on the wire; sendLoop must treat it as fatal (upstream 148c01b).
+func TestHardening_ShortConnWriteIsFatal(t *testing.T) {
+	a, b := net.Pipe()
+	defer a.Close()
+	go io.Copy(io.Discard, a)
+	s, err := Client(shortConn{b}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	st, err := s.OpenStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Write(make([]byte, 64)); err != io.ErrShortWrite {
+		t.Fatalf("Write over a short conn: err=%v; want io.ErrShortWrite", err)
+	}
+	waitClosed(t, s, "short conn write")
+}

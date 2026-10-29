@@ -585,6 +585,11 @@ func (s *Session) sendLoop() {
 				n, err = s.conn.Write(buf[:headerSize+len(request.frame.data)])
 			}
 
+			if err == nil && n < headerSize+len(request.frame.data) {
+				// A short write without an error leaves a partial frame
+				// on the wire; the stream is desynced, treat it as fatal.
+				err = io.ErrShortWrite
+			}
 			n -= headerSize
 			if n < 0 {
 				n = 0

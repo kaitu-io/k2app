@@ -134,6 +134,11 @@ before it.
   now wake a `Read`/`Write` already waiting, as net.Conn specifies; `Write`
   re-reads its deadline on every pass (upstream d2d7690 did the read side).
 - A PSH for an unknown stream returns its buffer to the allocator.
+- **Short writes are errors.** `WriteTo` returned success when its
+  destination took only part of a buffer without an error, dropping the
+  rest (upstream 9374ca7); a conn write that came back short without an
+  error left a partial frame on the wire (upstream 148c01b). Both now
+  report `io.ErrShortWrite`, the second closing the session.
 
 ## 6. Receive-window auto-tuning (`Config.MinStreamBuffer`; stream.go, session.go, mux.go)
 
