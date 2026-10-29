@@ -31,7 +31,7 @@ suites:
     run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG api
     paths: [api/**, contracts/**, .github/ci/center-config.yml, scripts/ci/api-db-test.sh]
     needs: [mariadb]
-    mem: 1.1G
+    mem: 1.6G   # 依赖升级后 api 主包冷编译 1.1G 被 OOM（2026-10-29 qtoolkit/log 升级）；暖缓存 anon 934M
   mcp:
     run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG mcp
     paths: [mcp/**]
