@@ -1,6 +1,6 @@
 # k2app — Kaitu VPN Client
 
-Tauri v2 desktop + Capacitor 8 mobile app wrapping the k2 Go tunnel core. React webapp frontend shared across platforms. Next.js website for marketing, user self-service, and admin management. **This file loads every session — keep it to the map plus rules that fail silently; layer detail belongs in the layer doc** (29 `CLAUDE.md` files: 10 here + 19 in `k2/`, each loading when you work in its directory).
+Tauri desktop + Capacitor mobile clients around the k2 Go core, plus sites and Center API. **Loads every session — only the map, cross-layer rules and silent-failure rules; layer detail goes in the layer doc.**
 
 ## Quick Commands
 
@@ -11,117 +11,86 @@ make dev-macos / make dev-windows           # Tauri desktop dev
 make dev-android / make dev-ios             # Mobile dev (gomobile bind + cap sync; dev-ios deploys a plugged-in iPhone via scripts/deploy-ios-device.sh, cap run = simulator fallback)
 make build-macos / build-windows / build-linux / build-android / build-ios
 make upload-macos / upload-windows / upload-linux / upload-android
-git push origin main:website                # Website deploy — Amplify builds the `website` branch,
-                                            # which is a pure mirror of main. Never commit to it directly.
+git push origin main:website                # Website deploy — Amplify builds `website`, a pure mirror of main. Never commit to it.
 make publish-android VERSION=x.y.z BRAND=kaitu   # Mobile latest.json (phase 2 release)
 make publish-ios     VERSION=x.y.z BRAND=kaitu   # both delegate to scripts/publish-mobile.sh
 cd webapp && yarn test                      # vitest
 cd desktop/src-tauri && cargo test          # Rust tests
-cd api && go test ./...                     # Center API tests — DB-backed tests silently SKIP without ../center/config.yml (gitignored); see api/CLAUDE.md
+cd api && go test ./...                     # DB tests silently SKIP without center/config.yml — see api/CLAUDE.md
 cd mcp && go test ./...                     # Go MCP server tests
-scripts/test_build.sh                       # Full build verification (count is dynamic, not fixed)
-# Pre-merge tests (GitHub CI only runs after main is pushed): the `labtest` MCP — test_plan(path) → test_run(path[, "all"]) → test_wait(job) / test_logs(job, suite)
-#   runs this worktree's suites (.labtest.yml, auto-picked from the diff vs main) on the PVE box k2ci. Terminal: ~/projects/testlab/tools/labtest run . [all] --wait
+scripts/test_build.sh                       # Full build verification (count is dynamic)
+# Pre-merge tests (GitHub CI runs only after push to main): `labtest` MCP test_plan → test_run → test_wait / test_logs — see scripts/CLAUDE.md
 ```
 
 ## Constitutional Rule: Work Isolation
 
-**任何非纯只读的代码改动，必须在独立 git worktree + 独立 feature 分支中完成。** `main` 的工作目录是并行 agent 共享的状态——在其上直接改代码会污染 `git status`、拖别人下水、绕过 review。同理：不要借用别人正在用的 worktree，不要直接 commit 到 `main`。
+**任何非纯只读的代码改动，必须在独立 git worktree + 独立 feature 分支中完成。** `main` 工作目录是并行 agent 共享的状态——直接改会污染 `git status`、拖别人下水、绕过 review。也不要借用别人的 worktree、不要直接 commit 到 `main`。
 
 **例外**：纯只读调查；`CLAUDE.md` / `docs/` 等治理文档；用户明确说"就在这儿改"。
 
 流程：`superpowers:using-git-worktrees`（或 `EnterWorktree`）建隔离区 → `fix/<slug>` / `feat/<slug>` 分支 → 改 + 测 → `git commit --only <paths>`（**先单独查一次 staging**，commit 打的是整个 index）→ `superpowers:finishing-a-development-branch` 决定合并/PR。
 
-## Project Structure
+## Repository Map
 
-```
-k2/                  Go core (in-tree since 2026-10-29, imported from kaitu-io/k2 as a subtree — its own CLAUDE.md tree)
-  engine/            Unified tunnel lifecycle manager (desktop + mobile)
-  daemon/            HTTP API shell over engine (desktop only)
-  appext/            gomobile type adapter over engine (iOS + Android)
-webapp/              React + MUI frontend — shared across Web/Desktop/Mobile
-web/                 Next.js website (kaitu.io) + admin dashboard
-sites/overleap/      overleap.io — standalone Next app, shares no code with web/ (own lockfile)
-api/                 Center API service — Go + Gin + GORM
-  cloudprovider/     Multi-cloud VPS management (AWS, Aliyun, Tencent, Bandwagon)
-desktop/             Tauri v2 Rust shell (macOS + Windows)
-mobile/              Capacitor 8 mobile app
-mobile/plugins/      K2Plugin (Swift + Kotlin) — native VPN bridge
-tools/kaitu-center/  MCP server (Claude Code) + OpenClaw plugin
-tools/kaitu-mail/    OpenClaw email plugin (himalaya CLI, per-account IMAP)
-tools/kaitu-signer/  Windows code-signing tray app (SimplySign + pywinauto, SQS-driven)
-mcp/                 Go MCP server for Claude Code (k2 user-facing tools)
-contracts/           Cross-layer contract artifact (api-contract.json) — generated, committed
-scripts/             Build, deploy, test helpers
-docker/scripts/      Node ops scripts (provision-node.sh, enable-ipv6.sh, etc.)
-docs/plans/          Architecture design docs
-```
+A directory's `CLAUDE.md` auto-loads once you read a file under it; under `k2/` they stack (`k2/CLAUDE.md` + each nested one on the path). Read the layer doc before changing a layer.
 
-## Tech Stack
-
-- Webapp: React 18, TypeScript, Material-UI 5, Zustand, React Router 7, i18next
-- Website: Next.js 15, React 19, Tailwind CSS 4, shadcn/ui, next-intl
-- Desktop: Tauri v2, Rust · Core: Go (`k2/`)
-- API: Go, Gin, GORM, MySQL, Redis, Asynq
-- Mobile: Capacitor 8, gomobile bind (K2Plugin Swift/Kotlin), `@capawesome/capacitor-android-edge-to-edge-support` for Android 15 edge-to-edge
-- CI: GitHub Actions — see `.github/workflows/`
+| Dir | What | Doc |
+|-----|------|-----|
+| `k2/` | Go core, own module `github.com/kaitu-io/k2`: engine, daemon (desktop), appext (gomobile), wire, server, CLIs | `k2/CLAUDE.md` + nested; specs `k2/docs/` |
+| `third_party/{kuic,smux}` | Forks k2 `replace`s in | none — `kuic/MAINTAINING.md`, `smux/K2_PATCHES.md` |
+| `api/` | Center API — Gin, GORM, MySQL, Redis, Asynq; `cloudprovider/` multi-cloud VPS; `api/cmd/` = separate module (`center` binary) | `api/CLAUDE.md` |
+| `webapp/` | React 18, MUI 5, Zustand, React Router 7, i18next — shared UI | `webapp/CLAUDE.md` |
+| `web/` | kaitu.io + admin — Next.js 15, React 19, Tailwind 4, shadcn/ui, next-intl | `web/CLAUDE.md` |
+| `sites/overleap/` | overleap.io — standalone Next app, no code shared with `web/` | `sites/overleap/CLAUDE.md` |
+| `desktop/` | Tauri v2 Rust shell (macOS + Windows) | `desktop/CLAUDE.md` |
+| `mobile/` | Capacitor 8; `mobile/plugins/` = K2Plugin (Swift/Kotlin) VPN bridge | `mobile/CLAUDE.md` |
+| `mcp/` | Go MCP server, user-facing k2 tools | `mcp/CLAUDE.md` |
+| `tools/kaitu-center/` | TS admin/ops MCP server (npm) | `tools/kaitu-center/CLAUDE.md` |
+| `tools/kaitu-mail/` | OpenClaw email plugin (himalaya) | none |
+| `tools/kaitu-signer/` | Windows signing tray app (SQS) — current CI chain doesn't call it | none — chain: `scripts/CLAUDE.md` |
+| `tessera/` | Tessera protocol proving ground, own module | `tessera/CLAUDE.md` |
+| `docker/` | `k2s/` node image; `sidecar/` metering + quota cutoff (Go module); `scripts/` node ops | `docker/sidecar/CLAUDE.md`, skill `kaitu-node-ops` |
+| `packaging/linux/` | Linux tarball `install.sh` + systemd unit | none |
+| `contracts/` | Committed goldens: `api-contract.json` ← `api/contract_export_test.go`; `bridge-api.json` ← webapp `bridge-contract.test.ts`; `webapp-support-floor.json` hand-edited, read by `scripts/ci/web-ota-manifest.mjs` | — |
+| `scripts/` | Build / deploy / CI / labtest | `scripts/CLAUDE.md` |
+| `.github/` | Workflows | `.github/CLAUDE.md` |
+| `docs/` | `superpowers/specs/` current designs (`plans/` older); `marketing/`, `customer-service/`; layer reference in `docs/<layer>/` | — |
 
 ## Cross-Layer Conventions
 
-Rules that span directories, or that fail silently if you don't know them up front. Layer-specific rules live in the layer docs.
-
-- **Version source of truth**: Root `package.json` `version`. Tauri reads it via `../../package.json`; the k2 binary gets it via ldflags. Bump here first, and pass the value through verbatim — an invented suffix makes an upgrade look like a downgrade.
-- **`make pre-build` (every `dev-*`/`build-*` target) rewrites tracked files**: `scripts/sync-version.sh` propagates the root version into `desktop/src-tauri/Cargo.toml`, `mobile/android/app/build.gradle`, `mobile/plugins/k2-plugin/ios/Plugin/K2Helpers.swift`, `mobile/ios/App/App.xcodeproj/project.pbxproj` — expect them modified after any `make`; a bump that skips it fails CI `check-versions`, which is sed-pattern based (reformat one of those files and propagation stops silently).
-- **k2 is in-tree, shared by both brands**: `k2/` is its own Go module (`github.com/kaitu-io/k2`) and was a submodule until 2026-10-29 — the standalone `kaitu-io/k2` repo is retired (read-only, to be archived on GitHub), so never branch or commit there. Change k2 in a worktree like anything else; a k2 change runs the labtest `k2` suite and, if it touches wire/server behaviour, keep it usable by both the Kaitu clients and Overleap. The desktop sidecar is built with `-tags=release` (`k2/Makefile` `DESKTOP_TAGS`) → `desktop/src-tauri/binaries/`; it is headless because `k2/webui/embed.go` is `linux && !nowebapp` — `nowebapp` is a k2r / dev-script tag, not a desktop one.
-- **`pre-build` also overwrites `k2/rule/embed/krs.tar.gz`** (tracked as a 66 KB placeholder) with the ~2 MB CDN rule archive — never commit it. Offline, a dev build silently embeds the placeholder; only `EMBED_REQUIRE_FULL=1` (release CI) fails instead. CI `test-gateway-uat` runs `scripts/check-embed-size.sh`, which fails if the committed HEAD blob exceeds 300 KB.
-- **No submodules**: `k2/` and `third_party/` (kuic, smux) are in-tree since 2026-10-29, so `git worktree add` gives a buildable tree. Go `replace` is not transitive: every module that imports k2 (k2 itself, `overleap/box`) must carry its own `replace github.com/kaitu-io/kuic => …/third_party/kuic` and the smux one.
-- **Go→JS JSON keys**: Go `json.Marshal` emits snake_case; JS/TS expects camelCase. Native bridges (`K2Plugin.swift`/`.kt`, Tauri bridges) remap at the boundary.
-- **Go `json.Marshal` escapes `&` as `\u0026`**: asserting on raw JSON strings containing URLs will fail. Unmarshal to `map[string]any` and assert on values.
-- **Docker on Apple Silicon**: always `--platform linux/amd64` for server images; the Go binary needs `GOARCH=amd64`.
-- **Log rotation**: the 20 MB cap is near-universal — the iOS Network Extension's own `NativeLogger` copy (`mobile/ios/App/PacketTunnelExtension/NativeLogger.swift`) caps at 50 MB; **retention is not** — Go `config.SetupLogging` (lumberjack) keeps 3 backups / 7 days / gzip, Tauri plugin-log keeps only one (`KeepOne`), the K2Plugin iOS/Android `NativeLogger` truncates to 0. Don't assume 3 backups exist off the Go path. **Upload modules are read-only — never truncate a source file.**
-- **Build-time log level**: `K2_BUILD_LOG_LEVEL` (default `debug`) is the single knob across Go / Rust / Vite. Production: `make build-macos K2_BUILD_LOG_LEVEL=info`. Runtime `SetLogLevel()` always wins.
-- **Artifact naming**: Desktop `Kaitu_{VERSION}_{ARCH}.{EXT}` (underscores); mobile uses the `kaitu/android/` CDN layout; overleap desktop builds are `Overleap_{VERSION}_{ARCH}.{EXT}` under CDN `/overleap/desktop/`; overleap mobile builds are `Overleap-{VERSION}.apk` / `Overleap-{VERSION}.aab` (no underscore — Android flavor naming) — **overleap Android is Play-only**: nothing is published under CDN `overleap/android/`, the AAB is a workflow artifact for the Play Console (kaitu also emits a `.aab`, unused). Release tags (desktop + mobile share one table, `scripts/ci/release-plan.mjs`): bare `v*` = **both brands on every platform they ship on**; `-kaitu` / `-overleap` = that brand everywhere; `-desktop` / `-mobile` / `-macos` / `-windows` / `-linux` / `-ios` / `-android` = kaitu narrowed; `-overleap-desktop` / `-overleap-mobile` / `-overleap-{macos,windows,ios,android}` = overleap narrowed. A brand scope never means different platforms in the two workflows — edit the script, not the YAML (a test fails if a suffix table is re-inlined). Linux desktop is **kaitu-only** (`scripts/ci/upload-release.sh` refuses overleap; `/i/k2` exists only on kaitu.io — `web/` is kaitu-only, `sites/overleap/` has no `/i/*`). Details in `desktop/CLAUDE.md` / `mobile/CLAUDE.md`.
-- **Linux desktop has no Tauri**: `cmd/k2` is one Go binary with the webapp embedded via `//go:embed` (`k2/webui`). Install is `curl -fsSL https://kaitu.io/i/k2 | sudo bash` — the script is the static file `web/public/i/k2` (`web/` builds kaitu.io only); it pulls a tarball + `.sha256`, verifies, and runs the tarball's `install.sh`, whose source is k2app-root `packaging/linux/install.sh` (not in `k2/`). macOS/Windows still ship the Tauri shell. `docs/superpowers/specs/2026-03-17-linux-desktop-design.md` still names the retired `/install-linux.sh` URL — this bullet wins.
-- **Web OTA 只由专用 tag 触发（2026-09-18 起）**：`{brand}/web/latest.json` 是全局可变指针，版本第 4 段是**时间基**——旧 commit 的产物也永远"更新"，一定赢，所以发布必须显式。触发只有一条自动路径：**推 `webapp/x.y.z[-brand]` tag**（裸=**双品牌**，`-kaitu` / `-overleap` 后缀=单品牌，`webapp/*` glob 因 `*` 不跨 `/` 天然匹配后缀）。tag 里的 `x.y.z` 必须 == `package.json`（剥掉品牌后缀后比对，见 `scripts/ci/web-ota-plan.mjs`）。**`v*` app 发版 tag 不再连带发 web OTA**——旧的 `build-mobile.yml` / `release-desktop.yml` 联动尾巴已删，两 workflow 的门不对称那个坑随之消失。副作用:发 app **不再**自动把 CDN web 追平到该 commit,想更新线上 web 必须主动推 `webapp/*` tag。kaitu / overleap **各自独立发布**（gate 只读在发的品牌的 provenance）。`publish-web-ota.yml` 的 `precheck` / `publish` 两道门拿线上出处（`{brand}/web/latest-source.json`，客户端不读）做**逐品牌**祖先比对：会倒退/岔开就直接**红**拒发，要往回发必须 dispatch 时勾 `allow_rollback`（gate 已收敛成 explicit-only,没有联动的 skip 分支了）。决策表与穷举测试在 `scripts/ci/web-ota-gate.mjs` / `.test.mjs`，tag→品牌解析在 `web-ota-plan.mjs` / `.test.mjs`，设计在 spec §6.1。**webapp 的改动不发一次 `webapp/*` tag 就到不了任何已装客户端**——push main 什么都不发。
-- **Workspace layout**: root `yarn install` (always from root) provisions the `webapp`/`desktop`/`mobile` workspaces. `web/` (yarn) and `tools/kaitu-center/` (npm) have their own lockfiles — install there separately.
-- **Brand 参数化（开途 / Overleap 双品牌）**: 后端按 Host→`X-K2-Brand`→kaitu 解析请求品牌；`users.brand` 是**出生属性**，认证层强制匹配（403003）。客户端 build 时烘焙品牌并恒发 `X-K2-Brand`。分层机制见 `api/CLAUDE.md` / `webapp/CLAUDE.md` / `web/CLAUDE.md` 的 "Brand" 段；设计见 `docs/superpowers/specs/2026-07-14-brand-split-design.md`。**以下三条会让你本地全绿而线上/CI 是瞎的**：
+- **Version source of truth**: root `package.json` `version` (Tauri reads `../../package.json`, k2 gets it via ldflags). Bump here first, pass it through verbatim — an invented suffix makes an upgrade look like a downgrade.
+- **`make pre-build` rewrites tracked files**: prerequisite of every `dev-*` and platform `build-*` target (`build-macos` runs it inside `scripts/build-macos.sh`). `sync-version.sh` writes the version into `desktop/src-tauri/Cargo.toml`, `mobile/android/app/build.gradle`, `K2Helpers.swift`, `App.xcodeproj/project.pbxproj` — expect them modified after any `make`. It and CI `check-versions` are sed-pattern based: reformat one of those files and propagation stops silently.
+- **`pre-build` also overwrites `k2/rule/embed/krs.tar.gz`** (tracked 66 KB placeholder) with the ~2 MB CDN archive — never commit it. Offline, dev builds silently embed the placeholder; only `EMBED_REQUIRE_FULL=1` (release CI) fails. `scripts/check-embed-size.sh` fails CI if the committed blob > 300 KB.
+- **Recursive `make` inherits only `K2_BRAND`** (exported env), not the make variable `BRAND`: a bare `make build-webapp` in a script silently falls back to `BRAND ?= kaitu` — write `BRAND=$BRAND`. Scripts running tools outside make (`build-mobile-*.sh` → `npx cap sync`) re-export `K2_BRAND` themselves.
+- **k2 is in-tree, no submodules** (`k2/`, `third_party/`): `git worktree add` gives a buildable tree; the old `kaitu-io/k2` repo is retired — never commit there. No other module here imports k2. Go `replace` isn't transitive: an importer (e.g. `overleap/box` in the **external** repo `~/projects/kaitu-io/overleap`) needs its own kuic + smux `replace`. Wire/server changes must keep both brands' clients working.
+- **Desktop sidecar is headless**: `-tags=release` (`k2/Makefile` `DESKTOP_TAGS`); `k2/webui/embed.go` is `linux && !nowebapp` (`nowebapp` is a k2r/dev tag, not desktop).
+- **Go JSON**: emits snake_case (bridges remap to camelCase at the boundary) and escapes `&` as `\u0026` — assert on unmarshalled values, not raw strings.
+- **Docker on Apple Silicon**: `--platform linux/amd64` for server images, `GOARCH=amd64`.
+- **Log rotation**: 20 MB cap nearly everywhere (the iOS NE's own `NativeLogger.swift` copy: 50 MB); **retention differs** — Go `config.SetupLogging` (lumberjack) 3 backups / 7 days / gzip, Tauri plugin-log 1 (`KeepOne`), K2Plugin `NativeLogger` truncates to 0. **Upload modules are read-only — never truncate a source file.**
+- **Build-time log level**: `K2_BUILD_LOG_LEVEL` (default `debug`) is the one knob for Go / Rust / Vite (prod: `=info`); runtime `SetLogLevel()` wins.
+- **Release tags**: the suffix table exists only in `scripts/ci/release-plan.mjs` — edit the script, never the YAML (a test guards it; suffixes in `scripts/CLAUDE.md`). **Linux desktop is kaitu-only**; **overleap Android is Play-only**. Artifact naming: desktop/mobile docs.
+- **Linux desktop has no Tauri**: `k2/cmd/k2` embeds the webapp (`k2/webui`); `kaitu.io/i/k2` = `web/public/i/k2`, which runs the tarball's `packaging/linux/install.sh` (the old spec's `/install-linux.sh` is retired). See `k2/cmd/k2/CLAUDE.md`.
+- **Web OTA 只由 `webapp/x.y.z[-brand]` tag 发布**：裸 tag=双品牌，`-kaitu`/`-overleap`=单品牌，`x.y.z` 必须 == `package.json`。**push main 什么都不发**，`v*` app tag 也不连带——webapp 改动不推 `webapp/*` tag 就到不了任何已装客户端。gate 拒绝倒退时，往回发须 dispatch 勾 `allow_rollback`。细节见 `scripts/CLAUDE.md`。
+- **Workspace layout**: root `yarn install` (always from root) covers `webapp`/`desktop`/`mobile`; `web/`, `sites/overleap/` (yarn) and `tools/kaitu-center/` (npm) install separately.
+- **Brand（开途 / Overleap 双品牌）**：客户端 build 时烘焙品牌并恒发 `X-K2-Brand`；`users.brand` 是**出生属性**，认证层强制匹配（403003）。机制见 api/webapp/web 文档的 "Brand" 段。**以下三条本地全绿而线上/CI 是瞎的**：
   - **品牌字面量只能进 `webapp/src/brands/<brand>/index.ts` / `web/src/lib/brands.ts`** —— 静态 import 的页面里写死的字面量会被打进**另一个品牌**的产物。
-  - **改任一层的品牌数据后必须重生成跨层契约**：`cd api && UPDATE_CONTRACT=1 go test -count=1 -run TestExportContract ./...`，产物与代码一起提交。`contracts/api-contract.json` 由 `api/contract_export_test.go` 从 **Go 活值**导出（不是手写清单），锁住三层注册表的交集（api/CLAUDE.md 的 Brand 段记着同一条，改动要两处同步）。**必须带 `-count=1`**（golden 在 api/ 模块外，go test 缓存不 recheck 模块外文件 → 手改 golden 迁就代码会拿到陈旧 PASS）；golden **只读**（自动重写 = CI 永远绿）；契约文件**必须进 git**（gitignore 掉 = 本地绿 CI 瞎）。
+  - **改任一层品牌数据后必须重生成 `contracts/api-contract.json`**，命令与陷阱见 `api/CLAUDE.md` Brand 段（唯一事实源）。
   - **跨层不变量是宿主归属**（`host(各层 baseURL) ∈ api.Hosts[该品牌]`）**而非字符串相等** —— api/webapp 用 `www.`、web 用裸域是合法漂移，别"修"它。
 
 ## Cross-Layer Domain Vocabulary
 
-Terms that cross layer boundaries. Each layer's doc extends its own.
-
-- **ClientConfig** — Universal config contract: Go `config.ClientConfig` ≡ TS `ClientConfig`. Webapp assembles it, passes it to `_k2.run('up', config)`. Outbounds live in `routes: [{via, match}]` — there is **no** top-level `server` field. See `k2/engine/engine.go buildRouteEntries`.
-- **Engine** — Unified tunnel lifecycle manager (`k2/engine/`), shared by the desktop daemon and the mobile wrapper.
-- **k2subs** — Subscription URL scheme (`k2subs://udid:token@host/api/subs`), resolved to `k2v5://` tunnels via `/api/subs`. **Desktop daemon only** — mobile is manual-only, webapp hands `_k2.run('up')` a single `k2v5://` URL. Don't assume symmetry. See `mobile/CLAUDE.md` "Server Selection".
-- **probe.Registry** — In-memory per-URL QUIC-probe cache (`k2/probe/`), read by the daemon probe loop, `/api/core probe`, and `Subscription.Pick`. **Flake tolerance**: a first `score==0` returns `ok=false` (neutral); only two consecutive zeros hard-exclude. TTL 15 min.
-- **recommendScore** — Canonical `[0.0, 1.0]` tunnel recommendation signal (higher = better), from `api.ComputeRecommendScore`. Non-cloud nodes get `0.5` neutral, never 0. Legacy `weight` is dual-emitted as `round(score*100)`. Model + rules: `api/CLAUDE.md` "Tunnel Scoring".
-- **EngineError** — `{Code int, Category string, Message string}` (`k2/engine/error.go`). Code ranges are load-bearing and **must never be mixed**: `1xx` network (101 NetworkUnavailable, **108 Timeout**), `4xx` client (400 BadConfig, 401 AuthRejected, 402 PaymentRequired, 403 Forbidden, 412 EnvironmentSetupFailed), `5xx` server (502 ProtocolError, 503 ServerUnreachable, 504 RuleBundlesUnavailable, 570 ConnectionFatal). Categories: `client`/`network`/`server`/`target`. **Timeout is `108`, not `408`** (a network fault, not a client one) — any code or doc saying `408` is stale.
-- **NetEvent** — Network state change (Signal + 7 platform fields), constructed by platforms and handed to `appext.Engine.NotifyNetEvent`: iOS `AppextNewNetEvent()` in `mobile/ios/App/PacketTunnelExtension/PacketTunnelProvider.swift`, Android `appext.NetEvent()` + `engine.notifyNetEvent()` in `mobile/android/app/.../K2VpnService.kt` — the wiring is in the app targets, not `mobile/plugins/`. Routed through `netCoordinator`, which separates 网络断了 / 恢复 / 接口变了. Legacy `OnNetworkChanged()` → `SignalChanged`. Details: `k2/engine/CLAUDE.md`, `k2/appext/CLAUDE.md`.
-- **transformStatus()** — Bridge-layer webapp boundary: `"stopped"`→`"disconnected"`, synthesizes `"error"`. See `webapp/CLAUDE.md`.
-- **Brand** — Registry-backed enum (`kaitu` / `overleap`, `api/brand.go`) driving per-brand hosts/CORS/payment-channels/node-visibility; resolution, immutability, and the contract gate are in the Brand convention above.
-
-## Layer Docs
-
-Loaded on demand when you work in the directory — read the layer doc before changing that layer.
-
-| Doc | Scope |
-|-----|-------|
-| [`webapp/CLAUDE.md`](webapp/CLAUDE.md) | React frontend: split globals, bridge contract, VPN state machine, services, stores, i18n, components |
-| [`web/CLAUDE.md`](web/CLAUDE.md) | Next.js website + admin dashboard, API proxy, Velite content |
-| [`sites/overleap/CLAUDE.md`](sites/overleap/CLAUDE.md) | overleap.io standalone app: no shared code, typed messages, contract-tested API edges |
-| [`desktop/CLAUDE.md`](desktop/CLAUDE.md) | Tauri shell, Rust modules, storage encryption, PKG install, artifact naming, S3 log upload |
-| [`mobile/CLAUDE.md`](mobile/CLAUDE.md) | Capacitor + gomobile, K2Plugin, iOS/Android VPN architecture, APK signing, ASO rules |
-| [`api/CLAUDE.md`](api/CLAUDE.md) | Center API: routes, middleware, models, workers, tunnel scoring, cloudprovider |
-| [`mcp/CLAUDE.md`](mcp/CLAUDE.md) | Go MCP server: tools, auth flow, Center/daemon clients, Tauri session sharing |
-| [`tools/kaitu-center/CLAUDE.md`](tools/kaitu-center/CLAUDE.md) | TypeScript MCP/OpenClaw tools, NodeNext conventions |
-| [`scripts/CLAUDE.md`](scripts/CLAUDE.md) | Build/deploy/test helpers, Windows k2 test workflow |
-| [`k2/CLAUDE.md`](k2/CLAUDE.md) | Go core: wire protocol, daemon API, engine internals — plus nested docs under `k2/engine/`, `k2/appext/`, `k2/webui/`, and specs in `k2/docs/` |
+- **ClientConfig** — Go `config.ClientConfig` ≡ TS; webapp passes it to `_k2.run('up', config)`. Outbounds are `routes: [{via, match}]` — **no** top-level `server` field.
+- **Engine** — tunnel lifecycle manager (`k2/engine/`), shared by desktop daemon and mobile.
+- **k2subs** — `k2subs://` subscription → `k2v5://` tunnels, **desktop daemon only**; mobile passes one `k2v5://` URL (`mobile/CLAUDE.md`).
+- **probe.Registry** — QUIC-probe cache (`k2/probe/`); one `score==0` is neutral, two in a row exclude.
+- **recommendScore** — `[0.0, 1.0]` tunnel score from `api.ComputeRecommendScore` (`api/CLAUDE.md` "Tunnel Scoring").
+- **EngineError** — `{Code, Category, Message}` (`k2/engine/error.go`): `1xx` network / `4xx` client / `5xx` server, **never mixed**; **Timeout is `108`, not `408`**. Table: `k2/engine/CLAUDE.md`.
+- **NetEvent** — network change sent to `appext.Engine.NotifyNetEvent`, wired in the app targets (`PacketTunnelProvider.swift`, `K2VpnService.kt`), not `mobile/plugins/` (`k2/appext/CLAUDE.md`).
+- **transformStatus()** — webapp bridge: `"stopped"`→`"disconnected"`, synthesizes `"error"`.
+- **Brand** — enum `kaitu` / `overleap` (`api/brand.go`): per-brand hosts/CORS/payment/node visibility.
 
 ## Marketing / Brand
 
 **品牌架构**：**Overleap（海外）与 开途·Kaitu（中国）是完全隔离的两个独立品牌**——不是母子层级，任何面向用户的语境都不互相提及（唯一例外：法务文书署名——开途侧沿用现有署名，Overleap 侧署名其运营公司 Wordgate LLC，即 Stripe 收单主体）。协议层 k2 / k2cc / k2s / k2r 全球共享，不属于任一品牌。中文用户面禁用 "Kaitu" 裸词（用「开途」）；海外面禁用 "Kaitu" 裸词（Google 会纠错成 kaitai）。
 
-策略 / 审查 / 内容日历见 [`docs/marketing/README.md`](docs/marketing/README.md)（目录索引 + 更新规则）。单一事实源是 [`.agents/product-marketing-context.md`](.agents/product-marketing-context.md)（路径硬编码，所有 `marketing-skills:*` 启动时自动读，**不可挪动**）。
+策略 / 审查 / 内容日历见 [`docs/marketing/README.md`](docs/marketing/README.md)。单一事实源是 [`.agents/product-marketing-context.md`](.agents/product-marketing-context.md)（路径硬编码，所有 `marketing-skills:*` 启动时自动读，**不可挪动**）。

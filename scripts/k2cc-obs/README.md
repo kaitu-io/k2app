@@ -1,7 +1,6 @@
 # k2cc observability — fleet MI report
 
-Read-only tooling for Phase 1 of `docs/superpowers/specs/2026-09-06-k2cc-observability-design.md`
-(the spec lives in the k2 submodule's docs tree). Every k2s node ≥ `v0.4.10-581bed4f` logs one
+Read-only tooling for Phase 1 of `k2/docs/superpowers/specs/2026-09-06-k2cc-observability-design.md`. Every k2s node ≥ `v0.4.10-581bed4f` logs one
 `DIAG: cc-summary` line per QUIC connection per minute plus a `final=true` line at close; this
 directory turns those lines into the spec §13 pattern numbers.
 

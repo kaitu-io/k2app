@@ -68,7 +68,7 @@ mcp/
 - **Center API always HTTP 200**: Error state is in JSON `code` field, not HTTP status. `CenterClient` returns `*CenterError` for non-zero codes.
 - **No `X-K2-Brand` header**: `CenterClient` sends only `Authorization` + `X-UDID`, so Center resolves brand Host→header→`kaitu` (`api/brand.go`); overleap accounts get 403003 from `AuthRequired` (`api/middleware.go`). Root CLAUDE.md says clients must always send it.
 - **`expiredAt` is Unix timestamp**: Center API returns `expiredAt` as `int64`, not RFC3339 string.
-- **Binary must be rebuilt**: After code changes, rebuild with `go build` and reconnect MCP in Claude Code (`/mcp`). Where the server is registered for Claude Code (no `.mcp.json` in this repo): unverified.
+- **Binary must be rebuilt**: After code changes, rebuild with `go build` and reconnect MCP in Claude Code (`/mcp`). Registration is the repo-root `.mcp.json`, which is local and gitignored (`.gitignore:40`) and points the `k2` server at `mcp/k2-mcp` — it holds credentials: never commit it or copy its values into docs.
 
 ## Related Docs
 

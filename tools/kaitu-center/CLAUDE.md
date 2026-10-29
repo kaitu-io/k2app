@@ -19,11 +19,12 @@ src/
 ├── config.ts         # ~/.kaitu-center/config.toml + env overrides (see Gotchas)
 ├── ssh.ts            # Node SSH via ssh2
 ├── center-api.ts     # Shared HTTP client for the Center API, injects X-Access-Key
-├── tool-factory.ts   # defineApiTool (Center envelope) + defineRestApiTool (raw REST) + fetchPermissions
+├── tool-factory.ts   # defineApiTool (Center envelope) + fetchPermissions
 ├── audit.ts          # Fire-and-forget invocation log → ~/.kaitu-center/audit.log (500 KB rotation)
 ├── redact.ts         # Secret redaction for SSH command output
 └── tools/
     ├── admin-*.ts    # Factory tools → Center Go API
+    ├── brand-params.ts  # brandRequired / brandFilter / withBrand shared by admin tools
     └── list-nodes / exec-on-node / ping-node / delete-node / download-device-log /
         # standalone hand-registered tools
 skills/kaitu-content, skills/kaitu-marketing   # SKILL.md files shipped with the package
@@ -39,14 +40,17 @@ vitest.config.ts                               # aliases ./x.js → ./x.ts for t
   - `download_device_log` → `join(os.tmpdir(), 'kaitu-device-logs')` (returns path + metadata, not contents)
   - `exec_on_node` → stdout > 4000 chars saved to `join(os.tmpdir(), 'kaitu-exec-output')`, inline copy cut at 4000; stderr cut at 2000 and never saved
   - `os.tmpdir()` is `$TMPDIR` (`/var/folders/.../T/`) on macOS, not `/tmp`.
-- **Independent package**: `tools/kaitu-center/` has its own `package-lock.json`, not part of the root yarn workspace. Use `npm` here, `yarn` everywhere else.
 
 ## Tool factory
 
-Tools target two different backends with different response envelopes:
+`tool-factory.ts` exports `defineApiTool`, `fetchPermissions` and the types `ApiToolDef` / `ToolRegistration` / `ApiClients` / `Permissions`. There is one backend: `ApiClients` holds only `center`.
 
-- **`defineApiTool`** — Center Go API at `KAITU_CENTER_URL`. Always HTTP 200; errors signaled in `{code, message, data}` envelope. Factory unwraps `data` on `code===0`, returns `{error, code}` otherwise. Used for all `admin-*.ts` tools.
-
+- **`defineApiTool(def)`** → `ToolRegistration {name, group, register}`; used by every `admin-*.ts` tool. `def`: `name`, `description`, `group`, optional zod `params`, `method` (`GET` default / `POST` / `PUT` / `DELETE`), `path` (string or `(params) => string`), optional `mapQuery` / `mapBody` / `mapResponse`.
+  - Path functions are dry-run through a Proxy to learn which params they read; those keys are left out of the query/body.
+  - GET: remaining defined params → query string (`mapQuery` overrides). Other methods: remaining defined params → JSON body (`mapBody` overrides), body omitted when empty.
+  - Center is always HTTP 200: `code === 0` → `data` (through `mapResponse`, e.g. PII redaction) as pretty JSON text; otherwise `{error, code}`; a thrown error → `{error}`. Every call is `audit()`-logged, failures with the error message.
+- **`fetchPermissions(client)`** → `{isAdmin, roles, groups}` from `GET /app/my-permissions`; any failure → `groups: []` (see Gotchas).
+- Standalone tools (`list-nodes`, `exec-on-node`, …) register on the server by hand instead of through the factory.
 
 
 ## Gotchas
@@ -56,6 +60,8 @@ Tools target two different backends with different response envelopes:
 - **Audit log**: every invocation appends its params to `~/.kaitu-center/audit.log` (500 KB rotation); redaction (`redact.ts`) applies to SSH command output, not to audit entries.
 - **`S3_BUCKET_URL`** is hardcoded to `kaitu-service-logs.s3.ap-northeast-1` in `download-device-log.ts`.
 - **Node**: `engines.node >= 22`.
+- **`BRAND_IDS`** (`tools/brand-params.ts`) is a hand copy of `api/brand.go` `brandRegistry`, outside the cross-layer contract gate — adding a brand needs a manual edit here.
+- **No test gate**: no labtest suite or CI job runs this package's tests — run `npm test` yourself.
 
 ## Related Docs
 
