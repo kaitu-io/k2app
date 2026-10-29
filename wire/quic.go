@@ -1181,6 +1181,8 @@ type QUICServer struct {
 	validate Validator       // set by SetValidator; used by metadata stream auth
 	adm      admissionPolicy // device-auth admission; see admission.go
 
+	ccInterval time.Duration // cc-summary cadence, ccSummaryInterval at construction
+
 	// cookieSigner enables the local cookie fast path; nil = cold auth only
 	// (legacy TLS mode without cert_dir, k2p). Immutable after SetCookieSigner
 	// (called before Listen), no lock needed on the read path.
@@ -1208,9 +1210,10 @@ type QUICServer struct {
 // NewQUICServer creates a new QUIC server transport.
 func NewQUICServer() *QUICServer {
 	return &QUICServer{
-		tcpCh: make(chan tcpAcceptResult, 64),
-		done:  make(chan struct{}),
-		adm:   admissionPolicy{authWait: authWaitDefault},
+		tcpCh:      make(chan tcpAcceptResult, 64),
+		done:       make(chan struct{}),
+		adm:        admissionPolicy{authWait: authWaitDefault},
+		ccInterval: ccSummaryInterval,
 	}
 }
 

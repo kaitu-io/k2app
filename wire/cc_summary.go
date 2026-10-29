@@ -10,7 +10,9 @@ import (
 )
 
 // ccSummaryInterval is the server-side cc-summary cadence. A var so tests can
-// shorten it; there is deliberately no runtime knob (spec §2).
+// shorten it; there is deliberately no runtime knob (spec §2). NewQUICServer
+// copies it, so the per-connection loops never read the var itself while a
+// test restores it.
 var ccSummaryInterval = 60 * time.Second
 
 // ccSummaryLoop emits one "DIAG: cc-summary" INFO line per ccSummaryInterval
@@ -52,7 +54,7 @@ func (s *QUICServer) ccSummaryLoop(log *slog.Logger, ctx *connContext, conn *qui
 		lastEmit = now
 	}
 
-	ticker := time.NewTicker(ccSummaryInterval)
+	ticker := time.NewTicker(s.ccInterval)
 	defer ticker.Stop()
 	for {
 		select {
