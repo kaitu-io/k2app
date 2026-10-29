@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 )
 
 // streamHeaderPool pools small buffers for WriteStreamHeader/WriteStreamResponse.
@@ -90,6 +91,14 @@ func WriteStreamHeader(w io.Writer, streamType byte, addr string) error {
 	streamHeaderPool.Put(bp)
 	return err
 }
+
+// streamHeaderTimeout bounds how long a server waits for a new stream's
+// header (and, for a metadata stream, its metadata frame). Streams can be
+// opened before the peer authenticates, and without a bound a peer that
+// opens streams and sends nothing pins a goroutine for each until the
+// connection dies. A k2 client writes the header right after opening.
+// var, not const, so tests can shorten it.
+var streamHeaderTimeout = 10 * time.Second
 
 // ReadStreamHeader reads a stream header from r.
 // r must implement io.Reader and io.ByteReader (bytes.Reader, bufio.Reader, etc.)

@@ -896,5 +896,23 @@ func (h *ProxyHandler) pipe(a, b net.Conn) {
 	} else {
 		a.Close()
 	}
-	<-done
+	// The target is done; the client half-closed by CloseWrite may still
+	// upload, but it may also never close (an app holding an idle socket),
+	// which would pin this handler and the target conn indefinitely. Bound
+	// the wait, as the client's pipe does (core pipeWatchdogGrace). The
+	// other order, client done first, is a request awaiting its response
+	// and stays unbounded.
+	grace := time.NewTimer(pipeHalfCloseGrace)
+	defer grace.Stop()
+	select {
+	case <-done:
+	case <-grace.C:
+		a.Close()
+		b.Close()
+		<-done
+	}
 }
+
+// pipeHalfCloseGrace bounds how long pipe waits for the client's upload
+// after the target has finished. var, not const, so tests can shorten it.
+var pipeHalfCloseGrace = 30 * time.Second

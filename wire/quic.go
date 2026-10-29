@@ -1445,6 +1445,8 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, ctx *co
 	log := ctx.udp.log.With("streamID", stream.StreamID())
 	br := bufio.NewReader(stream)
 
+	stream.SetReadDeadline(time.Now().Add(streamHeaderTimeout))
+
 	// Read H3 frame type marker
 	frameType, _, err := ReadVarint(br)
 	if err != nil {
@@ -1467,6 +1469,9 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, ctx *co
 	}
 
 	log.Info("QUICServer.handleStream: parsed", "streamType", streamType, "addr", addr)
+	if streamType != StreamTypeMeta { // metadata: the deadline covers its frame too
+		stream.SetReadDeadline(time.Time{})
+	}
 
 	switch streamType {
 	case StreamTypeMeta:

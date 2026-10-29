@@ -944,6 +944,14 @@ func (s *TCPWSServer) HandleSession(sess *smux.Session) {
 	s.handleSession(sess, connLog, remote)
 }
 
+// tcpwsMaxStreams caps concurrently handled streams per TCP-WS session. A
+// k2 client opens at most core's maxTunnelConns (4096 on desktop) plus a few
+// control streams; anything past that is not a k2 client, and each stream
+// costs the server a goroutine. QUIC has the same cap via
+// MaxIncomingStreams, where the peer queues instead of being refused.
+// var, not const, so tests can lower it.
+var tcpwsMaxStreams int32 = 4096
+
 func (s *TCPWSServer) handleSession(sess *smux.Session, connLog *slog.Logger, remote net.Addr) {
 	defer sess.Close()
 	dev := &deviceIDHolder{}
@@ -964,12 +972,24 @@ func (s *TCPWSServer) handleSession(sess *smux.Session, connLog *slog.Logger, re
 		unregister := s.sessions.register(as)
 		defer unregister()
 	}
+	var active atomic.Int32
+	refused := false
 	for {
 		stream, err := sess.AcceptStream()
 		if err != nil {
 			return
 		}
+		if active.Add(1) > tcpwsMaxStreams {
+			active.Add(-1)
+			if !refused {
+				refused = true
+				connLog.Warn("DIAG: tcpws-stream-cap", "max", tcpwsMaxStreams)
+			}
+			stream.Close()
+			continue
+		}
 		go func() {
+			defer active.Add(-1)
 			defer func() {
 				if r := recover(); r != nil {
 					connLog.Error("TCPWSServer: panic in handleStream", "panic", r)
@@ -983,10 +1003,14 @@ func (s *TCPWSServer) handleSession(sess *smux.Session, connLog *slog.Logger, re
 func (s *TCPWSServer) handleStream(sess *smux.Session, stream *smux.Stream, connLog *slog.Logger, remote net.Addr, dev *deviceIDHolder, auth *connAuth, as *authSession) {
 	br := bufio.NewReader(stream)
 
+	stream.SetReadDeadline(time.Now().Add(streamHeaderTimeout))
 	streamType, addr, err := ReadStreamHeader(br)
 	if err != nil {
 		stream.Close()
 		return
+	}
+	if streamType != StreamTypeMeta { // metadata: the deadline covers its frame too
+		stream.SetReadDeadline(time.Time{})
 	}
 
 	switch streamType {
