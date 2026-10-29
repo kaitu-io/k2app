@@ -91,6 +91,17 @@ used the promoted `WriteTo` and skipped the bytes its header `bufio.Reader`
 had buffered. It now shadows `WriteTo` with `br.WriteTo`
 (`wire.TestSmuxStreamConn_CopyIncludesBufferedBytes`).
 
+## 4. Edge-triggered poller removed (session.go, stream.go)
+
+`pushBytes` put a stream into `Session.pollEvents` whenever its buffer went
+from empty to non-empty, and only `PollWait` ever took it out. k2 never
+calls `PollWait`, so every stream that ever received data stayed referenced
+until its session ended: ~1.9 KB per stream across both ends, 94 MB after
+50k short streams on one session (0.2 MB without it) — enough to push an
+iOS Network Extension past its memory limit on a long TCP-WS session.
+`PollWait`, `pollEvents` and `TestPoll` are gone; upstream dropped the
+poller too (e7525af).
+
 ## Contract k2 relies on (not patched): the opener speaks first
 
 `OpenStream` writes the SYN and only then registers the stream in

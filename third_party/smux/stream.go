@@ -466,10 +466,6 @@ func (s *Stream) pushBytes(buf []byte) (written int, err error) {
 	s.bufferLock.Lock()
 	s.buffers = append(s.buffers, buf)
 	s.heads = append(s.heads, buf)
-	// Edge-Trigger
-	if len(s.buffers) == 1 {
-		s.sess.notifyPoll(s)
-	}
 	s.bufferLock.Unlock()
 	return
 }
