@@ -1,3 +1,0 @@
-[submodule "kuic"]
-	path = k2/third_party/kuic
-	url = git@github.com:kaitu-io/kuic.git
