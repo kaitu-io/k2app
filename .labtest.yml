@@ -8,7 +8,7 @@
 # node_modules + cargo; max over jobs 54-56): webapp 3.3G · overleap 3.2G · rust 1.9G (warm 0.5G) ·
 # web 750M · api 754M · k2 368M.
 # memory.peak would overstate it — it counts page cache from builds/installs, which the kernel
-# reclaims at the cap. k2 gets 1G, not 512M: its anon was measured with a warm GOCACHE.
+# reclaims at the cap. k2 gets 2G: 1G covered its own tests (anon measured with a warm GOCACHE), the vendored smux -race run needs more.
 # webapp (5G) now co-runs with suites ≤1G, so vitest's 10s timeouts can meet CPU contention —
 # cpus: 6 is what keeps that in check. Re-tune when a summary hints.
 # cpus is admission only (cpu_total 8).
