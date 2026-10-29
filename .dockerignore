@@ -1,5 +1,5 @@
 # Docker build context exclusions (Dockerfile.linux-build doesn't COPY anything)
-node_modules/
+**/node_modules/
 target/
 build/
 release/
