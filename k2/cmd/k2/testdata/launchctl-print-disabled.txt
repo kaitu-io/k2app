@@ -1,0 +1,7 @@
+
+	disabled services = {
+		"com.tencent.Lemon.uninstall" => enabled
+		"io.k2diag.test" => enabled
+		"kaitu" => enabled
+		"homebrew.mxcl.postgresql" => disabled
+}

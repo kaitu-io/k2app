@@ -1,0 +1,52 @@
+system/io.k2diag.test = {
+	active count = 0
+	path = /Library/LaunchDaemons/io.k2diag.test.plist
+	type = LaunchDaemon
+	state = spawn scheduled
+
+	program = /usr/local/bin/k2diag-run.sh
+	arguments = {
+		/usr/local/bin/k2diag-run.sh
+	}
+
+	default environment = {
+		PATH => /usr/bin:/bin:/usr/sbin:/sbin
+	}
+
+	environment = {
+		OSLogRateLimit => 64
+		XPC_SERVICE_NAME => io.k2diag.test
+	}
+
+	domain = system
+	minimum runtime = 10
+	exit timeout = 5
+	runs = 7
+	last exit code = 3
+
+	resource coalition = {
+		ID = 512580
+		type = resource
+		state = active
+		active count = 1
+		name = io.k2diag.test
+	}
+
+	jetsam coalition = {
+		ID = 512581
+		type = jetsam
+		state = active
+		active count = 1
+		name = io.k2diag.test
+	}
+
+	spawn type = daemon (3)
+	jetsam priority = 40
+	jetsam memory limit (active) = (unlimited)
+	jetsam memory limit (inactive) = (unlimited)
+	jetsamproperties category = daemon
+	jetsam thread limit = 32
+	cpumon = default
+
+	properties = keepalive | runatload | inferred program | system service | tle system
+}

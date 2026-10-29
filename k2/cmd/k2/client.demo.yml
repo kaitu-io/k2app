@@ -1,0 +1,54 @@
+# k2 client configuration
+# Start daemon: k2 [-c this-file]
+# Test config:  k2 -t [-c this-file]
+# Validate:     k2 -t -c this-file
+
+# Server connection URL (required)
+# Get this URL from your k2s server (printed on first run).
+# Format: k2v5://udid:token@host:port?ech=<config>&pin=sha256:<hash>
+server: "k2v5://my-device-id:my-token@your-server.com:443?ech=...&pin=sha256:..."
+
+# Traffic capture mode
+#   tun   — VPN mode, captures all traffic (needs root/sudo)
+#   proxy — SOCKS5+HTTP proxy, no root needed
+mode: tun
+
+# TUN mode settings (only used when mode: tun)
+# Defaults shown below; mobile builds use 10.0.0.2/24 and fd00::2/64.
+tun:
+  ipv4: "198.18.0.7/15"
+  ipv6: "fdfe:dcba:9876::7/64"
+
+# Proxy mode settings (only used when mode: proxy)
+proxy:
+  listen: "127.0.0.1:1080"       # SOCKS5 + HTTP proxy listen address
+
+# DNS resolver configuration
+dns:
+  direct:                         # DNS for direct (China) domains
+    - "114.114.114.114:53"
+    - "223.5.5.5:53"
+  proxy:                          # DNS for proxied (foreign) domains
+    - "8.8.8.8:53"
+    - "1.1.1.1:53"
+
+# k2rule routing engine
+# All URLs auto-download from CDN. Override only if needed.
+rule:
+  # rule_url: "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz"
+  # geoip_url: "https://cdn.jsdelivr.net/npm/geolite2-country/GeoLite2-Country.mmdb.gz"
+  # cache_dir: "~/.cache/k2rule/"
+  global: false                   # true = global proxy (ignore rules, proxy everything)
+
+# Logging
+log:
+  level: info                     # debug, info, warn, error
+  output: stderr                  # stderr, stdout, or file path
+
+# PID file path (optional — used by 'k2 -s stop|reload')
+# Default: /var/run/k2.pid (root) or ~/.config/k2/k2.pid (user)
+# pid_file: "/var/run/k2.pid"
+
+# Include additional config files (glob pattern, optional)
+# Overlapping keys are merged; last file wins.
+# include: "/etc/k2/conf.d/*.yaml"

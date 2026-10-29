@@ -1,0 +1,138 @@
+# k2r Gateway UAT — multi-container integration test.
+#
+# Topology:
+#   lan-client  ──→  k2r (TPROXY gateway)  ──→  k2s (tunnel server)  ──→  internet
+#
+# The k2r-net bridge gives all containers a shared L2 segment.
+# lan-client's default route points to k2r so traffic flows through TPROXY.
+#
+# lan-client-slot1/slot2 each get their OWN dedicated bridge network
+# (slot1-net/slot2-net), mirroring production's one-physical-bridge-per-slot
+# topology (see gateway/slots.go's slotSubnet doc comment: "factory-baked
+# bridge subnet for a slot"). This is NOT optional plumbing — a single lan
+# client aliasing multiple secondary IPs onto one interface was tried first
+# and silently breaks under Docker Desktop's virtualized networking: a plain
+# non-TPROXY curl sourced from a secondary IP to k2r's own API port timed
+# out even though the identical request from the container's PRIMARY IP
+# succeeded instantly. Giving each slot its own container + bridge (primary
+# IP, real subnet) sidesteps that limitation entirely.
+
+services:
+  # Step 1: Generate TLS certs, ECH keys, server + gateway configs.
+  init:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    entrypoint:
+      - gen-config
+      - -out=/etc/k2
+      - -host=k2s
+      - -port=443
+      - -mode=gateway
+      - -listen=0.0.0.0:1779
+    volumes:
+      - k2-config:/etc/k2
+
+  # Step 2: k2s tunnel server.
+  k2s:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    command: ["run", "-c", "/etc/k2/server.yaml"]
+    depends_on:
+      init: { condition: service_completed_successfully }
+    volumes:
+      - k2-config:/etc/k2
+    networks:
+      k2r-net:
+        ipv4_address: 10.99.0.10
+
+  # Step 3: k2r gateway (TPROXY interceptor).
+  k2r:
+    build:
+      context: .
+      dockerfile: Dockerfile.k2r
+    command: ["run", "-c", "/etc/k2/k2r.yml"]
+    depends_on:
+      k2s: { condition: service_started }
+      init: { condition: service_completed_successfully }
+    volumes:
+      - k2-config:/etc/k2
+    ports:
+      - "11779:1779"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.forwarding=1
+    networks:
+      k2r-net:
+        ipv4_address: 10.99.0.20
+      slot1-net:
+        ipv4_address: 10.81.1.20
+      slot2-net:
+        ipv4_address: 10.81.2.20
+
+  # Step 4: Simulated LAN device — routes all traffic through k2r.
+  lan-client:
+    build:
+      context: .
+      dockerfile: Dockerfile.lanclient
+    depends_on:
+      k2r: { condition: service_started }
+    cap_add:
+      - NET_ADMIN
+    networks:
+      k2r-net:
+        ipv4_address: 10.99.0.30
+
+  # Step 5/6: Per-slot LAN devices — each on its own dedicated bridge,
+  # mirroring production's one-physical-bridge-per-slot topology. Used only
+  # by the multislot phase (test_multislot); other phases ignore them.
+  lan-client-slot1:
+    build:
+      context: .
+      dockerfile: Dockerfile.lanclient
+    depends_on:
+      k2r: { condition: service_started }
+    cap_add:
+      - NET_ADMIN
+    networks:
+      slot1-net:
+        ipv4_address: 10.81.1.30
+
+  lan-client-slot2:
+    build:
+      context: .
+      dockerfile: Dockerfile.lanclient
+    depends_on:
+      k2r: { condition: service_started }
+    cap_add:
+      - NET_ADMIN
+    networks:
+      slot2-net:
+        ipv4_address: 10.81.2.30
+
+networks:
+  k2r-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.99.0.0/24
+          gateway: 10.99.0.1
+  slot1-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.81.1.0/24
+          gateway: 10.81.1.1
+  slot2-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.81.2.0/24
+          gateway: 10.81.2.1
+
+volumes:
+  k2-config:

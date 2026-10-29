@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Firefox
+GenericName=Web Browser
+Exec=/usr/lib/firefox/firefox %u
+Icon=firefox
+Type=Application
+Categories=Network;WebBrowser;

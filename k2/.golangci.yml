@@ -1,0 +1,22 @@
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+
+linters-settings:
+  errcheck:
+    exclude-functions:
+      - (io.Closer).Close
+      - (net.Conn).Close
+      - (net.PacketConn).Close
+
+issues:
+  exclude-use-default: true
+
+run:
+  build-tags:
+    - with_gvisor
+  timeout: 5m

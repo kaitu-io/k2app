@@ -1,0 +1,44 @@
+services:
+  # Init container: generates TLS certs, ECH keys, and config files
+  init:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: k2s
+    entrypoint: ["gen-config", "-out", "/etc/k2", "-host", "k2s", "-port", "443"]
+    volumes:
+      - k2-config:/etc/k2
+
+  k2s:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: k2s
+    command: ["-c", "/etc/k2/server.yaml"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    volumes:
+      - k2-config:/etc/k2
+    ports:
+      - "8443:443/tcp"
+      - "8443:443/udp"
+
+  k2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: k2
+    command: ["-c", "/etc/k2/client.yaml"]
+    depends_on:
+      k2s:
+        condition: service_started
+      init:
+        condition: service_completed_successfully
+    volumes:
+      - k2-config:/etc/k2
+    ports:
+      - "1080:1080"
+
+volumes:
+  k2-config:

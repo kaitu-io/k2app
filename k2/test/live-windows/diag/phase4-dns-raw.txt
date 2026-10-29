@@ -1,0 +1,66 @@
+==HIJACK== 
+服务器:  UnKnown
+Address:  198.18.0.8
+
+名称:    example.com
+Addresses:  104.18.27.120
+	  104.18.26.120
+
+==CHINA== 
+服务器:  UnKnown
+Address:  fdfe:dcba:9876::8
+
+名称:    www.a.shifen.com
+Addresses:  183.2.172.17
+	  183.2.172.177
+Aliases:  www.baidu.com
+
+==FOREIGN== 
+服务器:  UnKnown
+Address:  fdfe:dcba:9876::8
+
+名称:    www.google.com
+Address:  31.13.94.49
+
+==QQ== 
+服务器:  UnKnown
+Address:  fdfe:dcba:9876::8
+
+名称:    ins-r23tsuuf.ias.tencent-cloud.net
+Addresses:  121.14.77.201
+	  121.14.77.221
+Aliases:  www.qq.com
+
+==TAOBAO== 
+服务器:  UnKnown
+Address:  fdfe:dcba:9876::8
+
+名称:    www.taobao.com.danuoyi.tbcache.com
+Addresses:  113.96.128.62
+	  113.96.128.63
+Aliases:  www.taobao.com
+
+==YOUTUBE== 
+服务器:  UnKnown
+Address:  fdfe:dcba:9876::8
+
+名称:    www.youtube.com
+Address:  199.59.148.96
+
+==GITHUB== 
+服务器:  UnKnown
+Address:  fdfe:dcba:9876::8
+
+名称:    github.com
+Address:  20.205.243.166
+Aliases:  www.github.com
+
+==INTERCEPT== 
+服务器:  UnKnown
+Address:  1.2.3.4
+
+名称:    example.com
+Addresses:  104.18.27.120
+	  104.18.26.120
+
+==END==

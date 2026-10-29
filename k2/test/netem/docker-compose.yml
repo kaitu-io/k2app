@@ -1,0 +1,47 @@
+services:
+  init:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    entrypoint: ["gen-config", "-out", "/etc/k2", "-host", "k2s", "-port", "443", "-listen", "0.0.0.0:1777"]
+    volumes:
+      - k2-config:/etc/k2
+
+  k2s:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    command: ["run", "-c", "/etc/k2/server.yaml"]
+    depends_on:
+      init: { condition: service_completed_successfully }
+    volumes:
+      - k2-config:/etc/k2
+    cap_add: [NET_ADMIN]   # lets the harness shape the server's egress (downlink loss)
+    networks: [k2-net]
+
+  k2:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    command: ["run", "-c", "/etc/k2/client.yaml"]
+    depends_on:
+      k2s: { condition: service_started }
+      init: { condition: service_completed_successfully }
+    volumes:
+      - k2-config:/etc/k2
+    ports:
+      - "11080:1080"
+      - "11777:1777"
+    cap_add: [NET_ADMIN]
+    environment:
+      # Set K2_MOBILE_POWER_SAVING=1 on the host to run the client with the
+      # mobile probe gate (appext path) instead of the desktop cadence.
+      - K2_MOBILE_POWER_SAVING=${K2_MOBILE_POWER_SAVING:-0}
+    networks: [k2-net]
+
+networks:
+  k2-net:
+    driver: bridge
+
+volumes:
+  k2-config:

@@ -1,0 +1,308 @@
+# Golden route test cases for 14-country routing rules.
+# Each country declares apps with expected direct/proxy domains and IPs.
+# Used by golden_test.go for L1/L2/L3 assertions.
+#
+# Structure:
+#   countries[].code       — 2-letter country code
+#   countries[].preset     — rule preset name (e.g. "cn-access")
+#   countries[].apps[].name           — app identifier
+#   countries[].apps[].domains_direct — domains expected to route DIRECT
+#   countries[].apps[].domains_proxy  — domains expected to route PROXY
+#   countries[].apps[].ips_direct     — CIDRs expected to route DIRECT (test first IP)
+#   countries[].apps[].ips_proxy      — CIDRs expected to route PROXY (test first IP)
+#
+# Note: only domains confirmed in k2b bundle sets are listed here.
+# Domains in geoip-only sets (IP ranges) are NOT tested at L1 domain level.
+
+countries:
+  - code: cn
+    preset: cn-access
+    apps:
+      - name: wechat
+        domains_direct:
+          - qq.com
+          - weixin.qq.com
+          - channels.weixin.qq.com
+          - szextshort.weixin.qq.com
+          - long.weixin.qq.com
+          - minorshort.weixin.qq.com
+          - wechat.com
+          - wechatpay.cn
+          - servicewechat.com
+          - wxlivecdn.com
+          - wxcloudrun.com
+          - wxgateway.com
+          - weixinbridge.com
+          - cdntip.com
+          - tcdnlive.com
+          - tlivemcdn.com
+          - txlivecdn.com
+          - tcdnvod.com
+          - myqcloud.com
+        ips_direct:
+          - "109.244.0.0/16"
+          - "183.3.0.0/16"
+          - "112.60.0.0/14"
+          - "101.89.0.0/16"
+
+      - name: bilibili
+        domains_direct:
+          - bilibili.com
+          - hdslb.com
+          - bilivideo.com
+          - bilivideo.cn
+          - biliapi.com
+          - biliapi.net
+          - bilicomic.com
+          - im9.com
+
+      - name: douyin
+        domains_direct:
+          - douyin.com
+          - douyinpic.com
+          - douyincdn.com
+          - douyinvod.com
+          - amemv.com
+          - snssdk.com
+          - bytecdn.cn
+          - bytedance.com
+          - bytedance.net
+          - byted.org
+          - pstatp.com
+          - toutiao.com
+          - toutiaoimg.com
+          - toutiaocdn.com
+          - ixigua.com
+
+      - name: taobao-alipay
+        domains_direct:
+          - taobao.com
+          - tmall.com
+          - alipay.com
+          - alicdn.com
+          - aliyun.com
+          - tbcdn.cn
+          - mmstat.com
+          - tanx.com
+
+      - name: baidu
+        domains_direct:
+          - baidu.com
+          - bdstatic.com
+          - bdimg.com
+          - baidubce.com
+          - bcebos.com
+          - baiducontent.com
+
+      - name: jd
+        domains_direct:
+          - jd.com
+          - jdcloud.com
+          - 360buyimg.com
+          - jdpay.com
+
+      - name: weibo
+        domains_direct:
+          - weibo.com
+          - weibo.cn
+          - sinaimg.cn
+          - sina.com.cn
+
+      - name: netease
+        domains_direct:
+          - 163.com
+          - 126.com
+          - netease.com
+          - music.163.com
+          - ydstatic.com
+
+      - name: xiaohongshu
+        domains_direct:
+          - xiaohongshu.com
+          - xhscdn.com
+          - xhslink.com
+
+      - name: meituan
+        domains_direct:
+          - meituan.com
+          - dianping.com
+          - meituan.net
+
+      - name: kuaishou
+        domains_direct:
+          - kuaishou.com
+          - gifshow.com
+
+      - name: pinduoduo
+        domains_direct:
+          - pinduoduo.com
+          - yangkeduo.com
+
+      - name: google
+        domains_proxy:
+          - google.com
+          - googleapis.com
+          - gstatic.com
+          - youtube.com
+          - googlevideo.com
+          - ggpht.com
+          - googleusercontent.com
+        ips_proxy:
+          - "8.8.8.0/24"
+          - "8.8.4.0/24"
+
+      - name: telegram
+        domains_proxy:
+          - t.me
+          - telegram.org
+          - telesco.pe
+        ips_proxy:
+          - "149.154.160.0/20"
+          - "91.108.56.0/22"
+
+      - name: facebook-meta
+        domains_proxy:
+          - facebook.com
+          - fbcdn.net
+          - instagram.com
+          - whatsapp.com
+          - whatsapp.net
+
+      - name: openai
+        domains_proxy:
+          - openai.com
+          - chatgpt.com
+
+  - code: ir
+    preset: ir-access
+    apps:
+      - name: digikala
+        domains_direct: [digikala.com, digistyle.com]
+      - name: snapp
+        domains_direct: [snapp.ir, snapp.cab, snappfood.ir]
+      - name: aparat
+        domains_direct: [aparat.com, telewebion.com]
+      - name: rubika
+        domains_direct: [rubika.ir]
+      - name: bale
+        domains_direct: [bale.ai]
+      - name: divar
+        domains_direct: [divar.ir]
+      - name: filimo
+        domains_direct: [filimo.com]
+      - name: namava
+        domains_direct: [namava.ir]
+      - name: torob
+        domains_direct: [torob.com]
+      - name: cafe-bazaar
+        domains_direct: [cafebazaar.ir, cafe-bazaar.ir]
+      - name: google
+        domains_proxy: [google.com, youtube.com, googleapis.com]
+      - name: meta
+        domains_proxy: [facebook.com, instagram.com, whatsapp.com]
+
+  - code: ru
+    preset: ru-access
+    apps:
+      - name: vk
+        domains_direct: [vk.com, vkontakte.ru, vk.me, userapi.com, vkuservideo.net, vkuser.net]
+      - name: yandex
+        domains_direct: [yandex.ru, yandex.net, yandex.com, yastatic.net, ya.ru]
+      - name: mail-ru
+        domains_direct: [mail.ru, mycdn.me, imgsmail.ru, list.ru]
+      - name: ozon
+        domains_direct: [ozon.ru]
+      - name: wildberries
+        domains_direct: [wildberries.ru, wbstatic.net, wb.ru]
+      - name: sber
+        domains_direct: [sberbank.ru, sber.ru, online.sberbank.ru]
+      - name: rutube
+        domains_direct: [rutube.ru]
+      - name: avito
+        domains_direct: [avito.ru, avito.st]
+      - name: tinkoff
+        domains_direct: [tinkoff.ru, tcsbank.ru]
+      - name: gosuslugi
+        domains_direct: [gosuslugi.ru, esia.gosuslugi.ru]
+      - name: 2gis
+        domains_direct: [2gis.ru, 2gis.com]
+      - name: google
+        domains_proxy: [google.com, youtube.com]
+
+  - code: tr
+    preset: tr-access
+    apps:
+      # tr-sites bundle has domain entries but none of the expected app domains match.
+      # Country is kept for preset/geoip validation; domain tests will be added when bundle is updated.
+
+  - code: pk
+    preset: pk-access
+    apps:
+      # pk-sites bundle has no domain entries matching these apps.
+      # Country is kept for preset validation.
+
+  - code: vn
+    preset: vn-access
+    apps:
+      - name: zalo
+        domains_direct: [zalo.me]
+      - name: shopee-vn
+        domains_direct: [shopee.vn]
+      - name: fpt-play
+        domains_direct: [fptplay.vn]
+      - name: zing
+        domains_direct: [mp3.zing.vn]
+
+  - code: mm
+    preset: mm-access
+    apps:
+      - name: kbzpay
+        domains_direct: [kbzpay.com]
+
+  - code: eg
+    preset: eg-access
+    apps:
+      # eg-sites bundle has no domain entries matching these apps.
+      # Country is kept for preset validation.
+
+  - code: id
+    preset: id-access
+    apps:
+      - name: shopee-id
+        domains_direct: [shopee.co.id]
+
+  - code: sa
+    preset: sa-access
+    apps:
+      - name: stc-pay
+        domains_direct: [stc.com.sa]
+
+  - code: ae
+    preset: ae-access
+    apps:
+      # ae-sites bundle has no domain entries matching these apps.
+      # Country is kept for preset validation.
+
+  - code: th
+    preset: th-access
+    apps:
+      - name: shopee-th
+        domains_direct: [shopee.co.th]
+
+  - code: bd
+    preset: bd-access
+    apps:
+      # bd-sites bundle has no domain entries matching these apps.
+      # Country is kept for preset validation.
+
+  - code: by
+    preset: by-access
+    apps:
+      - name: yandex-by
+        domains_direct: [yandex.by]
+      - name: kufar
+        domains_direct: [kufar.by]
+      - name: onliner
+        domains_direct: [onliner.by]
+      - name: 21vek
+        domains_direct: [21vek.by]

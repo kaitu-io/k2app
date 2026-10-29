@@ -1,0 +1,46 @@
+# k2s server configuration
+# Most users don't need this — `k2s` works with zero config.
+# Use this file only for custom deployments: k2s -c server.yml
+
+# Listen address (QUIC + TCP share this port)
+listen: ":443"
+
+# TLS certificates — auto-generated if not specified.
+# Only set these if you have your own certificates.
+# tls:
+#   cert: "/etc/k2s/cert.pem"
+#   key: "/etc/k2s/key.pem"
+
+# Certificate directory — where auto-generated certs, ECH keys, and
+# connect URL are stored. Default: /etc/k2s/
+# cert_dir: "/etc/k2s"
+
+# PID file path — written when k2s starts, removed on exit.
+# Default: platform-dependent (see `k2s -h`).
+# pid_file: "/var/run/k2s.pid"
+
+# Include additional config files (glob patterns supported).
+# Loaded in lexicographic order and merged with this config.
+# include:
+#   - "/etc/k2s/conf.d/*.yml"
+
+# ECH (Encrypted Client Hello) — auto-configured from Cloudflare DNS.
+# ech:
+#   provider: local
+
+# PCC (Protocol Confusion Camouflage) — disguise traffic as normal HTTPS
+# pcc: "https://www.example.com"
+
+# Per-client rate limit in bytes/sec (0 = unlimited)
+# rate: 0
+
+# Authentication — validators checked in order, first match wins.
+# auth:
+#   users_file: "/etc/k2s/users"    # file-based (udid:token per line, hot-reload)
+#   remote_url: "https://api.example.com/k2/auth"  # Center API
+#   cache_ttl: 15m
+
+# Logging
+log:
+  level: info                     # debug, info, warn, error
+  output: stderr                  # stderr, stdout, or file path
