@@ -224,3 +224,144 @@ func TestAutoTune_InteropWithFixedWindowPeer(t *testing.T) {
 		})
 	}
 }
+
+func bufferedLen(s *Stream) int {
+	s.bufferLock.Lock()
+	defer s.bufferLock.Unlock()
+	return int(s.buffered)
+}
+
+func charged(s *Stream) uint32 {
+	s.bufferLock.Lock()
+	defer s.bufferLock.Unlock()
+	return s.charged
+}
+
+// downloadAndPause reads `size` bytes from a fresh download stream as fast
+// as it can, then leaves the stream open and unread.
+func downloadAndPause(t *testing.T, cs *Session, size int) *Stream {
+	t.Helper()
+	st, err := cs.OpenStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Write([]byte("x"))
+	st.SetReadDeadline(time.Now().Add(10 * time.Second))
+	if _, err := io.ReadFull(st, make([]byte, size)); err != nil {
+		t.Fatal(err)
+	}
+	return st
+}
+
+// A stream that grew and then went idle (a paused video, a kept-alive
+// HTTP/2 conn) used to keep its growth until it closed, so on the iOS
+// budget one such stream left every new stream at MinStreamBuffer. Now an
+// idle stream shrinks back after tuneInterval and the next stream grows.
+func TestAutoTune_IdleStreamGivesGrowthBack(t *testing.T) {
+	cfg := tuneConfig(16<<10, 1<<20, 1<<20) // iOS-like: pool 512 KB
+	cfg.KeepAliveInterval = time.Second
+	cfg.KeepAliveTimeout = 10 * time.Second
+	cs, ss := tunePair(t, cfg, cfg)
+	serveDownloads(ss, 4<<20)
+
+	a := downloadAndPause(t, cs, 4<<20)
+	if w := rcvWnd(a); w <= 16<<10 {
+		t.Fatalf("stream A did not grow (window %d)", w)
+	}
+	deadline := time.Now().Add(3 * tuneInterval)
+	for rcvWnd(a) > 16<<10 || atomic.LoadInt64(&cs.grown) != int64(charged(a)) {
+		if time.Now().After(deadline) {
+			t.Fatalf("idle stream A kept window %d, session grown %d", rcvWnd(a), atomic.LoadInt64(&cs.grown))
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	// A's peer may still have delivered bytes on the old window; reading
+	// them gives the rest of the charge back.
+	a.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	io.ReadFull(a, make([]byte, bufferedLen(a)))
+	if g := atomic.LoadInt64(&cs.grown); g != int64(charged(a)) {
+		t.Fatalf("grown = %d, A charged %d", g, charged(a))
+	}
+
+	b := downloadAndPause(t, cs, 4<<20)
+	want := uint32(16<<10) + uint32(cfg.MaxReceiveBuffer/4)
+	if w := rcvWnd(b); w != want {
+		t.Fatalf("stream B window = %d after A went idle; want the per-stream ceiling %d", w, want)
+	}
+}
+
+// One stream grows to at most MinStreamBuffer + half the pool, so a single
+// fast stream leaves room for another to grow.
+func TestAutoTune_PerStreamCeiling(t *testing.T) {
+	cfg := tuneConfig(16<<10, 1<<20, 1<<20) // ceiling 272 KB < MaxStreamBuffer
+	cs, ss := tunePair(t, cfg, cfg)
+	serveDownloads(ss, 8<<20)
+
+	ceiling := uint32(16<<10) + uint32(cfg.MaxReceiveBuffer/4)
+	a := downloadAndPause(t, cs, 8<<20)
+	b := downloadAndPause(t, cs, 8<<20)
+	if wa, wb := rcvWnd(a), rcvWnd(b); wa != ceiling || wb != ceiling {
+		t.Fatalf("windows %d and %d; want both at the ceiling %d", wa, wb, ceiling)
+	}
+}
+
+// After a window shrinks, the sender may still deliver what the old
+// window allowed. Those bytes are charged while buffered, even past the
+// pool, and the charge goes when they are read.
+func TestAutoTune_BytesPastShrunkWindowAreCharged(t *testing.T) {
+	cfg := tuneConfig(16<<10, 512<<10, 1<<20)
+	cs, ss := tunePair(t, cfg, cfg)
+	serveDownloads(ss, 4<<20) // the peer is done: no bytes in flight
+
+	a := downloadAndPause(t, cs, 4<<20)
+	if _, _, ok := a.decayIfIdle(time.Now().Add(time.Hour)); !ok {
+		t.Fatal("decayIfIdle did not shrink a grown window")
+	}
+	atomic.StoreInt64(&cs.grown, cs.growPool) // pool exhausted by others
+	base := charged(a)
+	a.pushBytes(make([]byte, 64<<10))
+	held := bufferedLen(a)
+	wantCharge := uint32(held) - 16<<10
+	if uint32(held) <= 16<<10 {
+		wantCharge = 0
+	}
+	if c := charged(a); c != wantCharge {
+		t.Fatalf("charged %d with %d bytes buffered; want %d", c, held, wantCharge)
+	}
+	if g := atomic.LoadInt64(&cs.grown); g != cs.growPool+int64(wantCharge)-int64(base) {
+		t.Fatalf("grown = %d; want pool %d + %d - %d", g, cs.growPool, wantCharge, base)
+	}
+	a.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	io.ReadFull(a, make([]byte, held))
+	if c := charged(a); c != 0 {
+		t.Fatalf("charged %d after the buffer was read; want 0", c)
+	}
+}
+
+// The acceptor's initial window update goes out on the stream's first
+// Read/Write, not inside AcceptStream: an accept loop must not wait on a
+// slow conn, or one stuck write stalls every new stream on the session.
+func TestAutoTune_AcceptDoesNotWaitOnConn(t *testing.T) {
+	cfg := tuneConfig(16<<10, 512<<10, 1<<20)
+	cfg.KeepAliveInterval = 10 * time.Second
+	cfg.KeepAliveTimeout = 30 * time.Second
+	a, b := net.Pipe() // nobody reads a: every write by ss blocks
+	ss, err := Server(b, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ss.Close(); a.Close() })
+
+	const n = 5
+	go func() {
+		for i := uint32(0); i < n; i++ {
+			a.Write(rawFrame(cmdSYN, 2*i+1, 0, nil))
+		}
+	}()
+	for i := 0; i < n; i++ {
+		ss.SetDeadline(time.Now().Add(2 * time.Second))
+		if _, err := ss.AcceptStream(); err != nil {
+			t.Fatalf("accept %d with the conn's writes blocked: %v", i, err)
+		}
+	}
+}

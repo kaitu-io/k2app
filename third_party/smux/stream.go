@@ -49,11 +49,16 @@ type Stream struct {
 	numWritten uint32 // count num of bytes written
 	incr       uint32 // counting for sending
 
-	// receive window we advertise (k2 patch 6); guarded by bufferLock
-	rcvWnd       uint32
+	// receive window auto-tuning (k2 patch 6); guarded by bufferLock
+	rcvWnd       uint32    // window we advertise
+	buffered     uint32    // bytes in buffers, not yet read
+	charged      uint32    // growth charged to the session pool
 	tuneStart    time.Time // start of the current auto-tuning sample
 	tuneBytes    uint32    // bytes consumed since tuneStart
-	tuneReleased bool      // growth returned to the session; never grow again
+	lastRead     time.Time // last time the user consumed data
+	tuneReleased bool      // charge returned at close; never grow again
+
+	initWnd sync.Once // initial window update (sendInitialWindow)
 
 	// UPD command
 	peerConsumed uint32        // num of bytes the peer has consumed
@@ -78,6 +83,7 @@ func newStream(id uint32, frameSize int, sess *Session) *Stream {
 	if sess.autoTune {
 		s.rcvWnd = uint32(sess.config.MinStreamBuffer)
 		s.tuneStart = time.Now()
+		s.lastRead = s.tuneStart
 	}
 	return s
 }
@@ -89,23 +95,57 @@ func newStream(id uint32, frameSize int, sess *Session) *Stream {
 // about its rate × tuneInterval.
 const tuneInterval = time.Second
 
+// The session pool is charged for what a stream may hold beyond
+// MinStreamBuffer: max(window, bytes buffered) − MinStreamBuffer. Growth is
+// charged up front (reserveGrowth). Bytes buffered beyond the window, which
+// a sender still running on a window we just shrank may deliver, are
+// charged when they arrive, even past the pool, so that new streams don't
+// grow on memory that is in use. The charge drops as those bytes are read,
+// and to zero at close.
+
+// syncChargeLocked brings the stream's charge to what it needs now.
+// Caller holds bufferLock.
+func (s *Stream) syncChargeLocked() {
+	if !s.sess.autoTune || s.tuneReleased {
+		return
+	}
+	need := s.rcvWnd
+	if s.buffered > need {
+		need = s.buffered
+	}
+	need -= uint32(s.sess.config.MinStreamBuffer)
+	switch {
+	case need < s.charged:
+		s.sess.releaseGrowth(s.charged - need)
+	case need > s.charged:
+		s.sess.chargeGrowth(need - s.charged)
+	}
+	s.charged = need
+}
+
 // consumedLocked accounts n bytes read by the user and decides whether to
 // send a window update; it returns the update's consumed and window values
 // (ok=false: none due). Caller holds bufferLock.
 func (s *Stream) consumedLocked(n int) (consumed, window uint32, ok bool) {
 	s.numRead += uint32(n)
 	s.incr += uint32(n)
-	if s.sess.autoTune && !s.tuneReleased && n > 0 {
-		s.tuneBytes += uint32(n)
-		if s.tuneBytes >= s.rcvWnd {
-			now := time.Now()
-			if now.Sub(s.tuneStart) <= tuneInterval {
-				if d := s.sess.reserveGrowth(s.rcvWnd); d > 0 {
-					s.rcvWnd += d
-					ok = true // tell the sender now, not at half a window
+	s.buffered -= uint32(n)
+	if s.sess.autoTune && n > 0 {
+		now := time.Now()
+		s.lastRead = now
+		if !s.tuneReleased {
+			s.tuneBytes += uint32(n)
+			if s.tuneBytes >= s.rcvWnd {
+				if now.Sub(s.tuneStart) <= tuneInterval {
+					if d := s.sess.reserveGrowth(s.rcvWnd); d > 0 {
+						s.rcvWnd += d
+						s.charged += d
+						ok = true // tell the sender now, not at half a window
+					}
 				}
+				s.tuneStart, s.tuneBytes = now, 0
 			}
-			s.tuneStart, s.tuneBytes = now, 0
+			s.syncChargeLocked()
 		}
 	}
 	// in an ideal environment:
@@ -124,20 +164,55 @@ func (s *Stream) consumedLocked(n int) (consumed, window uint32, ok bool) {
 	return s.numRead, s.rcvWnd, true
 }
 
-// sendInitialWindow tells the peer our window right after SYN (opener) or
-// accept (acceptor). Without it the peer assumes initialPeerWindow, 256 KB,
-// until our first read, which with auto-tuning is far more than we grant.
-// The opener's update is queued right behind its SYN, ahead of any data,
-// and the acceptor's goes out before AcceptStream returns, so before its
-// first reply: either way the peer applies it before it sends us data.
+// decayIfIdle shrinks a grown window back to MinStreamBuffer once its
+// reader has consumed nothing for tuneInterval (paused video, idle
+// keep-alive conn), so its growth goes back to the pool for the streams
+// that are moving. It returns the window update to send (ok=false: none).
+// The sender may still deliver what the old window allowed before the
+// update lands; those bytes are charged until read (syncChargeLocked).
+func (s *Stream) decayIfIdle(now time.Time) (consumed, window uint32, ok bool) {
+	s.bufferLock.Lock()
+	defer s.bufferLock.Unlock()
+	min := uint32(s.sess.config.MinStreamBuffer)
+	if s.tuneReleased || s.rcvWnd <= min || now.Sub(s.lastRead) < tuneInterval {
+		return 0, 0, false
+	}
+	s.rcvWnd = min
+	s.tuneStart, s.tuneBytes = now, 0
+	s.syncChargeLocked()
+	s.incr = 0
+	return s.numRead, s.rcvWnd, true
+}
+
+// sendInitialWindow tells the peer our window as soon as the stream exists.
+// Without it the peer assumes initialPeerWindow, 256 KB, until our first
+// read, far more than auto-tuning grants. OpenStream sends it right behind
+// the SYN, ahead of any data. An accepted stream sends it on its first
+// Read, Write or WriteTo, from the caller's goroutine rather than the
+// accept loop's, so accepting never waits on the conn; until it lands the
+// opener may use initialPeerWindow, bounded by our session buffer.
 func (s *Stream) sendInitialWindow() error {
 	if !s.sess.autoTune {
 		return nil
 	}
-	s.bufferLock.Lock()
-	consumed, window := s.numRead, s.rcvWnd
-	s.bufferLock.Unlock()
-	return s.sendWindowUpdate(consumed, window)
+	var err error
+	s.initWnd.Do(func() {
+		s.bufferLock.Lock()
+		consumed, window := s.numRead, s.rcvWnd
+		s.bufferLock.Unlock()
+		err = s.sendWindowUpdate(consumed, window)
+	})
+	return err
+}
+
+// PeerClosed is closed once the peer has closed the stream fully, so it
+// will read nothing more: on its second FIN when the session knows the
+// peer half-closes (SetPeerHalfClose), else on its first.
+func (s *Stream) PeerClosed() <-chan struct{} {
+	if s.sess.peerHalfClose() {
+		return s.chPeerClosed
+	}
+	return s.chFinEvent
 }
 
 // ID returns the unique stream ID.
@@ -147,6 +222,9 @@ func (s *Stream) ID() uint32 {
 
 // Read implements net.Conn
 func (s *Stream) Read(b []byte) (n int, err error) {
+	if err := s.sendInitialWindow(); err != nil {
+		return 0, err
+	}
 	for {
 		n, err = s.TryRead(b)
 		if err == ErrWouldBlock {
@@ -200,6 +278,9 @@ func (s *Stream) TryRead(b []byte) (n int, err error) {
 
 // WriteTo implements io.WriteTo
 func (s *Stream) WriteTo(w io.Writer) (n int64, err error) {
+	if err := s.sendInitialWindow(); err != nil {
+		return 0, err
+	}
 	for {
 		var buf []byte
 		s.bufferLock.Lock()
@@ -304,6 +385,9 @@ func (s *Stream) Write(b []byte) (n int, err error) {
 	if len(b) == 0 {
 		return 0, nil
 	}
+	if err := s.sendInitialWindow(); err != nil {
+		return 0, err
+	}
 
 	// check if stream has closed
 	select {
@@ -361,7 +445,7 @@ func (s *Stream) Write(b []byte) (n int, err error) {
 		// security check for misbehavior
 		inflight := int32(atomic.LoadUint32(&s.numWritten) - atomic.LoadUint32(&s.peerConsumed))
 		if inflight < 0 {
-			return 0, ErrConsumed
+			return sent, ErrConsumed
 		}
 
 		win := int32(atomic.LoadUint32(&s.peerWindow)) - inflight
@@ -536,6 +620,10 @@ func (s *Stream) pushBytes(buf []byte) (written int, err error) {
 	s.bufferLock.Lock()
 	s.buffers = append(s.buffers, buf)
 	s.heads = append(s.heads, buf)
+	s.buffered += uint32(len(buf))
+	if s.buffered > s.rcvWnd {
+		s.syncChargeLocked()
+	}
 	s.bufferLock.Unlock()
 	return
 }
@@ -551,8 +639,10 @@ func (s *Stream) recycleTokens() (n int, grown uint32) {
 	}
 	s.buffers = nil
 	s.heads = nil
+	s.buffered = 0
 	if s.sess.autoTune && !s.tuneReleased {
-		grown = s.rcvWnd - uint32(s.sess.config.MinStreamBuffer)
+		grown = s.charged
+		s.charged = 0
 		s.tuneReleased = true
 	}
 	s.bufferLock.Unlock()

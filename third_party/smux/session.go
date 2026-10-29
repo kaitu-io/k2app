@@ -118,6 +118,9 @@ func newSession(config *Config, conn io.ReadWriteCloser, client bool) *Session {
 	go s.recvLoop()
 	go s.sendLoop()
 	go s.keepalive()
+	if s.autoTune {
+		go s.tuneLoop()
+	}
 	return s
 }
 
@@ -190,10 +193,6 @@ func (s *Session) AcceptStream() (*Stream, error) {
 
 	select {
 	case stream := <-s.chAccepts:
-		if err := stream.sendInitialWindow(); err != nil {
-			stream.Close()
-			return nil, err
-		}
 		return stream, nil
 	case <-deadline:
 		return nil, ErrTimeout
@@ -347,11 +346,17 @@ func (s *Session) streamClosed(sid uint32) {
 }
 
 // reserveGrowth grants a stream with receive window cur up to cur more
-// (doubling it), limited by MaxStreamBuffer and by what is left of the
-// session's growth pool. It returns the bytes granted, possibly 0.
+// (doubling it), limited by what is left of the session's growth pool and
+// by the stream's ceiling: MaxStreamBuffer, and at most half the pool on
+// top of MinStreamBuffer, so one fast stream can't take all of it. It
+// returns the bytes granted, possibly 0.
 func (s *Session) reserveGrowth(cur uint32) uint32 {
+	ceiling := int64(s.config.MaxStreamBuffer)
+	if c := int64(s.config.MinStreamBuffer) + s.growPool/2; c < ceiling {
+		ceiling = c
+	}
 	want := int64(cur)
-	if max := int64(s.config.MaxStreamBuffer) - int64(cur); want > max {
+	if max := ceiling - int64(cur); want > max {
 		want = max
 	}
 	for want > 0 {
@@ -368,6 +373,49 @@ func (s *Session) reserveGrowth(cur uint32) uint32 {
 		}
 	}
 	return 0
+}
+
+// releaseGrowth returns n bytes of a stream's charge to the pool.
+func (s *Session) releaseGrowth(n uint32) {
+	atomic.AddInt64(&s.grown, -int64(n))
+}
+
+// chargeGrowth charges n bytes the stream already holds, past the pool if
+// need be; reserveGrowth then grants nothing until enough is released.
+func (s *Session) chargeGrowth(n uint32) {
+	atomic.AddInt64(&s.grown, int64(n))
+}
+
+// tuneLoop shrinks idle streams' windows every tuneInterval. It runs apart
+// from keepalive because a window update can wait behind a slow conn.
+func (s *Session) tuneLoop() {
+	t := time.NewTicker(tuneInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C:
+			s.decayIdleWindows()
+		case <-s.die:
+			return
+		}
+	}
+}
+
+// decayIdleWindows shrinks the windows of streams whose reader has gone
+// idle (Stream.decayIfIdle) and tells their peers.
+func (s *Session) decayIdleWindows() {
+	s.streamLock.Lock()
+	streams := make([]*Stream, 0, len(s.streams))
+	for _, st := range s.streams {
+		streams = append(streams, st)
+	}
+	s.streamLock.Unlock()
+	now := time.Now()
+	for _, st := range streams {
+		if consumed, window, ok := st.decayIfIdle(now); ok {
+			st.sendWindowUpdate(consumed, window)
+		}
+	}
 }
 
 // returnTokens is called by stream to return token after read

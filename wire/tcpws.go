@@ -41,7 +41,11 @@ var (
 //   - MaxReceiveBuffer caps the bytes buffered for all streams together.
 //   - Each stream's window starts at MinStreamBuffer and doubles while its
 //     reader keeps up, up to MaxStreamBuffer; that growth, summed over all
-//     streams, is capped at MaxReceiveBuffer/2.
+//     streams, is capped at MaxReceiveBuffer/2, and shrinks back once a
+//     reader has been idle for a second.
+//   - smux caps one stream's growth at half the pool; MaxStreamBuffer is
+//     set at or below that (MinStreamBuffer + MaxReceiveBuffer/4), so the
+//     configured number is the real one.
 //
 // A stream whose reader has stalled therefore holds about MinStreamBuffer,
 // and it takes MaxReceiveBuffer/2 / MinStreamBuffer of them to block the
@@ -53,10 +57,10 @@ func DefaultSmuxConfig() *smux.Config {
 }
 
 // ServerSmuxConfig returns the server-side smux configuration. The server
-// receives uploads; 4 MB per session, 32 KB per stalled stream, up to 2 MB
-// (~80 Mbps at 200 ms) per stream.
+// receives uploads; 4 MB per session, 32 KB per stalled stream, up to 1 MB
+// (~40 Mbps at 200 ms) per stream.
 func ServerSmuxConfig() *smux.Config {
-	return smuxConfig(4<<20, 32<<10, 2<<20)
+	return smuxConfig(4<<20, 32<<10, 1<<20)
 }
 
 func smuxConfig(recvBuf, minWindow, maxWindow int) *smux.Config {
@@ -946,11 +950,13 @@ func (s *TCPWSServer) HandleSession(sess *smux.Session) {
 
 // tcpwsMaxStreams caps concurrently handled streams per TCP-WS session. A
 // k2 client opens at most core's maxTunnelConns (4096 on desktop) plus a few
-// control streams; anything past that is not a k2 client, and each stream
+// control streams, and streams it has closed may still be finishing here
+// (pipe's half-close grace), so the cap is twice that; anything past it is
+// not a k2 client, and each stream
 // costs the server a goroutine. QUIC has the same cap via
 // MaxIncomingStreams, where the peer queues instead of being refused.
 // var, not const, so tests can lower it.
-var tcpwsMaxStreams int32 = 4096
+var tcpwsMaxStreams int32 = 8192
 
 func (s *TCPWSServer) handleSession(sess *smux.Session, connLog *slog.Logger, remote net.Addr) {
 	defer sess.Close()

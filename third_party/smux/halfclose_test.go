@@ -428,3 +428,44 @@ func TestHalfClose_WriteToEndsWithNilAtFIN(t *testing.T) {
 		t.Fatalf("io.Copy: %d bytes, err=%v; want %d, nil", got.Len(), err, len(want))
 	}
 }
+
+// PeerClosed fires when the peer will read nothing more: its second FIN on
+// a half-close session, its first otherwise.
+func TestHalfClose_PeerClosed(t *testing.T) {
+	for _, hc := range []bool{true, false} {
+		cs, ss := halfClosePair(t)
+		cs.SetPeerHalfClose(hc)
+		ss.SetPeerHalfClose(hc)
+		accepted := make(chan *Stream, 1)
+		go func() {
+			st, err := acceptAfterFirstByte(ss)
+			if err == nil {
+				accepted <- st
+			}
+		}()
+		cst, err := cs.OpenStream()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cst.Write([]byte("x"))
+		sst := waitStream(t, accepted, "accept")
+
+		cst.CloseWrite()
+		select {
+		case <-sst.PeerClosed():
+			if hc {
+				t.Fatal("half-close session: PeerClosed after CloseWrite alone")
+			}
+		case <-time.After(200 * time.Millisecond):
+			if !hc {
+				t.Fatal("legacy session: PeerClosed not fired by the peer's FIN")
+			}
+		}
+		cst.Close()
+		select {
+		case <-sst.PeerClosed():
+		case <-time.After(2 * time.Second):
+			t.Fatalf("hc=%v: PeerClosed not fired after the peer's Close", hc)
+		}
+	}
+}

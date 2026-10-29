@@ -31,6 +31,9 @@ func TestDefaultSmuxConfig(t *testing.T) {
 		if cfg.MinStreamBuffer <= 0 || cfg.MinStreamBuffer >= cfg.MaxStreamBuffer {
 			t.Errorf("%s: MinStreamBuffer %d, MaxStreamBuffer %d: auto-tuning off", name, cfg.MinStreamBuffer, cfg.MaxStreamBuffer)
 		}
+		if ceiling := cfg.MinStreamBuffer + cfg.MaxReceiveBuffer/4; cfg.MaxStreamBuffer > ceiling {
+			t.Errorf("%s: MaxStreamBuffer %d above smux's per-stream ceiling %d", name, cfg.MaxStreamBuffer, ceiling)
+		}
 		if stalled := cfg.MaxReceiveBuffer / 2 / cfg.MinStreamBuffer; stalled < 32 {
 			t.Errorf("%s: %d stalled streams block the session; want >= 32", name, stalled)
 		}

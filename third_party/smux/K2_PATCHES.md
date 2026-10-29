@@ -161,18 +161,34 @@ With `MinStreamBuffer` > 0:
   `tuneInterval` (1 s). That needs no RTT estimate: a window-limited
   sender delivers one window per round trip, so any path under 1 s RTT
   grows; a stream that is not window-limited stops at about rate × 1 s.
-- Growth over all live streams is capped at `MaxReceiveBuffer/2` and
-  returned when a stream closes. A stalled reader holds about
-  `MinStreamBuffer`, so blocking the session takes
+- Growth over all live streams is capped at `MaxReceiveBuffer/2` (the
+  pool), and one stream grows to at most `MinStreamBuffer` + half the
+  pool, so a single fast stream leaves room for another
+  (`TestAutoTune_PerStreamCeiling`).
+- A stream whose reader has consumed nothing for `tuneInterval` shrinks
+  back to `MinStreamBuffer` and tells its peer (`tuneLoop`, its own
+  goroutine so a slow conn can't delay keepalive). Without it, a stream
+  that grew and then paused (a paused video, a kept-alive HTTP/2 conn) kept
+  its growth until it closed; on the iOS budget one such stream left every
+  new stream at 16 KB (`TestAutoTune_IdleStreamGivesGrowthBack`).
+- The pool is charged for what a stream may actually hold:
+  max(window, bytes buffered) − `MinStreamBuffer`. Bytes that a sender
+  still on the old window delivers after a shrink are charged on arrival,
+  past the pool if need be, and released as they are read or at close
+  (`TestAutoTune_BytesPastShrunkWindowAreCharged`). A stalled reader holds
+  about `MinStreamBuffer`, so blocking the session takes
   `MaxReceiveBuffer/2 / MinStreamBuffer` of them, and conforming peers
   can't reach the buffer limit.
-- Each side sends a window update as soon as a stream exists: the opener
-  right after SYN, the acceptor before `AcceptStream` returns. Otherwise
-  the peer assumes `initialPeerWindow` (256 KB) until our first read. The
-  opener's update is queued behind its SYN, so it lands before any data;
-  the acceptor's goes out before its first reply. (An old opener registers
-  its stream only after its SYN write, so it can drop an acceptor's early
-  update; it then runs on 256 KB until our first read, as before.)
+- Each side sends a window update as soon as it starts using a stream: the
+  opener right behind its SYN, ahead of any data; the acceptor on the
+  stream's first `Read`, `Write` or `WriteTo`, from that caller's
+  goroutine, not in `AcceptStream`, so an accept loop never waits on the
+  conn (`TestAutoTune_AcceptDoesNotWaitOnConn`). Until then the peer
+  assumes `initialPeerWindow` (256 KB): an opener may send up to that much
+  before the acceptor's update lands, as before the patch, still bounded
+  by the session buffer. (An old opener registers its stream only after its
+  SYN write, so it can drop an acceptor's early update; it then runs on
+  256 KB until our first read, as before.)
 - All of this is receiver-local: a window travels in the receiver's own
   updates, so either end can run it against any peer
   (`TestAutoTune_InteropWithFixedWindowPeer`, plus a run against the
@@ -185,7 +201,14 @@ stall. Closing lets the client reconnect, and a server reclaims the
 session; leaving it frozen would do neither.
 
 k2's budgets live in `wire.DefaultSmuxConfig` (client, per platform) and
-`wire.ServerSmuxConfig`. Pinned by `autotune_test.go`.
+`wire.ServerSmuxConfig`, with `MaxStreamBuffer` at or below the per-stream
+ceiling (`wire.TestDefaultSmuxConfig`). Pinned by `autotune_test.go`.
+
+Also added: `Stream.PeerClosed()`, closed once the peer will read nothing
+more (its second FIN with half-close, its first otherwise). k2's server
+`pipe` uses it to end a stream whose client has closed while the target
+stays silent (`server.TestPipe_ClientFullCloseEndsSilentTarget`). And
+`Write` returns the bytes sent with `ErrConsumed`, as it does with `io.EOF`.
 
 ## Removed contract: the opener no longer has to speak first
 

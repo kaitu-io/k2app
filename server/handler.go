@@ -863,6 +863,13 @@ type closeWriter interface {
 	CloseWrite() error
 }
 
+// peerCloser is implemented by client conns that report when the client
+// has closed its end fully, so it will read nothing more (TCP-WS streams,
+// smux.Stream.PeerClosed).
+type peerCloser interface {
+	PeerClosed() <-chan struct{}
+}
+
 // pipe copies data bidirectionally between two connections.
 // Each direction uses CloseWrite (half-close) to send FIN without killing
 // the other direction. Full close is the caller's responsibility via defer.
@@ -873,6 +880,25 @@ type closeWriter interface {
 func (h *ProxyHandler) pipe(a, b net.Conn) {
 	key := connDeviceKey(a) // a is the client side
 	done := make(chan struct{})
+	finished := make(chan struct{})
+	defer close(finished)
+	if pc, ok := a.(peerCloser); ok {
+		// Once the upload is through and the client has closed fully,
+		// nothing the target sends can be delivered; a target that sends
+		// nothing would otherwise hold the downlink open indefinitely.
+		go func() {
+			select {
+			case <-done:
+			case <-finished:
+				return
+			}
+			select {
+			case <-pc.PeerClosed():
+				b.Close()
+			case <-finished:
+			}
+		}()
+	}
 	go func() {
 		defer close(done)
 		bp := tcpBufPool.Get().(*[]byte)
