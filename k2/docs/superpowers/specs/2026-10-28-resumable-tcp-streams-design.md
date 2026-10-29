@@ -325,7 +325,7 @@ WINDOW: [0x04][maxOffset:varint]                   授信：对方可以发到�
 
 ## 10. 观测
 
-遵守 DIAG 宪法，新增并登记到 `k2/CLAUDE.md` 保留事件表：
+遵守 DIAG 宪法，新增并登记到 `k2/docs/diag-events.md`（`k2/lint/diag_events_test.go` 强制）：
 
 | 事件 | 端 | 级别 | 字段 |
 |---|---|---|---|
@@ -412,7 +412,7 @@ WINDOW: [0x04][maxOffset:varint]                   授信：对方可以发到�
 
 ## 13. 留给 builder
 
-- rconn 内部锁设计（需加入 `k2/CLAUDE.md` 锁序图；遵守"临界区只读写字段"）、goroutine 结构、缓冲块池实现。
+- rconn 内部锁设计（跨包嵌套需加入 `k2/CLAUDE.md` 锁序链，包内锁写进 `k2/wire/CLAUDE.md`；遵守"临界区只读写字段"）、goroutine 结构、缓冲块池实现。
 - 承载连接关闭信号的具体接法（QUIC `conn.Context()`、smux session 关闭通道如何暴露给 rconn，不破坏封装规则）。
 - 节点级共享会话表放在哪个对象上、如何同时交给两个 listener 和 kill 回调。
 - ClientConfig 开关字段命名，以及是否需要 webapp 透传（默认不透传）。

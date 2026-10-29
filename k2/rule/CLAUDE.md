@@ -403,20 +403,7 @@ Helpers live in `tmp_lru.go`; none of them take a lock of their own, by design
 
 ### DIAG
 
-- `DIAG: rule-tmp-pin` (INFO) — first pin of an IP, or target change on an
-  already-pinned IP. Duplicates are suppressed (upstream re-resolves and
-  prefreshes re-pin the same answer; cache hits do not pin at all). Carries
-  `evictedIP` when that add displaced an entry.
-- `DIAG: rule-tmp-lru-desync` (WARN) — at cap but eviction found nothing to
-  evict. Unreachable while the three structures stay in lockstep; it exists so
-  the desync failure mode is not silent.
-- `DIAG: rule-tmp-reload` (INFO) — a hot reload swapped in a new route set;
-  `pinsKept` is how many DNS-learned pins carried over (the field was `cleared`
-  before #3889, when reload dropped them). The updater only reloads when the
-  on-disk set changed, so this no longer fires after every connect.
-- `DIAG: rule-tmp-evict` — **removed**. Eviction now rides along as
-  `rule-tmp-pin`'s `evictedIP` field. Grepping production logs for the old name
-  returns nothing.
+`rule-tmp-pin` (carries `evictedIP` when an add displaced an entry; duplicates suppressed — cache hits never pin), `rule-tmp-lru-desync`, `rule-tmp-reload` (`pinsKept`) — level, fields and the removed `rule-tmp-evict` are in `k2/docs/diag-events.md`, the lint-enforced registry. Don't re-list event fields here.
 
 Eviction deliberately has no line of its own: once the cache is warm, LRU
 eviction fires once per new pin, so a standalone event would be a 1:1 flood —
@@ -437,10 +424,13 @@ exactly what `rule-tmp-pin`'s duplicate suppression exists to avoid.
   jsdelivr/ghproxy mirrors for CN resilience).
 - `embed.go` + `embed/krs.tar.gz` — build-time embedded baseline (`//go:embed`),
   extracted on true cold start (offline, censorship-proof). The committed
-  archive is a small baseline placeholder; a release build is expected to
-  replace it with the full production archive beforehand, but **no target in
-  this repo's Makefile does that** — the refresh is out-of-band. (An earlier
-  comment named a `make fetch-rules-embed` target; no such target exists.)
+  archive is a small (~66 KB) baseline placeholder. The k2app-root Makefile's
+  `fetch-rules-embed` (part of `pre-build`, so every `make dev-*`/`build-*`)
+  **overwrites `k2/rule/embed/krs.tar.gz`** with the full CDN archive (k2-rules
+  GitHub release, jsdelivr fallback); offline it keeps the placeholder unless
+  `EMBED_REQUIRE_FULL=1` (release CI), which fails instead. **Never commit the
+  fetched ~2 MB file** — the labtest `k2` suite and `scripts/check-embed-size.sh`
+  fail above 300 KB. `k2/Makefile` targets do not fetch it.
 - `updater.go` — post-connect refresh: an immediate check, then every
   `defaultCheckInterval` (1h). Each check (`refreshAndReload`) runs
   `ensureBundles`, then hot-reloads via `ReloadNamed` **iff**

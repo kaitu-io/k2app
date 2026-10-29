@@ -24,7 +24,7 @@ Provider calls `handler.HandleTCP/HandleUDP` when connections arrive. `ClientTun
 
 - `provider.go` — Provider/ConnectionHandler interfaces, ProviderConfig, MTU constants, defaults
 - `stack.go` — sing-tun Handler adapter (converts sing-tun connections → ConnectionHandler)
-- `tun_desktop.go` — TUN device for macOS/Linux/Windows (sing-tun, requires root)
+- `tun_desktop.go` — TUN device for macOS/Linux/Windows (sing-tun, requires root). Build tag `(darwin && !ios) || (linux && !android) || windows` — any new desktop-TUN file must exclude ios/android the same way, or it compiles into the mobile builds next to `tun_ios.go`/`tun_android.go`
 - `tun_create_diag.go` / `_windows.go` / `_other.go` — `DIAG: wintun-create-fail`: samples Wintun devices (SetupAPI/CfgMgr, not sing-tun internals) while `tun.New` runs, logs the last-seen problem code on failure. Sampling/formatting is untagged and unit-tested everywhere; the enumeration was verified on a real Win10 VM (disabled adapter → `problem=22(DISABLED)`)
 - `tun_ios.go` — iOS PacketTunnelProvider (uses existing FD)
 - `tun_android.go` — Android VpnService (uses existing FD)
@@ -57,6 +57,10 @@ type ProviderConfig struct {
 **MTU defaults**: `SetDefaults()` picks MTU based on platform build tags (`platformMaxMTU`) and `NetworkExtension` flag. Apple NetworkExtension MTU > 4064 causes kernel perf degradation.
 
 **Important**: `tun.Options.DNSServers` is intentionally NOT set. sing-tun auto-derives `TUN_IP.Next()` as DNS, causing OS to send DNS through TUN where `dnsHandler` intercepts at port 53. `RouteExcludeAddrs` only adds IPs to route exclusion (prevents DirectDNSClient loop).
+
+## Locks
+
+`processCache.mu` (state) and `LinuxProcessSearcher.indexMu` (state, RWMutex) are standalone — never nested with engine/daemon locks. `dnsOverride.mu` sits under `engine.mu` in the cross-package chain (`k2/CLAUDE.md`).
 
 ## Process Attribution (process_*.go)
 

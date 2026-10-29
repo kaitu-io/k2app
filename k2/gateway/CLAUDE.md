@@ -14,7 +14,10 @@ LAN device → kernel nft/ipt TPROXY → gatewayProvider (TCP/UDP listeners)
 ```
 
 Gateway owns the full lifecycle: HTTP API → sysctl → interceptor → provider → engine.
-Lock ordering: `opMu` (serialization) → `mu` (state) → `sseMu` (state).
+Lock ordering (all standalone — never nested with engine locks):
+- `Gateway.opMu` (serialization) → `Gateway.mu` (state) → `Gateway.sseMu` (state)
+- `RouterDeviceManager.mu` (state, RWMutex) — acquired only after `Gateway.mu` is released
+- `installGate.installMu` (serialization, held across `Interceptor.Install`; taken under `Gateway.opMu` by doUp, alone by shutdown, never under `Gateway.mu`) → `nftNetlinkInterceptor.mu` (serialization, acquired after all state locks are released)
 
 ## Files
 
@@ -122,4 +125,4 @@ Two tests load a real ruleset into the kernel inside a throwaway network namespa
 
 What only a real router shows — procd's stop/restart/respawn, the nft backend's behaviour with no listener, busybox `ip` — is checked on the testlab OpenWrt VM: see `test/CLAUDE.md` "k2r lifecycle checks".
 
-`go test ./...` on macOS skips this whole package and `lint/` is a separate package — run both `GOOS=linux go vet ./gateway/` and `go test ./lint/` before committing gateway code (a `Close()` under `mu` shipped to master on 2026-09-25 because neither was run). UDP through real TPROXY is covered by `test/k2r-udp-lab/run.sh` (native Linux, root), not by the Docker UAT.
+`go test ./...` on macOS skips this whole package and `lint/` is a separate package — run both `GOOS=linux go vet ./gateway/` and `go test ./lint/` before committing gateway code (a `Close()` under `mu` shipped to main on 2026-09-25 because neither was run). UDP through real TPROXY is covered by `test/k2r-udp-lab/run.sh` (native Linux, root), not by the Docker UAT.

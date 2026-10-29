@@ -1,7 +1,7 @@
 # App Extension SDK (appext/)
 
 gomobile-compatible wrapper around `engine.Engine` for OS-managed platforms:
-macOS system extension, iOS, Android.
+iOS (Network Extension) and Android (VpnService). macOS desktop does not use appext — it runs `cmd/k2` + daemon/ as a launchd service (the NE/sysext path was removed in 297364a54).
 
 ## Constraint
 
@@ -21,10 +21,11 @@ Subscription URL resolution on mobile happens **in the main App webapp**
 (`webapp/src/services/subs-resolver.ts`) before `_k2.run('up', config)`.
 Engine receives `routes:[{via:'k2v5://...'}]` like any other connection.
 
-If a `k2subs://` route reaches engine here, `engine.buildOutboundMap`
-(engine.go:1052) treats it as reserved → drops the route → 0 wire outbounds →
-fail with code 570 "no k2v5 outbound configured". This is the symptom of a
-webapp bug (smart mode missing the resolver), not an engine bug.
+If a `k2subs://` route reaches engine here, `engine.Start` step 6.5 builds
+transports only for `k2v5://` routes (`buildOutboundMap` gives the k2subs route a
+target index but nothing dials it) → 0 wire outbounds → TUN mode fails with
+"no k2v5 outbound configured — TUN mode requires at least one" (unclassified → 570).
+This is the symptom of a webapp bug (smart mode missing the resolver), not an engine bug.
 
 ## API Surface
 
@@ -39,7 +40,7 @@ e.StatusJSON() string          // JSON status (matches daemon API format)
 
 ## Files
 
-- `appext.go` — `Engine` struct, `Start`/`Stop`/`OnNetworkChanged`/`StatusJSON`
+- `appext.go` — `Engine` struct, `Start`/`Stop`/`Pause`/`Wake`/`NotifyNetEvent`/`Status`/`StatusJSON`; package funcs `NewEngine`, `SetLogLevel`, `FreeMemory`, `PrefetchRules`
 - `event.go` — `EventHandler` interface, `eventBridge` (appext→engine adapter), state constants
 - `net_event.go` — `NetEvent` struct (mirrors `engine.NetEvent` for gomobile export), `NewNetEvent` constructor
 - `config.go` — `EngineConfig` (CacheDir, LogDir, SocketProtector)
@@ -53,9 +54,8 @@ e.StatusJSON() string          // JSON status (matches daemon API format)
 
 | Platform | TUN FD Source | Socket Protection | Network Change |
 |----------|---------------|-------------------|----------------|
-| macOS sysext | NEPacketTunnelProvider | `nePlatform` (interface-bound dialing via DefaultInterfaceMonitor) | `nePlatform` (sing-tun monitor → engine) |
 | iOS | NEPacketTunnelProvider | `nePlatform` (interface-bound dialing via DefaultInterfaceMonitor) | `nePlatform` (sing-tun monitor → engine) |
-| Android | VpnService | `SocketProtector.Protect(fd)` → `protectedDialer` | ConnectivityManager → `OnNetworkChanged()` |
+| Android | VpnService | `SocketProtector.Protect(fd)` → `protectedDialer` | ConnectivityManager → `NotifyNetEvent(ev)` (K2VpnService.kt) |
 
 ## Socket Protection
 
@@ -66,8 +66,8 @@ e.StatusJSON() string          // JSON status (matches daemon API format)
 ## Build
 
 ```bash
-make appext-ios       # iOS xcframework (gomobile bind)
-make appext-android   # Android aar (gomobile bind)
+make appext-ios       # iOS xcframework (gomobile bind) — from the k2app root Makefile
+make appext-android   # Android aar — root Makefile only: it adds -extldflags=-Wl,-z,max-page-size=16384 (16 KB pages, Play requirement); k2/Makefile's target lacks it
 ```
 
 Requires `golang.org/x/mobile` in go.mod (gobind uses `go list`).
@@ -76,11 +76,11 @@ Requires `golang.org/x/mobile` in go.mod (gobind uses `go list`).
 
 iOS NE has ~50 MB jetsam limit. Two-layer GC strategy (sing-box pattern):
 - `memlimit_ios.go`: `SetGCPercent(10)` (aggressive — GC at 10% heap growth) + `SetMemoryLimit(35MB)` (hard ceiling, 15MB headroom for C/ObjC)
-- `appext.go`: `FreeOSMemory()` after `Start()` succeeds — reclaims init-time allocations (config parsing, k2rule loading)
+- `appext.go`: `FreeOSMemory()` after `Start()` succeeds — reclaims init-time allocations (config parsing, rule-engine loading)
 - `memprofile.go`: `MemorySnapshot()` — per-component heap breakdown (exported as `AppextMemorySnapshot` for iOS/Android diagnostics)
 
 Additional platform-specific controls in `core/`:
-- `limits_ios.go`: 512 max connections (non-blocking drop), 8KB TCP buffers, 15s UDP idle timeout
+- `limits_ios.go`: 512 max connections (`maxTunnelConns`, non-blocking drop), 8KB TCP buffers (`tcpBufSize`), 60s UDP idle timeout (`udpIdleTimeoutSec`)
 - `gc_ios.go`: sampled GC every 8 connection releases if HeapInuse > 20MB
 
 ## Testing

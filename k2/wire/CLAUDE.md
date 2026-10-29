@@ -33,6 +33,31 @@ type StatsProvider interface {
 }
 ```
 
+- Implementers: `Dialer` = QUICClient, TCPWSClient, TransportManager, SwappableDialer; `Listener` = QUICServer, TCPWSServer; `StatsProvider` and `EchoProber` (`echo.go`, `RunEchoProbe`) = QUICClient, TCPWSClient. Optional interfaces upper layers may assert on are registered in `k2/CLAUDE.md` § Layer Boundaries.
+- `DirectDialer` (`DialContext`, `ListenPacket`) — the shell's bypass-the-tunnel dialer: `daemon.directDialer`, `appext.protectedDialer` (Android), `appext.nePlatform` (Darwin NE), `gateway.gatewayDirectDialer` (SO_MARK). Optional `DialerController.ControlFunc()` supplies the raw-socket control for DNS socket protection — implemented by the same three non-daemon dialers.
+
+## Lock Ordering (wire-internal)
+
+Cross-package chain (`engine.mu → TransportManager.mu → QUICClient.mu / TCPWSClient.mu`) is in `k2/CLAUDE.md`. Inside wire:
+
+```
+Serialization locks — never acquired while holding any state lock:
+  QUICClient.connectMu → QUICClient.mu
+  QUICClient.initUDPMu → QUICClient.mu
+  TCPWSClient.initUDPMu → TCPWSClient.mu   (concurrent dials deduped via singleflight.Group — no held mutex)
+  smuxUDPMux.writeMu, quicStreamUDPMux.writeMu (standalone)
+  udpOverflowStream.initMu → udpOverflowStream.writeMu
+  CookieSigner.rotateMu (holds across the rotation's file write) → CookieSigner.mu (state); never under another lock
+State locks, standalone (no nesting with any engine/server/transport lock):
+  RelayManager.mu   — node pool/ranking/health; client.Do and Transport.CloseIdleConnections run OUTSIDE it
+  authCache.mu      — verdict cache; validator I/O (Center call) runs OUTSIDE it, inside a singleflight.Group
+  CookieJar.mu      — map ops only; one jar per outbound, shared by every dialer built for it
+  authSessions.mu   — connection registry; the sweeper snapshots under it, calls Validator / kill() OUTSIDE
+  SlackAlerter.mu   — per-key cooldown map; the webhook POST runs on its own goroutine
+  authHealth.mu     — Center-reachability state; SlackAlerter.Fire is called OUTSIDE it (the two never nest)
+  ChannelScore.mu   — field-only; read/written by TransportManager under no other lock
+```
+
 ## Config (wire.go)
 
 `Config` parsed from `k2v5://udid:token@host:port?ech=...&pin=...&fp=...`
@@ -120,6 +145,10 @@ camouflage exists to avoid.
 
 ## Gotchas
 
+- **connectMu hard timeout**: `QUICClient.connect()` runs `transport.Dial` in a goroutine bounded by `quicDialHardTimeout` (15s). If quic-go's `Conn.destroy()` blocks (waiting for `conn.run()` to exit on context cancel), the goroutine is orphaned (`DIAG: quic-dial-orphan-cleanup` when it finally resolves) and connectMu is released. Without it, connectMu starvation blocked all DialTCP/DialUDP for 30s+ (v0.4.1, 4/22 devices). `TCPWSClient` relies on `net.Dialer{Timeout}`; `daemon.directDialer` derives Timeout from the context deadline.
+- QUIC datagrams may be unsupported by the path/peer — `DialUDP` falls back to stream-based UDP.
+- ECH requires X25519 keys (not P-256) — Go's crypto/tls only supports DHKEM(X25519). TLS wire formats are big-endian — always `binary.BigEndian` for ECH/TLS parsing. DNS queries for ECH config need a trailing dot (FQDN: `crypto.cloudflare.com.`).
+- Server certs: dual RSA+EC pair, both padded to match the camouflage target's cert length; the EC CA (`kaitu_ca.pem`, disguised as DigiCert) signs both.
 - `EchoProbe` verifies Short Header data path — QUIC handshake success (Long Header) does NOT prove data can flow. Middleboxes can allow Long Header but drop Short Header packets. Always echo-verify QUIC before declaring it the winner.
 - `echo-probe-unsupported` backward compat: `IsEchoUnsupported(err)` returns true for all non-timeout errors (stream reset/EOF = old server, which hits `QUICServer.handleStream`'s `default:` → `stream.Close()` → client reads EOF). All three consumers share this one predicate — `race.go` (unsupported still wins the race), `probe.go` (short-circuits to `EchoSupported=false`, `Score()` sentinel `-1`), and `engine/health.go` `echoStep` (unsupported grows trust, never strikes). So a misclassification here blinds transport selection, node scoring, and re-race simultaneously.
 - **A timeout is not `context.DeadlineExceeded`.** `EchoProbe` arms its response read with `stream.SetReadDeadline`, and quic-go answers an expired stream deadline with its own `deadlineError` — it unwraps to `os.ErrDeadlineExceeded` and reports `net.Error.Timeout()`, but **never** matches `context.DeadlineExceeded`. `IsEchoUnsupported` originally tested only the latter, so a black-holed data path (handshake passes, Short Header dropped — exactly what echo exists to catch) read as "old server, no echo support": trust grew, strikes stayed 0, no re-race, no TCP-WS fallback, and the UI kept showing connected while nothing loaded. Ticket #3463. Because the predicate's default is fail-open, a missed failure mode is silent — over-match timeouts here. Regression cover: `TestIsEchoUnsupported_RealStreamDeadlineIsNotUnsupported` drives a real quic-go connection to a real read deadline; every other echo test feeds a synthetic error and is blind to this class of bug.
@@ -141,7 +170,7 @@ camouflage exists to avoid.
 - QUIC flow control is platform-specific (build tags `ios || android` vs desktop) — mobile uses smaller windows (2 MB stream / 8 MB conn vs 8 MB / 20 MB desktop) to stay under iOS NE jetsam limit.
 - QUIC stream responses have 5s timeout to prevent indefinite blocking on slow/dead servers.
 - `DialTCP(ctx, addr, earlyData)` sends earlyData after stream header, before reading server response. Server's `bufio.Reader` naturally buffers it during header parsing; `pipe()` consumes it after upstream dial. Saves 1 RTT on high-latency links. Backward compatible — old servers handle it without changes. Pass `nil` for no early data.
-- `SendDatagram` uses atomic inflight counter (`maxDatagramInflight=8`, `wire/quic.go:55`, `ErrDatagramSendTimeout`) — quic-go's own datagram queue holds up to 32 frames and blocks indefinitely (`datagramQueue.Add()`) once full under congestion. Our cap must stay well below that 32: with N sessions sharing one queue, only `maxDatagramInflight` goroutines are allowed into the blocking `Add()` path at once, so a value close to 32 would let most `HandleUDP` goroutines pile up there together instead of continuing to read from their targets. When concurrent SendDatagram calls exceed the limit, excess packets are dropped immediately (protocol-correct for unreliable DATAGRAM). No goroutine spawned — avoids leak when SendDatagram blocks. Applies to both client `quicUDPConn.WriteTo` (via `quicUDPMux.sendInflight`) and server `serverUDPConn.WriteTo` (via `connUDPState.sendInflight`).
+- `SendDatagram` uses atomic inflight counter (`maxDatagramInflight=8` in `quic.go`, `ErrDatagramSendTimeout`) — quic-go's own datagram queue holds up to 32 frames and blocks indefinitely (`datagramQueue.Add()`) once full under congestion. Our cap must stay well below that 32: with N sessions sharing one queue, only `maxDatagramInflight` goroutines are allowed into the blocking `Add()` path at once, so a value close to 32 would let most `HandleUDP` goroutines pile up there together instead of continuing to read from their targets. When concurrent SendDatagram calls exceed the limit, excess packets are dropped immediately (protocol-correct for unreliable DATAGRAM). No goroutine spawned — avoids leak when SendDatagram blocks. Applies to both client `quicUDPConn.WriteTo` (via `quicUDPMux.sendInflight`) and server `serverUDPConn.WriteTo` (via `connUDPState.sendInflight`).
 - UDP sessions are multi-destination: one session (= one client source port) can address many destinations over its lifetime. Uplink `UDPFrame.Addr` is **that packet's** destination; empty means "same as the session's first destination". Downlink `UDPFrame.Addr` is the **actual source** the reply came from; empty means "from the session's first destination" (old server, pre-multi-dest). Both ends fall back to the session's first destination on an empty addr, so the *frame encoding* interoperates in any old/new combination. See `udp.go` (`UDPFrame`) and `server/handler.go` (`HandleUDP`'s per-session destination LRU, `maxUDPDestsPerSession = 64`).
 - **The empty-addr fallback returns the session target VERBATIM, which may be a hostname** — `DialUDP(ctx, dest)` stores `dest` unparsed in `targetAddr`, and `core/tunnel.go handleUDP` hands it a *domain* whenever the QUIC SNI upgrade or the IPv6→hostname rewrite fires. So a new client talking to a not-yet-upgraded node gets a hostname `net.Addr` out of every `ReadFrom`. Callers must not assume it is an IP: sing-tun rejects a non-IP write destination with `os.ErrInvalid`, which used to kill the whole session on the first downlink packet. `core.pipePacket` now repairs it (`repairSourceAddr` → the session's primary destination) rather than the wire layer re-resolving per packet. Do not "simplify" that back into a `ResolveUDPAddr` here: it puts DNS on the per-packet hot path and can hand the app an IP it never addressed, which its connected socket then discards. So the honest interop claim is: **wire-level frames interoperate in any combination; the hostname-shaped fallback address is a real hazard for anything that writes it to a socket.**
 - **UDP drop instrumentation — what a `0` means, per transport.** Every path that silently discards a UDP packet increments a counter, so `0` never means "nobody counted":

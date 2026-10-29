@@ -39,7 +39,7 @@ k2s help                            Usage info
 - `setup.go` — `k2s setup`: wizard + non-interactive mode
 - `wizard.go` — Interactive prompts (port, username)
 - `user.go` — `k2s user`: add/list/del/reset with --json support
-- `upgrade.go` — `k2s upgrade`: LATEST + checksums.txt from CDN, beta channel support
+- `upgrade.go` — `k2s upgrade`: fetches the JSON manifest (`/k2s-cloudfront.latest.json`, beta: `/beta/k2s-cloudfront.latest.json`) from the `releaseEndpoints` CDNs → `version` + per-platform `binaries` URL + `sha256:` `checksums`, verifies, replaces the binary. Channel persisted in `<cert_dir>/update-channel`. Published by `.github/workflows/release-k2s.yml` on a `v*-k2s` tag
 - `service.go` — `k2s service`: install/uninstall
 - `service_darwin.go` / `service_linux.go` / `service_windows.go` — Platform service management
 - `process.go` — PID helpers, `IsRoot()`

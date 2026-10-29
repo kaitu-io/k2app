@@ -73,14 +73,15 @@ implementation instead of two copies drifting.
   then downloads `web.zip`, verifies sha256 + minisign, unpacks into
   `pending/`, and atomically renames `pending/` → `current/` (old
   `current/` rotates to `previous/`). `LinuxBridgeVersion` (this file)
-  is this shell's mirror of the outer repo's `BRIDGE_API_VERSION`
-  (`webapp/src/types/bridge-version.ts`) — one integer versioning the whole
+  is this shell's mirror of k2app's `BRIDGE_API_VERSION`
+  (k2app-root `webapp/src/types/bridge-version.ts`) — one integer versioning the whole
   webapp↔shell surface, also mirrored by Android, iOS and Tauri desktop.
   It tracks that value even when a bump's additions belong to another shell
   (v2 = five Tauri commands a Go daemon can never have): the number means
   "current with the surface", and holding it back does not describe the gap
   honestly — it only excludes Linux from every bundle once the published
-  support floor reaches that version. **The outer repo's contract gate does
+  support floor reaches that version. **k2app's bridge contract gate
+  (`webapp/src/types/__tests__/bridge-contract.test.ts` → `contracts/bridge-api.json`) does
   not check this mirror** (it predates k2 moving in-tree), so nothing catches
   drift: a `BRIDGE_API_VERSION` bump must change both sides in the same commit.
   The minisign public key is the same
@@ -88,8 +89,7 @@ implementation instead of two copies drifting.
   `plugins.updater.pubkey`, key ID `40D7545FD7CEDE83`) — one signing key
   covers both the desktop binary OTA and the web OTA. Emits `DIAG:
   webota-applied` (INFO, `from`/`to`) on a successful swap and `DIAG:
-  webota-fail` (WARN, `err`) on a failed poll cycle; see root `CLAUDE.md`
-  DIAG event table.
+  webota-fail` (WARN, `err`) on a failed poll cycle; see `k2/docs/diag-events.md`.
 - `webota_version.go` — Version-comparison pure functions
   (`isNewerVersion`, `meetsMinVersion`, `meetsMinBridge`, `splitVersion`,
   `compareSegments`) backing the three `shouldApply` gates above.
@@ -178,11 +178,12 @@ handler round-trips live in `storage_test.go` and `storage_http_test.go`.
 
 This package is `//go:build linux`: on macOS `go test ./...` excludes it
 outright — no SKIP line, no output at all. In CI it runs only in the
-`test-gateway-uat` job's explicit linux-only package list (outer repo
+`test-gateway-uat` job's explicit linux-only package list (k2app-root
 `.github/workflows/ci.yml`). To run it from macOS:
 
 ```bash
+# from the k2app root — go.mod's replace points at ../third_party, so mount the whole repo
 docker run --rm --platform linux/amd64 -v "$PWD":/src \
-  -v "$(go env GOMODCACHE)":/go/pkg/mod -w /src golang:1.25 \
+  -v "$(go env GOMODCACHE)":/go/pkg/mod -w /src/k2 golang:1.26 \
   go test ./webui/ -count=1
 ```

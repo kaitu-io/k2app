@@ -45,12 +45,12 @@ Outbound table is `[]Outbound` indexed by `rule.Target` value. `nil` entry = rej
 **Sniff flags** (set by engine, disabled in global mode):
 - `sniffBT` — BT/WebRTC detection. BitTorrent (TCP handshake, uTP, UDPTracker) → wire→direct. STUN/DTLS are detected but **stay on the wire** (ticket #3051); they set `ConnMeta.Protocol` so a `protocol:` rule can act on them. Only fires on connections headed for the wire — already-direct traffic is never sniffed
 - `sniffSNI` — domain extraction: direct→wire (TLS SNI on 443, HTTP Host on non-443, QUIC SNI on 443)
-- `blockQUIC` — block browser QUIC via ICMP reject (default: false)
+- `blockQUIC` — block browser QUIC via ICMP reject (default: false — browser QUIC then rides the wire's DATAGRAM path: unreliable, no tunnel-layer retransmission; the inner browser CC (BBR/Cubic) adapts to the outer K2CC throughput. `block_quic: true` in client config restores ICMP-reject)
 - `rewriteIPv6` — replace IPv6 wire dests with hostname via SNI (when server lacks IPv6)
 
 **Traffic counting**: `txBytes`/`rxBytes` `atomic.Int64` count all bytes through `pipe()`/`pipePacket()`.
 
-**Dial counting**: `recordDial` is called on every `outbound.DialTCP`/`DialUDP` return in `HandleTCP`/`HandleUDP`, incrementing one of four `atomic.Int64` counters — proxied vs direct, success vs failure — read via `DialOutcomes()` and reported as per-heartbeat deltas by `engine/health.go`. This exists because byte counters and wire loss cannot separate "nobody asked" from "everybody asked and every one failed": when a node is reachable but cannot egress, every dial fails at the proxy layer while wire loss stays 0 and the health FSM reads `healthy`. `DialOutcomes.Sub` gives the window. Direct and proxied are counted apart on purpose — see the heartbeat field notes in `k2/CLAUDE.md`. These counters are observability only; nothing reads them to make a decision, and `wire/`'s channel scoring deliberately excludes proxy-layer errors (switching transport cannot fix a node that cannot egress).
+**Dial counting**: `recordDial` is called on every `outbound.DialTCP`/`DialUDP` return in `HandleTCP`/`HandleUDP`, incrementing one of four `atomic.Int64` counters — proxied vs direct, success vs failure — read via `DialOutcomes()` and reported as per-heartbeat deltas by `engine/health.go`. This exists because byte counters and wire loss cannot separate "nobody asked" from "everybody asked and every one failed": when a node is reachable but cannot egress, every dial fails at the proxy layer while wire loss stays 0 and the health FSM reads `healthy`. `DialOutcomes.Sub` gives the window. Direct and proxied are counted apart on purpose — see the heartbeat field notes in `k2/docs/diag-events.md`. These counters are observability only; nothing reads them to make a decision, and `wire/`'s channel scoring deliberately excludes proxy-layer errors (switching transport cannot fix a node that cannot egress).
 
 **Files**: `tunnel.go`, `tunnel_test.go`
 
@@ -85,6 +85,10 @@ Routes traffic using in-tree `rule.Engine` (domain/IP → `rule.Target` opaque i
 `rule.Target` is a pure `uint8` index — no semantic constants in rule package. Convention: 0=direct, 1=reject, 2+=wire outbounds. Semantics assigned by engine via `buildOutboundMap`.
 
 **Files**: `router.go`
+
+## Gotchas
+
+- The sing-tun gVisor stack owns the connections it hands to `HandleTCP`/`HandleUDP` — the handler must `defer` the close, never close early.
 
 ## Testing
 

@@ -10,7 +10,7 @@ Two entry points:
 
 All entry points require `context.Context`. The engine context propagates through the entire pipeline, enabling cancellation on shutdown/reconnect.
 
-Steps: parse → validate → hosts lookup → filter (RFC 6761 + noise) → per-process view resolve (5b, see below) → cache check → route (k2rule) → reject check → in-flight dedup → upstream query (direct or proxy) → cache store → SetTmpRule for learned IPs → respond.
+Steps: parse → validate → hosts lookup → filter (RFC 6761 + noise) → per-process view resolve (5b, see below) → cache check → route (`matchRule` → `rule.Target`) → reject check → in-flight dedup → upstream query (direct or proxy) → cache store → SetTmpRule for learned IPs → respond.
 
 **Key**: Direct DNS uses raw UDP sockets (bypasses TUN). Proxy DNS goes through tunnel.
 
@@ -34,7 +34,7 @@ This is NOT a proxy→direct DNS *fallback* (see Constitutional Rules) — it is
 rule-driven upstream choice made before any query is sent, symmetric for
 force-proxy apps.
 
-**Active SWR Prefresh**: When a cache entry has < 25% of its TTL remaining, `GetPackedNearExpiry()` returns cached data immediately and flags it as near-expiry. Middleware launches a background goroutine (`triggerPrefresh`) to refresh the cache. Lazy `k2rule.Match` — only on near-expiry, not every cache hit. Deduped via `prefreshing sync.Map` — at most one refresh per domain:qtype. Background refresh uses `engineCtx` (cancelled on engine Stop), calls `queryUpstream` directly, updates cache + SetTmpRule on success. Fire-and-forget — failures are harmless (existing stale-while-revalidate handles the next query). Disabled when `EngineCtx` is nil.
+**Active SWR Prefresh**: When a cache entry has < 25% of its TTL remaining, `GetPackedNearExpiry()` returns cached data immediately and flags it as near-expiry. Middleware launches a background goroutine (`triggerPrefresh`) to refresh the cache. Lazy `matchRule` — only on near-expiry, not every cache hit. Deduped via `prefreshing sync.Map` — at most one refresh per domain:qtype. Background refresh uses `engineCtx` (cancelled on engine Stop), calls `queryUpstream` directly, updates cache + SetTmpRule on success. Fire-and-forget — failures are harmless (existing stale-while-revalidate handles the next query). Disabled when `EngineCtx` is nil.
 
 **In-flight dedup**: `sync.Map` keyed by `domain:qtype`. If another goroutine is already querying the same domain+qtype, waiters share the result instead of issuing duplicate upstream queries. Owner uses defer-based cleanup (sing-box pattern) — guarantees cleanup even on panic. Waiters respect parent context cancellation: on ctx cancel, return stale data if available or ctx.Err() (sing-box pattern — no independent query, since ctx is already cancelled).
 
@@ -80,12 +80,12 @@ Uses persistent UDP connections with message-ID-based multiplexing (sing-box pat
 
 ## Constitutional Rules (never violate)
 
-- **No proxy→direct DNS fallback**: When k2rule routes a domain to `TargetProxy`, DNS resolution MUST only use proxy DNS servers (via tunnel). If proxy DNS fails, return error — NEVER fall back to direct DNS. Direct DNS in censored networks returns GFW-poisoned IPs, causing certificate errors and security violations. A failed response is better than a poisoned response. (2026-03-08 incident)
+- **No proxy→direct DNS fallback**: When the rule engine routes a domain to a proxy view (`proxyView(target)` true — any `rule.Target` other than direct/reject unless `dnsRouter` says otherwise), DNS resolution MUST only use proxy DNS servers (via tunnel). If proxy DNS fails, return error — NEVER fall back to direct DNS. Direct DNS in censored networks returns GFW-poisoned IPs, causing certificate errors and security violations. A failed response is better than a poisoned response. (2026-03-08 incident)
 
 ## Gotchas
 
 - `DirectDNSClient` only falls back to next server on transport errors (timeout, connection refused). NXDOMAIN is a valid response and is returned as-is.
-- `queryUpstream()` takes `k2rule.Target` (not `int`) — matches `k2rule.Match()` return type.
+- `queryUpstream(ctx, domain, action rule.Target, query)` takes the `rule.Target` returned by `matchRule(domain)` (an opaque outbound index: 0 = direct, 1 = reject, 2+ = wire outbounds) — not an `int`, not a proxy/direct bool; `proxyView(action)` decides the upstream.
 - `DNSQuerier.Query()` requires `context.Context` — all implementations must respect cancellation.
 - `ProxyDNSClient` rewrites query IDs for multiplexing — restores original ID before returning.
 - freelru `GetWithLifetimeNoExpire` has race issues in sing v0.7.6 — use `Get()` + `entry.expireAt` instead.

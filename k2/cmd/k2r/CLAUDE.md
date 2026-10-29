@@ -1,6 +1,6 @@
 # cmd/k2r — Gateway CLI
 
-Gateway binary for LAN routers/soft-routers (TPROXY interception). Linux only (`//go:build linux`). Headless: production builds always use `-tags nowebapp` (root `Makefile` `K2R_TAGS`, applied to all six `build-k2r*` targets) — no embedded webapp, control is over HTTP API + control-key auth (see `gateway/CLAUDE.md` "Control API Auth").
+Gateway binary for LAN routers/soft-routers (TPROXY interception). Linux only (`//go:build linux`). Headless: production builds always use `-tags nowebapp` (`k2/Makefile` `K2R_TAGS`, applied to all six `build-k2r*` targets) — no embedded webapp, control is over HTTP API + control-key auth (see `gateway/CLAUDE.md` "Control API Auth").
 
 ## Subcommands
 
