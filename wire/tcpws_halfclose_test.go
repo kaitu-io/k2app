@@ -5,8 +5,11 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net"
 	"testing"
 	"time"
+
+	"github.com/xtaci/smux/v2"
 )
 
 // TCP-WS half-close (smux K2 patch 2) is enabled per session by the
@@ -157,5 +160,86 @@ func TestTCPWS_HalfClose_UploadAfterServerFIN(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("server upload read timed out")
+	}
+}
+
+// pipe() (core/tunnel.go, server/handler.go) copies with io.CopyBuffer, which
+// dispatches to the source's WriteTo when it has one; *smuxStreamConn gets
+// smux's by embedding. A peer FIN must end that copy with nil, like Read's
+// io.EOF does for io.ReadAll: pipeDirExit treats a non-nil error as a broken
+// stream and fully closes both conns, killing the other direction.
+func TestTCPWS_HalfClose_CopyFromStreamEndsCleanlyOnFIN(t *testing.T) {
+	client, server, cleanup := setupTCPWSPair(t)
+	defer cleanup()
+	want := tcpwsHalfClosePayload()
+
+	go func() {
+		conn, _, err := server.AcceptTCP(context.Background())
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		WriteStreamResponse(conn, nil)
+		conn.Write(want)
+		conn.(halfCloser).CloseWrite()
+		io.Copy(io.Discard, conn)
+	}()
+
+	conn, err := client.DialTCP(context.Background(), "example.com:80", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	var got bytes.Buffer
+	n, err := io.Copy(&got, conn)
+	if err != nil || !bytes.Equal(got.Bytes(), want) {
+		t.Fatalf("io.Copy from stream: n=%d err=%v; want %d bytes, nil", n, err, len(want))
+	}
+}
+
+// Stream headers are read through a bufio.Reader, which can buffer bytes
+// past the header (the peer's next bytes, if they came in the same frame).
+// io.Copy on the conn goes through WriteTo, not Read, and must still
+// deliver them first.
+func TestSmuxStreamConn_CopyIncludesBufferedBytes(t *testing.T) {
+	a, b := net.Pipe()
+	cs, err := smux.Client(a, DefaultSmuxConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	ss, err := smux.Server(b, DefaultSmuxConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+
+	go func() {
+		st, err := cs.OpenStream()
+		if err != nil {
+			return
+		}
+		st.Write([]byte("HDRbuffered-")) // one frame: header + first bytes
+		st.Write([]byte("rest"))
+		st.CloseWrite()
+	}()
+	st, err := ss.AcceptStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	br := bufio.NewReader(st)
+	if _, err := io.ReadFull(br, make([]byte, 3)); err != nil {
+		t.Fatal(err)
+	}
+	if br.Buffered() == 0 {
+		t.Fatal("setup: bufio.Reader buffered nothing past the header")
+	}
+	conn := &smuxStreamConn{Stream: st, br: br}
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	var got bytes.Buffer
+	if _, err := io.Copy(&got, conn); err != nil || got.String() != "buffered-rest" {
+		t.Fatalf("io.Copy = %q, err=%v; want %q, nil", got.String(), err, "buffered-rest")
 	}
 }

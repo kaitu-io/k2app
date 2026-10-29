@@ -30,10 +30,9 @@ type Stream struct {
 	// FIN command. A stream ends with two FINs from each side (k2 patch 2):
 	// the first closes that side's write direction, the second its read
 	// direction. Upstream sent a single FIN, from Close.
-	chFinEvent    chan struct{} // peer's first FIN: peer stopped writing
-	chPeerClosed  chan struct{} // peer's second FIN: peer stopped reading too
-	peerCloseOnce sync.Once
-	finsRecv      uint32 // FINs received; written only by recvLoop
+	chFinEvent   chan struct{} // peer's first FIN: peer stopped writing
+	chPeerClosed chan struct{} // peer's second FIN: peer stopped reading too
+	finsRecv     uint32        // FINs received, saturating at 3; written only by recvLoop
 
 	// our write direction (CloseWrite)
 	writeClosed     chan struct{}
@@ -180,6 +179,12 @@ func (s *Stream) WriteTo(w io.Writer) (n int64, err error) {
 				}
 			}
 		} else if ew := s.waitRead(); ew != nil {
+			if ew == io.EOF {
+				// io.WriterTo: reaching EOF is success. io.Copy hands this
+				// error straight back to its caller, so EOF here made a
+				// clean peer FIN look like a broken stream.
+				return n, nil
+			}
 			return n, ew
 		}
 	}
@@ -501,11 +506,21 @@ func (s *Stream) update(consumed uint32, window uint32) {
 }
 
 // fin records a FIN from the peer: the first closes the peer's write
-// direction, any later one its read direction. Called only from recvLoop.
+// direction, the second its read direction; further FINs are no-ops. The
+// count saturates so a peer flooding FINs can never wrap it back to 1 and
+// close chFinEvent twice (a panic in recvLoop takes the whole process down).
+// 3 means "more than two", kept distinct so tests can spot a stray FIN.
+// Called only from recvLoop.
 func (s *Stream) fin() {
-	if atomic.AddUint32(&s.finsRecv, 1) == 1 {
-		close(s.chFinEvent)
+	n := atomic.LoadUint32(&s.finsRecv)
+	if n >= 3 {
 		return
 	}
-	s.peerCloseOnce.Do(func() { close(s.chPeerClosed) })
+	atomic.StoreUint32(&s.finsRecv, n+1)
+	switch n {
+	case 0:
+		close(s.chFinEvent)
+	case 1:
+		close(s.chPeerClosed)
+	}
 }

@@ -1,8 +1,18 @@
 # k2 patches to smux v2.1.0
 
-Vendored from `github.com/xtaci/smux/v2@v2.1.0` (latest v2 tag; MIT, see LICENSE)
-and wired in with a `replace` in k2's `go.mod`. Images and README dropped; every
-other file is upstream byte-for-byte except the patches below.
+Vendored from `github.com/xtaci/smux/v2@v2.1.0` (MIT, see LICENSE) and wired
+in with a `replace` in k2's `go.mod`. Images and README dropped; every other
+file is upstream byte-for-byte except the patches below.
+
+**This is an independent fork; it does not track upstream.** The `smux/v2`
+module line ended at v2.1.0 (2019-12-26) and its tags are gone from the
+upstream repo; upstream development continues as `github.com/xtaci/smux`
+v1.5.x, which merged this protocol as "version 2" and has diverged by ~160
+commits (closest code point: v1.5.5). Upstream's own half-close (v1.5.58,
+2026-10) is not wire-compatible in meaning with patch 2: it sends one FIN for
+both `CloseWrite` and `Close`, and a writer whose peer has fully closed blocks
+until its deadline. Port individual upstream fixes when they apply; don't
+re-vendor.
 
 ## 1. `waitRead`: don't report EOF while data is still buffered (stream.go)
 
@@ -18,8 +28,6 @@ issued cookie".
 Same fix upstream applied on the v1 line (xtaci/smux#82): on FIN, return nil
 (re-read) when the buffer is non-empty. Pinned by `fin_tail_test.go`.
 
-Upgrading smux: re-check whether upstream v2 carries this fix; if it does, drop
-this directory and the `replace`.
 
 ## 2. Half-close: `Stream.CloseWrite`, two FINs per side (stream.go, session.go)
 
@@ -40,7 +48,11 @@ The patch:
   upstream code treats every FIN after the first as a no-op (`fin()` used a
   `sync.Once`; a FIN for a deregistered stream is ignored by `recvLoop`).
 - On receive, `fin()` counts: the first FIN closes `chFinEvent` (reads drain
-  and then return EOF, as before), the second closes `chPeerClosed`.
+  and then return EOF, as before), the second closes `chPeerClosed`, later
+  ones are no-ops. The count saturates at 3: a uint32 that kept counting
+  would wrap after 2^32 FINs from a hostile peer and close `chFinEvent`
+  twice, a panic in `recvLoop` that kills the process
+  (`TestHalfClose_FINCounterNeverWraps`).
 - `Write` ends with `io.EOF` on the peer's second FIN, and on its first FIN
   **only if the peer is not known to support half-close**. An upstream
   peer's single FIN is a full close, and it will never send another window
@@ -62,6 +74,22 @@ server keeps upstream semantics too. Pinned by `halfclose_test.go` and
 The opener-speaks-first contract below still applies: an acceptor must not
 FIN before the opener's first byte, or the FIN can land before `OpenStream`
 registers the stream and be dropped.
+
+## 3. `WriteTo` returns nil at EOF (stream.go)
+
+`io.WriterTo` reports success at EOF, and `io.Copy` returns `WriteTo`'s error
+unchanged. Upstream returned `io.EOF`, so every `io.Copy` out of a stream
+that ended with a clean FIN returned an error. k2's client `pipe`
+(`core/tunnel.go`) treats a copy error as a broken stream and fully closes
+both conns, which cancelled half-close for the direction still running.
+Upstream v1.5.x made the same change (92b1bfc). Pinned by
+`TestHalfClose_WriteToEndsWithNilAtFIN` and
+`wire.TestTCPWS_HalfClose_CopyFromStreamEndsCleanlyOnFIN`.
+
+Related, in k2 not here: `wire.smuxStreamConn` embeds `*Stream`, so `io.Copy`
+used the promoted `WriteTo` and skipped the bytes its header `bufio.Reader`
+had buffered. It now shadows `WriteTo` with `br.WriteTo`
+(`wire.TestSmuxStreamConn_CopyIncludesBufferedBytes`).
 
 ## Contract k2 relies on (not patched): the opener speaks first
 

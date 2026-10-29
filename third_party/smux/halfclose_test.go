@@ -350,3 +350,82 @@ func TestHalfClose_SmallWriteToClosedPeerFails(t *testing.T) {
 	}
 	st.Close()
 }
+
+// A peer may send any number of FINs for a stream it keeps open. The count
+// must saturate: wrapping back to 1 closed chFinEvent a second time, a
+// panic inside recvLoop that killed the whole process.
+func TestHalfClose_FINFloodDoesNotPanic(t *testing.T) {
+	cs, ss := halfClosePair(t)
+	accepted := make(chan *Stream, 1)
+	go func() {
+		st, _ := ss.AcceptStream()
+		accepted <- st
+	}()
+	st, err := cs.OpenStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer := waitStream(t, accepted, "accept")
+	for i := 0; i < 100; i++ {
+		if _, err := cs.writeFrame(newFrame(cmdFIN, st.id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A NOP round-trip after the flood proves recvLoop processed every FIN.
+	if _, err := cs.writeFrame(newFrame(cmdNOP, 0)); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for atomic.LoadUint32(&peer.finsRecv) < 3 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := atomic.LoadUint32(&peer.finsRecv); got != 3 {
+		t.Fatalf("finsRecv = %d after 100 FINs; want saturated at 3", got)
+	}
+	if ss.IsClosed() {
+		t.Fatal("server session died on a FIN flood")
+	}
+}
+
+// The wrap itself, without sending 2^32 frames: a counter at the top of its
+// range must not come round to "first FIN" again.
+func TestHalfClose_FINCounterNeverWraps(t *testing.T) {
+	cs, _ := halfClosePair(t)
+	st := newStream(1, cs.config.MaxFrameSize, cs)
+	st.fin()
+	st.fin()
+	atomic.StoreUint32(&st.finsRecv, ^uint32(0))
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("fin() panicked near counter wrap: %v", r)
+		}
+	}()
+	st.fin()
+	st.fin()
+}
+
+// io.WriterTo returns nil at EOF; io.Copy passes WriteTo's error through
+// unchanged, so returning io.EOF made every clean FIN look like a failure.
+func TestHalfClose_WriteToEndsWithNilAtFIN(t *testing.T) {
+	cs, ss := halfClosePair(t)
+	want := halfClosePayload()
+	go func() {
+		st, err := acceptAfterFirstByte(ss)
+		if err != nil {
+			return
+		}
+		st.Write(want)
+		st.Close()
+	}()
+	st, err := cs.OpenStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	st.Write([]byte("x"))
+	st.SetReadDeadline(time.Now().Add(5 * time.Second))
+	var got bytes.Buffer
+	if _, err := io.Copy(&got, st); err != nil || !bytes.Equal(got.Bytes(), want) {
+		t.Fatalf("io.Copy: %d bytes, err=%v; want %d, nil", got.Len(), err, len(want))
+	}
+}

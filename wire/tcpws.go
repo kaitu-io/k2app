@@ -84,6 +84,17 @@ func (c *smuxStreamConn) Read(b []byte) (int, error) {
 	return c.Stream.Read(b)
 }
 
+// WriteTo shadows the embedded smux.Stream.WriteTo, which io.Copy prefers
+// over Read and which would skip whatever br buffered past the stream
+// header. bufio.Reader.WriteTo drains that buffer, then hands off to the
+// stream's WriteTo.
+func (c *smuxStreamConn) WriteTo(w io.Writer) (int64, error) {
+	if c.br != nil {
+		return c.br.WriteTo(w)
+	}
+	return c.Stream.WriteTo(w)
+}
+
 // CloseWrite closes only the write direction (sends FIN); the stream stays
 // readable (third_party/smux K2 patch 2). Whether the peer may keep writing
 // after it depends on the peer's half-close capability, negotiated by the

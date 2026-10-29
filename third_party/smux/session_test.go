@@ -201,7 +201,7 @@ func TestWriteTo(t *testing.T) {
 
 	var rcvbuf bytes.Buffer
 	nw, ew := stream.WriteTo(&rcvbuf)
-	if ew != io.EOF {
+	if ew != nil { // k2: WriteTo returns nil at EOF (io.WriterTo contract)
 		t.Fatal(ew)
 	}
 
