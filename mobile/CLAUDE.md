@@ -29,17 +29,11 @@ make build-ios        # gomobile bind + cap sync + xcodebuild archive
 make publish-android VERSION=x.y.z BRAND=kaitu   # latest.json manifests → scripts/publish-mobile.sh
 make publish-ios     VERSION=x.y.z BRAND=kaitu
 make plugin-purity-check                          # k2-plugin must stay gomobile-free (see Gotchas)
-cd plugins/k2-plugin && npm run build             # Rebuild K2Plugin dist/ (tsc; required after src/ edits)
 ```
 
-After editing `plugins/k2-plugin/src/`:
-```bash
-cd plugins/k2-plugin && npm run build   # Regenerate dist/ (committed)
-rm -rf node_modules/k2-plugin && yarn install --force  # Re-copy to node_modules
-npx cap sync                            # Sync to native projects
-```
+After editing `plugins/k2-plugin/src/`: `make build-k2-plugin` (from the repo root: `npm run build` → committed `dist/`, then `rm -rf node_modules/k2-plugin && yarn install --force` to refresh the `file:` copy), then `cd mobile && npx cap sync` (`build-k2-plugin` does not sync; the `dev-*` / `build-*` mobile targets do).
 
-CI entry points are `scripts/build-mobile-{ios,android}.sh`, not `make build-*`; both run the same steps and the same plugin-test gate. `build-mobile.yml` sets `K2_BUILD_LOG_LEVEL: info` and `EMBED_REQUIRE_FULL: "1"` (release fails if the full `krs.tar.gz` can't be fetched — enforces the k2-rules-first deploy order); the `dry_run` dispatch input builds + signs + runs the purity gate but skips ASC upload, S3 upload and Slack.
+CI entry points are `scripts/build-mobile-{ios,android}.sh`, not `make build-*`; both run the same steps and the same plugin-test gate. `build-mobile.yml` sets `K2_BUILD_LOG_LEVEL: info` and `EMBED_REQUIRE_FULL: "1"` (root CLAUDE.md); the `dry_run` dispatch input builds + signs + runs the purity gate but skips ASC upload, S3 upload and Slack.
 
 ## Versioning (package.json → native literals)
 
@@ -51,11 +45,11 @@ CI entry points are `scripts/build-mobile-{ios,android}.sh`, not `make build-*`;
 
 **iOS build number** (`scripts/build-mobile-ios.sh`): the marketing version is **per brand** — kaitu `0.x.y` → `4.x.y` (predecessor ANC shipped 3.0.1; Apple's downgrade check needs > 3.x), overleap ships the real semver (`0.4.10`; fresh ASC record, no legacy line). `CFBundleVersion` below is brand-independent (separate apps, each only needs to be monotonic). `CFBundleVersion = 4000000 + MINOR*100000 + PATCH*1000 + SLOT*10 + REV`; SLOT = N for `-beta.N` (1..98), 99 for final; REV = repo variable `IOS_BUILD_REV` (0..9), normally unset — set it **only** to re-upload an already-uploaded (version, slot) after an ASC rejection, then clear it; never wire it to a run number. The script aborts on MAJOR ≠ 0 or MINOR/PATCH > 99. `scripts/test-ios-build-number.sh` (ci.yml) drives the real script rather than restating the arithmetic.
 
-**Bridge API version** is a triple literal that must stay equal: `K2Helpers.swift` `k2BridgeApiVersion`, `K2PluginUtils.kt` `BRIDGE_API_VERSION`, `webapp/src/types/bridge-version.ts` `BRIDGE_API_VERSION`. `webapp/src/types/__tests__/bridge-contract.test.ts` greps both native files and generates `contracts/bridge-api.json` (method list + version). Adding a `CAPPluginMethod` or bumping one literal without `cd webapp && UPDATE_BRIDGE_CONTRACT=1 npx vitest run src/types/__tests__/bridge-contract.test.ts` turns webapp vitest red.
+**Bridge API version**: the mobile mirrors `K2Helpers.swift` `k2BridgeApiVersion` and `K2PluginUtils.kt` `BRIDGE_API_VERSION` must equal `webapp/src/types/bridge-version.ts` `BRIDGE_API_VERSION` (as must desktop `DESKTOP_BRIDGE_VERSION`; Linux `LinuxBridgeVersion` is the ungated fifth). `webapp/src/types/__tests__/bridge-contract.test.ts` greps them and snapshots `contracts/bridge-api.json`; adding a `CAPPluginMethod` or bumping one literal without the regen turns webapp vitest red. Procedure: `webapp/CLAUDE.md` 兼容模型 "契约门".
 
 ## Brand (kaitu / overleap)
 
-Same `K2_BRAND` build-time contract as desktop/webapp/web (root `Makefile` `BRAND ?= kaitu` → `export K2_BRAND`; recursive `make` only inherits the **exported env** `K2_BRAND`, never the make variable `BRAND` — any script invoking `make` directly must pass `BRAND=$BRAND` explicitly). `mobile/capacitor.config.ts` reads `process.env.K2_BRAND` at `cap sync` time to pick `appId`/`appName` (`io.kaitu`/`开途` vs `io.overleap`/`Overleap`); the values are inert (`cap sync` never reads them — real ids live in the native projects) but are kept brand-conditional. `scripts/build-mobile-{ios,android}.sh` validate `BRAND` and **re-export `K2_BRAND` themselves** because they call `npx cap sync` outside `make`'s recipe-scoped env — a stale overleap APK once shipped `"appId":"io.kaitu"` in `assets/capacitor.config.json` from missing exactly this export.
+Same `K2_BRAND` build-time contract as desktop/webapp (root `Makefile` `BRAND ?= kaitu` → `export K2_BRAND`; a script calling `make` must pass `BRAND=$BRAND` — see root CLAUDE.md Cross-Layer). `mobile/capacitor.config.ts` reads `process.env.K2_BRAND` at `cap sync` time to pick `appId`/`appName` (`io.kaitu`/`开途` vs `io.overleap`/`Overleap`); the values are inert (`cap sync` never reads them — real ids live in the native projects) but are kept brand-conditional. `scripts/build-mobile-{ios,android}.sh` validate `BRAND` and **re-export `K2_BRAND` themselves** because they call `npx cap sync` outside `make`'s recipe-scoped env — a stale overleap APK once shipped `"appId":"io.kaitu"` in `assets/capacitor.config.json` from missing exactly this export.
 
 ### Android
 
@@ -88,69 +82,21 @@ Same `K2_BRAND` build-time contract as desktop/webapp/web (root `Makefile` `BRAN
 ### Release chain
 
 - `scripts/publish-mobile.sh VERSION --platform=android|ios --brand=kaitu|overleap` (brand falls back to `$K2_BRAND`, then `kaitu`; channel auto-detected from a `-beta` suffix). kaitu's `APPSTORE_URL` is fixed; overleap requires `OVERLEAP_APPSTORE_URL` — if unset, the iOS manifest step exits early with a WARN. **Overleap Android is Play-only**: `--brand=overleap --platform=android` prints `Play-only` and exits 0 without touching S3 (no CDN APK, no android manifest — the APK self-update lane is off, see `k2_apk_updates`); `--platform=both` narrows to iOS.
-- `.github/workflows/build-mobile.yml`: a first `plan` job takes brands + platforms from `scripts/ci/release-plan.mjs`, the table shared with `release-desktop.yml` (bare `v*` = kaitu **and** overleap on both platforms; `-kaitu` / `-mobile` / `-ios` / `-android` = kaitu; `-overleap` / `-overleap-mobile` / `-overleap-ios` / `-overleap-android` = overleap; any other suffix → empty lists, every job skips) and also emits the suffix-stripped `tag_version` the version check compares to `package.json`. `workflow_dispatch` takes `platform` + `brand` (kaitu / overleap / both, **default both** — same as a bare tag). `build-ios` / `build-android` read `fromJSON(needs.plan.outputs.<x>_brands)`. GitHub-hosted runners (`macos-26`, `ubuntu-latest`, ephemeral). ASC upload runs for **both** brands (same team + API key; ASC routes by the IPA's bundle id). Android: APK **and** AAB purity gates, `android-apk-<brand>` + `android-aab-<brand>` artifacts; the S3 upload is kaitu-only (overleap AAB goes to the Play Console by hand); `ANDROID_BUILD_REV` is passed like `IOS_BUILD_REV`. The purity gate is run against the brand-exact artifact path, never a glob (the desktop `.app.tar.gz` alphabetical-glob incident, `813bf3f5`). **Web OTA is decoupled (2026-09-18)**: this workflow no longer has a `publish-web-ota` tail — a `v*` app tag does NOT publish web OTA. Web OTA ships only via its own dedicated `webapp/x.y.z[-brand]` tag (`publish-web-ota.yml`, per-brand: bare=both, `-kaitu`/`-overleap`=one).
-- **Overleap builds with every bare tag** (2026-09-13; before that a repo variable `OVERLEAP_MOBILE_CI` gated it on mobile only, desktop never built it, and overleap 0.4.10 shipped desktop plus iOS/Android from a commit 50 behind kaitu 0.4.10). Building is not releasing: the overleap legs upload to App Store Connect (no submission) and attach the Play AAB to the run. One consequence to keep in mind: `IOS_BUILD_REV` / `ANDROID_BUILD_REV` now bump both brands together. `K2_APP_STORE_URL` (xcconfig), `OVERLEAP_APPSTORE_URL` (CI env), webapp `storeUrls.ios` and web `storeLinks.ios` are backfilled together in one commit once the App Store listing is live (spec 2026-09-06 §1.6); the Play URL is fixed by the package name and already filled in.
+- `.github/workflows/build-mobile.yml`: a first `plan` job takes brands + platforms from `scripts/ci/release-plan.mjs` (tag-suffix table shared with `release-desktop.yml` — read it there; an unknown suffix → empty lists, every job skips) and also emits the suffix-stripped `tag_version` the version check compares to `package.json`. `workflow_dispatch` takes `platform` + `brand` (kaitu / overleap / both, **default both** — same as a bare tag). `build-ios` / `build-android` read `fromJSON(needs.plan.outputs.<x>_brands)`. GitHub-hosted runners (`macos-26`, `ubuntu-latest`, ephemeral). ASC upload runs for **both** brands (same team + API key; ASC routes by the IPA's bundle id). Android: APK **and** AAB purity gates, `android-apk-<brand>` + `android-aab-<brand>` artifacts; the S3 upload is kaitu-only (overleap AAB goes to the Play Console by hand); `ANDROID_BUILD_REV` is passed like `IOS_BUILD_REV`. The purity gate is run against the brand-exact artifact path, never a glob (the desktop `.app.tar.gz` alphabetical-glob incident, `813bf3f5`). This workflow does **not** publish web OTA (root CLAUDE.md "Web OTA").
+- **Overleap builds with every bare tag**. Building is not releasing: the overleap legs upload to App Store Connect (no submission) and attach the Play AAB to the run. One consequence to keep in mind: `IOS_BUILD_REV` / `ANDROID_BUILD_REV` now bump both brands together. `K2_APP_STORE_URL` (xcconfig), `OVERLEAP_APPSTORE_URL` (CI env), webapp `storeUrls.ios` and web `storeLinks.ios` are backfilled together in one commit once the App Store listing is live (spec 2026-09-06 §1.6); the Play URL is fixed by the package name and already filled in.
 
-## Architecture
+## Architecture（非显然的位置）
 
-```
-mobile/
-├── capacitor.config.ts          # appId/appName via K2_BRAND (inert — see Brand); webDir: ../webapp/dist
-├── plugins/k2-plugin/           # Capacitor plugin — JS ↔ native bridge (gomobile-FREE, see Gotchas)
-│   ├── src/                     # definitions.ts (K2PluginInterface), web.ts (stub), index.ts (registerPlugin)
-│   ├── dist/                    # Built output (MUST be committed — webapp tsc depends on it)
-│   ├── android/src/.../K2Plugin.kt        # VPN lifecycle, auto-update, logs, relay, getDefaultGateway
-│   ├── android/src/.../K2PluginUtils.kt   # Pure Kotlin (JVM-testable): brandString, BRIDGE_API_VERSION, minisign pubkey
-│   ├── android/src/.../AutoUpdatePlan.kt  # Pure decision core: native-APK lane vs web-OTA lane
-│   ├── android/src/.../WebBootDecision.kt # Pure decision core: .boot-pending / quarantine
-│   ├── android/src/.../MinisignVerifier.kt # Web OTA signature check
-│   ├── android/src/.../NativeLogger.kt    # native.log writer (20 MB cap)
-│   ├── android/src/.../VpnServiceBridge.kt # Service ↔ Plugin interface (relayFetch, setLogLevel)
-│   ├── android/src/test/                  # JVM unit tests — gate on both release paths
-│   ├── ios/Plugin/K2Plugin.swift          # NE manager, auto-update, logs, getDefaultGateway
-│   ├── ios/Plugin/K2Helpers.swift         # k2AppVersion, k2BridgeApiVersion, decideWebBoot, webBundleSkipReason
-│   ├── ios/Plugin/K2Plugin+Iap.swift, StoreKitManager.swift, IapHelpers.swift  # StoreKit 2 IAP (iOS only)
-│   ├── ios/Plugin/K2RelayBridge.swift     # Handler slots the App target fills with gomobile relay calls
-│   ├── ios/Plugin/MinisignVerifier.swift  # Web OTA signature check (vendored BLAKE2b)
-│   └── ios/Plugin/NativeLogger.swift      # native.log writer (20 MB cap)
-├── android/
-│   ├── app/src/main/java/io/kaitu/
-│   │   ├── K2VpnService.kt     # VpnService (engine lifecycle, memory pressure)
-│   │   ├── K2VpnServiceUtils.kt # Pure Kotlin utils (parseCIDR, stripPort — JVM-testable)
-│   │   ├── MainApplication.kt  # Appext.prefetchRules at launch
-│   │   └── MainActivity.kt     # Capacitor activity
-│   └── app/libs/k2mobile.aar   # gomobile output (gitignored via *.aar)
-├── ios/App/
-│   ├── K2Mobile.xcframework     # gomobile output copied here by build-ios/dev-ios (gitignored)
-│   ├── App/
-│   │   ├── AppBridgeViewController.swift  # Capacitor router fix (FixedCapacitorRouter)
-│   │   ├── AppDelegate.swift    # Registers K2RelayBridge handlers, AppextPrefetchRules
-│   │   ├── App.entitlements     # NE + App Group entitlements
-│   │   └── Config/, brand/      # Brand xcconfigs, per-brand InfoPlist.strings + AppIcon
-│   ├── K2Tests/                 # XCTest (BrandDerivation, K2Helpers, IapHelpers, Minisign, NEHelpers) — NOT run in CI
-│   └── PacketTunnelExtension/
-│       ├── PacketTunnelProvider.swift  # NE provider (engine lifecycle, memory monitor, sleep/wake)
-│       ├── NativeLogger.swift   # Separate copy from the plugin's — 50 MB cap
-│       ├── NEHelpers.swift      # Pure helpers (parseIPv4CIDR, parseIPv6CIDR, stripPort)
-│       └── Info.plist           # Must have explicit CFBundleExecutable + CFBundleVersion
-```
+- `plugins/k2-plugin/` — Capacitor plugin, **gomobile-free** (Gotchas). `dist/` is committed (webapp `tsc` reads it).
+  - Android pure-Kotlin, JVM-tested decision cores: `K2PluginUtils.kt` (brandString, `BRIDGE_API_VERSION`, minisign pubkey), `AutoUpdatePlan.kt` (APK lane vs web-OTA lane), `WebBootDecision.kt` (`.boot-pending` / quarantine); `VpnServiceBridge.kt` = Service ↔ Plugin interface.
+  - iOS: `K2Helpers.swift` (`k2AppVersion`, `k2BridgeApiVersion`, `decideWebBoot`, `webBundleSkipReason`), `K2Plugin+Iap.swift` / `StoreKitManager.swift` / `IapHelpers.swift` (StoreKit 2), `K2RelayBridge.swift` (handler slots the App target fills).
+- App shells (where gomobile calls live): Android `android/app/src/main/java/io/kaitu/` — `K2VpnService.kt`, `K2VpnServiceUtils.kt` (JVM-testable), `MainApplication.kt` (`Appext.prefetchRules`); iOS `ios/App/App/AppDelegate.swift` (fills `K2RelayBridge`, `AppextPrefetchRules`), `AppBridgeViewController.swift`, `Config/` + `brand/` (brand xcconfigs, InfoPlist.strings, AppIcon).
+- `ios/App/PacketTunnelExtension/` — `PacketTunnelProvider.swift`, its own `NativeLogger.swift` (50 MB — diverged from the plugin's 20 MB copy; fix both when touching either), `NEHelpers.swift`, `Info.plist` (explicit `CFBundleExecutable` + `CFBundleVersion`).
+- `ios/App/K2Tests/` — XCTest, **not run in CI**. gomobile outputs `android/app/libs/k2mobile.aar` / `ios/App/K2Mobile.xcframework` are gitignored copies.
 
 ## iOS Two-Process Architecture
 
-```
-┌─────────────────────────┐     ┌──────────────────────────────────┐
-│ App Process              │     │ NE Process (PacketTunnelProvider) │
-│                          │     │                                  │
-│ K2Plugin.swift           │     │ gomobile Engine (appext)         │
-│   NETunnelProviderMgr    │────→│   Start(configJSON, fd, cfg)    │
-│   startVPNTunnel(opts)   │     │   StatusJSON()                  │
-│                          │     │   Pause() / Wake()              │
-│ NEVPNStatusDidChange     │←────│   EventBridge.onStatus(json)    │
-│   (system notification)  │     │                                  │
-│                          │     │ App Group (UserDefaults)         │
-│ vpnError ← App Group    │←────│   vpnError → structured JSON    │
-└─────────────────────────┘     └──────────────────────────────────┘
-```
+App process (`K2Plugin.swift`, `NETunnelProviderManager.startVPNTunnel(options:)`) ↔ NE process (`PacketTunnelProvider`, gomobile Engine: `Start` / `StatusJSON` / `Pause` / `Wake`), sharing state through the App Group.
 
 - **State source of truth**: `NEVPNStatusDidChange` notification ONLY
 - **Error propagation**: NE writes `vpnError` to App Group → `cancelTunnelWithError()` → system `.disconnected` → K2Plugin reads App Group
@@ -169,24 +115,13 @@ mobile/
 
 Mobile has **no smart-mode / k2subs resolution**: users pick a tunnel on Dashboard and the webapp passes that single `k2v5://` URL as `_k2.run('up', {routes:[{via:'k2v5://...'}]})` — the NE's 50 MB jetsam limit rules out an in-extension resolver, and a webapp-side one would fetch `/api/subs` through the tunnel it is trying to establish. Failure mode: any raw `k2subs://` leaked to appext is dropped by `engine.buildOutboundMap` as a reserved scheme → code 570 "no k2v5 outbound configured" — always a webapp bug; the only legitimate `via` on mobile is `k2v5://` or `direct`. `probe.store` + `ProbeChip` populate RTT/loss via the webapp-triggered `runProbe()`; the daemon-side background probe loop is desktop-only.
 
-## Router LAN Bridge (k2r headless app-control)
+## Router LAN Bridge
 
-- `getDefaultGateway()` (iOS `defaultGatewayIPv4()` walks the `PF_ROUTE` table skipping `utun*`; Android filters `ConnectivityManager.allNetworks` to WiFi/Ethernet, deliberately not `activeNetwork` which is the TUN once connected) — **currently unconsumed**; discovery is anchor-only (`10.17.79.1:1779`), `router-service.ts` never calls it.
-- `routerRequest` (`capacitor-k2.ts`) uses `CapacitorHttp.request()` with `disableRedirects: true`, behind the TS-side SSRF gate `assertRouterUrlAllowed` (`http://` to a private/loopback IPv4 **literal** only — mirrors desktop Rust `is_private_host`). iOS needs `NSLocalNetworkUsageDescription` + `NSAllowsLocalNetworking` (both in `Info.plist`); no Bonjour entitlement.
-- Full flow: `webapp/CLAUDE.md` "Router Tab"; design `docs/superpowers/specs/2026-07-17-k2r-headless-app-control-design.md`.
+`routerRequest` = `CapacitorHttp` + `disableRedirects: true` behind the TS SSRF gate `assertRouterUrlAllowed` (`capacitor-k2.ts`, private/loopback IPv4 literal only); iOS needs `NSLocalNetworkUsageDescription` + `NSAllowsLocalNetworking`. `getDefaultGateway()` is unconsumed. Flow: `webapp/CLAUDE.md` "Router Tab".
 
 ## Android VpnService Architecture
 
-```
-┌─────────────────────────┐     ┌──────────────────────────────────┐
-│ K2Plugin.kt              │     │ K2VpnService (foreground service) │
-│   VpnServiceBridge       │────→│   gomobile Engine (appext)       │
-│   bindService()          │     │   Builder().establish() → TUN fd │
-│                          │     │   engineExecutor (background)    │
-│ onStatus(statusJSON)     │←────│   EventHandler.onStatus()       │
-│   → JS vpnStateChange   │     │   NetworkCallback → onAvailable  │
-└─────────────────────────┘     └──────────────────────────────────┘
-```
+`K2Plugin.kt` binds `K2VpnService` (foreground service) through `VpnServiceBridge`; the service runs the gomobile Engine, gets the TUN fd from `Builder().establish()`, and pushes `EventHandler.onStatus()` back as the JS `vpnStateChange`.
 
 - **VPN permission**: `VpnService.prepare(activity)` — must use Activity context, not Application
 - **TUN fd**: `Builder().establish()` returns `ParcelFileDescriptor`. Pass `fd` (not `detachFd()`) — Go `syscall.Dup()` internally. Kotlin retains ownership for `close()` on teardown.
@@ -196,8 +131,8 @@ Mobile has **no smart-mode / k2subs resolution**: users pick a tunnel on Dashboa
 
 ## Crash Diagnostics & Memory (appext)
 
-- `k2/appext/appext.go`: `debug.SetTraceback("crash")` in `init()` (all goroutine stacks to logcat / os_log on unrecoverable panics) + `recover()` wrappers on every exported Engine method — `Start()` / `Stop()` panic → error return, `StatusJSON()` → `{"state":"disconnected"}`, `Pause()` / `Wake()` / `NotifyNetEvent()` → log only. (Not yet documented in `k2/appext/CLAUDE.md`.)
-- Go-side memory strategy (GOGC=10, 35 MB `SetMemoryLimit`, `FreeMemory()`, `MemorySnapshot()`, `k2/core/limits_ios.go` connection/buffer caps): see `k2/appext/CLAUDE.md`. Note its "15s UDP idle timeout" is stale — `limits_ios.go` has `udpIdleTimeoutSec = 60`.
+- `k2/appext/appext.go`: `debug.SetTraceback("crash")` in `init()` (all goroutine stacks to logcat / os_log on unrecoverable panics) + `recover()` wrappers on every exported Engine method — `Start()` / `Stop()` panic → error return, `StatusJSON()` → `{"state":"disconnected"}`, `Pause()` / `Wake()` / `NotifyNetEvent()` → log only.
+- Go-side memory strategy (GOGC=10, 35 MB `SetMemoryLimit`, `FreeMemory()`, `MemorySnapshot()`, `k2/core/limits_ios.go` connection/buffer caps): see `k2/appext/CLAUDE.md`.
 
 ### Android: `onTrimMemory()`
 - Triggers at `TRIM_MEMORY_RUNNING_CRITICAL` (level 15+) — K2VpnService is a foreground service, so it only ever sees the RUNNING_* tiers (5/10/15). `RUNNING_LOW` (10) fired too readily during ordinary background use and tore down the tunnel far more often than warranted (ticket #3169 — UI read "connected" for 11-58 min while the tunnel was dead).
@@ -218,7 +153,6 @@ Mobile has **no smart-mode / k2subs resolution**: users pick a tunnel on Dashboa
 | Webapp | `{LogDir}/webapp.log` | `K2Plugin.appendLogs(entries)` from JS |
 
 - **iOS LogDir**: `{AppGroup}/logs/` — App Group is brand-parameterized (`K2_APP_GROUP`), shared between App and NE process. **Android LogDir**: `{filesDir}/logs/`.
-- **Two `NativeLogger.swift` files exist and have diverged**: the plugin's (`plugins/k2-plugin/ios/Plugin/`, 20 MB cap, matches `NativeLogger.kt`) and the NE's (`ios/App/PacketTunnelExtension/`, still 50 MB). The root doc's "20 MB cap is universal" is false for the NE process; fix both when touching either.
 - **Upload**: `K2Plugin.uploadLogs()` — ZIP all logs → PUT to S3 key `mobile/{version}/{udid}/{date}/logs-{ts}-{id}.zip` (feedback path only — mobile has no beta auto-upload). Legacy prefixes (`service-logs/` / `feedback-logs/`) still supported by the Lambda (unverified — Lambda source is not in this repo).
 - **Redaction**: Token, password, `Bearer`, `X-K2-Token` patterns stripped before upload.
 - **Debug dual output**: `EngineConfig.Debug = true` → `io.MultiWriter(file, stderr)` so Go logs reach Xcode console / logcat. Set via `#if DEBUG` (Swift) / `BuildConfig.DEBUG` (Kotlin).
@@ -244,7 +178,7 @@ Go package `k2/appext/` → gomobile naming:
 
 - **Plugin is gomobile-free by rule**: `make plugin-purity-check` (a prerequisite of `appext-ios` / `appext-android`) fails on any `appext.` / `Appext*` reference under `plugins/k2-plugin/` — the plugin's gradle/podspec do not link the aar/xcframework. gomobile calls live in the app shells: `AppDelegate.swift` (`AppextRelayFetch` / `AppextRelayAddNodes` installed into `K2RelayBridge.handler` / `.addNodesHandler`, `AppextPrefetchRules`), `MainApplication.kt` (`Appext.prefetchRules`), `K2VpnService.kt`. The iOS plugin reaches relay only through those handler slots (nil → reports relay unsupported); Android through `VpnServiceBridge.relayFetch`.
 - **K2Plugin dist/ must be committed**: Webapp `tsc` depends on `dist/definitions.d.ts`. After editing `src/`, rebuild and commit `dist/`.
-- **`file:` plugin sync**: Copied (not symlinked) to `node_modules/`. Must `rm -rf node_modules/k2-plugin && yarn install --force` after edits. **Gradle compiles the copy** (`capacitor.settings.gradle` points `:k2-plugin` at `node_modules/k2-plugin/android`), main *and* test sources — so `./gradlew :k2-plugin:testDebugUnitTest` after editing `mobile/plugins/k2-plugin/` silently tests the STALE copy and reports green. Re-sync before believing any local plugin test result. That gate does run on both release paths (`make build-android`, `build-mobile-android.sh`), after `cap sync`.
+- **`file:` plugin sync**: Copied (not symlinked) to `node_modules/`. Must `make build-k2-plugin` (rm + `yarn install --force`) after edits. **Gradle compiles the copy** (`capacitor.settings.gradle` points `:k2-plugin` at `node_modules/k2-plugin/android`), main *and* test sources — so `./gradlew :k2-plugin:testDebugUnitTest` after editing `mobile/plugins/k2-plugin/` silently tests the STALE copy and reports green. Re-sync before believing any local plugin test result. That gate does run on both release paths (`make build-android`, `build-mobile-android.sh`), after `cap sync`.
 - **Web OTA bundles are minisign-signed**: pubkey `RWSD3s7X…` is duplicated as `K2Plugin.swift` `webOtaMinisignPublicKey` and `K2PluginUtils.kt` `WEB_OTA_MINISIGN_PUBKEY` (same key pair as desktop); verification is mandatory whenever the manifest carries `sig` (sha256 always). Rotating the key without both literals silently breaks mobile OTA.
 - **IAP is iOS-only**: StoreKit 2 via `iapGetProducts` / `iapPurchase` / `iapRestore` / `iapFinishTransaction` (`K2Plugin+Iap.swift`, `StoreKitManager.swift`); `K2Plugin.kt` has no IAP surface.
 - **gomobile Swift API**: Generated methods use `throws` pattern, NOT NSError out-parameter.
@@ -268,9 +202,8 @@ Go package `k2/appext/` → gomobile naming:
 
 ASO / AEO constitutional rules for App Store Connect submissions (keyword system, no "VPN" in user-visible text, review-notes template, etc.) live in [`docs/marketing/aso-constitutional-rules.md`](../docs/marketing/aso-constitutional-rules.md).
 
-## Cross-Layer Conventions
+## Misc
 
-- **Go→JS JSON key convention**: Go `json.Marshal` outputs snake_case. JS/TS expects camelCase. `K2Plugin.swift` / `K2Plugin.kt` must remap at the boundary before forwarding to the webapp.
 - **`.gitignore` for native platforms**: Never ignore entire source directories (`mobile/ios/`, `mobile/android/`). Only ignore build artifacts.
 
 ## Android S3 CDN Structure
@@ -282,10 +215,3 @@ ASO / AEO constitutional rules for App Store Connect submissions (keyword system
 - `tools/tools.json` — adb binaries (`scripts/sync-adb-tools.sh`; kaitu path only)
 
 `publish-mobile.sh` copies the artifact into `beta/{VERSION}/` and then: a **stable** version updates both `latest.json` and `beta/latest.json` (beta is a superset of stable); a **`-beta` version updates only `beta/latest.json`** — it never touches the stable manifest the Android install flow reads. iOS manifests (`ios/latest.json`, `ios/beta/latest.json`) follow the same rule.
-
-## Related Docs
-
-- [Root Architecture](../CLAUDE.md)
-- [Webapp Frontend](../webapp/CLAUDE.md) — Shared UI running inside Capacitor WebView
-- [Go Core / appext](../k2/appext/CLAUDE.md) — gomobile engine wrapper
-- [Engine](../k2/engine/CLAUDE.md) — Unified tunnel lifecycle

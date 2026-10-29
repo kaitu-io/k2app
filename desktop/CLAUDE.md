@@ -2,11 +2,7 @@
 
 Rust desktop shell using Tauri v2. UI loads via the `kaitu-ui://` custom protocol (web-ota bundle from disk, embedded assets as fallback).
 
-**Linux is NOT supported by this shell.** Linux desktop ships a single Go
-binary from `cmd/k2` with the React webapp embedded via `k2/webui`; users
-open `http://127.0.0.1:1777` in their browser after running
-`packaging/linux/install.sh`. Install flow: root `CLAUDE.md` "Cross-Layer Conventions".
-(`k2/webui/CLAUDE.md` covers the `//go:embed` package itself — not the installer.)
+**Linux is not this shell** — see root `CLAUDE.md` "Linux desktop has no Tauri".
 
 ## Commands
 
@@ -44,9 +40,7 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
   `813bf3f5`）。`build-macos.sh` 现在按品牌精确路径收集，且收集后立即跑这道门。webapp payload
   被 brotli（macOS 二进制）/ LZMA（NSIS）压缩后对 `strings` 不可见——webapp 品牌纯度真正的门是
   打包前的 `webapp/scripts/check-brand-purity.sh` dist 检查。
-- 递归 `make` 只透传 `K2_BRAND`（导出的 env），不透传 `BRAND`（make 变量本身）——脚本里
-  任何裸 `make build-webapp` 调用都会被子 make 进程自己的 `BRAND ?= kaitu` 吃掉、
-  静默改回 kaitu，必须写成 `make build-webapp BRAND=$BRAND`（见 commit `dd2d8608`）。
+- 脚本里调 `make` 必须显式带 `BRAND=$BRAND`（递归 make 只透传 `K2_BRAND`）——见根 CLAUDE.md Cross-Layer。
 - `desktop/src-tauri/installer-hooks.overleap.nsh` 是构建期由 Makefile 对
   `installer-hooks.nsh` 做 sed 替换（`io.kaitu.desktop` → `io.overleap.desktop`）生成的
   派生副本——仅当 `BRAND=overleap` 才生成，gitignored，永不手改。
@@ -69,92 +63,49 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
   分叉 signtool `/d`（`Overleap` / `Kaitu`）。`src-tauri/windows-sign.sh` 的 journal 多记一行 `brand=`，
   dry-run（`K2_SIGN_LOG=… SKIP_WINDOWS_SIGNING=true`）即可证明 env 到达了签名器。测试：
   `bash scripts/test-sign-description.sh`。证书主体（Wordgate LLC）两品牌共用，见上一条。
-- **日志上传按品牌分前缀**（`log_upload.rs`）：`S3_PREFIX_MANUAL` = `desktop` / `desktop-overleap`，
-  `S3_PREFIX_AUTO` = `auto` / `auto-overleap`，`MACOS_LOG_PREDICATE` = `process CONTAINS "kaitu"` /
+- **日志上传按品牌分前缀**（`log_upload.rs`，前缀值见 "S3 Log Upload"）：`MACOS_LOG_PREDICATE` = `process CONTAINS "kaitu"` /
   `process CONTAINS "k2app"`。**两品牌的主二进制都叫 `k2app`**（crate 名；两份 tauri.conf 都没设
   `mainBinaryName`，Tauri v2 不会改名，已建 `Kaitu.app` 的 `CFBundleExecutable = k2app`）——所以 overleap
   谓词写进程实名，`"Overleap"` 匹配不到任何进程；kaitu 谓词按字节保留。`brand_prefix_tests` 每个 cfg
   各钉一条字面量。同一桶（`kaitu-service-logs`）两品牌共用，靠前缀区分。
-- **Linux 桌面 kaitu-only**：`make build-linux` 首行 `[ "$(BRAND)" = kaitu ] || exit 1`，与
-  `scripts/ci/upload-release.sh --linux` 拒绝 overleap 一致（`pre-build` 作为前置仍会先跑）。
 
 ## Rust Modules (`src-tauri/src/`)
 
-- **main.rs** — App setup: panic hook (appends to desktop.log — see gotcha below), then plugins with single-instance **first** (plugins initialize in registration order; the duplicate-instance `exit(0)` must precede all other side effects). Wires tray + service + updater in setup closure. `RunEvent::ExitRequested` → `service::stop_vpn()` (sends `down`, once) then auto-applies pending updates; `CloseRequested` on `main` is intercepted → `hide_window` (only Quit exits); `ScaleFactorChanged` → `window::reclamp_min_size`.
-- **service.rs** — k2 daemon lifecycle. Routes VPN actions to the k2 daemon HTTP API at `:1777` on all platforms.
-  - `daemon_exec`: HTTP to `:1777/api/core`
-  - `ensure_service_running`: phase 1 `cleanup_old_kaitu_service()` (legacy `kaitu-service` plist / SCM entry) + poll `action:version` up to 15 s; phase 2 elevated `k2 service install` (osascript on macOS, PowerShell `-Verb RunAs` on Windows) only if phase 1 fails; phase 3 re-poll 5 s — actual service state is the sole arbiter, a reported install error is diagnostics only.
-  - `admin_reinstall_service`: elevated reinstall (osascript on macOS, PowerShell on Windows)
-  - `set_log_level`: IPC command with beta channel check — forces debug when beta. Uses `set_log_level_internal()` (pub, blocking HTTP, reusable by updater/main).
-- **channel.rs** — Update channel persistence (stable/beta). Reads/writes `update-channel` file in app data dir via `get_channel(app)`. `endpoints_for_channel()` returns stable or beta CDN URLs.
-- **status_stream.rs** — SSE client for daemon's `GET /api/events`:
-  - Maintains persistent SSE connection, auto-reconnects with 3s delay
-  - Emits `service-state-changed { available }` on connect/disconnect
-  - Emits `vpn-status-changed { ...engine.Status }` on SSE status events
-- **tray.rs** — System tray: menu is Show / Hide / Quit only (`build_tray_menu`, re-localised via `sync_locale`); Quit calls `service::stop_vpn()` then `app.exit(0)`; left click shows the window. There are no connect/disconnect items.
-- **updater.rs** — Auto-updater: 5s delay → 30min periodic check loop. `UpdateInfo` struct (currentVersion, newVersion, releaseNotes). Emits `update-ready` Tauri event. Windows: NSIS install + `app.exit(0)`. macOS: store update, apply on exit via `install_pending_update()` (= `app.restart()`). Beta channel: `set_update_channel` saves/restores pre-beta log level, returns `{channel, logLevel}` JSON so JS can update localStorage directly. Downgrade detection: stable channel + beta build → `version_comparator(!=)`. A channel switch runs a forced check; on macOS a successful channel-switch install restarts through a `sh -c` helper that waits for the old PID and `open`s the bundle (`restart_after_channel_switch`). Installing a `-beta` build activates the beta channel unconditionally at startup (`main.rs`).
-- **window.rs** — Window management: calculates optimal size from screen dimensions using 9:20 aspect ratio with min/max constraints. Startup creates the window hidden (`visible: false`); `main.rs` setup calls `adjust_window_size()` then `show_window()` immediately — **before** `web_ota::prepare_boot` navigates; there is no `frontend_ready` handshake (comments naming it are stale). Supports `--minimized` autostart (tray-only). `show_window()` uses always-on-top trick on Windows to bring window to front. `hide_window()` minimizes on Windows (keeps taskbar icon) vs hides on macOS/Linux.
-- **storage.rs** — App-private key-value storage. Persists `storage.json` in Tauri app data dir. In-memory `HashMap` mirror with atomic write (write `.tmp` then `fs::rename`). Single-instance plugin guarantees no concurrent writers. Used by webapp for secure storage on desktop (IPlatform.storage). Values encrypted with AES-256-GCM via `storage_crypto.rs`; reads auto-detect `ENC1:` prefix for backward compat with plaintext.
-- **storage_crypto.rs** — AES-256-GCM for storage values; key = HKDF-SHA256 of the `machine-uid` crate's hardware ID; `ENC1:` prefix, plaintext read transparently. Sources, history and threat model: "Storage Encryption" below.
-- **log_upload.rs** — Log upload (runs in Tauri, not the daemon, so it works when the daemon is dead): stages `k2*.log` / `.log.gz` / `panic-*.log` from both the root and user daemon log dirs, `desktop*.log`, macOS `log show` output, and the Windows NSIS installer diagnostics (`install-diag.log`, `kaitu-preinstall.log`); sanitizes, tar.gz, uploads to S3 `{S3_PREFIX_MANUAL}/{version}/{udid}/{date}/logs-{ts}-{id}.tar.gz` (`desktop/` kaitu, `desktop-overleap/` overleap). Reason `beta-auto-upload` switches to per-file `{S3_PREFIX_AUTO}/{udid}/{name}` PUTs (`auto/` / `auto-overleap/`). Prefixes and the macOS `log show` predicate are `cfg(brand_overleap)` constants — see "Brand". Uses `spawn_blocking`. **Read-only**: it never deletes or truncates a source log — only its own staging/tmp files.
-- **app_list.rs** — `list_running_processes` command: running user-facing apps (macOS: NSWorkspace `runningApplications` with child PIDs grouped under the owning `.app` via libproc; Windows: sysinfo process list, `id` = exe path). App Bypass **supplement** — see "App Bypass app lists".
-- **installed_apps.rs** — `list_installed_apps` command: installed apps `{id, label, processNames, paths?, iconUrl, installerPackageName?}` (camelCase serde). macOS: Info.plist scan of `/Applications`, `/System/Applications`, `~/Applications` — one plist read per app, bundle contents are never walked; Windows: registry Uninstall scan. App Bypass **primary** list — see "App Bypass app lists".
-- **icon_protocol.rs** — Registers the `kaitu-icon://` URI scheme (`handle_kaitu_icon`) serving per-app icons to the App Bypass UI. macOS renders via NSWorkspace + NSBitmapImageRep → PNG; Windows is a v1 stub (404).
-- **web_ota.rs** — Web OTA: polls `{CDN}/{brand}/web[/beta]/latest.json` (5s + 30min, channel-aware), gates on `sig`(mandatory minisign, updater pubkey)/`min_desktop`/`min_bridge`/`isNewerVersion`, downloads+verifies web.zip into `$APPDATA/web-ota/pending/`, atomically swaps pending→current (current→previous). `.boot-pending` marker + `startup_rollback()` quarantine failed bundles. `DESKTOP_BRIDGE_VERSION` compile-time constant. Debug builds no-op (dev keeps Vite devUrl). `K2_WEB_OTA_BASE` env overrides endpoints for UAT (signature gates still enforced).
-- **ui_protocol.rs** — Registers `kaitu-ui://` (page origin `kaitu-ui://localhost` on macOS, `http://kaitu-ui.localhost` on Windows): serves the web-ota `current/` bundle from disk, falls back to embedded assets via `asset_resolver`, MIME by extension, SPA fallback for extensionless routes. Scheme name is brand-neutral (kaitu-icon precedent).
-- **storage_migration.rs** — One-time origin migration: unmigrated startup boots the embedded UI at the legacy tauri:// origin with `?migrate=export`; webapp dumps localStorage via `storage_migration_put/done`; `storage-migrated` marker (app data root) + 20s watchdog fallback. Desktop auth lives in storage.json (origin-independent) — migration carries preferences/caches, not login state.
+- **main.rs** — `install_panic_hook()` first, single-instance plugin first (Gotchas). `RunEvent::ExitRequested` → `service::stop_vpn()` (sends `down`, once) then applies pending updates; `CloseRequested` on `main` → `hide_window` (only Quit exits); `ScaleFactorChanged` → `window::reclamp_min_size`. Installing a `-beta` build activates the beta channel at startup.
+- **service.rs** — k2 daemon at `:1777` (`daemon_exec` → `/api/core`, `daemon_helper_exec` → `/api/helper` for `adb-*`). `ensure_service_running`: phase 1 `cleanup_old_kaitu_service()` + poll `action:version` ≤15 s; phase 2 elevated `k2 service install` (osascript / PowerShell `-Verb RunAs`) only if phase 1 fails; phase 3 re-poll 5 s — **actual service state is the sole arbiter**, a reported install error is diagnostics only. `set_log_level` forces debug on beta (`set_log_level_internal()` is the blocking reusable form).
+- **service_diag.rs** — macOS daemon diagnostics readable without root (#3911: launchd refusing the job leaves k2.log silent): `launchd_summary()`, `background_blocker()` ("Allow in the Background" off → `get_service_blocker`), durable `service-history.log` next to desktop.log (`record()`, trimmed to its newest half past 256 KB, written by service.rs / updater.rs), and the pkg trail from `/var/log/install.log`; `log_upload.rs` bundles both.
+- **dock_icon.rs** — macOS only, `refresh()` runs in setup before any window work: sets the Dock tile from the bundled icon every launch, and once per icon change (fingerprint file `dock-icon-fingerprint`, skipped on a fresh install) deletes the Dock icon cache and restarts the Dock — the only thing that cleared the stale logo after 0.4.12.
+- **channel.rs** — stable/beta persisted in `update-channel` (app data dir); `endpoints_for_channel()`.
+- **status_stream.rs** — SSE client for daemon `GET /api/events` (3 s reconnect) → `service-state-changed { available }` / `vpn-status-changed`.
+- **tray.rs** — Show / Hide / Quit only (re-localised via `sync_locale`); Quit = `stop_vpn()` + `app.exit(0)`. No connect items.
+- **updater.rs** — 5 s delay → 30 min loop; emits `update-ready`. Windows: NSIS install + `app.exit(0)`; macOS: apply on exit (`install_pending_update()` = `app.restart()`). `set_update_channel` saves/restores pre-beta log level and returns `{channel, logLevel}`. Downgrade detection: stable + beta build → `version_comparator(!=)`. macOS channel-switch install restarts via a `sh -c` helper that waits for the old PID (`restart_after_channel_switch`).
+- **window.rs** — size from screen; created hidden, `adjust_window_size()` + `show_window()` run in setup **before** `web_ota::prepare_boot` navigates — there is no `frontend_ready` handshake (comments in window.rs / web_ota.rs naming it are stale). `--minimized` autostart; Windows always-on-top trick to focus; `hide_window()` minimizes on Windows, hides on macOS.
+- **storage.rs / storage_crypto.rs** — `storage.json` in app data dir, in-memory mirror, atomic `.tmp` + rename (single-instance = single writer); values AES-256-GCM (see "Storage Encryption").
+- **log_upload.rs** — runs in Tauri (works with the daemon dead); see "S3 Log Upload".
+- **app_list.rs / installed_apps.rs / icon_protocol.rs** — App Bypass `list_running_processes` / `list_installed_apps` (`{id, label, processNames, paths?, iconUrl, installerPackageName?}`, camelCase serde) and `kaitu-icon://` (macOS PNG; Windows 404 stub); see "App Bypass app lists".
+- **web_ota.rs** — polls `{CDN}/{brand}/web[/beta]/latest.json` (5 s + 30 min), gates on `sig` (mandatory minisign, updater pubkey) / `min_desktop` / `min_bridge` / `isNewerVersion`, pending → current (→ previous) atomic swap, `.boot-pending` + `startup_rollback()` quarantine. Owns `DESKTOP_BRIDGE_VERSION`. Debug builds no-op. `K2_WEB_OTA_BASE` overrides endpoints for UAT (signature gates still enforced).
+- **ui_protocol.rs** — `kaitu-ui://` (origin `kaitu-ui://localhost` macOS, `http://kaitu-ui.localhost` Windows): disk `current/` bundle, embedded fallback, SPA fallback.
+- **storage_migration.rs** — one-time origin migration: legacy `tauri://` origin boots with `?migrate=export`, webapp dumps localStorage via `storage_migration_put/done`, `storage-migrated` marker + 20 s watchdog. Login lives in storage.json, so it carries preferences/caches, not auth.
+- **router_bridge.rs** — see "Router LAN Bridge".
 
 ## Tauri Config (`src-tauri/tauri.conf.json`)
 
-- Window: 430×956 (mobile-like), non-maximizable, hidden title bar
 - Bundle: `targets: ["app", "nsis"]` — no DMG. The macOS installer is a `.pkg` built by `scripts/build-macos.sh` (`pkgbuild` + `productsign` + notarize) from the `.app`, with `scripts/pkg-scripts/{preinstall,postinstall}`; `createUpdaterArtifacts` yields the `.app.tar.gz` + `.sig`. **First download ≠ update**: the `.pkg` (and `_universal.app.tar.gz`, kept as `darwin-universal` + fallback) stay universal because a browser can't tell Apple Silicon from Intel; `build_thin_update` additionally ships `_aarch64.app.tar.gz` / `_x64.app.tar.gz` (`lipo -thin` → same `sign_app` → own notarize + staple, ~half size) and `publish-desktop.sh` points `darwin-aarch64` / `darwin-x86_64` at them only when **both** sigs exist on S3, otherwise at the universal one. The desktop k2 sidecar is built with `-trimpath` (`K2_DESKTOP_GOFLAGS` in the root Makefile) — no CI paths in shipped binaries. Its darwin build also gets `-mmacosx-version-min` = `tauri.conf.json` `minimumSystemVersion` via `CGO_CFLAGS`/`CGO_LDFLAGS` (`K2_DARWIN_CGOFLAGS`) — without it clang stamps the build host's macOS as minos (0.4.7–0.4.13 shipped k2 at 26.0 in a 12.0 app); `MACOSX_DEPLOYMENT_TARGET` alone is not enough (not in Go's build-cache key, stale cgo objects get relinked). `build-macos.sh` runs `scripts/check-macos-minos.sh` (every Mach-O slice ≤ the bundle's `LSMinimumSystemVersion`). NSIS is `perMachine` with `installerHooks: installer-hooks.nsh`. `csp: null`, `withGlobalTauri: true`.
 - Updater: CloudFront endpoints with minisign public key
-- Version: `"../../package.json"` (references root, single source of truth)
-- Identifier: `io.kaitu.desktop`
+- Version: `"../../package.json"`; window size / identifier differ per brand (see Brand)
 
 ## Plugins
 
-- `tauri-plugin-single-instance` — Show + focus existing window (**must be registered first**, see Gotchas)
-- `tauri-plugin-log` — `desktop.log` in the per-brand log dir (`~/Library/Logs/{kaitu|overleap}` / `%LOCALAPPDATA%\{brand}\logs`), 20 MB `KeepOne`, level fixed at compile time by `K2_BUILD_LOG_LEVEL`, `reqwest` targets filtered out
-- `tauri-plugin-updater` — Auto-update with CDN endpoints
-- `tauri-plugin-process` — Process management
-- `tauri-plugin-autostart` — Launch on system boot
-- `tauri-plugin-opener` — Open external URLs in system browser
-- `tauri-plugin-clipboard-manager` — Read/write system clipboard
+- `tauri-plugin-single-instance` — **must be registered first** (Gotchas). (`tauri-plugin-log` rotation: root CLAUDE.md "Log rotation".)
 - `tauri-plugin-mcp-bridge` — cargo feature `mcp-bridge` only (tauri-mcp dev bridge); `build.rs` writes/removes the gitignored `capabilities/mcp-bridge.json`; `make build-macos-test` builds with `--features=mcp-bridge`
 
 ## IPC Commands (JS → Rust)
 
-| Command | Module | Purpose |
-|---------|--------|---------|
-| `show_window` / `hide_window` | main | Show (unminimize + focus) / hide the main window — same fns the tray and single-instance callback use |
-| `daemon_exec` | service | Proxy VPN actions (up/down/status/version) to k2 daemon HTTP |
-| `daemon_helper_exec` | service | Proxy `adb-*` actions to k2 daemon `/api/helper` (not `/api/core`) |
-| `get_platform_info` | service | Returns `{ os, version }` |
-| `get_pid` | service | Returns k2 daemon PID |
-| `ensure_service_running` | service | Legacy-service cleanup + version poll + elevated install + post-install verify (see service.rs) |
-| `admin_reinstall_service` | service | Elevated reinstall (osascript on macOS, PowerShell on Windows) |
-| `check_update_now` | updater | Manual update check |
-| `apply_update_now` | updater | Apply downloaded update |
-| `get_update_status` | updater | Returns `UpdateInfo \| null` |
-| `set_log_level` | service | Set daemon log level (beta forces debug) |
-| `get_update_channel` | updater | Returns current channel ("stable"/"beta") |
-| `set_update_channel` | updater | Set channel, accepts `currentLogLevel` for pre-beta save |
-| `storage_get` | storage | Get value by key from app storage |
-| `storage_set` | storage | Set key-value pair in app storage |
-| `storage_remove` | storage | Remove key from app storage |
-| `sync_locale` | tray | Sync locale to system tray |
-| `upload_service_log_command` | log_upload | Collect + upload logs to S3 |
-| `set_dev_enabled` | service | Toggle WebView devtools inspection |
-| `list_running_processes` | app_list | Running apps — App Bypass **supplement** (see "App Bypass app lists") |
-| `list_installed_apps` | installed_apps | Installed apps `{id,label,processNames,iconUrl,installerPackageName?}` — App Bypass **primary** list |
-| `router_http_request` | router_bridge | SSRF-gated HTTP to a LAN k2r router (`http://` + private IPv4 only, no redirects) |
-| `get_default_gateway` | router_bridge | Physical-interface default gateway, excluding TUN (unconsumed — see "Router LAN Bridge") |
-| `ui_boot_ok` | web_ota | Webapp boot confirmation — clears `.boot-pending` rollback marker |
-| `storage_migration_put` | storage_migration | Store localStorage snapshot (legacy-origin export page) |
-| `storage_migration_get` | storage_migration | Read stored snapshot (new-origin import) |
-| `storage_migration_clear` | storage_migration | Delete stored snapshot after import |
-| `storage_migration_done` | storage_migration | Mark migrated + navigate window to `kaitu-ui://` |
+The command list is `main.rs` `generate_handler![]` (the bridge contract test parses it into `contracts/bridge-api.json`). Non-obvious ones:
+
+- `daemon_helper_exec` — `adb-*` actions go to daemon `/api/helper`, not `/api/core`.
+- `get_service_blocker` / `open_service_settings` (bridge v4) — macOS: report a user-flippable reason the daemon cannot run (Login Items "Allow in the Background" off, via `service_diag::background_blocker()`; `None` = none known) and open System Settings → Login Items & Extensions; `open_service_settings` errors on non-macOS. Webapp `ServiceAlert`.
+- `ui_boot_ok` clears `.boot-pending`; `storage_migration_*` serve the origin migration.
 
 ## App Bypass app lists (`installed_apps.rs` + `app_list.rs`)
 
@@ -202,25 +153,16 @@ updater endpoints；**合并时数组整体替换，overlay 里数组字段必�
 
 ## Router LAN Bridge (`router_bridge.rs`)
 
-Two Tauri commands support app-direct control of a headless k2r router (companion to the same feature's mobile bridge, see `mobile/CLAUDE.md`). Full design: `docs/superpowers/specs/2026-07-17-k2r-headless-app-control-design.md`.
+Flow: `webapp/CLAUDE.md` "Router Tab".
 
-- **`router_http_request(opts: RouterRequestOptions) -> RouterResponse`** — the only channel webapp's `_platform.routerRequest` uses to reach a LAN router (`http://10.17.79.1:1779`, k2r's DNAT-intercepted anchor address — see `webapp/CLAUDE.md` "Router Tab"). Gated by `is_private_host()`: scheme must be `http` **and** host must parse as an `Ipv4Addr` that is private or loopback (hostnames, IPv6, and public IPv4 are all rejected). Built on `reqwest::blocking` inside `spawn_blocking` (blocking client panics in Tauri's async runtime — same rule as elsewhere in this file). The client is built with `redirect(Policy::none())` — deliberate: `is_private_host` only validates the *requested* URL, not a `Location:` header from a possibly-compromised router, so following redirects would let a validated private-IP target bounce the client to an arbitrary public URL post-validation. The 3xx is surfaced to the caller instead of chased.
-- **`get_default_gateway() -> Option<String>`** — physical-interface default gateway, macOS via `route -n get default` (skips `utun*` interfaces), Windows via `Get-NetRoute -DestinationPrefix '0.0.0.0/0'` filtered against adapter descriptions containing `wintun`/`tap`/`kaitu`/`tunnel`. **Currently unconsumed**: router discovery is anchor-only (constant address, DNAT-intercepted by k2r), so `router-service.ts` never calls this — kept as an `IPlatform`-optional capability for possible future diagnostics.
-- Mirrored on the mobile side by `capacitor-k2.ts`'s `isPrivateIPv4Literal`/`assertRouterUrlAllowed` TS gate (`CapacitorHttp` has no native URL allowlist, so the equivalent check has to live in TS) plus `disableRedirects: true`.
+- **`router_http_request`** — the only channel for `_platform.routerRequest`. Gated by `is_private_host()`: scheme `http` **and** host parses as a private/loopback `Ipv4Addr` (hostnames, IPv6, public IPv4 rejected). `reqwest::blocking` inside `spawn_blocking`. Built with `redirect(Policy::none())` on purpose: the gate validates only the requested URL, so following a `Location:` from a compromised router would bounce to an arbitrary public URL post-validation; the 3xx is returned instead.
+- **`get_default_gateway`** — macOS `route -n get default` (skips `utun*`), Windows `Get-NetRoute` filtered against `wintun`/`tap`/`kaitu`/`tunnel` adapters. **Unconsumed** (discovery is anchor-only).
 
 ## Storage Encryption (`storage_crypto.rs`)
 
-Desktop `storage.json` values encrypted with AES-256-GCM. Key derived via HKDF-SHA256 from the `machine-uid` crate's firmware-level ID:
-
-- **macOS**: `ioreg IOPlatformUUID`
-- **Windows**: registry `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid`
-- **Linux**: `/var/lib/dbus/machine-id` → `/etc/machine-id`
-
-**Not** `sysctl kern.uuid` — that is a UUIDv3 derived from hostname and collided in v0.4.0 (see commit `d4ebdd6`).
-
-`ENC1:` prefix marks encrypted values; plaintext read transparently for backward compat. MCP Go (`mcp/storage_crypto.go`) reimplements the same crypto with shared test vectors for read-only session sharing.
-
-**Threat model**: scope is 落盘混淆 + 硬件绑定, **not** anti-local-attacker. See the `storage_crypto.rs` module doc for details.
+- AES-256-GCM, key = HKDF-SHA256 of the `machine-uid` crate's ID (macOS `IOPlatformUUID`, Windows `MachineGuid`) — **not** `sysctl kern.uuid` (hostname-derived UUIDv3, collided in v0.4.0, `d4ebdd6`).
+- `ENC1:` prefix marks encrypted values; plaintext is read transparently. `mcp/storage_crypto.go` reimplements it with shared test vectors (read-only session sharing) — change both together.
+- Threat model: 落盘混淆 + 硬件绑定, **not** anti-local-attacker (module doc).
 
 ## macOS PKG Install Order
 
@@ -228,21 +170,20 @@ Preinstall runs the OLD binary, postinstall runs the NEW. Always `launchctl unlo
 
 ## Artifact Naming
 
-`Kaitu_{VERSION}_{ARCH}.{EXT}` — underscore-separated.
+This section is the source of truth (root CLAUDE.md points here). `{Product}_{VERSION}_{ARCH}.{EXT}` — underscore-separated, `Product` = `Kaitu` / `Overleap`.
 
-- macOS: `_universal.pkg` / `_universal.app.tar.gz` / `.sig`
-- Windows: `_x64.exe` / `.sig`
-- S3 path: `kaitu/desktop/{VERSION}/`
+- macOS: `_universal.pkg` / `_universal.app.tar.gz` + `.sig`, plus thin updater bundles `_aarch64.app.tar.gz` / `_x64.app.tar.gz` + `.sig` (see Tauri Config)
+- Windows: `_x64.exe` + `.sig`
+- S3 path: `{brand}/desktop/{VERSION}/` (`kaitu/` or `overleap/`; `scripts/publish-desktop.sh`)
 
 Never use hyphen separator (`Kaitu-`) or `-setup` suffix.
 
-## Root Daemon adb Discovery
+## S3 Log Upload (`log_upload.rs`)
 
-Daemon runs as root on macOS → different `$PATH` and `$HOME` from the user, so it never relies on the user's `adb` install. `k2/daemon/helper_adb.go` `prepareAdb()`: reuse an existing adb server on `:5037` (avoids USB conflicts with Android Studio), else download platform-tools per the CDN `tools/tools.json` manifest and start its own server. Device ops go through `gadb` (pure Go ADB TCP client) — no external `adb` binary at runtime.
+Root CLAUDE.md "Log rotation" covers caps/retention and the read-only rule. Desktop specifics:
 
-## S3 Log Upload (Desktop)
+- Stages `k2*.log` / `.log.gz` / `panic-*.log` from both root and user daemon log dirs, `desktop*.log`, `service-history.log` + pkg installer trail (macOS), macOS `log show` output, Windows NSIS diagnostics (`install-diag.log`, `kaitu-preinstall.log`); sanitizes, tar.gz, `spawn_blocking`.
+- **Feedback**: `{S3_PREFIX_MANUAL}/{version}/{udid}/{date}/logs-{ts}-{id}.tar.gz` (`desktop/` kaitu, `desktop-overleap/` overleap). **Beta auto-upload** (desktop only): per-file PUT `{S3_PREFIX_AUTO}/{udid}/{filename}` (`auto/` / `auto-overleap/`); active `.log` overwrites, rotated `.log.gz` skipped via HEAD.
+- **The notify Lambda (`scripts/lambda/s3-log-notify/index.mjs`) only recognises `PLATFORM_PREFIXES = {desktop, mobile}`** — `desktop-overleap/` uploads land but trigger no notification until that set gains it and the Lambda is redeployed (`auto/` never notifies, by design).
 
-- **Feedback upload**: bundle tar.gz with unique feedbackId key: `{S3_PREFIX_MANUAL}/{version}/{udid}/{date}/logs-{ts}-{id}.tar.gz` — `desktop/` for kaitu (historical, unchanged), `desktop-overleap/` for overleap.
-- **Beta auto-upload** (desktop only): per-file PUT to `{S3_PREFIX_AUTO}/{udid}/{filename}` — `auto/` kaitu, `auto-overleap/` overleap. Active `.log` files overwrite (latest snapshot). Rotated `.log.gz` files use HEAD check to skip if already uploaded.
-- Legacy `service-logs/` / `feedback-logs/` prefixes still supported by Lambda. **The notify Lambda (`scripts/lambda/s3-log-notify/index.mjs`) only recognises `PLATFORM_PREFIXES = {desktop, mobile}`** — `desktop-overleap/` feedback uploads land in the bucket but trigger no notification until that set gains `desktop-overleap` and the Lambda is redeployed (ops follow-up; `auto/` never notified either, by design).
-- Upload modules are read-only — never truncate source log files.
+The daemon's adb helper (root daemon → its own adb, CDN `tools/tools.json`) is daemon-layer: `k2/daemon/helper_adb.go`.
