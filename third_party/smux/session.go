@@ -78,6 +78,11 @@ type Session struct {
 
 	halfClose int32 // peer keeps reading after its first FIN (SetPeerHalfClose)
 
+	// receive-window auto-tuning (Config.MinStreamBuffer, k2 patch 6)
+	autoTune bool
+	grown    int64 // window growth granted to live streams, beyond MinStreamBuffer
+	growPool int64 // cap on grown
+
 	deadline atomic.Value
 
 	shaper chan writeRequest // a shaper for writing
@@ -92,6 +97,10 @@ func newSession(config *Config, conn io.ReadWriteCloser, client bool) *Session {
 	s.streams = make(map[uint32]*Stream)
 	s.chAccepts = make(chan *Stream, defaultAcceptBacklog)
 	s.bucket = int32(config.MaxReceiveBuffer)
+	if config.MinStreamBuffer > 0 && config.MinStreamBuffer < config.MaxStreamBuffer {
+		s.autoTune = true
+		s.growPool = int64(config.MaxReceiveBuffer / 2)
+	}
 	s.bucketNotify = make(chan struct{}, 1)
 	s.shaper = make(chan writeRequest)
 	s.writes = make(chan writeRequest)
@@ -157,6 +166,10 @@ func (s *Session) OpenStream() (*Stream, error) {
 		s.streamClosed(sid)
 		return nil, err
 	}
+	if err := stream.sendInitialWindow(); err != nil {
+		stream.Close()
+		return nil, err
+	}
 	return stream, nil
 }
 
@@ -177,6 +190,10 @@ func (s *Session) AcceptStream() (*Stream, error) {
 
 	select {
 	case stream := <-s.chAccepts:
+		if err := stream.sendInitialWindow(); err != nil {
+			stream.Close()
+			return nil, err
+		}
 		return stream, nil
 	case <-deadline:
 		return nil, ErrTimeout
@@ -314,13 +331,43 @@ func (s *Session) peerHalfClose() bool { return atomic.LoadInt32(&s.halfClose) =
 // notify the session that a stream has closed
 func (s *Session) streamClosed(sid uint32) {
 	s.streamLock.Lock()
-	if n := s.streams[sid].recycleTokens(); n > 0 { // return remaining tokens to the bucket
-		if atomic.AddInt32(&s.bucket, int32(n)) > 0 {
-			s.notifyBucket()
+	if stream, ok := s.streams[sid]; ok {
+		n, grown := stream.recycleTokens()
+		if n > 0 { // return remaining tokens to the bucket
+			if atomic.AddInt32(&s.bucket, int32(n)) > 0 {
+				s.notifyBucket()
+			}
+		}
+		if grown > 0 {
+			atomic.AddInt64(&s.grown, -int64(grown))
 		}
 	}
 	delete(s.streams, sid)
 	s.streamLock.Unlock()
+}
+
+// reserveGrowth grants a stream with receive window cur up to cur more
+// (doubling it), limited by MaxStreamBuffer and by what is left of the
+// session's growth pool. It returns the bytes granted, possibly 0.
+func (s *Session) reserveGrowth(cur uint32) uint32 {
+	want := int64(cur)
+	if max := int64(s.config.MaxStreamBuffer) - int64(cur); want > max {
+		want = max
+	}
+	for want > 0 {
+		grown := atomic.LoadInt64(&s.grown)
+		d := s.growPool - grown
+		if d <= 0 {
+			return 0
+		}
+		if d > want {
+			d = want
+		}
+		if atomic.CompareAndSwapInt64(&s.grown, grown, grown+d) {
+			return uint32(d)
+		}
+	}
+	return 0
 }
 
 // returnTokens is called by stream to return token after read

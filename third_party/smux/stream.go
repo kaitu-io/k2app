@@ -49,6 +49,12 @@ type Stream struct {
 	numWritten uint32 // count num of bytes written
 	incr       uint32 // counting for sending
 
+	// receive window we advertise (k2 patch 6); guarded by bufferLock
+	rcvWnd       uint32
+	tuneStart    time.Time // start of the current auto-tuning sample
+	tuneBytes    uint32    // bytes consumed since tuneStart
+	tuneReleased bool      // growth returned to the session; never grow again
+
 	// UPD command
 	peerConsumed uint32        // num of bytes the peer has consumed
 	peerWindow   uint32        // peer window, initialized to 256KB, updated by peer
@@ -68,7 +74,70 @@ func newStream(id uint32, frameSize int, sess *Session) *Stream {
 	s.chPeerClosed = make(chan struct{})
 	s.writeClosed = make(chan struct{})
 	s.peerWindow = initialPeerWindow // set to initial window size
+	s.rcvWnd = uint32(sess.config.MaxStreamBuffer)
+	if sess.autoTune {
+		s.rcvWnd = uint32(sess.config.MinStreamBuffer)
+		s.tuneStart = time.Now()
+	}
 	return s
+}
+
+// tuneInterval is the auto-tuning sample: a stream whose reader consumes
+// its whole window within it gets the window doubled. A window-limited
+// sender delivers one window per round trip, so any path with RTT under
+// tuneInterval grows; a stream that is not window-limited grows only to
+// about its rate × tuneInterval.
+const tuneInterval = time.Second
+
+// consumedLocked accounts n bytes read by the user and decides whether to
+// send a window update; it returns the update's consumed and window values
+// (ok=false: none due). Caller holds bufferLock.
+func (s *Stream) consumedLocked(n int) (consumed, window uint32, ok bool) {
+	s.numRead += uint32(n)
+	s.incr += uint32(n)
+	if s.sess.autoTune && !s.tuneReleased && n > 0 {
+		s.tuneBytes += uint32(n)
+		if s.tuneBytes >= s.rcvWnd {
+			now := time.Now()
+			if now.Sub(s.tuneStart) <= tuneInterval {
+				if d := s.sess.reserveGrowth(s.rcvWnd); d > 0 {
+					s.rcvWnd += d
+					ok = true // tell the sender now, not at half a window
+				}
+			}
+			s.tuneStart, s.tuneBytes = now, 0
+		}
+	}
+	// in an ideal environment:
+	// if more than half of buffer has consumed, send read ack to peer
+	// based on round-trip time of ACK, continous flowing data
+	// won't slow down because of waiting for ACK, as long as the
+	// consumer keeps on reading data
+	// s.numRead == n also notify window at the first read
+	if s.incr >= s.rcvWnd/2 || (n > 0 && s.numRead == uint32(n)) {
+		ok = true
+	}
+	if !ok {
+		return 0, 0, false
+	}
+	s.incr = 0
+	return s.numRead, s.rcvWnd, true
+}
+
+// sendInitialWindow tells the peer our window right after SYN (opener) or
+// accept (acceptor). Without it the peer assumes initialPeerWindow, 256 KB,
+// until our first read, which with auto-tuning is far more than we grant.
+// The opener's update is queued right behind its SYN, ahead of any data,
+// and the acceptor's goes out before AcceptStream returns, so before its
+// first reply: either way the peer applies it before it sends us data.
+func (s *Stream) sendInitialWindow() error {
+	if !s.sess.autoTune {
+		return nil
+	}
+	s.bufferLock.Lock()
+	consumed, window := s.numRead, s.rcvWnd
+	s.bufferLock.Unlock()
+	return s.sendWindowUpdate(consumed, window)
 }
 
 // ID returns the unique stream ID.
@@ -96,7 +165,6 @@ func (s *Stream) TryRead(b []byte) (n int, err error) {
 		return 0, nil
 	}
 
-	var notifyConsumed uint32
 	s.bufferLock.Lock()
 	if len(s.buffers) > 0 {
 		n = copy(b, s.buffers[0])
@@ -109,25 +177,13 @@ func (s *Stream) TryRead(b []byte) (n int, err error) {
 			s.heads = s.heads[1:]
 		}
 	}
-
-	// in an ideal environment:
-	// if more than half of buffer has consumed, send read ack to peer
-	// based on round-trip time of ACK, continous flowing data
-	// won't slow down because of waiting for ACK, as long as the
-	// consumer keeps on reading data
-	// s.numRead == n also notify window at the first read
-	s.numRead += uint32(n)
-	s.incr += uint32(n)
-	if s.incr >= uint32(s.sess.config.MaxStreamBuffer/2) || s.numRead == uint32(n) {
-		notifyConsumed = s.numRead
-		s.incr = 0
-	}
+	consumed, window, notify := s.consumedLocked(n)
 	s.bufferLock.Unlock()
 
 	if n > 0 {
 		s.sess.returnTokens(n)
-		if notifyConsumed > 0 {
-			err := s.sendWindowUpdate(notifyConsumed)
+		if notify {
+			err := s.sendWindowUpdate(consumed, window)
 			return n, err
 		} else {
 			return n, nil
@@ -145,7 +201,6 @@ func (s *Stream) TryRead(b []byte) (n int, err error) {
 // WriteTo implements io.WriteTo
 func (s *Stream) WriteTo(w io.Writer) (n int64, err error) {
 	for {
-		var notifyConsumed uint32
 		var buf []byte
 		s.bufferLock.Lock()
 		if len(s.buffers) > 0 {
@@ -153,12 +208,7 @@ func (s *Stream) WriteTo(w io.Writer) (n int64, err error) {
 			s.buffers = s.buffers[1:]
 			s.heads = s.heads[1:]
 		}
-		s.numRead += uint32(len(buf))
-		s.incr += uint32(len(buf))
-		if s.incr >= uint32(s.sess.config.MaxStreamBuffer/2) || s.numRead == uint32(len(buf)) {
-			notifyConsumed = s.numRead
-			s.incr = 0
-		}
+		consumed, window, notify := s.consumedLocked(len(buf))
 		s.bufferLock.Unlock()
 
 		if buf != nil {
@@ -173,8 +223,8 @@ func (s *Stream) WriteTo(w io.Writer) (n int64, err error) {
 				return n, ew
 			}
 
-			if notifyConsumed > 0 {
-				if err := s.sendWindowUpdate(notifyConsumed); err != nil {
+			if notify {
+				if err := s.sendWindowUpdate(consumed, window); err != nil {
 					return n, err
 				}
 			}
@@ -190,7 +240,7 @@ func (s *Stream) WriteTo(w io.Writer) (n int64, err error) {
 	}
 }
 
-func (s *Stream) sendWindowUpdate(consumed uint32) error {
+func (s *Stream) sendWindowUpdate(consumed, window uint32) error {
 	var timer *time.Timer
 	var deadline <-chan time.Time
 	if d, ok := s.readDeadline.Load().(time.Time); ok && !d.IsZero() {
@@ -202,7 +252,7 @@ func (s *Stream) sendWindowUpdate(consumed uint32) error {
 	frame := newFrame(cmdUPD, s.id)
 	var hdr updHeader
 	binary.LittleEndian.PutUint32(hdr[:], consumed)
-	binary.LittleEndian.PutUint32(hdr[4:], uint32(s.sess.config.MaxStreamBuffer))
+	binary.LittleEndian.PutUint32(hdr[4:], window)
 	frame.data = hdr[:]
 	_, err := s.sess.writeFrameInternal(frame, deadline, 0)
 	return err
@@ -488,7 +538,9 @@ func (s *Stream) pushBytes(buf []byte) (written int, err error) {
 }
 
 // recycleTokens transform remaining bytes to tokens(will truncate buffer)
-func (s *Stream) recycleTokens() (n int) {
+// It also hands back the window growth this stream holds, which the
+// caller returns to the session's pool.
+func (s *Stream) recycleTokens() (n int, grown uint32) {
 	s.bufferLock.Lock()
 	for k := range s.buffers {
 		n += len(s.buffers[k])
@@ -496,6 +548,10 @@ func (s *Stream) recycleTokens() (n int) {
 	}
 	s.buffers = nil
 	s.heads = nil
+	if s.sess.autoTune && !s.tuneReleased {
+		grown = s.rcvWnd - uint32(s.sess.config.MinStreamBuffer)
+		s.tuneReleased = true
+	}
 	s.bufferLock.Unlock()
 	return
 }

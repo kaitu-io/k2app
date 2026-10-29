@@ -31,14 +31,42 @@ var (
 	_ EchoProber = (*TCPWSClient)(nil)
 )
 
-// DefaultSmuxConfig returns the smux configuration for k2v5 TCP-WS transport.
+// DefaultSmuxConfig returns the client-side smux configuration for the k2v5
+// TCP-WS transport; ServerSmuxConfig is the server's. They differ only in
+// the receive budget (smux K2 patch 6), which is local to each side: the
+// window a receiver grants travels in its own window updates, so the two
+// ends need not agree and any mix of versions interoperates.
+//
+// The receive budget, per session (one TCP-WS connection per server):
+//   - MaxReceiveBuffer caps the bytes buffered for all streams together.
+//   - Each stream's window starts at MinStreamBuffer and doubles while its
+//     reader keeps up, up to MaxStreamBuffer; that growth, summed over all
+//     streams, is capped at MaxReceiveBuffer/2.
+//
+// A stream whose reader has stalled therefore holds about MinStreamBuffer,
+// and it takes MaxReceiveBuffer/2 / MinStreamBuffer of them to block the
+// session. Single-stream throughput tops out near MaxStreamBuffer/RTT. The
+// old fixed config (64 KB windows, 256 KB session) blocked on 4 stalled
+// streams and capped one stream at ~5 Mbps on a 100 ms path.
 func DefaultSmuxConfig() *smux.Config {
+	return smuxConfig(clientRecvBuffer, clientMinStreamWindow, clientMaxStreamWindow)
+}
+
+// ServerSmuxConfig returns the server-side smux configuration. The server
+// receives uploads; 4 MB per session, 32 KB per stalled stream, up to 2 MB
+// (~80 Mbps at 200 ms) per stream.
+func ServerSmuxConfig() *smux.Config {
+	return smuxConfig(4<<20, 32<<10, 2<<20)
+}
+
+func smuxConfig(recvBuf, minWindow, maxWindow int) *smux.Config {
 	return &smux.Config{
 		KeepAliveInterval: 10 * time.Second,
 		KeepAliveTimeout:  30 * time.Second,
-		MaxFrameSize:      32768,  // 32 KB, matches WebSocket message limit
-		MaxReceiveBuffer:  262144, // 256 KB
-		MaxStreamBuffer:   65536,  // 64 KB per stream
+		MaxFrameSize:      32768, // 32 KB, matches WebSocket message limit
+		MaxReceiveBuffer:  recvBuf,
+		MaxStreamBuffer:   maxWindow,
+		MinStreamBuffer:   minWindow,
 	}
 }
 
@@ -892,7 +920,7 @@ func (s *TCPWSServer) admitUDP(auth *connAuth) (handler UDPHandler, ok bool) {
 func (s *TCPWSServer) HandleConn(conn net.Conn) {
 	remote := conn.RemoteAddr()
 	connLog := slog.With("remote", remote)
-	sess, err := smux.Server(conn, DefaultSmuxConfig())
+	sess, err := smux.Server(conn, ServerSmuxConfig())
 	if err != nil {
 		conn.Close()
 		return

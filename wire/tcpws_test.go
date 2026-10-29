@@ -16,25 +16,30 @@ import (
 	"github.com/coder/websocket"
 )
 
+// Both smux configs must pass smux's own check, run receive-window
+// auto-tuning (smux K2 patch 6), and leave room for at least 32 stalled
+// streams before the session buffer blocks: the old fixed config (64 KB
+// windows, 256 KB buffer) blocked on 4.
 func TestDefaultSmuxConfig(t *testing.T) {
-	cfg := DefaultSmuxConfig()
-	if cfg == nil {
-		t.Fatal("DefaultSmuxConfig returned nil")
-	}
-	if cfg.MaxFrameSize != 32768 {
-		t.Errorf("MaxFrameSize = %d, want 32768", cfg.MaxFrameSize)
-	}
-	if cfg.MaxReceiveBuffer != 262144 {
-		t.Errorf("MaxReceiveBuffer = %d, want 262144", cfg.MaxReceiveBuffer)
-	}
-	if cfg.MaxStreamBuffer != 65536 {
-		t.Errorf("MaxStreamBuffer = %d, want 65536", cfg.MaxStreamBuffer)
-	}
-	if cfg.KeepAliveInterval != 10*time.Second {
-		t.Errorf("KeepAliveInterval = %v, want 10s", cfg.KeepAliveInterval)
-	}
-	if cfg.KeepAliveTimeout != 30*time.Second {
-		t.Errorf("KeepAliveTimeout = %v, want 30s", cfg.KeepAliveTimeout)
+	for name, cfg := range map[string]*smux.Config{
+		"client": DefaultSmuxConfig(),
+		"server": ServerSmuxConfig(),
+	} {
+		if err := smux.VerifyConfig(cfg); err != nil {
+			t.Errorf("%s: VerifyConfig: %v", name, err)
+		}
+		if cfg.MinStreamBuffer <= 0 || cfg.MinStreamBuffer >= cfg.MaxStreamBuffer {
+			t.Errorf("%s: MinStreamBuffer %d, MaxStreamBuffer %d: auto-tuning off", name, cfg.MinStreamBuffer, cfg.MaxStreamBuffer)
+		}
+		if stalled := cfg.MaxReceiveBuffer / 2 / cfg.MinStreamBuffer; stalled < 32 {
+			t.Errorf("%s: %d stalled streams block the session; want >= 32", name, stalled)
+		}
+		if cfg.MaxFrameSize != 32768 {
+			t.Errorf("%s: MaxFrameSize = %d, want 32768", name, cfg.MaxFrameSize)
+		}
+		if cfg.KeepAliveInterval != 10*time.Second || cfg.KeepAliveTimeout != 30*time.Second {
+			t.Errorf("%s: keepalive %v/%v, want 10s/30s", name, cfg.KeepAliveInterval, cfg.KeepAliveTimeout)
+		}
 	}
 }
 

@@ -32,6 +32,15 @@ type Config struct {
 	// MaxStreamBuffer is used to control the maximum
 	// number of data per stream
 	MaxStreamBuffer int
+
+	// MinStreamBuffer turns on receive-window auto-tuning (k2 patch 6): each
+	// stream starts with this window and doubles it, up to MaxStreamBuffer,
+	// whenever its reader consumes a whole window within a second. The
+	// growth of all streams together is capped at MaxReceiveBuffer/2, so
+	// streams whose reader has stalled hold only their small window and
+	// cannot use up the session buffer the others need. 0 keeps every
+	// stream at a fixed MaxStreamBuffer window (upstream behavior).
+	MinStreamBuffer int
 }
 
 // DefaultConfig is used to return a default configuration
@@ -70,6 +79,9 @@ func VerifyConfig(config *Config) error {
 	}
 	if config.MaxStreamBuffer > math.MaxInt32 {
 		return errors.New("max stream buffer cannot be larger than 2147483647")
+	}
+	if config.MinStreamBuffer < 0 || config.MinStreamBuffer > config.MaxStreamBuffer {
+		return errors.New("min stream buffer must be between 0 and max stream buffer")
 	}
 	return nil
 }

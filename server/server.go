@@ -943,7 +943,7 @@ func (s *Server) handleHTTP(conn net.Conn) {
 		// HandleConn creates the smux session and starts a goroutine to accept streams.
 		// We must block here to keep the HTTP handler alive (and the underlying
 		// hijacked connection open). Wait until the smux session ends.
-		sess, err := smux.Server(wsConn, wire.DefaultSmuxConfig())
+		sess, err := smux.Server(wsConn, wire.ServerSmuxConfig())
 		if err != nil {
 			return
 		}

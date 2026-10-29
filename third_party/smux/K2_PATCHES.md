@@ -135,6 +135,53 @@ before it.
   re-reads its deadline on every pass (upstream d2d7690 did the read side).
 - A PSH for an unknown stream returns its buffer to the allocator.
 
+## 6. Receive-window auto-tuning (`Config.MinStreamBuffer`; stream.go, session.go, mux.go)
+
+Upstream advertises a fixed window of `MaxStreamBuffer` for every stream,
+and stops reading the conn once `MaxReceiveBuffer` bytes are buffered. With
+k2's old TCP-WS config (64 KB / 256 KB) that meant two failures, both
+reproduced in tests:
+
+- **One stream capped at 64 KB per round trip**: 5 Mbps at 100 ms RTT,
+  2.6 Mbps at 200 ms, whatever the link could do.
+- **Four stalled readers froze the session.** A stream whose reader stops
+  (a paused video, an app in the background) keeps its window full. Four
+  such streams filled the session buffer, `recvLoop` stopped, every other
+  stream froze, and keepalive killed the session 30 s later.
+
+With `MinStreamBuffer` > 0:
+
+- A stream's window starts at `MinStreamBuffer` and doubles, up to
+  `MaxStreamBuffer`, each time its reader consumes a whole window within
+  `tuneInterval` (1 s). That needs no RTT estimate: a window-limited
+  sender delivers one window per round trip, so any path under 1 s RTT
+  grows; a stream that is not window-limited stops at about rate × 1 s.
+- Growth over all live streams is capped at `MaxReceiveBuffer/2` and
+  returned when a stream closes. A stalled reader holds about
+  `MinStreamBuffer`, so blocking the session takes
+  `MaxReceiveBuffer/2 / MinStreamBuffer` of them, and conforming peers
+  can't reach the buffer limit.
+- Each side sends a window update as soon as a stream exists: the opener
+  right after SYN, the acceptor before `AcceptStream` returns. Otherwise
+  the peer assumes `initialPeerWindow` (256 KB) until our first read. The
+  opener's update is queued behind its SYN, so it lands before any data;
+  the acceptor's goes out before its first reply. (An old opener registers
+  its stream only after its SYN write, so it can drop an acceptor's early
+  update; it then runs on 256 KB until our first read, as before.)
+- All of this is receiver-local: a window travels in the receiver's own
+  updates, so either end can run it against any peer
+  (`TestAutoTune_InteropWithFixedWindowPeer`, plus a run against the
+  pre-patch code).
+
+Not changed: keepalive still closes a session whose `recvLoop` is blocked
+on the buffer, unlike upstream 80072d9. Once conforming peers can't
+block it, a blocked buffer means a misbehaving peer or a pathological
+stall. Closing lets the client reconnect, and a server reclaims the
+session; leaving it frozen would do neither.
+
+k2's budgets live in `wire.DefaultSmuxConfig` (client, per platform) and
+`wire.ServerSmuxConfig`. Pinned by `autotune_test.go`.
+
 ## Removed contract: the opener no longer has to speak first
 
 Before patch 5 an acceptor could not write (FIN included) before the
