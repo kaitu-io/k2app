@@ -83,7 +83,14 @@ suite_k2() {
   # compile — on the Mac they silently vanish from `go test ./...`.
   # TestSOMark*: need CAP_NET_ADMIN, which an unprivileged container does not have.
   ( cd k2 && go test ./... -count=1 -short -timeout=600s -skip 'SOMark|SoMark' ) &&
-  ( cd k2 && go build -tags=deadlock_disable ./... )
+  ( cd k2 && go build -tags=deadlock_disable ./... ) &&
+  # Nested module: `go test ./...` above never enters it (ci.yml "Vendored smux tests").
+  ( cd k2/third_party/smux && go test -race -count=2 ./... ) &&
+  # krs.tar.gz is an outer-repo file since k2 went in-tree: a `git commit -a` after
+  # any `make` would carry the 2 MB build archive. labtest ships the worktree without
+  # .git, so check the shipped file (scripts/check-embed-size.sh reads HEAD after push).
+  { local n; n=$(wc -c < k2/rule/embed/krs.tar.gz)
+    [ "$n" -le 307200 ] || { echo "k2/rule/embed/krs.tar.gz is $n bytes (> 300 KB): the build archive, not the placeholder — git checkout -- k2/rule/embed/krs.tar.gz"; false; }; }
 }
 
 suite_rust() {
