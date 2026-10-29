@@ -1609,13 +1609,14 @@ func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream,
 		return
 	}
 
+	// Publish before answering, as on TCP-WS (handleMetadataStream).
+	if ctx.sess != nil {
+		ctx.sess.markAuthed(st.udid, st.token, st.mode, st.authAt, st.svcExp)
+	}
 	// newCookie is non-empty ONLY after a Center cold auth (spec §6.3) — a
 	// cookie hit answers with an empty kv and the client keeps its copy.
 	WriteMetadataResponse(stream, st.newCookie, false) // no smux on QUIC
 	stream.Close()
-	if ctx.sess != nil {
-		ctx.sess.markAuthed(st.udid, st.token, st.mode, st.authAt, st.svcExp)
-	}
 	slog.Info("QUICServer: metadata auth OK", "udid", st.udid, "mode", st.mode, "cookieHit", st.cookieHit, "remote", qconn.RemoteAddr())
 }
 

@@ -2,6 +2,7 @@ package wire
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -131,6 +132,45 @@ func TestSendMetadata_TransportErrorIsNotReject(t *testing.T) {
 	}
 	if isMetadataReject(err) {
 		t.Fatalf("transport error misclassified as rejection: %v", err)
+	}
+}
+
+// rejectedStream is a meta stream the server has already answered with resp
+// and torn down: the stream header goes out, the metadata frame's write
+// fails, and resp is waiting in the read buffer.
+type rejectedStream struct {
+	resp   io.Reader
+	writes int
+}
+
+func (r *rejectedStream) Read(p []byte) (int, error) { return r.resp.Read(p) }
+func (r *rejectedStream) Write(p []byte) (int, error) {
+	if r.writes++; r.writes > 1 {
+		return 0, io.ErrClosedPipe
+	}
+	return len(p), nil
+}
+func (r *rejectedStream) Close() error { return nil }
+
+// A server that rejects answers and then closes the connection; that close
+// can fail our metadata write although its answer has already arrived. The
+// rejection must still be reported as one, not as a transport error that
+// lets connect() carry on.
+func TestSendMetadata_RejectSurvivesFailedWrite(t *testing.T) {
+	var resp bytes.Buffer
+	WriteStreamResponse(&resp, &StreamError{Code: 402, Message: "subscription expired"})
+	_, err := sendMetadata(context.Background(), fakeMetaTransport{stream: &rejectedStream{resp: &resp}},
+		MetadataFrame{UDID: "d", Token: "t"})
+	var se *StreamError
+	if !errors.As(err, &se) || se.Code != 402 {
+		t.Fatalf("err = %v, want *StreamError{402}", err)
+	}
+
+	// Nothing buffered: the write error is what gets reported.
+	_, err = sendMetadata(context.Background(), fakeMetaTransport{stream: &rejectedStream{resp: &bytes.Buffer{}}},
+		MetadataFrame{UDID: "d", Token: "t"})
+	if err == nil || isMetadataReject(err) || !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("err = %v, want the write's io.ErrClosedPipe", err)
 	}
 }
 

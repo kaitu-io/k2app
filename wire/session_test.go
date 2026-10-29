@@ -370,3 +370,44 @@ func TestTCPWSServer_SweepUnreachableKeepsSession(t *testing.T) {
 		t.Fatalf("FLEET KILLER: session dead after undecidable sweep: %v", err)
 	}
 }
+
+// The session is published to the sweeper before the client gets its OK.
+// The other order left a window in which a client already using the
+// session was skipped by a sweep as never authenticated, so a revocation
+// in that pass did not reach it.
+func TestTCPWSServer_AuthedBeforeClientSeesOK(t *testing.T) {
+	for i := 0; i < 50; i++ {
+		clientConn, serverConn := net.Pipe()
+		server := NewTCPWSServer()
+		server.SetValidator(okV())
+		server.SetEnforce(true)
+		server.EnableRevalidation(okV())
+		server.HandleConn(serverConn)
+		sess, err := smux.Client(clientConn, DefaultSmuxConfig())
+		if err != nil {
+			t.Fatal(err)
+		}
+		br, stream := sendRawMetadataSmux(t, sess, MetadataFrame{UDID: "d", Token: "t"})
+		ok, _, _, err := ReadStreamResponse(br)
+		if err != nil || !ok {
+			t.Fatalf("metadata: ok=%v err=%v", ok, err)
+		}
+		server.sessions.mu.Lock()
+		var authed, total int
+		for s := range server.sessions.set {
+			total++
+			if s.authAt.Load() != 0 {
+				authed++
+			}
+		}
+		server.sessions.mu.Unlock()
+		stream.Close()
+		sess.Close()
+		server.Close()
+		clientConn.Close()
+		serverConn.Close()
+		if total != 1 || authed != 1 {
+			t.Fatalf("round %d: client has its OK but %d of %d sessions are marked authenticated", i, authed, total)
+		}
+	}
+}

@@ -67,13 +67,19 @@ func sendMetadata(ctx context.Context, t metadataTransport, meta MetadataFrame) 
 	if err := WriteStreamHeader(stream, StreamTypeMeta, ""); err != nil {
 		return MetadataFrame{}, fmt.Errorf("write stream header: %w", err)
 	}
-	if err := WriteMetadataFrame(stream, meta); err != nil {
-		return MetadataFrame{}, fmt.Errorf("write metadata: %w", err)
-	}
+	// A server that rejects us answers and then closes the connection, and
+	// the close can reach our write before its success does. The rejection
+	// is already buffered on the stream, so read it before trusting a write
+	// error: reporting a 402 as a transport failure would let connect() go
+	// on as if nothing were wrong.
+	werr := WriteMetadataFrame(stream, meta)
 
 	br := bufio.NewReader(stream)
 	ok, errCode, errMsg, err := ReadStreamResponse(br)
 	if err != nil {
+		if werr != nil {
+			return MetadataFrame{}, fmt.Errorf("write metadata: %w", werr)
+		}
 		return MetadataFrame{}, fmt.Errorf("read response: %w", err)
 	}
 	if !ok {

@@ -1124,13 +1124,16 @@ func (s *TCPWSServer) handleMetadataStream(sess *smux.Session, stream *smux.Stre
 		return
 	}
 
+	// Publish the identity to the sweeper before answering: once the client
+	// has its OK it may use the session, and a sweep that ran before
+	// markAuthed would skip it as never authenticated (a revocation missed).
+	if as != nil {
+		as.markAuthed(st.udid, st.token, st.mode, st.authAt, st.svcExp)
+	}
 	// newCookie is non-empty ONLY after a Center cold auth (spec §6.3) — a
 	// cookie hit answers with an empty kv and the client keeps its copy.
 	WriteMetadataResponse(stream, st.newCookie, true)
 	stream.Close()
-	if as != nil {
-		as.markAuthed(st.udid, st.token, st.mode, st.authAt, st.svcExp)
-	}
 }
 
 // runSmuxUDPHandler invokes handler.HandleUDP and removes the session from

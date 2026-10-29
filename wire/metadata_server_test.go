@@ -46,8 +46,11 @@ func sendRawMetadataSmux(t *testing.T, sess *smux.Session, meta MetadataFrame) (
 	if err := WriteStreamHeader(stream, StreamTypeMeta, ""); err != nil {
 		t.Fatalf("write header: %v", err)
 	}
+	// A rejecting server answers and closes the session, which can fail
+	// this write after the frame went out; the answer is what the tests
+	// check, so a write error is fatal only if no answer follows.
 	if err := WriteMetadataFrame(stream, meta); err != nil {
-		t.Fatalf("write frame: %v", err)
+		t.Logf("write frame: %v (reading the answer anyway)", err)
 	}
 	stream.SetReadDeadline(time.Now().Add(2 * time.Second))
 	return bufio.NewReader(stream), stream
