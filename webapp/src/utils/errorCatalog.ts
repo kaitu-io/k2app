@@ -179,8 +179,7 @@ export const ERROR_CODES = {
  * k2 engine error codes — MIRROR of `k2/engine/error.go`, names and values
  * verbatim. Do not "fix" a value here; fix it in the Go file and re-mirror.
  * `services/__tests__/k2-engine-codes.test.ts` parses the Go source and fails
- * on any divergence — but only where the k2 submodule is checked out (not in
- * the webapp CI job). See that file's BLIND SPOT note.
+ * on any divergence (fail-closed; k2 is in-tree).
  *
  * Ranges are load-bearing and must never be mixed: 1xx network, 4xx client,
  * 5xx server. Timeout is 108, NOT 408 — it is a network fault.

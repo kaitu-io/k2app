@@ -35,7 +35,7 @@ scripts/test_build.sh                       # Full build verification (count is 
 ## Project Structure
 
 ```
-k2/                  Go core (submodule, read-only — its own CLAUDE.md tree)
+k2/                  Go core (in-tree since 2026-10-29, imported from kaitu-io/k2 as a subtree — its own CLAUDE.md tree)
   engine/            Unified tunnel lifecycle manager (desktop + mobile)
   daemon/            HTTP API shell over engine (desktop only)
   appext/            gomobile type adapter over engine (iOS + Android)
@@ -61,7 +61,7 @@ docs/plans/          Architecture design docs
 
 - Webapp: React 18, TypeScript, Material-UI 5, Zustand, React Router 7, i18next
 - Website: Next.js 15, React 19, Tailwind CSS 4, shadcn/ui, next-intl
-- Desktop: Tauri v2, Rust · Core: Go (k2 submodule)
+- Desktop: Tauri v2, Rust · Core: Go (`k2/`)
 - API: Go, Gin, GORM, MySQL, Redis, Asynq
 - Mobile: Capacitor 8, gomobile bind (K2Plugin Swift/Kotlin), `@capawesome/capacitor-android-edge-to-edge-support` for Android 15 edge-to-edge
 - CI: GitHub Actions — see `.github/workflows/`
@@ -72,9 +72,9 @@ Rules that span directories, or that fail silently if you don't know them up fro
 
 - **Version source of truth**: Root `package.json` `version`. Tauri reads it via `../../package.json`; the k2 binary gets it via ldflags. Bump here first, and pass the value through verbatim — an invented suffix makes an upgrade look like a downgrade.
 - **`make pre-build` (every `dev-*`/`build-*` target) rewrites tracked files**: `scripts/sync-version.sh` propagates the root version into `desktop/src-tauri/Cargo.toml`, `mobile/android/app/build.gradle`, `mobile/plugins/k2-plugin/ios/Plugin/K2Helpers.swift`, `mobile/ios/App/App.xcodeproj/project.pbxproj` — expect them modified after any `make`; a bump that skips it fails CI `check-versions`, which is sed-pattern based (reformat one of those files and propagation stops silently).
-- **k2 submodule is read-only**: Do not edit `k2/` from the parent worktree unless the task explicitly targets the k2 repo. The desktop sidecar is built with `-tags=release` (`k2/Makefile` `DESKTOP_TAGS`) → `desktop/src-tauri/binaries/`; it is headless because `k2/webui/embed.go` is `linux && !nowebapp` — `nowebapp` is a k2r / dev-script tag, not a desktop one.
-- **`pre-build` also overwrites `k2/rule/embed/krs.tar.gz`** (tracked in the submodule as a 66 KB placeholder) with the ~2 MB CDN rule archive — never commit it. Offline, a dev build silently embeds the placeholder; only `EMBED_REQUIRE_FULL=1` (release CI) fails instead. CI `test-gateway-uat` runs `scripts/check-embed-size.sh`, which fails if the committed k2 HEAD blob exceeds 300 KB.
-- **New worktrees need `make init-submodules`**: `k2/` is a private SSH submodule with a nested `third_party/kuic` submodule (a go.mod `replace` target) — `git worktree add` populates neither, and a bare `git submodule update` detaches a checked-out k2 branch back to the pinned gitlink.
+- **k2 is in-tree, shared by both brands**: `k2/` is its own Go module (`github.com/kaitu-io/k2`) and was a submodule until 2026-10-29 — the standalone `kaitu-io/k2` repo is archived, so never branch or commit there. Change k2 in a worktree like anything else; a k2 change runs the labtest `k2` suite and, if it touches wire/server behaviour, keep it usable by both the Kaitu clients and Overleap. The desktop sidecar is built with `-tags=release` (`k2/Makefile` `DESKTOP_TAGS`) → `desktop/src-tauri/binaries/`; it is headless because `k2/webui/embed.go` is `linux && !nowebapp` — `nowebapp` is a k2r / dev-script tag, not a desktop one.
+- **`pre-build` also overwrites `k2/rule/embed/krs.tar.gz`** (tracked as a 66 KB placeholder) with the ~2 MB CDN rule archive — never commit it. Offline, a dev build silently embeds the placeholder; only `EMBED_REQUIRE_FULL=1` (release CI) fails instead. CI `test-gateway-uat` runs `scripts/check-embed-size.sh`, which fails if the committed HEAD blob exceeds 300 KB.
+- **New worktrees need `make init-submodules`**: the one remaining submodule is the private `k2/third_party/kuic` (a k2 go.mod `replace` target) — `git worktree add` does not populate it, and `go build` in `k2/` fails without it.
 - **Go→JS JSON keys**: Go `json.Marshal` emits snake_case; JS/TS expects camelCase. Native bridges (`K2Plugin.swift`/`.kt`, Tauri bridges) remap at the boundary.
 - **Go `json.Marshal` escapes `&` as `\u0026`**: asserting on raw JSON strings containing URLs will fail. Unmarshal to `map[string]any` and assert on values.
 - **Docker on Apple Silicon**: always `--platform linux/amd64` for server images; the Go binary needs `GOARCH=amd64`.
@@ -118,7 +118,7 @@ Loaded on demand when you work in the directory — read the layer doc before ch
 | [`mcp/CLAUDE.md`](mcp/CLAUDE.md) | Go MCP server: tools, auth flow, Center/daemon clients, Tauri session sharing |
 | [`tools/kaitu-center/CLAUDE.md`](tools/kaitu-center/CLAUDE.md) | TypeScript MCP/OpenClaw tools, NodeNext conventions |
 | [`scripts/CLAUDE.md`](scripts/CLAUDE.md) | Build/deploy/test helpers, Windows k2 test workflow |
-| [`k2/CLAUDE.md`](k2/CLAUDE.md) | Go core: wire protocol, daemon API, engine internals (submodule, read-only) — plus nested docs under `k2/engine/`, `k2/appext/`, `k2/webui/`, and specs in `k2/docs/` |
+| [`k2/CLAUDE.md`](k2/CLAUDE.md) | Go core: wire protocol, daemon API, engine internals — plus nested docs under `k2/engine/`, `k2/appext/`, `k2/webui/`, and specs in `k2/docs/` |
 
 ## Marketing / Brand
 

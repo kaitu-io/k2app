@@ -81,9 +81,8 @@ implementation instead of two copies drifting.
   "current with the surface", and holding it back does not describe the gap
   honestly — it only excludes Linux from every bundle once the published
   support floor reaches that version. **The outer repo's contract gate does
-  not check this mirror** (k2 is a submodule a fresh worktree may not have
-  checked out), so nothing catches drift: a `BRIDGE_API_VERSION` bump must
-  carry a k2 commit + submodule pointer bump in the same change set.
+  not check this mirror** (it predates k2 moving in-tree), so nothing catches
+  drift: a `BRIDGE_API_VERSION` bump must change both sides in the same commit.
   The minisign public key is the same
   key pair as the Tauri desktop updater (`desktop/src-tauri/tauri.conf.json`
   `plugins.updater.pubkey`, key ID `40D7545FD7CEDE83`) — one signing key

@@ -14,7 +14,6 @@ concurrency:
 jobs:
   test-webapp:
     uses: ./.github/workflows/test-webapp-reusable.yml
-    # The reusable job inits the private k2 submodule (engine error-code gate).
     secrets: inherit
 
   # web/ had NO CI coverage until now, which meant its brand-leak guards
@@ -254,14 +253,13 @@ jobs:
       - name: Test macOS minos gate
         run: bash scripts/test-check-macos-minos.sh
 
-      - name: Setup SSH for private submodule
+      - name: Setup SSH for private kuic submodule
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: |
-            ${{ secrets.K2_DEPLOY_KEY }}
             ${{ secrets.KUIC_DEPLOY_KEY }}
 
-      - name: Init k2 submodule
+      - name: Init kuic submodule (k2/third_party/kuic)
         run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
 
       - name: Setup Node.js
@@ -419,14 +417,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup SSH for private submodule
+      - name: Setup SSH for private kuic submodule
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: |
-            ${{ secrets.K2_DEPLOY_KEY }}
             ${{ secrets.KUIC_DEPLOY_KEY }}
 
-      - name: Init k2 submodule
+      - name: Init kuic submodule (k2/third_party/kuic)
         run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
 
       # The committed k2/rule/embed/krs.tar.gz must stay the ~66 KB cn-baseline
@@ -493,14 +490,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup SSH for private submodule
+      - name: Setup SSH for private kuic submodule
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: |
-            ${{ secrets.K2_DEPLOY_KEY }}
             ${{ secrets.KUIC_DEPLOY_KEY }}
 
-      - name: Init k2 submodule
+      - name: Init kuic submodule (k2/third_party/kuic)
         shell: bash
         run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
 
@@ -822,6 +818,14 @@ jobs:
     timeout-minutes: 60
 
     steps:
+      # k2 used to be a submodule. A self-hosted runner's persisted workspace
+      # still has the old checkout (k2/.git is a gitfile into .git/modules/k2),
+      # and checkout cannot turn that into the in-tree k2/ directory. Drop it
+      # once; on a clean workspace this is a no-op.
+      - name: Remove legacy k2 submodule checkout (self-hosted workspace)
+        shell: bash
+        run: if [ -f k2/.git ]; then rm -rf k2 .git/modules/k2; fi
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -843,7 +847,7 @@ jobs:
         run: |
           echo "K2_SIGN_LOG=$RUNNER_TEMP/k2-sign-${{ github.run_id }}-${{ github.run_attempt }}.log" >> "$GITHUB_ENV"
 
-      - name: Setup SSH for private submodule
+      - name: Setup SSH for private kuic submodule
         # GitHub-hosted only. On the self-hosted runner (this Mac, running as the
         # machine owner) webfactory writes into the OWNER's ~/.gitconfig (a
         # url.<key-alias>.insteadOf for every deploy key whose comment names a repo)
@@ -856,10 +860,9 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: |
-            ${{ secrets.K2_DEPLOY_KEY }}
             ${{ secrets.KUIC_DEPLOY_KEY }}
 
-      - name: Init k2 submodule
+      - name: Init kuic submodule (k2/third_party/kuic)
         shell: bash
         run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
 

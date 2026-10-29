@@ -45,11 +45,9 @@
  *   Android: K2PluginUtils.BRIDGE_API_VERSION          — gated by this test
  *   iOS:     k2BridgeApiVersion (K2Helpers.swift)      — gated by this test
  *   Desktop: DESKTOP_BRIDGE_VERSION (web_ota.rs)       — gated by this test
- *   Linux:   LinuxBridgeVersion (k2/webui/webota.go)   — NOT gated: k2 is a
- *     submodule that a fresh worktree may not have checked out, and a gate on
- *     unpopulated content is a gate that fails for the wrong reason. Bumping
- *     it is a k2-repo commit + submodule pointer bump; carry it in the same
- *     change set as a bump here.
+ *   Linux:   LinuxBridgeVersion (k2/webui/webota.go)   — NOT gated (k2 was a
+ *     submodule when this gate was written; it is in-tree since 2026-10-29, so
+ *     it could be). Bump it in the same commit as a bump here.
  *
  * v2 (2026-08-16): desktop web OTA added five Tauri commands the webapp calls
  * — `ui_boot_ok` (tauri-k2.ts) and `storage_migration_{put,get,clear,done}`

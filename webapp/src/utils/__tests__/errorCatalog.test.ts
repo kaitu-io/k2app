@@ -33,9 +33,7 @@
  *     string copy-pasted.
  *  b. Codes that exist in the Go engine but were never added to
  *     ENGINE_ERROR_CODES at all. The k2 cross-check in
- *     `src/services/__tests__/k2-engine-codes.test.ts` covers that — but only
- *     where the `k2/` submodule is checked out. CI's webapp job runs
- *     `actions/checkout@v4` WITHOUT submodules, so that check is skipped there.
+ *     `src/services/__tests__/k2-engine-codes.test.ts` covers that.
  *  c. Codes produced by the native bridges / daemon that no TypeScript file
  *     declares. Nothing in this repo enumerates them.
  *  d. Dynamic i18n keys (template strings). See the note in

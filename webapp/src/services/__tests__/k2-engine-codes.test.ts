@@ -11,14 +11,14 @@
  *
  * FAIL-CLOSED — a missing Go file is a failure, never a skip
  * ----------------------------------------------------------
- * `k2/` is a private git submodule. Until 0.4.8 the webapp CI job checked the
+ * `k2/` was a private git submodule until 2026-10-29. Until 0.4.8 the webapp CI job checked the
  * repo out WITHOUT it, and this suite used `describe.skipIf(!available)` — so
  * the gate had never once executed in CI, while every run reported green. A
  * skipped gate is an absent gate (same lesson as brands/__tests__/
- * cross-layer-contract.test.ts). test-webapp-reusable.yml now inits `k2`
+ * cross-layer-contract.test.ts). test-webapp-reusable.yml then inited `k2`
  * before running vitest; if the file is still missing, the job is
  * misconfigured and this file throws at load so the run is red, not quiet.
- * Locally: `git submodule update --init k2`.
+ * k2 is in-tree now, so a missing file means a broken checkout.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
@@ -32,7 +32,7 @@ const GO_FILE = path.resolve(here, '../../../../k2/engine/error.go');
 if (!fs.existsSync(GO_FILE)) {
   throw new Error(
     `k2 engine error-code gate cannot run: ${GO_FILE} not found.\n` +
-      'This gate MUST NOT be skipped — init the submodule: git submodule update --init k2'
+      'This gate MUST NOT be skipped — k2/ is in-tree, so this checkout is broken.'
   );
 }
 

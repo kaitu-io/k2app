@@ -101,17 +101,14 @@ fetch-rules-embed:
 fetch-embedded-seed:
 	@node scripts/gen-embedded-seed.js || echo "fetch-embedded-seed: skipped (CDN/dist unreachable) — using committed floor"
 
-# Fresh clones: k2 (private submodule) AND its nested third_party/kuic
-# submodule are both required — kuic is a go.mod `replace` target inside k2,
-# so a populated k2 with an empty kuic dir still dies at `go build` with
-# "no required module provides package github.com/kaitu-io/kuic". Nothing else
-# in the build inits either one (CI does it in the workflow, by hand).
-# Guarded on sentinel files so an already-populated checkout is never touched:
-# a bare `submodule update` would detach a developer's k2 branch back to the
-# pinned gitlink and silently build the wrong core.
+# k2 is in-tree (imported 2026-10-29 as a git subtree); the only submodule left
+# is the private k2/third_party/kuic — a go.mod `replace` target inside k2, so an
+# empty kuic dir dies at `go build` with "no required module provides package
+# github.com/kaitu-io/kuic". Nothing else in the build inits it (CI does it in
+# the workflow, by hand). Guarded on a sentinel file so a populated checkout is
+# never touched.
 init-submodules:
-	@test -f k2/go.mod || git submodule update --init k2
-	@test -f k2/third_party/kuic/go.mod || git -C k2 submodule update --init --recursive
+	@test -f k2/third_party/kuic/go.mod || git submodule update --init k2/third_party/kuic
 
 pre-build: init-submodules sync-version fetch-rules-embed fetch-embedded-seed
 	mkdir -p webapp/public
@@ -127,7 +124,7 @@ build-webapp: build-k2-plugin
 # --- k2 sidecar (delegates to k2/Makefile) ---
 # -trimpath strips the build machine's absolute source paths (/Users/runner/work/…)
 # from shipped desktop binaries; panics then show module paths. Passed as GOFLAGS
-# env so the k2 submodule (read-only from here) needs no change. Appends to any
+# env so k2/Makefile needs no change. Appends to any
 # GOFLAGS the caller already set.
 K2_DESKTOP_GOFLAGS = GOFLAGS="$(strip $(GOFLAGS) -trimpath)"
 

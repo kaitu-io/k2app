@@ -95,7 +95,7 @@ DO:
 
 Never hand-write a code→key mapping outside that file. In catch blocks, log the raw error and show an i18n fallback string to the user.
 
-`ENGINE_ERROR_CODES` in the same file mirrors `k2/engine/error.go`; `services/__tests__/k2-engine-codes.test.ts` parses the Go source and fails on drift. It is **fail-closed**: a missing `k2/engine/error.go` throws at load (never skips) — CI inits the submodule; locally `git submodule update --init k2`. `utils/__tests__/errorCatalog.test.ts` fails if any declared code lacks copy in every locale. `i18n/__tests__/static-keys.test.ts` does the same for every statically-written `t('key')` in `src/` (dynamic template keys are a known blind spot).
+`ENGINE_ERROR_CODES` in the same file mirrors `k2/engine/error.go`; `services/__tests__/k2-engine-codes.test.ts` parses the Go source and fails on drift. It is **fail-closed**: a missing `k2/engine/error.go` throws at load (never skips) — k2 is in-tree, so it is always there. `utils/__tests__/errorCatalog.test.ts` fails if any declared code lacks copy in every locale. `i18n/__tests__/static-keys.test.ts` does the same for every statically-written `t('key')` in `src/` (dynamic template keys are a known blind spot).
 
 ### API Error Code Constitution
 

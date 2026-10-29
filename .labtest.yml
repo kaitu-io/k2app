@@ -38,7 +38,7 @@ suites:
     mem: 512M
   k2:
     run: bash scripts/ci/k2ci-run.sh $LABTEST_SLUG k2
-    paths: [k2, k2/**]          # `k2` alone = the submodule pointer moved
+    paths: [k2/**]
     mem: 1G
     cpus: 4
   rust:

@@ -7,9 +7,9 @@ set -euo pipefail
 MAX=307200   # 300 KB
 PATH_IN_K2="rule/embed/krs.tar.gz"
 
-size=$(git -C k2 cat-file -s "HEAD:${PATH_IN_K2}" 2>/dev/null || echo "missing")
+size=$(git cat-file -s "HEAD:k2/${PATH_IN_K2}" 2>/dev/null || echo "missing")
 if [ "$size" = "missing" ]; then
-  echo "check-embed-size: ${PATH_IN_K2} not committed in k2 HEAD" >&2
+  echo "check-embed-size: ${PATH_IN_K2} not committed at HEAD:k2/" >&2
   exit 1
 fi
 if [ "$size" -gt "$MAX" ]; then
