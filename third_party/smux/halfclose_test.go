@@ -33,9 +33,8 @@ func halfClosePair(t *testing.T) (cs, ss *Session) {
 }
 
 // acceptAfterFirstByte accepts a stream and reads the opener's first byte
-// before returning it: the acceptor must not write (FIN included) before the
-// opener speaks, or the frame can land before OpenStream registers the
-// stream and be dropped (K2_PATCHES.md, "the opener speaks first").
+// before returning it, so the tests below know the opener has started.
+// (Before patch 5 this ordering was also required for correctness.)
 func acceptAfterFirstByte(ss *Session) (*Stream, error) {
 	st, err := ss.AcceptStream()
 	if err != nil {

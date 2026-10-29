@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"math"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -135,21 +136,28 @@ func (s *Session) OpenStream() (*Stream, error) {
 
 	stream := newStream(sid, s.config.MaxFrameSize, s)
 
-	if _, err := s.writeFrame(newFrame(cmdSYN, sid)); err != nil {
-		return nil, err
-	}
-
+	// Register before the SYN goes out: a peer that accepts and writes at
+	// once can otherwise land its PSH/FIN in recvLoop before the stream is
+	// in s.streams, where it is dropped as a frame for an unknown stream
+	// (K2_PATCHES.md patch 5).
 	s.streamLock.Lock()
-	defer s.streamLock.Unlock()
 	select {
 	case <-s.chSocketWriteError:
+		s.streamLock.Unlock()
 		return nil, s.socketWriteError.Load().(error)
 	case <-s.die:
+		s.streamLock.Unlock()
 		return nil, io.ErrClosedPipe
 	default:
 		s.streams[sid] = stream
-		return stream, nil
 	}
+	s.streamLock.Unlock()
+
+	if _, err := s.writeFrame(newFrame(cmdSYN, sid)); err != nil {
+		s.streamClosed(sid)
+		return nil, err
+	}
+	return stream, nil
 }
 
 // Open returns a generic ReadWriteCloser
@@ -214,11 +222,16 @@ func (s *Session) notifyBucket() {
 	}
 }
 
+// The three notify*Error helpers close the session too: recvLoop or
+// sendLoop has exited, so the session can never move data again, and
+// leaving it open let OpenStream succeed on it and writers wait on window
+// updates that could not arrive (K2_PATCHES.md patch 5).
 func (s *Session) notifyReadError(err error) {
 	s.socketReadErrorOnce.Do(func() {
 		s.socketReadError.Store(err)
 		close(s.chSocketReadError)
 	})
+	s.Close()
 }
 
 func (s *Session) notifyWriteError(err error) {
@@ -226,6 +239,7 @@ func (s *Session) notifyWriteError(err error) {
 		s.socketWriteError.Store(err)
 		close(s.chSocketWriteError)
 	})
+	s.Close()
 }
 
 func (s *Session) notifyProtoError(err error) {
@@ -233,6 +247,7 @@ func (s *Session) notifyProtoError(err error) {
 		s.protoError.Store(err)
 		close(s.chProtoError)
 	})
+	s.Close()
 }
 
 // IsClosed does a safe check to see if we have shutdown
@@ -337,19 +352,41 @@ func (s *Session) recvLoop() {
 				return
 			}
 			sid := hdr.StreamID()
+			// Only PSH and UPD carry a payload, and UPD's is fixed. A
+			// length on any other frame would be parsed as the next header
+			// and desync the stream (K2_PATCHES.md patch 5).
+			switch hdr.Cmd() {
+			case cmdNOP, cmdSYN, cmdFIN:
+				if hdr.Length() != 0 {
+					s.notifyProtoError(ErrInvalidProtocol)
+					return
+				}
+			case cmdUPD:
+				if hdr.Length() != szCmdUPD {
+					s.notifyProtoError(ErrInvalidProtocol)
+					return
+				}
+			}
 			switch hdr.Cmd() {
 			case cmdNOP:
 			case cmdSYN:
+				var accepted *Stream
 				s.streamLock.Lock()
 				if _, ok := s.streams[sid]; !ok {
-					stream := newStream(sid, s.config.MaxFrameSize, s)
-					s.streams[sid] = stream
-					select {
-					case s.chAccepts <- stream:
-					case <-s.die:
-					}
+					accepted = newStream(sid, s.config.MaxFrameSize, s)
+					s.streams[sid] = accepted
 				}
 				s.streamLock.Unlock()
+				// Hand off outside streamLock: a full accept backlog blocks
+				// recvLoop (backpressure), and holding the lock meanwhile
+				// also blocked every Stream.Close and OpenStream.
+				if accepted != nil {
+					select {
+					case s.chAccepts <- accepted:
+					case <-s.die:
+						return
+					}
+				}
 			case cmdFIN:
 				s.streamLock.Lock()
 				if stream, ok := s.streams[sid]; ok {
@@ -366,6 +403,8 @@ func (s *Session) recvLoop() {
 							stream.pushBytes(newbuf)
 							atomic.AddInt32(&s.bucket, -int32(written))
 							stream.notifyReadEvent()
+						} else {
+							defaultAllocator.Put(newbuf)
 						}
 						s.streamLock.Unlock()
 					} else {
@@ -375,6 +414,13 @@ func (s *Session) recvLoop() {
 				}
 			case cmdUPD:
 				if _, err := io.ReadFull(s.conn, updHdr[:]); err == nil {
+					// Write computes the remaining window in int32; a window
+					// past MaxInt32 goes negative there and the writer waits
+					// forever for an update that would fix it.
+					if updHdr.Window() > math.MaxInt32 {
+						s.notifyProtoError(ErrInvalidProtocol)
+						return
+					}
 					s.streamLock.Lock()
 					if stream, ok := s.streams[sid]; ok {
 						stream.update(updHdr.Consumed(), updHdr.Window())
@@ -449,6 +495,15 @@ func (s *Session) sendLoop() {
 	var err error
 	var vec [][]byte // vector for writeBuffers
 
+	// A peer that keeps sending NOPs but stops reading would otherwise block
+	// this loop in Write forever: keepalive only watches the receive side,
+	// so nothing ever closed the session (K2_PATCHES.md patch 5). Bound
+	// every write by KeepAliveTimeout. The deadline is pushed forward only
+	// once less than half of it is left, not per frame.
+	dl, _ := s.conn.(interface{ SetWriteDeadline(time.Time) error })
+	var writeDeadline time.Time
+	timeout := s.config.KeepAliveTimeout
+
 	bw, ok := s.conn.(buffersWriter)
 	if ok {
 		buf = make([]byte, headerSize)
@@ -466,6 +521,13 @@ func (s *Session) sendLoop() {
 			buf[1] = request.frame.cmd
 			binary.LittleEndian.PutUint16(buf[2:], uint16(len(request.frame.data)))
 			binary.LittleEndian.PutUint32(buf[4:], request.frame.sid)
+
+			if dl != nil {
+				if now := time.Now(); writeDeadline.Sub(now) < timeout/2 {
+					writeDeadline = now.Add(timeout)
+					dl.SetWriteDeadline(writeDeadline)
+				}
+			}
 
 			if len(vec) > 0 {
 				vec[0] = buf[:headerSize]

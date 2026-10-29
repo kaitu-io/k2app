@@ -71,9 +71,6 @@ before. An old client with a new server never offers `smux_hc`, so the
 server keeps upstream semantics too. Pinned by `halfclose_test.go` and
 `wire/tcpws_halfclose_test.go`.
 
-The opener-speaks-first contract below still applies: an acceptor must not
-FIN before the opener's first byte, or the FIN can land before `OpenStream`
-registers the stream and be dropped.
 
 ## 3. `WriteTo` returns nil at EOF (stream.go)
 
@@ -102,18 +99,45 @@ iOS Network Extension past its memory limit on a long TCP-WS session.
 `PollWait`, `pollEvents` and `TestPoll` are gone; upstream dropped the
 poller too (e7525af).
 
-## Contract k2 relies on (not patched): the opener speaks first
+## 5. Hardening against hostile or stuck peers (session.go, stream.go)
 
-`OpenStream` writes the SYN and only then registers the stream in
-`s.streams`. A PSH or FIN that the peer sends for that id in between finds no
-stream in `recvLoop` and is dropped silently. Upstream v1 (v1.5.57) has the
-same ordering, so this is smux's design assumption, not a v2 regression. k2
-never trips it: only the client opens streams (`wire/tcpws.go`,
-`wire/metadata_client.go`), it writes the stream header right after
-`OpenStream` returns, and `TCPWSServer.handleStream` reads that header before
-writing anything — so no server byte can precede registration. A new stream
-type where the accepting side writes first, or the server starting to open
-streams, would break this; keep the opener-speaks-first order.
-`TestWriteThenCloseDeliversEverything` follows the same order (the acceptor
-reads one byte before replying); without that read it loses data on upstream
-code too.
+Each item is pinned by a `hardening_test.go` test that fails on the code
+before it.
+
+- **Register before SYN.** `OpenStream` used to write the SYN and only then
+  add the stream to `s.streams`; a PSH or FIN the acceptor sent at once
+  could reach `recvLoop` first and be dropped as a frame for an unknown
+  stream. k2 got by on an "opener speaks first" ordering contract; the
+  test without it loses the acceptor's reply within a few rounds. Upstream
+  fixed the same in 8291a86.
+- **Frame lengths validated.** NOP/SYN/FIN must carry length 0 and UPD
+  length 8; otherwise the payload was parsed as the next header. Now a
+  protocol error (upstream 5c3cd51).
+- **UPD window bounded.** A window above MaxInt32 went negative in
+  `Write`'s int32 arithmetic and blocked the writer forever. Now a
+  protocol error.
+- **A dead loop closes the session.** A read, write or protocol error ends
+  `recvLoop`/`sendLoop`; the session used to stay open, so `OpenStream`
+  still succeeded and writers waited for window updates that could not
+  come. `notify*Error` now also call `Close` (upstream 292d504 covered
+  only `OpenStream`).
+- **Writes are bounded.** `sendLoop` sets a write deadline of
+  `KeepAliveTimeout` on the conn (refreshed when less than half remains).
+  A peer that keeps sending NOPs but stops reading used to block it
+  forever, and keepalive, which watches only the receive side, never
+  fired. With `coder/websocket`'s net.Conn an expired deadline only fails
+  a write in progress; an idle conn is re-armed before its next write.
+- **Accept hand-off outside `streamLock`.** A full accept backlog blocks
+  `recvLoop` on `chAccepts` (backpressure); it used to do so holding
+  `streamLock`, which also blocked every `OpenStream` and `Stream.Close`.
+- **Deadlines wake blocked calls.** `SetReadDeadline`/`SetWriteDeadline`
+  now wake a `Read`/`Write` already waiting, as net.Conn specifies; `Write`
+  re-reads its deadline on every pass (upstream d2d7690 did the read side).
+- A PSH for an unknown stream returns its buffer to the allocator.
+
+## Removed contract: the opener no longer has to speak first
+
+Before patch 5 an acceptor could not write (FIN included) before the
+opener's first byte. That ordering is no longer required; k2 still
+follows it (the client opens every stream and writes the header first),
+which costs nothing.

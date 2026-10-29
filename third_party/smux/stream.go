@@ -272,19 +272,31 @@ func (s *Stream) Write(b []byte) (n int, err error) {
 		peerFin = nil
 	}
 
-	// create write deadline timer
-	var deadline <-chan time.Time
-	if d, ok := s.writeDeadline.Load().(time.Time); ok && !d.IsZero() {
-		timer := time.NewTimer(time.Until(d))
-		defer timer.Stop()
-		deadline = timer.C
-	}
+	// The write deadline is re-read on every pass, so a SetWriteDeadline
+	// from another goroutine (which wakes us via chUpdate) applies to a
+	// writer already blocked on the window (K2_PATCHES.md patch 5).
+	var timer *time.Timer
+	defer func() {
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
 
 	// frame split and transmit process
 	sent := 0
 	frame := newFrame(cmdPSH, s.id)
 
 	for {
+		var deadline <-chan time.Time
+		if timer != nil {
+			timer.Stop()
+			timer = nil
+		}
+		if d, ok := s.writeDeadline.Load().(time.Time); ok && !d.IsZero() {
+			timer = time.NewTimer(time.Until(d))
+			deadline = timer.C
+		}
+
 		// per stream sliding window control
 		// [.... [consumed... numWritten] ... win... ]
 		// [.... [consumed...................+rmtwnd]]
@@ -414,6 +426,7 @@ func (s *Stream) GetDieCh() <-chan struct{} {
 // A zero time value disables the deadline.
 func (s *Stream) SetReadDeadline(t time.Time) error {
 	s.readDeadline.Store(t)
+	s.notifyReadEvent() // a blocked reader re-reads the deadline
 	return nil
 }
 
@@ -422,6 +435,10 @@ func (s *Stream) SetReadDeadline(t time.Time) error {
 // A zero time value disables the deadline.
 func (s *Stream) SetWriteDeadline(t time.Time) error {
 	s.writeDeadline.Store(t)
+	select { // a blocked writer re-reads the deadline
+	case s.chUpdate <- struct{}{}:
+	default:
+	}
 	return nil
 }
 
