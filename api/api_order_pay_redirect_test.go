@@ -158,3 +158,20 @@ func TestPayRedirect_OtherBrand_GoesToPurchase(t *testing.T) {
 
 	assert.Equal(t, BrandKaitu.Config().BaseURL+"/zh-CN/purchase", get302(t, "/api/orders/"+o.UUID+"/pay"))
 }
+
+// 耐久链接带 src 时把来源带到支付页；没带 src 时原样跳转。Stripe Checkout 链接见 TestWithPaySource。
+func TestPayRedirect_PaymentPageCarriesSrc(t *testing.T) {
+	skipIfNoDB(t)
+	require.NoError(t, Migrate())
+	gin.SetMode(gin.TestMode)
+	setNextpayReady(t)
+	plan := nextpayTestPlan(t)
+	user := CreateTestUser(t)
+	o := newUnpaidNextpayOrder(t, user, plan)
+	require.NoError(t, o.SetOrderCheckout(payRedirectURL(o.UUID), "https://pay.arbella.group/pay/np-cached", time.Now().Unix()))
+	require.NoError(t, o.SetCheckoutMode(checkoutModePaymentPage))
+	require.NoError(t, db.Get().Save(o).Error)
+
+	assert.Equal(t, "https://pay.arbella.group/pay/np-cached?src=mail", get302(t, "/api/orders/"+o.UUID+"/pay?src=mail"))
+	assert.Equal(t, "https://pay.arbella.group/pay/np-cached", get302(t, "/api/orders/"+o.UUID+"/pay"))
+}

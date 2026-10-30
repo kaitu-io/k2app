@@ -142,3 +142,57 @@ func TestCreateOrder_Nextpay_NotReady_405001(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, float64(ErrorPaymentChannelUnavailable), resp["code"])
 }
+
+// 支付页模式下 payUrl 带来源：App（有 X-K2-Client）标 src=app + 平台 + 版本，网站标 src=web；
+// 缓存里存的仍是原链接（来源属于这一次打开，不属于这张单）。
+func TestCreateOrder_Nextpay_PaymentPageURLCarriesSource(t *testing.T) {
+	skipIfNoDB(t)
+	require.NoError(t, Migrate())
+	gin.SetMode(gin.TestMode)
+	setNextpayReady(t)
+	plan := nextpayTestPlan(t)
+	user := CreateTestUser(t)
+
+	orig := createNextpayCheckoutFn
+	t.Cleanup(func() { createNextpayCheckoutFn = orig })
+	createNextpayCheckoutFn = func(context.Context, *User, *Order, *Plan) (*nextpayCheckout, error) {
+		return &nextpayCheckout{NextpayOrderID: "np-src", CheckoutURL: "https://pay.arbella.group/pay/np-src", Mode: checkoutModePaymentPage}, nil
+	}
+
+	for _, tc := range []struct {
+		name, header, want string
+	}{
+		{"App", "kaitu-service/0.4.14 (windows; amd64)", "https://pay.arbella.group/pay/np-src?platform=windows&src=app&v=0.4.14"},
+		{"网站", "", "https://pay.arbella.group/pay/np-src?src=web"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _ := json.Marshal(map[string]any{"plan": plan.PID, "preview": false})
+			req, _ := http.NewRequest(http.MethodPost, "/api/orders", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			if tc.header != "" {
+				req.Header.Set("X-K2-Client", tc.header)
+			}
+			w := httptest.NewRecorder()
+			nextpayOrderRouter(user).ServeHTTP(w, req)
+
+			var resp struct {
+				Code int `json:"code"`
+				Data struct {
+					PayUrl string `json:"payUrl"`
+					Order  struct {
+						UUID string `json:"uuid"`
+					} `json:"order"`
+				} `json:"data"`
+			}
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+			require.Equal(t, 0, resp.Code, w.Body.String())
+			assert.Equal(t, tc.want, resp.Data.PayUrl)
+
+			var saved Order
+			require.NoError(t, db.Get().Where("uuid = ?", resp.Data.Order.UUID).First(&saved).Error)
+			t.Cleanup(func() { db.Get().Unscoped().Delete(&saved) })
+			cached, _ := saved.GetCheckout()
+			assert.Equal(t, "https://pay.arbella.group/pay/np-src", cached, "缓存不带来源参数")
+		})
+	}
+}

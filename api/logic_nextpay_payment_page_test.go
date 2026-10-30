@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -218,4 +219,21 @@ func TestEnsureOrderCheckout_PersistsMode(t *testing.T) {
 	assert.Equal(t, "https://pay.arbella.group/pay/np-1", url)
 	_, err := saved.GetPlan()
 	assert.NoError(t, err, "套餐快照不能被覆盖")
+}
+
+// 支付页链接追加来源参数；Stripe Checkout 链接（带 #fragment）原样返回，空值不加。
+func TestWithPaySource(t *testing.T) {
+	page := "https://pay.arbella.group/pay/np-1"
+	got, err := url.Parse(withPaySource(page, checkoutModePaymentPage, "app", "windows", "0.4.14"))
+	require.NoError(t, err)
+	assert.Equal(t, "/pay/np-1", got.Path)
+	assert.Equal(t, url.Values{"src": {"app"}, "platform": {"windows"}, "v": {"0.4.14"}}, got.Query())
+
+	got, err = url.Parse(withPaySource(page+"?lang=zh", checkoutModePaymentPage, "mail", "", ""))
+	require.NoError(t, err)
+	assert.Equal(t, url.Values{"lang": {"zh"}, "src": {"mail"}}, got.Query(), "已有参数保留，空值不加")
+
+	stripe := "https://checkout.stripe.com/c/pay/cs_1#fidkdWxOYHwnPyd1blpxYHZxWjA0"
+	assert.Equal(t, stripe, withPaySource(stripe, checkoutModeStripeCheckout, "app", "windows", "0.4.14"))
+	assert.Equal(t, stripe, withPaySource(stripe, "", "app", "windows", "0.4.14"), "老订单无 mode 按 Stripe Checkout 处理")
 }

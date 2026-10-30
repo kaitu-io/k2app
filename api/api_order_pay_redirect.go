@@ -120,5 +120,8 @@ func api_order_pay_redirect(c *gin.Context) {
 	}
 	// mode 追加在 outcome 之后：既有 grep "outcome=checkout" 的统计不受影响。
 	funnel("checkout mode=" + order.GetCheckoutMode())
+	if src != "-" {
+		checkoutURL = withPaySource(checkoutURL, order.GetCheckoutMode(), src, "", "")
+	}
 	c.Redirect(http.StatusFound, checkoutURL)
 }

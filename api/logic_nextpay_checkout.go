@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"net/url"
 	"time"
 
 	"github.com/wordgate/qtoolkit/log"
@@ -174,4 +175,27 @@ func ensureOrderCheckout(ctx context.Context, tx *gorm.DB, user *User, order *Or
 		return "", fmt.Errorf("persist order checkout: %w", err)
 	}
 	return co.CheckoutURL, nil
+}
+
+// withPaySource 给 NextPay 自有支付页链接追加来源参数，供支付页埋点区分这一次是从哪里打开的：
+// src（app / web / mail / retry）、platform、v（App 版本）。值为空的参数不加。
+//
+// 只对支付页模式追加：Stripe Checkout URL 带 #fragment，追加的 query 会落进 fragment 里弄坏链接。
+// 也不写进 Meta 缓存：同一张单可能先从 App、后从邮件打开，来源属于这一次打开，不属于这张单。
+func withPaySource(rawURL, mode, src, platform, version string) string {
+	if mode != checkoutModePaymentPage {
+		return rawURL
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	q := u.Query()
+	for k, v := range map[string]string{"src": src, "platform": platform, "v": version} {
+		if v != "" {
+			q.Set(k, v)
+		}
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
 }

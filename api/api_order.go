@@ -347,6 +347,13 @@ func api_create_order(c *gin.Context) {
 		return
 	}
 
+	// App 带 X-K2-Client：标 src=app + 平台 + 版本；没有这个头的是网站（路由器购买页直接用 payUrl）。
+	src, platform, version := "web", "", ""
+	if info := parseClientHeader(c.GetHeader("X-K2-Client")); info != nil {
+		src, platform, version = "app", info.Platform, info.Version
+	}
+	payUrl = withPaySource(payUrl, order.GetCheckoutMode(), src, platform, version)
+
 	log.Debugf(c, "final order response prepared: PayURL=%s", payUrl)
 
 	Success(c, &CreateOrderResponse{
