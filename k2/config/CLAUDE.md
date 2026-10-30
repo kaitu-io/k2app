@@ -59,7 +59,6 @@ auth:
   users_file: ""                # udid:token per line
   remote_url: ""                # Center auth URL
   cache_ttl: 15m                # 0 → 15m (not "no cache")
-  enforce_auth: false           # reject unauthenticated streams on both transports; env K2_ENFORCE_AUTH
 usage_api_listen: "127.0.0.1:9099"   # "" disables; env K2_USAGE_API_LISTEN wins
 usage_report_url: ""            # env K2_USAGE_REPORT_URL
 node_cutoff_report: false       # LEGACY in-process usage reporter; env K2_NODE_CUTOFF_REPORT — only against a Center that serves verdicts

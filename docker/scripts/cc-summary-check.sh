@@ -10,8 +10,8 @@
 # Usage (from the kaitu-center MCP, runs ON the node):
 #   exec_on_node(ip, "sudo bash -s 60", scriptPath="docker/scripts/cc-summary-check.sh")
 # Argument = look-back window in minutes (default 10). Prints counts, 5 sample
-# lines, the spec §9 invariants (all must be 0 except noUdid, which counts
-# legacy no-metadata clients under K2_ENFORCE_AUTH=0), totals and the
+# lines, the spec §9 invariants (all must be 0 except noUdid, which counted
+# legacy no-metadata clients back when k2s ran permissive), totals and the
 # mode / rttP50 / lossP50 / tputP50 distributions.
 MIN="${1:-10}"
 LOGF=/apps/k2s/logs/k2s.log

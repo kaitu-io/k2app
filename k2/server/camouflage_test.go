@@ -72,17 +72,13 @@ func TestLearnOuterSNI_NoCamouflageNameLearnsNothing(t *testing.T) {
 	}
 }
 
-// TestNew_EnforceWithoutValidatorIsRefused: with enforce on and no auth backend
-// the chain falls back to accept-all (`jwt != "" && udid != ""`), so the node
-// logs "enforcement: true" while admitting any two non-empty strings. A gate
-// that reports enforcement it does not perform is worse than no gate — fail at
-// startup instead.
-func TestNew_EnforceWithoutValidatorIsRefused(t *testing.T) {
-	cfg := &config.ServerConfig{
-		Listen: "127.0.0.1:0",
-		Auth:   config.AuthConfig{EnforceAuth: true}, // no UsersFile, no RemoteURL
-	}
+// TestNew_NoValidatorIsRefused: device auth is always enforced, so a static-TLS
+// config with no users_file, no remote_url and no cert_dir (hence no
+// provisioned auth.json) has nothing to check a credential against. It must
+// fail at startup, not fall back to admitting any two non-empty strings.
+func TestNew_NoValidatorIsRefused(t *testing.T) {
+	cfg := &config.ServerConfig{Listen: "127.0.0.1:0"}
 	if _, err := New(cfg); err == nil {
-		t.Fatal("enforce_auth with no validator configured must be refused, not silently downgraded to accept-all")
+		t.Fatal("a config with no auth backend must be refused, not downgraded to accept-all")
 	}
 }

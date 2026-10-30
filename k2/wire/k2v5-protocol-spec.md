@@ -208,20 +208,14 @@ metadata stream decides, and every proxy path on that connection lives or dies b
 that verdict. Both transports share the implementation (`wire/admission.go`), and
 the two things egress needs — a route to `AcceptTCP` and the server's `UDPHandler`
 — are handed out only by the gate, so a path that does not ask cannot proxy.
-Admission is governed by a single flag, `K2_ENFORCE_AUTH` (config
-`auth.enforce_auth`, default **false**):
+k2s **always enforces** (the `K2_ENFORCE_AUTH` / `auth.enforce_auth` rollout knob
+was removed 2026-10-30): proxy streams on a connection whose metadata failed (or
+never sent) validation are rejected; QUIC tears the connection, TCP-WS tears the
+smux session. Clients that predate metadata auth cannot connect.
 
-- **Permissive (default)** — an unauthenticated or unvalidated connection is still
-  served, but attribution follows the server-side verdict, never the self-reported
-  udid: only a passing verdict attributes the connection to its udid, otherwise it
-  lands in the empty-udid bucket. The stream itself is never blocked. This is the
-  rollout-safe default: legacy clients that send no/invalid metadata keep working
-  until the flag is flipped.
-- **Enforce** — proxy streams on a connection whose metadata failed (or never sent)
-  validation are rejected; QUIC tears the connection, TCP-WS tears the smux session.
-
-Flip to enforce only after fixed clients have propagated fleet-wide, else unupgraded
-clients are cut off.
+The wire package still has a permissive mode (`SetEnforce(false)`, the zero value)
+used only by wire-level tests and k2p: the connection is served, attributed to the
+empty-udid bucket unless the verdict passes.
 
 Every client-reachable egress entry is gated: QUIC stream TCP (`0x01`), stream UDP
 (`0x02`), the client overflow stream (`0x03`), QUIC datagrams, and the TCP-WS
@@ -247,7 +241,7 @@ had no opinion at all does the tail fail-closed to `Code: 401`.
 |-----------|--------|
 | `NewUsersFileValidator` | local `users_file` (`username:token_or_bcrypt`) |
 | `NewRemoteValidator` | Center `POST /slave/device-check-auth`, authenticated with `Basic <nodeIPv4>:<NodeSecret>`; empty secret fails closed |
-| accept-all fallback | only when no validator configured: `token != "" && udid != ""` |
+| provisioned credential | only when neither of the above is configured and `cert_dir` is set: exactly the `cert_dir/auth.json` udid/token from the connect URL. No validator and no `cert_dir` → k2s refuses to start |
 
 ## 5. Wire Framing
 

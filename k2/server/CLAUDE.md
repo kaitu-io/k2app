@@ -32,7 +32,7 @@ ECH match   No match
 k2v5 handler  ReverseProxy
     │
 ┌───┴───┐
-│ Auth  │  metadata stream (0x10) → Validator/AuthVerdict; enforce gate K2_ENFORCE_AUTH
+│ Auth  │  metadata stream (0x10) → Validator/AuthVerdict; enforce gate always on
 └───┬───┘
     │
 QUIC + TCP-WS Listeners

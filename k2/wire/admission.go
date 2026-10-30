@@ -91,7 +91,7 @@ func (a *connAuth) claimRolloutCount() bool {
 }
 
 // admissionPolicy is the server-side enforcement configuration. Both
-// QUICServer and TCPWSServer hold one, driven by the same K2_ENFORCE_AUTH flag:
+// QUICServer and TCPWSServer hold one, and k2s always enforces on both:
 // enforcement that covered only QUIC would let an attacker force the TCP-WS
 // fallback and bypass device auth entirely.
 type admissionPolicy struct {
@@ -101,8 +101,8 @@ type admissionPolicy struct {
 
 // admit reports whether a connection may perform egress.
 //
-// Permissive (the default, and the only mode in production until the rollout
-// flag is flipped) never blocks: an unauthenticated connection is still
+// Permissive (the zero value; k2s never uses it — server.New always enforces,
+// so it survives only for wire tests and k2p) never blocks: an unauthenticated connection is still
 // served, but attribution follows the verdict, not the self-report — only a
 // passing verdict attributes to the sent udid, otherwise the connection lands
 // in the empty-udid bucket. Enforce admits a connection whose metadata stream

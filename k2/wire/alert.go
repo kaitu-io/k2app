@@ -180,8 +180,7 @@ func (h *authHealth) observe(v AuthVerdict) {
 		// rather than waiting out a window that would never expire on its own.
 		h.alerter.Fire("auth-node-misconfigured",
 			"DIAG: auth-node-misconfigured — this node cannot authenticate any device "+
-				"(missing K2_NODE_SECRET or unresolvable node IPv4). Devices are being served "+
-				"unattributed under permissive, and would be rejected under enforce_auth.")
+				"(missing K2_NODE_SECRET or unresolvable node IPv4). Every device is being rejected.")
 
 	case v.Code == AuthCodeUndetermined:
 		h.markUnreachable()

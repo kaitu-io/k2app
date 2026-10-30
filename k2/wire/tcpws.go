@@ -859,15 +859,12 @@ func (s *TCPWSServer) SetValidator(v Validator) {
 	s.validate = v
 }
 
-// SetEnforce toggles TCP-WS device-auth enforcement. When false (default,
-// permissive) an unauthenticated session is still served, but attribution
-// follows the verdict, not the self-report — a session with no passing
-// verdict lands in the empty-udid bucket; the connection itself is never
-// blocked, so legacy clients that predate metadata auth keep working during
-// rollout. When true, proxy streams on a session that failed (or never sent)
-// metadata auth are rejected. This is the same K2_ENFORCE_AUTH flag that
-// governs QUIC: enforcement must cover BOTH transports, else an attacker
-// forces TCP-WS fallback to bypass QUIC auth.
+// SetEnforce toggles TCP-WS device-auth enforcement. k2s (server.New) always
+// sets true on both transports — enforcement must cover BOTH, else an attacker
+// forces TCP-WS fallback to bypass QUIC auth. When true, proxy streams on a
+// session that failed (or never sent) metadata auth are rejected. False (the
+// zero value, permissive) remains for wire-level tests: an unauthenticated
+// session is served, attributed to the empty-udid bucket.
 func (s *TCPWSServer) SetEnforce(v bool) {
 	s.adm.enforce = v
 }

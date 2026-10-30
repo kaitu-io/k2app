@@ -251,7 +251,7 @@ func TestHandleK2V5_NonMatchingInnerSNIFallsThrough(t *testing.T) {
 // New must bake in the single permanent control-plane route when no explicit
 // control_plane_routes config is present, so a node needs zero per-node config.
 func TestNew_DefaultsControlPlaneRouteWhenUnset(t *testing.T) {
-	s, err := New(&config.ServerConfig{}) // no CertDir → no provisioning; no routes
+	s, err := New(&config.ServerConfig{Auth: testAuthConfig(t)}) // no CertDir → no provisioning; no routes
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -266,6 +266,7 @@ func TestNew_DefaultsControlPlaneRouteWhenUnset(t *testing.T) {
 // built-in default.
 func TestNew_ExplicitControlPlaneRouteOverridesDefault(t *testing.T) {
 	s, err := New(&config.ServerConfig{
+		Auth:               testAuthConfig(t),
 		ControlPlaneRoutes: map[string]string{"cp.test": "cp.test:443"},
 	})
 	if err != nil {

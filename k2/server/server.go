@@ -3,11 +3,12 @@ package server
 import (
 	"bufio"
 	"context"
+	"crypto/subtle"
 	stdtls "crypto/tls"
 
-	tls "github.com/metacubex/utls"
 	"encoding/base64"
 	"fmt"
+	tls "github.com/metacubex/utls"
 	"log/slog"
 	"net"
 	"net/http"
@@ -18,12 +19,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kaitu-io/kuic"
 	"github.com/coder/websocket"
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/safego"
 	"github.com/kaitu-io/k2/wire"
 	"github.com/kaitu-io/k2/wire/tlspad"
+	"github.com/kaitu-io/kuic"
 	smux "github.com/xtaci/smux/v2"
 )
 
@@ -42,6 +43,11 @@ type Server struct {
 
 	// echConfig is the ECH config list bytes (for distribution to clients).
 	echConfig []byte
+
+	// provisionedAuth is the cert_dir/auth.json credential embedded in this
+	// node's connect URL. With no users_file/remote_url it is the only
+	// credential the node admits. nil when cert_dir is unset.
+	provisionedAuth *wire.AuthInfo
 
 	// camouflageName is this node's cover domain — the `public_name` of its own
 	// ECH config. It is the ONLY outer SNI learnOuterSNI will trust; see there.
@@ -129,7 +135,7 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		}
 	}
 
-	// Auth: build validator chain (users_file → remote_url → accept-all).
+	// Auth: build validator chain (users_file → remote_url → provisioned auth.json).
 	var validators []wire.Validator
 	if cfg.Auth.UsersFile != "" {
 		slog.Info("server: auth chain", "mode", "users_file", "path", cfg.Auth.UsersFile)
@@ -172,37 +178,33 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 	}
 
 	var validator wire.Validator
-	if len(validators) > 0 {
+	switch {
+	case len(validators) > 0:
 		validator = wire.ChainValidators(validators...)
 		// Cache successful auths: opening the QUIC metadata path to all normal
 		// clients would otherwise fire one Center request per new connection.
 		validator = wire.CachingValidator(validator, cfg.Auth.CacheTTL)
-	} else {
-		// The accept-all fallback admits any two non-empty strings. Combined with
-		// enforce that is the worst possible state: the node logs that it enforces
-		// device auth while admitting everyone. Refuse to start rather than report
-		// an enforcement the node does not perform.
-		if cfg.Auth.EnforceAuth {
-			return nil, fmt.Errorf("auth: enforce_auth is on but no validator is configured — " +
-				"set auth.users_file or auth.remote_url, else the accept-all fallback admits any non-empty udid/token")
-		}
-		slog.Info("server: auth chain", "mode", "accept-all")
-		validator = func(token, udid, mode string) wire.AuthVerdict {
-			if token != "" && udid != "" {
-				return wire.AuthVerdict{OK: true}
-			}
-			return wire.AuthVerdict{OK: false, Code: 401}
-		}
+	case s.provisionedAuth != nil:
+		// Zero-config `k2s run`: admit exactly the credential written into the
+		// connect URL. This replaced an accept-all fallback (any two non-empty
+		// strings) that was only tolerable while enforcement was optional.
+		slog.Info("server: auth chain", "mode", "provisioned")
+		validator = provisionedAuthValidator(*s.provisionedAuth)
+	default:
+		// Static-TLS config with no users_file/remote_url: nothing to check a
+		// credential against. Refuse to start rather than admit everyone.
+		return nil, fmt.Errorf("auth: no validator configured — " +
+			"set auth.users_file or auth.remote_url, or cert_dir for an auto-provisioned credential")
 	}
 	// Enforcement must cover BOTH transports with the same validator: QUIC is
 	// primary, TCP-WS is the fallback used exactly on the UDP-blocked/censored
 	// networks that matter most. Gating only QUIC would let an attacker force
-	// TCP-WS to bypass device auth entirely.
+	// TCP-WS to bypass device auth entirely. Always on — there is no
+	// permissive mode for k2s.
 	s.quicSrv.SetValidator(validator)
-	s.quicSrv.SetEnforce(cfg.Auth.EnforceAuth)
+	s.quicSrv.SetEnforce(true)
 	s.tcpwsSrv.SetValidator(validator)
-	s.tcpwsSrv.SetEnforce(cfg.Auth.EnforceAuth)
-	slog.Info("server: device-auth enforcement", "enforce", cfg.Auth.EnforceAuth)
+	s.tcpwsSrv.SetEnforce(true)
 
 	// Phase 3 enforce-rollout observability: both transports feed one counter
 	// set; the reporter goroutine starts in Run().
@@ -348,6 +350,7 @@ func (s *Server) setupAutoProvision(cfg *config.ServerConfig) error {
 	if err != nil {
 		return fmt.Errorf("auth: %w", err)
 	}
+	s.provisionedAuth = auth
 
 	// 11. Log connection info.
 	slog.Info("server: cert pins", "pins", pair.FormatPins())
@@ -357,6 +360,18 @@ func (s *Server) setupAutoProvision(cfg *config.ServerConfig) error {
 	logConnectionURL(cfg, pair, s.echConfig, auth)
 
 	return nil
+}
+
+// provisionedAuthValidator admits only the auto-provisioned credential.
+func provisionedAuthValidator(auth wire.AuthInfo) wire.Validator {
+	return func(token, udid, mode string) wire.AuthVerdict {
+		if auth.UDID != "" && auth.Token != "" &&
+			subtle.ConstantTimeCompare([]byte(udid), []byte(auth.UDID)) == 1 &&
+			subtle.ConstantTimeCompare([]byte(token), []byte(auth.Token)) == 1 {
+			return wire.AuthVerdict{OK: true}
+		}
+		return wire.AuthVerdict{OK: false, Code: 401}
+	}
 }
 
 // logConnectionURL prints and saves the k2v5:// connect URL for clients.

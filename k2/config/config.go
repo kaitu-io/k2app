@@ -228,13 +228,14 @@ type ECHConfig struct {
 	Provider   string `yaml:"provider"`    // "local" (default) — ECH template provider
 }
 
-// AuthConfig contains server auth configuration.
-// Validators are checked in order: users_file → remote_url → accept-all.
+// AuthConfig contains server auth configuration. Device auth is always
+// enforced on both transports; there is no permissive mode.
+// Validators are checked in order: users_file → remote_url; with neither, the
+// auto-provisioned cert_dir/auth.json credential is the only one admitted.
 type AuthConfig struct {
-	UsersFile   string        `yaml:"users_file"`   // path to users file (udid:token per line)
-	RemoteURL   string        `yaml:"remote_url"`   // Center API auth URL
-	CacheTTL    time.Duration `yaml:"cache_ttl"`    // TTL for cached successful auths; 0 → defaults to 15m in SetDefaults (not "no cache")
-	EnforceAuth bool          `yaml:"enforce_auth"` // reject unauthenticated proxy streams on BOTH transports (QUIC + TCP-WS). Default false (permissive) during rollout — flip to true only once new clients (which send metadata) have propagated, else legacy clients are cut off. env K2_ENFORCE_AUTH
+	UsersFile string        `yaml:"users_file"` // path to users file (udid:token per line)
+	RemoteURL string        `yaml:"remote_url"` // Center API auth URL
+	CacheTTL  time.Duration `yaml:"cache_ttl"`  // TTL for cached successful auths; 0 → defaults to 15m in SetDefaults (not "no cache")
 }
 
 // LogConfig contains logging configuration.
@@ -414,9 +415,6 @@ func setServerDefaults(cfg *ServerConfig) {
 	}
 	if v := os.Getenv("K2_NODE_CUTOFF_REPORT"); v == "1" || v == "true" {
 		cfg.NodeCutoffReport = true
-	}
-	if v := os.Getenv("K2_ENFORCE_AUTH"); v == "1" || v == "true" {
-		cfg.Auth.EnforceAuth = true
 	}
 	// Node-level alerting (spec §6.4). Unset => alerting off, which is the
 	// documented default: a node with no webhook must behave exactly as it did

@@ -34,7 +34,9 @@ listen: ":443"
 # Per-client rate limit in bytes/sec (0 = unlimited)
 # rate: 0
 
-# Authentication — validators checked in order, first match wins.
+# Authentication — always enforced. Validators checked in order, first match
+# wins. With neither set, only the auto-provisioned cert_dir/auth.json
+# credential (embedded in the connect URL) is admitted.
 # auth:
 #   users_file: "/etc/k2s/users"    # file-based (udid:token per line, hot-reload)
 #   remote_url: "https://api.example.com/k2/auth"  # Center API

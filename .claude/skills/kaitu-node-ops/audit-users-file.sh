@@ -1,8 +1,8 @@
 #!/bin/bash
-# Audit /apps/k2s/users across the fleet — BLOCKING pre-enforce check.
+# Audit /apps/k2s/users across the fleet.
 # Any non-empty entry in the bind-mounted users file bypasses Center auth
-# entirely (validator chain: users_file FIRST, then remote_url). Before
-# flipping K2_ENFORCE_AUTH anywhere, every shared node must show 0.
+# entirely (validator chain: users_file FIRST, then remote_url). k2s always
+# enforces device auth, so every shared node must show 0.
 #
 # Usage: ./audit-users-file.sh            # audit all active nodes
 #        ./audit-users-file.sh --node=IP  # single node
@@ -46,7 +46,7 @@ done <<< "$NODE_LIST"
 
 echo ""
 if [ "$DIRTY" -ne 0 ]; then
-  echo "BLOCKED: $DIRTY node(s) have non-empty (or unreadable) /apps/k2s/users — resolve before enabling enforce."
+  echo "BLOCKED: $DIRTY node(s) have non-empty (or unreadable) /apps/k2s/users — they bypass Center auth."
   exit 1
 fi
 echo "OK: all audited nodes have an empty users file."

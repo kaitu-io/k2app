@@ -38,8 +38,8 @@ the nodes; launchd jobs have no ssh-agent). Check: `launchctl list | grep k2cc-o
   carry ~1 % of bytes and are the desktop daemon's server-probe handshakes. `node-sessions.sh` does
   this; `node-report.sh` numbers are raw.
 - `minRttMs=1000` = never measured (all-app-limited sender), `bwRise=0`, `rateAdj=0`, `ssSat=0` are
-  structural (see `k2/wire/k2cc/CLAUDE.md` "Observability"). `udid=""` = legacy / failed-verdict
-  client under `K2_ENFORCE_AUTH=0`.
+  structural (see `k2/wire/k2cc/CLAUDE.md` "Observability"). `udid=""` = a session with no passing
+  verdict; k2s always enforces auth now, so on a current node it should not carry proxy traffic.
 - `tputMax` is noise (tiny MIs report 400+ Mbps). Percentiles are histogram **upper edges**.
 - Log rotation is 20 MB × 3 backups: a busy node keeps ~12–24 h; run the report before the window
   you care about rotates out.

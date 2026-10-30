@@ -52,6 +52,7 @@ func generateTestCert(t *testing.T) tls.Certificate {
 func TestNewServer(t *testing.T) {
 	cfg := &config.ServerConfig{
 		Listen: ":0",
+		Auth:   testAuthConfig(t),
 	}
 
 	s, err := New(cfg)
@@ -94,7 +95,7 @@ func TestServer_TCPWSProxy(t *testing.T) {
 	}()
 
 	// Create server.
-	cfg := &config.ServerConfig{Listen: "127.0.0.1:0"}
+	cfg := &config.ServerConfig{Listen: "127.0.0.1:0", Auth: testAuthConfig(t)}
 	srv, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -145,6 +146,7 @@ func TestServer_TCPWSProxy(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sess.Close()
+	authenticateTCPWS(t, sess)
 
 	// Open TCP proxy stream.
 	stream, err := sess.OpenStream()
@@ -261,7 +263,7 @@ func buildTestClientHello(sni string, includeECH bool) []byte {
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	cert := generateTestCert(t)
-	cfg := &config.ServerConfig{Listen: "127.0.0.1:0"}
+	cfg := &config.ServerConfig{Listen: "127.0.0.1:0", Auth: testAuthConfig(t)}
 	srv, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -367,6 +369,7 @@ func TestServer_ECHRouting_ECHConnection(t *testing.T) {
 		t.Fatalf("smux client: %v", err)
 	}
 	defer sess.Close()
+	authenticateTCPWS(t, sess)
 
 	stream, err := sess.OpenStream()
 	if err != nil {
@@ -495,6 +498,7 @@ func TestServer_ECHRouting_NonECHConnection(t *testing.T) {
 func TestServer_MatchLocalRoute(t *testing.T) {
 	cfg := &config.ServerConfig{
 		Listen: ":0",
+		Auth:   testAuthConfig(t),
 		LocalRoutes: map[string]string{
 			"*.vpn.example.com": "127.0.0.1:8443",
 			"oc.example.com":    "127.0.0.1:10001",
@@ -535,7 +539,7 @@ func TestServer_MatchLocalRoute(t *testing.T) {
 
 // TestServer_MatchLocalRoute_Empty verifies no panic when local_routes is nil.
 func TestServer_MatchLocalRoute_Empty(t *testing.T) {
-	cfg := &config.ServerConfig{Listen: ":0"}
+	cfg := &config.ServerConfig{Listen: ":0", Auth: testAuthConfig(t)}
 	srv, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -576,6 +580,7 @@ func TestServer_LocalRoutes_TCPRelay(t *testing.T) {
 	// Create server with local_routes pointing to our mock backend.
 	cfg := &config.ServerConfig{
 		Listen: ":0",
+		Auth:   testAuthConfig(t),
 		LocalRoutes: map[string]string{
 			"k2v4.example.com": backendAddr,
 		},
@@ -693,6 +698,7 @@ func TestServer_WSUpgrade(t *testing.T) {
 		t.Fatalf("smux client: %v", err)
 	}
 	defer sess.Close()
+	authenticateTCPWS(t, sess)
 
 	// Open TCP proxy stream.
 	stream, err := sess.OpenStream()

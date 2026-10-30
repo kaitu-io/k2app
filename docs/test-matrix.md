@@ -333,7 +333,7 @@ k2 传输层是本次改动最深的地方：QUIC 腿从 `apernet/quic-go` 迁�
 
 - **ECH config_id gate 不会踢掉合法客户端**：`server.go` 新增按 plaintext `config_id` 分流（自有→k2v5，外来→伪装站）。实测 HK 5458 节点持有 `{175,176,231}` 三份 ECH config，`LoadAllECHConfigs` **加载全部**（注释明写 supports rotation）进 `EncryptedClientHelloKeys`，而 Center 下发的 `ech=` 解出 `config_id=231` ∈ 该集合 → `ownsECHConfigID` 命中。JP/US 抽样同理。**升级节点不会因 config_id 漂移断连。**
 - **origin 迁移不威胁登录态**：桌面 auth token 存 Rust `storage.json`（`_platform.storage`），localStorage 只承载偏好/缓存。迁移失败的兜底是"以空存储进入新 origin"，最坏丢语言/公告已读。
-- **tunnel token 目前是软路径**：全车队 `K2_ENFORCE_AUTH=0`（k2s 与 sidecar 均是），节点不强制。存量 access token 继续可用 → tunnel token 出问题不会导致断连。**代价是这条链路在生产上从未被强制验证过**（阶段 E）。
+- **（2026-10-30 更新）tunnel token 已是硬路径**：`K2_ENFORCE_AUTH` 开关已删除，k2s 永远强制认证；tunnel token 出问题即断连。下文 E07 与「`K2_ENFORCE_AUTH=0`」行是历史记录。
 - **旧 `hop=` 订阅 URL 不会失效**：R02 已 PASS，解析时静默忽略。
 
 ## 真机清单

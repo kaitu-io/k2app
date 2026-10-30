@@ -1235,9 +1235,10 @@ func (s *QUICServer) EnableRevalidation(v Validator) {
 	s.sessions = newAuthSessions(v, authSweepInterval)
 }
 
-// SetEnforce toggles QUIC device-auth enforcement. When false (default,
-// permissive) the metadata stream never blocks a connection — required during
-// rollout so legacy clients (which don't send metadata) keep working.
+// SetEnforce toggles QUIC device-auth enforcement. k2s (server.New) always
+// sets true; false (the zero value, permissive) remains only for wire-level
+// tests and the k2p P2P path, where the metadata stream never blocks a
+// connection.
 // Attribution still follows the verdict, not the self-report: only a passing
 // verdict feeds ctx.dev, an unvalidated connection lands in the empty-udid
 // bucket. When true, proxy streams on a connection that failed or omitted
