@@ -1745,3 +1745,110 @@ describe('Connection Store - 504 rule-bundle global fallback', () => {
     expect(vpn.useVPNMachineStore.getState().error?.code).toBe(401);
   });
 });
+
+// ==================== Self-hosted selection stays in sync ====================
+//
+// In self_hosted mode activeTunnel is derived from the self-hosted store's
+// tunnel. It used to be computed only when the tab was switched, so a tunnel
+// loaded or saved afterwards never reached it: the connect button stayed on
+// "select a server" and the self-hosted row was not clickable, until the user
+// switched tabs away and back.
+describe('self_hosted activeTunnel follows the self-hosted tunnel', () => {
+  const URI_A = 'k2v5://alice:token@1.2.3.4:443?country=JP#tokyo';
+  const URI_B = 'k2v5://bob:token@5.6.7.8:443?country=SG#sg';
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it('cold start with persisted self_hosted mode and a stored tunnel is connectable', async () => {
+    mockStorage.get.mockImplementation(async (key: string) => {
+      if (key === 'k2.vpn.server_mode') return 'self_hosted';
+      if (key === 'k2.self_hosted.tunnel') return { uri: URI_A, name: 'tokyo', country: 'JP' };
+      return undefined;
+    });
+    const sh = await import('../self-hosted.store');
+    const conn = await import('../connection.store');
+    await sh.useSelfHostedStore.getState().loadTunnel();
+    const cleanup = conn.initializeConnectionStore();
+    await flush();
+
+    const s = conn.useConnectionStore.getState();
+    expect(s.serverMode).toBe('self_hosted');
+    expect(s.activeTunnel?.serverUrl).toBe(URI_A);
+    expect(conn.hasConnectableSelection(s)).toBe(true);
+    cleanup();
+  });
+
+  it('cold start where the tunnel loads after the server mode is connectable', async () => {
+    mockStorage.get.mockImplementation(async (key: string) => {
+      if (key === 'k2.vpn.server_mode') return 'self_hosted';
+      if (key === 'k2.self_hosted.tunnel') return { uri: URI_A, name: 'tokyo', country: 'JP' };
+      return undefined;
+    });
+    const sh = await import('../self-hosted.store');
+    const conn = await import('../connection.store');
+    const cleanup = conn.initializeConnectionStore();
+    await flush();
+    expect(conn.useConnectionStore.getState().serverMode).toBe('self_hosted');
+    await sh.useSelfHostedStore.getState().loadTunnel();
+
+    const s = conn.useConnectionStore.getState();
+    expect(s.activeTunnel?.serverUrl).toBe(URI_A);
+    expect(conn.hasConnectableSelection(s)).toBe(true);
+    cleanup();
+  });
+
+  it('saving a tunnel while the self-hosted tab is already open makes it connectable', async () => {
+    const sh = await import('../self-hosted.store');
+    sh.useSelfHostedStore.setState({ tunnel: null, loaded: true });
+    const { useConnectionStore, initializeConnectionStore, hasConnectableSelection } = await getStores();
+    const cleanup = initializeConnectionStore();
+    await flush();
+
+    await useConnectionStore.getState().setServerMode('self_hosted'); // tab opened before configuring
+    expect(hasConnectableSelection(useConnectionStore.getState())).toBe(false);
+
+    await sh.useSelfHostedStore.getState().saveTunnel(URI_A);
+
+    const s = useConnectionStore.getState();
+    expect(s.activeTunnel?.serverUrl).toBe(URI_A);
+    expect(hasConnectableSelection(s)).toBe(true);
+    cleanup();
+  });
+
+  it('replacing and clearing the tunnel update activeTunnel; connectedTunnel stays frozen', async () => {
+    const sh = await import('../self-hosted.store');
+    sh.useSelfHostedStore.setState({ tunnel: { uri: URI_A, name: 'tokyo', country: 'JP' }, loaded: true });
+    const { useConnectionStore, initializeConnectionStore, hasConnectableSelection } = await getStores();
+    const cleanup = initializeConnectionStore();
+    await flush();
+    useConnectionStore.getState().selectSelfHosted();
+    const frozen = useConnectionStore.getState().activeTunnel;
+    useConnectionStore.setState({ connectedTunnel: frozen });
+
+    await sh.useSelfHostedStore.getState().saveTunnel(URI_B);
+    expect(useConnectionStore.getState().activeTunnel?.serverUrl).toBe(URI_B);
+    expect(useConnectionStore.getState().connectedTunnel).toBe(frozen);
+
+    await sh.useSelfHostedStore.getState().clearTunnel();
+    expect(useConnectionStore.getState().activeTunnel).toBeNull();
+    expect(hasConnectableSelection(useConnectionStore.getState())).toBe(false);
+    cleanup();
+  });
+
+  it('in manual mode a self-hosted save leaves the cloud selection alone', async () => {
+    const sh = await import('../self-hosted.store');
+    sh.useSelfHostedStore.setState({ tunnel: null, loaded: true });
+    const { useConnectionStore, initializeConnectionStore } = await getStores();
+    const cleanup = initializeConnectionStore();
+    await flush();
+    const tunnel = { id: 1, domain: 'tokyo.example.com', name: 'Tokyo', protocol: 'k2v5', port: 443,
+      serverUrl: 'k2v5://tokyo.example.com:443', node: { country: 'JP' } } as any;
+    useConnectionStore.getState().selectCloudTunnel(tunnel);
+    const before = useConnectionStore.getState().activeTunnel;
+
+    await sh.useSelfHostedStore.getState().saveTunnel(URI_A);
+
+    expect(useConnectionStore.getState().serverMode).toBe('manual');
+    expect(useConnectionStore.getState().activeTunnel).toBe(before);
+    cleanup();
+  });
+});

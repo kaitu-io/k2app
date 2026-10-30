@@ -827,6 +827,16 @@ function tryRestoreConnectedTunnel(): boolean {
   return true;
 }
 
+// In self_hosted mode activeTunnel is derived from the self-hosted tunnel, so it
+// must follow every change to that tunnel and the mode's own (async) load —
+// not only the moment the tab is switched. Otherwise a tunnel saved after the
+// tab was opened, or restored at cold start, is never connectable.
+// connectedTunnel (the connect-time snapshot) is deliberately left alone.
+function syncSelfHostedActiveTunnel(): void {
+  if (useConnectionStore.getState().serverMode !== 'self_hosted') return;
+  useConnectionStore.setState({ activeTunnel: computeSelfHostedActiveTunnel() });
+}
+
 // ============ Lifecycle ============
 
 export function initializeConnectionStore(): () => void {
@@ -893,12 +903,17 @@ export function initializeConnectionStore(): () => void {
       tryRestoreConnectedTunnel();
     }
     if (state.serverModeLoaded && !prevState.serverModeLoaded) {
+      syncSelfHostedActiveTunnel();
       tryRestoreConnectedTunnel();
     }
   });
 
   // Trigger 3: selfHosted loaded (must be ready before self-hosted vs cloud determination)
+  // or its tunnel saved / replaced / cleared.
   const unsubSelfHosted = useSelfHostedStore.subscribe((state, prevState) => {
+    if (state.tunnel !== prevState.tunnel) {
+      syncSelfHostedActiveTunnel();
+    }
     if (state.loaded && !prevState.loaded) {
       tryRestoreConnectedTunnel();
     }
