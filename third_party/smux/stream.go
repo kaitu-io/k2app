@@ -350,8 +350,8 @@ func (s *Stream) sendLatestWindowBy(deadline <-chan time.Time) error {
 	s.bufferLock.Lock()
 	consumed, window := s.numRead, s.rcvWnd
 	s.bufferLock.Unlock()
-	if testHookUpdSnapshot != nil {
-		testHookUpdSnapshot()
+	if h, _ := testHookUpdSnapshot.Load().(func()); h != nil {
+		h()
 	}
 
 	frame := newFrame(cmdUPD, s.id)

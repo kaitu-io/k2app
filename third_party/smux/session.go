@@ -389,13 +389,14 @@ func (s *Session) chargeGrowth(n uint32) {
 	s.grown.Add(int64(n))
 }
 
-// testHookDecaySend, when set (tests only, before the session starts), runs
-// between an idle shrink being decided and its window update being sent.
-var testHookDecaySend func()
+// testHookDecaySend, when set (tests only), runs between an idle shrink being
+// decided and its window update being sent. Atomic: a test's cleanup clears
+// it while that test's sessions may still be sending updates.
+var testHookDecaySend atomic.Value // func()
 
-// testHookUpdSnapshot, when set (tests only, before the session starts),
-// runs between a window update reading its values and enqueueing the frame.
-var testHookUpdSnapshot func()
+// testHookUpdSnapshot, when set (tests only), runs between a window update
+// reading its values and enqueueing the frame. Atomic for the same reason.
+var testHookUpdSnapshot atomic.Value // func()
 
 // tuneLoop shrinks idle streams' windows every tuneInterval. It runs apart
 // from keepalive because a window update can wait behind a slow conn.
@@ -424,11 +425,15 @@ func (s *Session) decayIdleWindows() {
 	now := time.Now()
 	for _, st := range streams {
 		if st.decayIfIdle(now) {
-			if testHookDecaySend != nil {
-				testHookDecaySend()
+			if h, _ := testHookDecaySend.Load().(func()); h != nil {
+				h()
 			}
-			// Bounded: a reader waiting on updMu behind this send waits at
-			// most tuneInterval. A shrink that misses its bound is harmless —
+			// The write is bounded: a reader waiting on updMu behind this
+			// send waits at most tuneInterval. Getting updMu is not — a
+			// reader without a read deadline can hold it for as long as its
+			// own update write takes (up to KeepAliveTimeout, when the
+			// session dies), and this tuneLoop pass waits with it; the
+			// shrinks it would have made happen on a later pass. A shrink that misses its bound is harmless —
 			// the peer keeps the larger window, whose bytes are charged — and
 			// one already queued still goes out ahead of later updates (FIFO).
 			bound := time.NewTimer(tuneInterval)

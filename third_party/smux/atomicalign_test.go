@@ -15,7 +15,7 @@ import (
 // can't reintroduce it (Session.reqSeq did: offset 148 on 386).
 func TestNo64BitAtomicFuncs(t *testing.T) {
 	banned := map[string]bool{}
-	for _, op := range []string{"Add", "Load", "Store", "Swap", "CompareAndSwap"} {
+	for _, op := range []string{"Add", "And", "Or", "Load", "Store", "Swap", "CompareAndSwap"} {
 		banned[op+"Int64"], banned[op+"Uint64"] = true, true
 	}
 	files, err := filepath.Glob("*.go")

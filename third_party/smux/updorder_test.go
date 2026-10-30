@@ -20,13 +20,12 @@ func TestWindowUpdates_NeverGoBackwards(t *testing.T) {
 	decided := make(chan struct{})
 	readerSent := make(chan struct{})
 	var once sync.Once
-	testHookDecaySend = func() {
+	setTestHook(t, &testHookDecaySend, func() {
 		once.Do(func() {
 			close(decided)
 			<-readerSent
 		})
-	}
-	defer func() { testHookDecaySend = nil }()
+	})
 
 	cfg := DefaultConfig()
 	cfg.MaxReceiveBuffer = 1 << 20
@@ -118,7 +117,7 @@ func TestWindowUpdates_StaleShrinkDoesNotStallSender(t *testing.T) {
 	decided := make(chan struct{})
 	readerSent := make(chan struct{})
 	var once sync.Once
-	testHookDecaySend = func() {
+	setTestHook(t, &testHookDecaySend, func() {
 		if !armed.Load() {
 			return
 		}
@@ -126,8 +125,7 @@ func TestWindowUpdates_StaleShrinkDoesNotStallSender(t *testing.T) {
 			close(decided)
 			<-readerSent
 		})
-	}
-	defer func() { testHookDecaySend = nil }()
+	})
 
 	cfg := DefaultConfig()
 	cfg.KeepAliveInterval = 100 * time.Millisecond
@@ -197,8 +195,8 @@ func TestWindowUpdates_SnapshotAndSendAreAtomic(t *testing.T) {
 	var shrinking, armed atomic.Bool
 	snapped := make(chan struct{})
 	var once sync.Once
-	testHookDecaySend = func() { shrinking.Store(armed.Load()) }
-	testHookUpdSnapshot = func() {
+	setTestHook(t, &testHookDecaySend, func() { shrinking.Store(armed.Load()) })
+	setTestHook(t, &testHookUpdSnapshot, func() {
 		if !shrinking.Load() {
 			return
 		}
@@ -207,8 +205,7 @@ func TestWindowUpdates_SnapshotAndSendAreAtomic(t *testing.T) {
 			close(snapped)
 			time.Sleep(300 * time.Millisecond) // the reader gets every chance to overtake
 		})
-	}
-	defer func() { testHookDecaySend, testHookUpdSnapshot = nil, nil }()
+	})
 
 	cfg := DefaultConfig()
 	cfg.MaxReceiveBuffer = 1 << 20
@@ -275,4 +272,12 @@ func TestWindowUpdates_SnapshotAndSendAreAtomic(t *testing.T) {
 	if len(consumed) == 0 || consumed[len(consumed)-1] != 10<<10 {
 		t.Fatalf("last update consumed=%v; want the reader's 10240 last", consumed)
 	}
+}
+
+// setTestHook installs fn in hook until the test ends. Cleanup clears it
+// after the test's sessions are closed only if they were registered later;
+// clearing earlier is still safe — the hook is atomic and nil means "none".
+func setTestHook(t *testing.T, hook *atomic.Value, fn func()) {
+	hook.Store(fn)
+	t.Cleanup(func() { hook.Store((func())(nil)) })
 }
