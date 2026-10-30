@@ -64,11 +64,15 @@ The patch:
 - `Write` now returns the bytes actually sent alongside `io.EOF` (upstream
   returned 0), so `io.Copy` byte counts stay right.
 
-Mixed versions: a new client with an old server keeps upstream write
-semantics for the session (no `smux_hc` in the response). Its `CloseWrite`
-still keeps reading, which can only receive more of the response than
-before. An old client with a new server never offers `smux_hc`, so the
-server keeps upstream semantics too. Pinned by `halfclose_test.go` and
+Mixed versions: a session whose peer is not known to half-close (an old
+peer never offers `smux_hc`) keeps upstream semantics entirely: writes end
+at the peer's first FIN, and **`CloseWrite` is a full `Close`**, as k2's
+`CloseWrite` was before this patch. Half-closing toward such a peer would
+be worse than either: it reads our FIN as a full close and stops sending
+once its window runs out, so we would read a response cut at an arbitrary
+point that still ends in a clean EOF
+(`TestHalfClose_CloseWriteToUnknownPeerClosesFully`). Half-close is used
+only when both ends have said so. Pinned by `halfclose_test.go` and
 `wire/tcpws_halfclose_test.go`.
 
 
@@ -209,6 +213,37 @@ more (its second FIN with half-close, its first otherwise). k2's server
 `pipe` uses it to end a stream whose client has closed while the target
 stays silent (`server.TestPipe_ClientFullCloseEndsSilentTarget`). And
 `Write` returns the bytes sent with `ErrConsumed`, as it does with `io.EOF`.
+
+Window updates are ordered (review of patch 6). The reader and tuneLoop's
+idle shrink both send a stream's window updates, and the peer — old or new
+— keeps whichever arrives last. A shrink built before the reader consumed
+more, landing after the reader's update, sent "consumed" backwards: the
+sender then counted bytes as in flight that had been read, and with the
+buffer drained below half a window the receiver had no reason to send
+another update — a stream stalled for good while keepalive kept the
+session up. Now `Stream.sendLatestWindow` sends every update under the
+per-stream `updMu`, reading consumed/window at send time, and the shaper
+releases equal-priority frames first-in, first-out (`writeRequest.seq`; a
+heap is not stable). Pinned by `TestWindowUpdates_NeverGoBackwards` (a
+test hook pauses the shrink between deciding and sending) and
+`TestShaper_EqualPriorityIsFIFO`.
+
+## 7. A write's own result wins over the session closing (session.go)
+
+A conn write that fails closes the session right after delivering the
+frame's result, so the writer's `select` saw both ready and picked at
+random: `io.ErrClosedPipe` about a third of the time instead of the real
+error (`TestHardening_ShortConnWriteIsFatal` failed 84 / 500 runs).
+`writeFrameInternal` now takes the result when it is there.
+
+## Fuzzing
+
+`FuzzSession` (`fuzz_test.go`) drives a server session with arbitrary peer
+frames, well-formed or not, interleaved with local stream calls, and
+checks: no panic or hang, receive accounting in bounds (`bucket <=
+MaxReceiveBuffer`, `grown >= 0`), and closing the conn ends the session and
+every goroutine. Its seeds run with the normal tests; to fuzz,
+`go test -run '^$' -fuzz FuzzSession -fuzztime 10m ./`.
 
 ## Removed contract: the opener no longer has to speak first
 

@@ -314,7 +314,7 @@ func TestAutoTune_BytesPastShrunkWindowAreCharged(t *testing.T) {
 	serveDownloads(ss, 4<<20) // the peer is done: no bytes in flight
 
 	a := downloadAndPause(t, cs, 4<<20)
-	if _, _, ok := a.decayIfIdle(time.Now().Add(time.Hour)); !ok {
+	if !a.decayIfIdle(time.Now().Add(time.Hour)) {
 		t.Fatal("decayIfIdle did not shrink a grown window")
 	}
 	atomic.StoreInt64(&cs.grown, cs.growPool) // pool exhausted by others

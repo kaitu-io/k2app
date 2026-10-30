@@ -109,6 +109,7 @@ func waitStream(t *testing.T, ch <-chan *Stream, what string) *Stream {
 // response was dropped.
 func TestHalfClose_ReadAfterCloseWrite(t *testing.T) {
 	cs, ss := halfClosePair(t)
+	cs.SetPeerHalfClose(true) // the client half-closes: the server says it can
 	ss.SetPeerHalfClose(true) // the server writes after the client's FIN
 	want := halfClosePayload()
 
@@ -156,6 +157,7 @@ func TestHalfClose_ReadAfterCloseWrite(t *testing.T) {
 func TestHalfClose_WriteAfterPeerFIN(t *testing.T) {
 	cs, ss := halfClosePair(t)
 	cs.SetPeerHalfClose(true)
+	ss.SetPeerHalfClose(true) // the server half-closes: the client says it can
 	want := halfClosePayload()
 
 	uploaded := make(chan readResult, 1)
@@ -265,6 +267,7 @@ func TestHalfClose_UnknownPeerFINEndsWrites(t *testing.T) {
 
 func TestHalfClose_WriteAfterCloseWriteFails(t *testing.T) {
 	cs, ss := halfClosePair(t)
+	cs.SetPeerHalfClose(true)
 	go ss.AcceptStream()
 	st, err := cs.OpenStream()
 	if err != nil {
@@ -467,5 +470,31 @@ func TestHalfClose_PeerClosed(t *testing.T) {
 		case <-time.After(2 * time.Second):
 			t.Fatalf("hc=%v: PeerClosed not fired after the peer's Close", hc)
 		}
+	}
+}
+
+// Half-closing toward a peer not known to support it (an old server, which
+// reads our FIN as a full close and stops sending after its window) would
+// leave a response cut at an arbitrary point that still ends in a clean EOF.
+// CloseWrite is a full Close there, as before half-close existed: the
+// stream is gone, and a read fails instead of returning part of the reply.
+func TestHalfClose_CloseWriteToUnknownPeerClosesFully(t *testing.T) {
+	cs, ss := halfClosePair(t) // neither side has heard the other can half-close
+	go acceptAfterFirstByte(ss)
+	st, err := cs.OpenStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Write([]byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CloseWrite(); err != nil {
+		t.Fatal(err)
+	}
+	if n := cs.NumStreams(); n != 0 {
+		t.Fatalf("stream still registered after CloseWrite to an unknown peer (%d streams)", n)
+	}
+	if _, err := st.Read(make([]byte, 1)); err == nil {
+		t.Fatal("read after CloseWrite to an unknown peer succeeded; want the stream closed")
 	}
 }

@@ -37,6 +37,9 @@ func TestDefaultSmuxConfig(t *testing.T) {
 		if stalled := cfg.MaxReceiveBuffer / 2 / cfg.MinStreamBuffer; stalled < 32 {
 			t.Errorf("%s: %d stalled streams block the session; want >= 32", name, stalled)
 		}
+		if name == "server" && cfg.MaxReceiveBuffer > serverMaxSessionBuffer {
+			t.Errorf("server: MaxReceiveBuffer %d: a client ignoring flow control pins that much node memory per connection; keep it <= %d", cfg.MaxReceiveBuffer, serverMaxSessionBuffer)
+		}
 		if cfg.MaxFrameSize != 32768 {
 			t.Errorf("%s: MaxFrameSize = %d, want 32768", name, cfg.MaxFrameSize)
 		}

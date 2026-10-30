@@ -57,11 +57,16 @@ func DefaultSmuxConfig() *smux.Config {
 }
 
 // ServerSmuxConfig returns the server-side smux configuration. The server
-// receives uploads; 4 MB per session, 32 KB per stalled stream, up to 1 MB
-// (~40 Mbps at 200 ms) per stream.
+// receives uploads; 2 MB per session, 16 KB per stalled stream, up to 512 KB
+// (~20 Mbps at 200 ms, ~75 Mbps at 55 ms) per stream. MaxReceiveBuffer is
+// also what one client that ignores flow control can pin on the node, per
+// TCP-WS connection (the pre-auto-tuning config: 256 KB), so it stays at
+// serverMaxSessionBuffer.
 func ServerSmuxConfig() *smux.Config {
-	return smuxConfig(4<<20, 32<<10, 1<<20)
+	return smuxConfig(serverMaxSessionBuffer, 16<<10, 512<<10)
 }
+
+const serverMaxSessionBuffer = 2 << 20
 
 func smuxConfig(recvBuf, minWindow, maxWindow int) *smux.Config {
 	return &smux.Config{
@@ -128,9 +133,10 @@ func (c *smuxStreamConn) WriteTo(w io.Writer) (int64, error) {
 }
 
 // CloseWrite closes only the write direction (sends FIN); the stream stays
-// readable (third_party/smux K2 patch 2). Whether the peer may keep writing
-// after it depends on the peer's half-close capability, negotiated by the
-// metadata "smux_hc" key (SetPeerHalfClose on each side's session).
+// readable (third_party/smux K2 patch 2) — when the peer has said it
+// half-closes, via the metadata "smux_hc" key (SetPeerHalfClose on each
+// side's session). Toward any other peer it is a full Close, as it was
+// before half-close existed.
 // Used by pipe() for half-close; full cleanup is the caller's defer Close().
 func (c *smuxStreamConn) CloseWrite() error {
 	return c.Stream.CloseWrite()

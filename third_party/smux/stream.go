@@ -60,6 +60,13 @@ type Stream struct {
 
 	initWnd sync.Once // initial window update (sendInitialWindow)
 
+	// updMu serializes this stream's window updates (a serialization lock:
+	// held across the frame write, never taken under bufferLock). The reader
+	// and tuneLoop's idle shrink both send them, and the peer keeps whichever
+	// arrives last; sendLatestWindow builds each update from the state at
+	// send time under updMu, so the peer never sees consumed go backwards.
+	updMu sync.Mutex
+
 	// UPD command
 	peerConsumed uint32        // num of bytes the peer has consumed
 	peerWindow   uint32        // peer window, initialized to 256KB, updated by peer
@@ -124,9 +131,8 @@ func (s *Stream) syncChargeLocked() {
 }
 
 // consumedLocked accounts n bytes read by the user and decides whether to
-// send a window update; it returns the update's consumed and window values
-// (ok=false: none due). Caller holds bufferLock.
-func (s *Stream) consumedLocked(n int) (consumed, window uint32, ok bool) {
+// send a window update (sendLatestWindow). Caller holds bufferLock.
+func (s *Stream) consumedLocked(n int) (ok bool) {
 	s.numRead += uint32(n)
 	s.incr += uint32(n)
 	s.buffered -= uint32(n)
@@ -158,30 +164,30 @@ func (s *Stream) consumedLocked(n int) (consumed, window uint32, ok bool) {
 		ok = true
 	}
 	if !ok {
-		return 0, 0, false
+		return false
 	}
 	s.incr = 0
-	return s.numRead, s.rcvWnd, true
+	return true
 }
 
 // decayIfIdle shrinks a grown window back to MinStreamBuffer once its
 // reader has consumed nothing for tuneInterval (paused video, idle
 // keep-alive conn), so its growth goes back to the pool for the streams
-// that are moving. It returns the window update to send (ok=false: none).
+// that are moving. It reports whether the peer must be told (sendLatestWindow).
 // The sender may still deliver what the old window allowed before the
 // update lands; those bytes are charged until read (syncChargeLocked).
-func (s *Stream) decayIfIdle(now time.Time) (consumed, window uint32, ok bool) {
+func (s *Stream) decayIfIdle(now time.Time) bool {
 	s.bufferLock.Lock()
 	defer s.bufferLock.Unlock()
 	min := uint32(s.sess.config.MinStreamBuffer)
 	if s.tuneReleased || s.rcvWnd <= min || now.Sub(s.lastRead) < tuneInterval {
-		return 0, 0, false
+		return false
 	}
 	s.rcvWnd = min
 	s.tuneStart, s.tuneBytes = now, 0
 	s.syncChargeLocked()
 	s.incr = 0
-	return s.numRead, s.rcvWnd, true
+	return true
 }
 
 // sendInitialWindow tells the peer our window as soon as the stream exists.
@@ -196,12 +202,7 @@ func (s *Stream) sendInitialWindow() error {
 		return nil
 	}
 	var err error
-	s.initWnd.Do(func() {
-		s.bufferLock.Lock()
-		consumed, window := s.numRead, s.rcvWnd
-		s.bufferLock.Unlock()
-		err = s.sendWindowUpdate(consumed, window)
-	})
+	s.initWnd.Do(func() { err = s.sendLatestWindow() })
 	return err
 }
 
@@ -255,13 +256,13 @@ func (s *Stream) TryRead(b []byte) (n int, err error) {
 			s.heads = s.heads[1:]
 		}
 	}
-	consumed, window, notify := s.consumedLocked(n)
+	notify := s.consumedLocked(n)
 	s.bufferLock.Unlock()
 
 	if n > 0 {
 		s.sess.returnTokens(n)
 		if notify {
-			err := s.sendWindowUpdate(consumed, window)
+			err := s.sendLatestWindow()
 			return n, err
 		} else {
 			return n, nil
@@ -289,7 +290,7 @@ func (s *Stream) WriteTo(w io.Writer) (n int64, err error) {
 			s.buffers = s.buffers[1:]
 			s.heads = s.heads[1:]
 		}
-		consumed, window, notify := s.consumedLocked(len(buf))
+		notify := s.consumedLocked(len(buf))
 		s.bufferLock.Unlock()
 
 		if buf != nil {
@@ -308,7 +309,7 @@ func (s *Stream) WriteTo(w io.Writer) (n int64, err error) {
 			}
 
 			if notify {
-				if err := s.sendWindowUpdate(consumed, window); err != nil {
+				if err := s.sendLatestWindow(); err != nil {
 					return n, err
 				}
 			}
@@ -322,6 +323,17 @@ func (s *Stream) WriteTo(w io.Writer) (n int64, err error) {
 			return n, ew
 		}
 	}
+}
+
+// sendLatestWindow tells the peer the stream's current consumed count and
+// window. See updMu for why the values are read here, at send time.
+func (s *Stream) sendLatestWindow() error {
+	s.updMu.Lock()
+	defer s.updMu.Unlock()
+	s.bufferLock.Lock()
+	consumed, window := s.numRead, s.rcvWnd
+	s.bufferLock.Unlock()
+	return s.sendWindowUpdate(consumed, window)
 }
 
 func (s *Stream) sendWindowUpdate(consumed, window uint32) error {
@@ -503,6 +515,14 @@ func (s *Stream) Write(b []byte) (n int, err error) {
 // CloseWrite closes the write direction: it sends FIN and leaves the stream
 // readable until Close. Calling it more than once is a no-op.
 func (s *Stream) CloseWrite() error {
+	// A peer not known to half-close (upstream smux, or a k2 peer that has
+	// not said so in metadata) reads our first FIN as a full close: it stops
+	// sending once its window runs out, so we would get a response cut at an
+	// arbitrary point that ends in a clean EOF. Close fully instead, exactly
+	// as before half-close existed.
+	if !s.sess.peerHalfClose() {
+		return s.Close()
+	}
 	select {
 	case <-s.die:
 		return io.ErrClosedPipe

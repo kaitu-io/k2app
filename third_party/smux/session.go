@@ -27,6 +27,7 @@ var (
 
 type writeRequest struct {
 	prio   uint64
+	seq    uint64 // enqueue order: equal prio leaves the shaper first-in, first-out
 	frame  Frame
 	result chan writeResult
 }
@@ -77,6 +78,8 @@ type Session struct {
 	goAway int32 // flag id exhausted
 
 	halfClose int32 // peer keeps reading after its first FIN (SetPeerHalfClose)
+
+	reqSeq uint64 // writeRequest.seq source
 
 	// receive-window auto-tuning (Config.MinStreamBuffer, k2 patch 6)
 	autoTune bool
@@ -386,6 +389,10 @@ func (s *Session) chargeGrowth(n uint32) {
 	atomic.AddInt64(&s.grown, int64(n))
 }
 
+// testHookDecaySend, when set (tests only, before the session starts), runs
+// between an idle shrink being decided and its window update being sent.
+var testHookDecaySend func()
+
 // tuneLoop shrinks idle streams' windows every tuneInterval. It runs apart
 // from keepalive because a window update can wait behind a slow conn.
 func (s *Session) tuneLoop() {
@@ -412,8 +419,11 @@ func (s *Session) decayIdleWindows() {
 	s.streamLock.Unlock()
 	now := time.Now()
 	for _, st := range streams {
-		if consumed, window, ok := st.decayIfIdle(now); ok {
-			st.sendWindowUpdate(consumed, window)
+		if st.decayIfIdle(now) {
+			if testHookDecaySend != nil {
+				testHookDecaySend()
+			}
+			st.sendLatestWindow()
 		}
 	}
 }
@@ -670,6 +680,7 @@ func (s *Session) writeFrame(f Frame) (n int, err error) {
 func (s *Session) writeFrameInternal(f Frame, deadline <-chan time.Time, prio uint64) (int, error) {
 	req := writeRequest{
 		prio:   prio,
+		seq:    atomic.AddUint64(&s.reqSeq, 1),
 		frame:  f,
 		result: make(chan writeResult, 1),
 	}
@@ -687,10 +698,28 @@ func (s *Session) writeFrameInternal(f Frame, deadline <-chan time.Time, prio ui
 	case result := <-req.result:
 		return result.n, result.err
 	case <-s.die:
+		// The frame's own result may be ready too — a write that failed and
+		// closed the session delivers both — and select picks at random.
+		// Report what happened to this frame rather than "closed".
+		if result, ok := readyResult(req.result); ok {
+			return result.n, result.err
+		}
 		return 0, io.ErrClosedPipe
 	case <-s.chSocketWriteError:
+		if result, ok := readyResult(req.result); ok {
+			return result.n, result.err
+		}
 		return 0, s.socketWriteError.Load().(error)
 	case <-deadline:
 		return 0, ErrTimeout
+	}
+}
+
+func readyResult(ch chan writeResult) (writeResult, bool) {
+	select {
+	case r := <-ch:
+		return r, true
+	default:
+		return writeResult{}, false
 	}
 }
