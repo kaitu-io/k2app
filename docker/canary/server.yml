@@ -1,0 +1,8 @@
+# No users_file / remote_url: k2s self-provisions udid+token into cert_dir/auth.json
+# and accepts only that pair (always-on auth). The connect URL is written to
+# cert_dir/connect-url.txt.
+listen: ":443"
+cert_dir: "/etc/k2v5"
+log:
+  level: info
+  output: "/etc/k2v5/k2s.log"

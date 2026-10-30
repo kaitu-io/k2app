@@ -74,6 +74,7 @@ One skill for everything you do to a Kaitu VPN node, via the `kaitu-center` MCP 
 | **AWS Lightsail billing rules** (in+out sum, calendar month, proration, Center ratchet/autostop) | → `references/metering.md` |
 | **Observe metering / operate the cutoff** | → `references/metering.md` Parts D–E |
 | **Triage a user's device logs** (DIAG analysis) | → `references/device-logs.md` |
+| **Test a k2s build before the fleet** (private canary node, no users) | → `docker/canary/README.md` |
 
 The three `references/*.md` files are pulled in with the Read tool only when the task needs them — keep the hub lean.
 

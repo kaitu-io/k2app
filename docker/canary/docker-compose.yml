@@ -1,0 +1,21 @@
+# k2s canary — a standalone k2s with no sidecar and no Center registration, so
+# no user ever gets this node. Lives at /apps/k2s-canary on the canary host
+# (see README.md). The project name stays "canary": the cert_dir volume
+# canary_k2v5-data holds the self-provisioned credentials, certs, ECH key and
+# QUIC reset key, so the connect URL survives every image change.
+name: canary
+services:
+  k2s:
+    image: ${K2S_IMAGE:?set K2S_IMAGE in .env}
+    container_name: k2s
+    # Bypass the image's sidecar-mode entrypoint: run k2s straight off our config.
+    entrypoint: ["./k2s", "run", "-c", "/etc/canary/server.yml"]
+    ports:
+      - "443:443/tcp"
+      - "443:443/udp"
+    volumes:
+      - ./server.yml:/etc/canary/server.yml:ro
+      - k2v5-data:/etc/k2v5
+    restart: unless-stopped
+volumes:
+  k2v5-data:
