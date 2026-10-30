@@ -186,6 +186,17 @@ var funnelPathRegistry = []funnelPath{
 		},
 	},
 	{
+		// 试用到期由 Apple 自动扣费，产生的是 Apple 入账的 purchase 事实；窗口 = 7 天试用 + Apple 扣费重试的头几天。
+		// 关闭自动续费、扣费重试中等中间状态漏斗看不到，看 /app/stats/trials。
+		Key: "app_trial", Title: "试用转付费", Question: "开了 Apple 免费试用的人里，有多少试用到期后付了款？",
+		Lane:   funnelLaneApp,
+		Window: 14 * funnelDay,
+		Steps: []funnelStep{
+			{Label: "开始试用", Events: []string{funnelFactTrial}},
+			{Label: "付款", Events: funnelPaidFacts},
+		},
+	},
+	{
 		Key: "app_purchase", Title: "应用内购买", Question: "看到付费墙的人里，有多少最终付款？",
 		Lane: funnelLaneApp, Hop: "非 iOS 平台在 App 内点「支付」后跳到外部浏览器的支付页付款（开途 NextPay，Overleap Stripe），iOS 走 Apple 内购不离开 App；付款事实按登录账号归属，与在哪个面付的无关，是确定性的。",
 		Window: 7 * funnelDay,

@@ -100,6 +100,17 @@ export const statsTools: ToolRegistration[] = [
   }),
 
   defineApiTool({
+    name: 'trial_conversion',
+    description: 'Get Apple free-trial cohorts by trial start day (UTC): started, still in trial with auto-renew on/off, billing retry, converted to paid, ended unpaid, revoked/refunded, plus conversion rate (converted / matured). Production only.',
+    group: 'stats',
+    params: {
+      brand: brandFilter,
+      days: z.number().int().min(1).max(90).optional().describe('Trial start days to include, counting today (default 30, max 90)'),
+    },
+    path: '/app/stats/trials',
+  }),
+
+  defineApiTool({
     name: 'survey_stats',
     description: 'Get survey response statistics and aggregates.',
     group: 'surveys',

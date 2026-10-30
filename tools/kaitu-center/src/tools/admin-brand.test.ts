@@ -63,7 +63,7 @@ describe('list/stat tools accept ?brand=', () => {
     'list_admin_plans', 'list_campaigns', 'list_announcements', 'list_license_key_batches',
     'list_license_keys', 'list_edm_templates', 'lookup_user', 'list_orders',
     'query_feedback_tickets', 'device_statistics', 'user_statistics', 'order_statistics',
-    'funnel', 'retention',
+    'funnel', 'retention', 'trial_conversion',
   ]
   for (const name of lists) {
     it(`${name} forwards brand`, async () => {
@@ -131,6 +131,14 @@ describe('funnel / retention tools', () => {
     expect(tool.schema.from.safeParse('2026-9-1').success).toBe(false)
     expect(tool.schema.to.safeParse('2026-09-30').success).toBe(true)
     expect(request).not.toHaveBeenCalled()
+  })
+  it('trial_conversion sends days to /app/stats/trials', async () => {
+    const { tool, request, run } = invoke('trial_conversion', { days: 14 })
+    await run()
+    const path = request.mock.calls[0][0] as string
+    expect(path).toContain('/app/stats/trials')
+    expect(path).toContain('days=14')
+    expect(tool.schema.days.safeParse(91).success).toBe(false)
   })
   it('retention sends metric and months', async () => {
     const { tool, request, run } = invoke('retention', { metric: 'paid', months: 6 })

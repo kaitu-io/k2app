@@ -89,6 +89,9 @@ func TestFunnelPaths_RegistryContent(t *testing.T) {
 			{"首次打开", "", []string{"app_first_open"}}, {"建号或登录", "app", []string{"auth_done", "device_account_created"}},
 			{"尝试连接", "", []string{"first_connect_attempt"}}, {"连上", "", []string{"first_connect_ok"}},
 		}},
+		{"app_trial", 14 * day, []step{
+			{"开始试用", "", []string{"trial_start"}}, {"付款", "", []string{"purchase", "renewal"}},
+		}},
 		{"app_purchase", 7 * day, []step{
 			{"付费墙", "", []string{"paywall_view"}},
 			{"发起支付", "", []string{"checkout_start"}}, {"付款", "", []string{"purchase", "renewal"}},
@@ -238,6 +241,10 @@ var funnelStepEmitSites = map[string][][]string{
 		{"webapp/src/stores/connection.store.ts"}, // 首次点连接
 		{"webapp/src/stores/index.ts"},            // 首次连上
 	},
+	"app_trial": {
+		nil, // 事实（trial_start）
+		nil, // 事实
+	},
 	"app_purchase": {
 		{"webapp/src/pages/Purchase.tsx"}, // 购买页挂载即发
 		{"webapp/src/pages/Purchase.tsx", "webapp/src/components/stripe/StripePurchasePanel.tsx", "webapp/src/components/ios/IosSubscribePanel.tsx"}, // 各渠道的下单按钮，带 plan
@@ -299,7 +306,7 @@ func TestFunnelPaths_EveryStepHasUnconditionalEmitSite(t *testing.T) {
 func TestFunnelPaths_LaneAndHop(t *testing.T) {
 	wantLane := map[string]string{
 		"web_purchase": "web", "web_checkout_auth": "web", "web_install": "web", "web_to_app": "web", "guide_conversion": "web", "ad_landing": "web",
-		"app_activation": "app", "app_purchase": "app", "app_to_web": "app", "post_purchase_activation": "app",
+		"app_activation": "app", "app_trial": "app", "app_purchase": "app", "app_to_web": "app", "post_purchase_activation": "app",
 	}
 	require.Len(t, wantLane, len(funnelPathRegistry))
 	for _, p := range funnelPathRegistry {

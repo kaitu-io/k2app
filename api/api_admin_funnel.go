@@ -41,6 +41,7 @@ func registerAdminFunnelRoutes(g *gin.RouterGroup) {
 	g.GET("/stats/funnels", RoleRequired(RoleMarketing), api_admin_list_funnels)
 	g.GET("/stats/funnels/:key", RoleRequired(RoleMarketing), api_admin_get_funnel)
 	g.GET("/stats/retention", RoleRequired(RoleMarketing), api_admin_get_retention)
+	g.GET("/stats/trials", RoleRequired(RoleMarketing), api_admin_get_trial_cohorts)
 }
 
 type AdminFunnelPath struct {
@@ -245,4 +246,29 @@ func api_admin_get_retention(c *gin.Context) {
 	default:
 		Error(c, ErrorInvalidArgument, "metric must be paid or active")
 	}
+}
+
+// api_admin_get_trial_cohorts GET /app/stats/trials?brand=&days=
+// 最近 days 天（含今天，默认 30，最多 90）开始的 Apple 免费试用，按开始日看各自走到了哪一步。
+func api_admin_get_trial_cohorts(c *gin.Context) {
+	brand, hasBrand := parseBrandFilter(c.Query("brand"))
+	days := trialCohortDefaultDays
+	if raw := c.Query("days"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 1 || v > trialCohortMaxDays {
+			Error(c, ErrorInvalidArgument, "days must be 1-90")
+			return
+		}
+		days = v
+	}
+	now := time.Now()
+	since := funnelUTCDay(now).AddDate(0, 0, -(days - 1))
+	chains, err := loadTrialChains(c, brand, hasBrand, since)
+	if err != nil {
+		log.Errorf(c, "failed to load trial chains: %v", err)
+		Error(c, ErrorSystemError, "failed to compute trial cohorts")
+		return
+	}
+	resp := computeTrialCohorts(chains, now)
+	Success(c, &resp)
 }
