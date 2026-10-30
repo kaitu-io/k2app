@@ -224,7 +224,11 @@ func creditStripeInvoice(ctx context.Context, tx *gorm.DB, f *stripeInvoiceFacts
 	if f.PeriodEnd > sub.CurrentPeriodEnd {
 		sub.CurrentPeriodEnd = f.PeriodEnd
 	}
-	sub.AutoRenew = true
+	// 同 Apple：auto_renew 的权威来源是 customer.subscription.updated（cancel_at_period_end）。
+	// 重放已入账的 invoice 不能把用户已取消的续订翻回 true。
+	if !alreadyCredited {
+		sub.AutoRenew = true
+	}
 	if f.Livemode {
 		sub.Environment = "production"
 	} else {

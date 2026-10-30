@@ -277,7 +277,12 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	if revival || newPeriodEnd > sub.CurrentPeriodEnd {
 		sub.CurrentPeriodEnd = newPeriodEnd
 	}
-	sub.AutoRenew = true
+	// 自动续订开关的权威来源是 Apple 的 RenewalInfo（applyRenewalInfo）。只有新入账的交易能推断"续订是开着的"
+	// （首购 / Apple 刚完成一次续订）；重放已入账的交易（恢复购买、设备账号恢复、webhook 重投）绝不能把
+	// 用户已关闭的续订翻回 true——会让试用卡片对已取消的用户说「到期将扣费」、续费提醒漏发。
+	if !alreadyCredited {
+		sub.AutoRenew = true
+	}
 	sub.Environment = info.Environment
 	if revival {
 		sub.Status = deriveActiveOrExpired(sub.CurrentPeriodEnd, now)

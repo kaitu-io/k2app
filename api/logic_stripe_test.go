@@ -286,6 +286,29 @@ func TestCreditStripeInvoice(t *testing.T) {
 		assert.Equal(t, int64(1), creditCount)
 	})
 
+	t.Run("CancelThenInvoiceReplay_KeepsAutoRenewOff", func(t *testing.T) {
+		u := createStripeTestUser(t, BrandOverleap)
+		p := createStripeTestPlan(t)
+		subID := "sub_" + stripeUniq()
+		f := mkStripeFacts(u, p, "in_"+stripeUniq(), subID, now, now+month)
+
+		require.NoError(t, creditInTx(f))
+		// 用户在 Billing Portal 取消（customer.subscription.updated: cancel_at_period_end）。
+		require.NoError(t, db.Get().Model(&Subscription{}).
+			Where("provider = ? AND provider_subscription_id = ?", "stripe", subID).
+			Update("auto_renew", false).Error)
+		var before User
+		require.NoError(t, db.Get().First(&before, u.ID).Error)
+
+		require.NoError(t, creditInTx(f)) // invoice.paid 重投 / 对账补投
+		var sub Subscription
+		require.NoError(t, db.Get().Where(&Subscription{Provider: "stripe", ProviderSubscriptionID: subID}).First(&sub).Error)
+		assert.False(t, sub.AutoRenew, "重放已入账的 invoice 不能把已取消的续订翻回开")
+		var after User
+		require.NoError(t, db.Get().First(&after, u.ID).Error)
+		assert.Equal(t, before.ExpiredAt, after.ExpiredAt)
+	})
+
 	t.Run("RenewalInvoice_AdditiveCredit", func(t *testing.T) {
 		u := createStripeTestUser(t, BrandOverleap)
 		p := createStripeTestPlan(t)

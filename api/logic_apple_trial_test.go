@@ -557,3 +557,34 @@ func TestTrial_NonApplePaymentClearsInTrial(t *testing.T) {
 	assert.False(t, u.InTrial, "非 Apple 付费清试用标志")
 	assert.True(t, isTrue(u.IsFirstOrderDone))
 }
+
+// 试用中关闭自动续订 → 恢复购买 / 设备账号恢复 / webhook 重投把同一笔试用交易再送一遍：
+// auto_renew 必须保持 false（试用卡片据此说「不会扣费」），时长不变；到期后不延长，权益停在试用结束。
+func TestTrial_CancelThenReplayKeepsAutoRenewOff(t *testing.T) {
+	trialDB(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	t0 := time.Now().Unix()
+	trialEnd := t0 + 7*aDay
+
+	trial := f.trialTxn("TR-CR1", t0, trialEnd)
+	require.NoError(t, creditInfo(t, f.buyer.ID, trial))
+	require.True(t, f.subNow(t).AutoRenew, "新开试用默认自动续订")
+
+	sub := f.subNow(t)
+	off := &appstore.RenewalInfo{AutoRenewStatus: appstore.AutoRenewStatus_Off}
+	require.NoError(t, applyRenewalInfo(context.Background(), &sub, off, appstore.Subtype_AUTO_RENEW_DISABLED))
+	require.False(t, f.subNow(t).AutoRenew)
+	expiryAfterCancel := f.userNow(t, f.buyer.ID).ExpiredAt
+	assert.InDelta(t, trialEnd, expiryAfterCancel, float64(60), "关闭续订不缩短也不延长试用")
+
+	require.NoError(t, creditInfo(t, f.buyer.ID, trial)) // 恢复购买重放
+	s := f.subNow(t)
+	assert.False(t, s.AutoRenew, "重放已入账的试用交易不能把已关闭的续订翻回开")
+	assert.True(t, s.IsTrial)
+	assert.Zero(t, s.PaidThrough)
+	assert.Equal(t, expiryAfterCancel, f.userNow(t, f.buyer.ID).ExpiredAt, "重放不加时长")
+
+	subs := GetActiveSubscriptions(f.buyer.ID)
+	require.Len(t, subs, 1)
+	assert.False(t, subs[0].AutoRenew, "客户端读到的也是已关闭")
+}
