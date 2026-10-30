@@ -10,8 +10,10 @@ import {
   UserStatisticsResponse,
   OrderStatisticsResponse,
   ConnectionRatingStatisticsResponse,
+  TrialCohortResponse,
 } from "@/lib/api";
 import { ConnectionQualityTab } from "./connection-quality-tab";
+import { TrialStatsTab, formatTrialRate } from "./trial-stats-tab";
 import { useManagerBrand } from "@/components/manager/brand";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -69,6 +71,7 @@ export default function ManagerDashboardPage() {
   const [userStats, setUserStats] = useState<UserStatisticsResponse | null>(null);
   const [orderStats, setOrderStats] = useState<OrderStatisticsResponse | null>(null);
   const [ratingStats, setRatingStats] = useState<ConnectionRatingStatisticsResponse | null>(null);
+  const [trialStats, setTrialStats] = useState<TrialCohortResponse | null>(null);
   const [activeDevices, setActiveDevices] = useState<ActiveDeviceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activePeriod, setActivePeriod] = useState<"24h" | "7d" | "30d">("7d");
@@ -86,6 +89,14 @@ export default function ManagerDashboardPage() {
 
   async function loadData() {
     setLoading(true);
+    // 试用卡片单独加载：它要营销权限，失败不拖垮整页统计。90 天 = 接口上限。
+    api
+      .getTrialCohorts({ brand: brandParam, days: 90 })
+      .then(setTrialStats)
+      .catch((error) => {
+        console.error("Failed to load trial statistics:", error);
+        setTrialStats(null);
+      });
     try {
       const [deviceData, userData, orderData, ratingData] = await Promise.all([
         api.getDeviceStatistics({ brand: brandParam }),
@@ -147,6 +158,7 @@ export default function ManagerDashboardPage() {
         <TabsList>
           <TabsTrigger value="overview">概览</TabsTrigger>
           <TabsTrigger value="users">用户统计</TabsTrigger>
+          <TabsTrigger value="trials">试用统计</TabsTrigger>
           <TabsTrigger value="orders">订单统计</TabsTrigger>
           <TabsTrigger value="devices">设备统计</TabsTrigger>
           <TabsTrigger value="quality">连接质量</TabsTrigger>
@@ -155,7 +167,7 @@ export default function ManagerDashboardPage() {
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
           {/* Key Metrics */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-4">
             <Card>
               <CardHeader className="pb-2">
                 <CardDescription>总用户数</CardDescription>
@@ -176,6 +188,22 @@ export default function ManagerDashboardPage() {
               <CardContent>
                 <div className="text-sm text-muted-foreground">
                   已过期: {userStats?.expiredPro ?? 0}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>试用中</CardDescription>
+                <CardTitle className="text-3xl">
+                  {trialStats ? trialStats.totals.inTrialRenewOn + trialStats.totals.inTrialRenewOff : "-"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-sm text-muted-foreground">
+                  {trialStats
+                    ? `90天开始 ${trialStats.totals.started} | 转化率 ${formatTrialRate(trialStats.totals.conversionRate)}`
+                    : "无权限或加载失败"}
                 </div>
               </CardContent>
             </Card>
@@ -979,6 +1007,10 @@ export default function ManagerDashboardPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="trials" className="space-y-6">
+          <TrialStatsTab brand={brandParam} />
         </TabsContent>
 
         <TabsContent value="quality" className="space-y-6">

@@ -182,6 +182,53 @@ export interface UserStatisticsResponse {
   byRegistrationPeriod: PeriodCount[];
 }
 
+// Apple 试用转化（GET /app/stats/trials，api/logic_trial_cohorts.go）
+// 按试用开始日（UTC）分批；每条订阅链只落在一个状态里，各状态加起来 = started。
+export interface TrialCohortRow {
+  cohort: string; // "2026-10-28"；合计行为 "total"
+  started: number;
+  inTrialRenewOn: number;
+  inTrialRenewOff: number;
+  awaitingCharge: number;
+  billingRetry: number;
+  converted: number;
+  endedUnpaid: number;
+  revoked: number;
+  settled: number;
+  settledConverted: number;
+  conversionRate: number | null; // 0..1；没有已结算链时为 null
+  paidAmount: number;     // 分（套餐标价）
+  refundedAmount: number; // 分
+}
+
+export type TrialChainState =
+  | 'in_trial_renew_on'
+  | 'in_trial_renew_off'
+  | 'awaiting_charge'
+  | 'billing_retry'
+  | 'converted'
+  | 'ended_unpaid'
+  | 'revoked';
+
+export interface TrialChainDetail {
+  userId: number;
+  userUuid: string;
+  startedAt: number;   // unix 秒
+  trialEndsAt: number; // unix 秒
+  state: TrialChainState;
+  autoRenew: boolean;
+  paidAmount: number;
+  refundedAmount: number;
+  planTitle?: string;
+}
+
+export interface TrialCohortResponse {
+  rows: TrialCohortRow[];
+  totals: TrialCohortRow;
+  chains?: TrialChainDetail[];
+  note: string;
+}
+
 // Order statistics types
 export interface RevenuePeriod {
   period: string;
@@ -2278,6 +2325,16 @@ export const api = {
   // Get user statistics (aggregated counts)
   async getUserStatistics(params: { brand?: BrandId } = {}): Promise<UserStatisticsResponse> {
     return this.request<UserStatisticsResponse>(`/app/users/statistics${brandQuery(params.brand)}`);
+  },
+
+  // Apple 试用转化：最近 days 天（1-90）开始的试用；带 cohort 时附该批名单
+  async getTrialCohorts(
+    params: { brand?: BrandId; days?: number; cohort?: string } = {}
+  ): Promise<TrialCohortResponse> {
+    const q = new URLSearchParams({ days: String(params.days ?? 30) });
+    if (params.brand) q.set('brand', params.brand);
+    if (params.cohort) q.set('cohort', params.cohort);
+    return this.request<TrialCohortResponse>(`/app/stats/trials?${q.toString()}`);
   },
 
   // ==================== Order Statistics APIs ====================

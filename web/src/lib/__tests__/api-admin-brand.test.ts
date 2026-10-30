@@ -27,6 +27,7 @@ const cases: Case[] = [
   { name: 'getDeviceStatistics', call: (b) => api.getDeviceStatistics({ brand: b }), prefix: '/app/devices/statistics' },
   { name: 'getUserStatistics', call: (b) => api.getUserStatistics({ brand: b }), prefix: '/app/users/statistics' },
   { name: 'getOrderStatistics', call: (b) => api.getOrderStatistics({ brand: b }), prefix: '/app/orders/statistics' },
+  { name: 'getTrialCohorts', call: (b) => api.getTrialCohorts({ brand: b }), prefix: '/app/stats/trials' },
   { name: 'listSlaveNodes', call: (b) => api.listSlaveNodes({ page: 1, pageSize: 200, brand: b }), prefix: '/app/nodes' },
 ];
 
