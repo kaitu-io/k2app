@@ -248,8 +248,9 @@ func api_admin_get_retention(c *gin.Context) {
 	}
 }
 
-// api_admin_get_trial_cohorts GET /app/stats/trials?brand=&days=
-// 最近 days 天（含今天，默认 30，最多 90）开始的 Apple 免费试用，按开始日看各自走到了哪一步。
+// api_admin_get_trial_cohorts GET /app/stats/trials?brand=&days=&cohort=
+// 最近 days 天（含今天，默认 30，最多 90）开始的 Apple 免费试用，按开始日看各自走到了哪一步；
+// 带 cohort=YYYY-MM-DD 时附上该批每条链的名单（用户、状态、付款金额）。
 func api_admin_get_trial_cohorts(c *gin.Context) {
 	brand, hasBrand := parseBrandFilter(c.Query("brand"))
 	days := trialCohortDefaultDays
@@ -261,6 +262,13 @@ func api_admin_get_trial_cohorts(c *gin.Context) {
 		}
 		days = v
 	}
+	cohort := c.Query("cohort")
+	if cohort != "" {
+		if _, err := time.Parse(funnelQueryDateForm, cohort); err != nil {
+			Error(c, ErrorInvalidArgument, "cohort must be YYYY-MM-DD")
+			return
+		}
+	}
 	now := time.Now()
 	since := funnelUTCDay(now).AddDate(0, 0, -(days - 1))
 	chains, err := loadTrialChains(c, brand, hasBrand, since)
@@ -269,6 +277,21 @@ func api_admin_get_trial_cohorts(c *gin.Context) {
 		Error(c, ErrorSystemError, "failed to compute trial cohorts")
 		return
 	}
-	resp := computeTrialCohorts(chains, now)
+	pays, err := loadTrialPayments(c, chains)
+	if err != nil {
+		log.Errorf(c, "failed to load trial payments: %v", err)
+		Error(c, ErrorSystemError, "failed to compute trial cohorts")
+		return
+	}
+	resp := computeTrialCohorts(chains, pays, now)
+	if cohort != "" {
+		users, err := loadTrialUsers(c, chains, cohort)
+		if err != nil {
+			log.Errorf(c, "failed to load trial users: %v", err)
+			Error(c, ErrorSystemError, "failed to compute trial cohorts")
+			return
+		}
+		resp.Chains = trialChainDetails(chains, pays, users, cohort, now)
+	}
 	Success(c, &resp)
 }

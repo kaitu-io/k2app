@@ -101,11 +101,12 @@ export const statsTools: ToolRegistration[] = [
 
   defineApiTool({
     name: 'trial_conversion',
-    description: 'Get Apple free-trial cohorts by trial start day (UTC): started, still in trial with auto-renew on/off, billing retry, converted to paid, ended unpaid, revoked/refunded, plus conversion rate (converted / matured). Production only.',
+    description: 'Get Apple free-trial cohorts by trial start day (UTC): started, in trial with auto-renew on/off, awaiting charge (ended <24h ago), billing retry, converted to paid, ended unpaid, revoked/refunded, paid/refunded order amounts (plan list price, cents), and conversion rate over settled chains (ended >24h ago). Pass cohort=YYYY-MM-DD to also list that day\'s chains (user uuid, state, auto-renew, amounts). Production only.',
     group: 'stats',
     params: {
       brand: brandFilter,
       days: z.number().int().min(1).max(90).optional().describe('Trial start days to include, counting today (default 30, max 90)'),
+      cohort: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Trial start day YYYY-MM-DD (UTC) whose chains to list'),
     },
     path: '/app/stats/trials',
   }),

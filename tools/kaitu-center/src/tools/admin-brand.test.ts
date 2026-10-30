@@ -139,6 +139,8 @@ describe('funnel / retention tools', () => {
     expect(path).toContain('/app/stats/trials')
     expect(path).toContain('days=14')
     expect(tool.schema.days.safeParse(91).success).toBe(false)
+    expect(tool.schema.cohort.safeParse('2026-10-28').success).toBe(true)
+    expect(tool.schema.cohort.safeParse('2026-10-2').success).toBe(false)
   })
   it('retention sends metric and months', async () => {
     const { tool, request, run } = invoke('retention', { metric: 'paid', months: 6 })
