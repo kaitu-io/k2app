@@ -327,23 +327,29 @@ func (s *Stream) WriteTo(w io.Writer) (n int64, err error) {
 
 // sendLatestWindow tells the peer the stream's current consumed count and
 // window. See updMu for why the values are read here, at send time.
+// The send is bounded by the read deadline, as any window update the reader
+// sends always was.
 func (s *Stream) sendLatestWindow() error {
+	var deadline <-chan time.Time
+	if d, ok := s.readDeadline.Load().(time.Time); ok && !d.IsZero() {
+		timer := time.NewTimer(time.Until(d))
+		defer timer.Stop()
+		deadline = timer.C
+	}
+	return s.sendLatestWindowBy(deadline)
+}
+
+// sendLatestWindowBy is sendLatestWindow with an explicit bound on the frame
+// write. Waiting for updMu is not bounded by it: a caller that gave up there
+// would drop an update the peer may need (its consumed count was already
+// reset), so it waits for the holder instead — at most the holder's own
+// bound. tuneLoop's shrink holds updMu for at most tuneInterval.
+func (s *Stream) sendLatestWindowBy(deadline <-chan time.Time) error {
 	s.updMu.Lock()
 	defer s.updMu.Unlock()
 	s.bufferLock.Lock()
 	consumed, window := s.numRead, s.rcvWnd
 	s.bufferLock.Unlock()
-	return s.sendWindowUpdate(consumed, window)
-}
-
-func (s *Stream) sendWindowUpdate(consumed, window uint32) error {
-	var timer *time.Timer
-	var deadline <-chan time.Time
-	if d, ok := s.readDeadline.Load().(time.Time); ok && !d.IsZero() {
-		timer = time.NewTimer(time.Until(d))
-		defer timer.Stop()
-		deadline = timer.C
-	}
 
 	frame := newFrame(cmdUPD, s.id)
 	var hdr updHeader

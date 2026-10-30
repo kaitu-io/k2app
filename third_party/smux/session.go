@@ -423,7 +423,13 @@ func (s *Session) decayIdleWindows() {
 			if testHookDecaySend != nil {
 				testHookDecaySend()
 			}
-			st.sendLatestWindow()
+			// Bounded: a reader waiting on updMu behind this send waits at
+			// most tuneInterval. A shrink that misses its bound is harmless —
+			// the peer keeps the larger window, whose bytes are charged — and
+			// one already queued still goes out ahead of later updates (FIFO).
+			bound := time.NewTimer(tuneInterval)
+			st.sendLatestWindowBy(bound.C)
+			bound.Stop()
 		}
 	}
 }

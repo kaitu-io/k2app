@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -98,5 +99,92 @@ func TestWindowUpdates_NeverGoBackwards(t *testing.T) {
 		if upds[i].consumed < upds[i-1].consumed {
 			t.Fatalf("window update %d went backwards: %+v after %+v (all: %+v)", i, upds[i], upds[i-1], upds)
 		}
+	}
+}
+
+// The consequence, end to end with a real sender: the stale update leaves
+// the sender counting bytes the receiver has already read as still in
+// flight. It is permanent when nothing else repairs it: the reader's catch-up
+// read was between half a window and a window (enough for an update, not
+// enough to grow the window again, so tuneLoop never fires again), and the
+// sender pauses past tuneInterval (request/response, a websocket between
+// messages). The sender's next write fills the shrunk window with what it
+// thinks is in flight, the receiver acknowledges less than half a window,
+// and no update ever comes while keepalive keeps the session up. A pool
+// exhausted by other streams (iOS: 512 KB) removes the growth that could
+// rescue it.
+func TestWindowUpdates_StaleShrinkDoesNotStallSender(t *testing.T) {
+	var armed atomic.Bool
+	decided := make(chan struct{})
+	readerSent := make(chan struct{})
+	var once sync.Once
+	testHookDecaySend = func() {
+		if !armed.Load() {
+			return
+		}
+		once.Do(func() {
+			close(decided)
+			<-readerSent
+		})
+	}
+	defer func() { testHookDecaySend = nil }()
+
+	cfg := DefaultConfig()
+	cfg.KeepAliveInterval = 100 * time.Millisecond
+	cfg.KeepAliveTimeout = 10 * time.Second
+	cfg.MaxReceiveBuffer = 1 << 20
+	cfg.MaxStreamBuffer = 64 << 10
+	cfg.MinStreamBuffer = 4 << 10
+	cs, ss := tunePair(t, cfg, cfg)
+
+	sender, err := cs.OpenStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sender.Write(make([]byte, 4<<10)); err != nil {
+		t.Fatal(err)
+	}
+	recv, err := ss.AcceptStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The receiver keeps up with a whole window: its window grows past min.
+	if _, err := io.ReadFull(recv, make([]byte, 4<<10)); err != nil {
+		t.Fatal(err)
+	}
+	if rcvWnd(recv) <= 4<<10 {
+		t.Fatalf("window did not grow: %d", rcvWnd(recv))
+	}
+
+	// A burst the receiver leaves unread for a while; the sender then pauses.
+	armed.Store(true)
+	if _, err := sender.Write(make([]byte, 3<<10)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-decided: // tuneLoop shrank the idle window and is about to say so
+	case <-time.After(5 * time.Second):
+		t.Fatal("idle shrink never decided")
+	}
+	if _, err := io.ReadFull(recv, make([]byte, 3<<10)); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond) // the reader's update reaches the sender
+	close(readerSent)
+	time.Sleep(1200 * time.Millisecond) // then the shrink's; the sender pauses past tuneInterval
+
+	// The sender writes again; the receiver is reading.
+	got := make(chan error, 1)
+	go func() {
+		recv.SetReadDeadline(time.Now().Add(5 * time.Second))
+		_, err := io.ReadFull(recv, make([]byte, 16<<10))
+		got <- err
+	}()
+	sender.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	if _, err := sender.Write(make([]byte, 16<<10)); err != nil {
+		t.Fatalf("sender stuck after the receiver drained its buffer: %v", err)
+	}
+	if err := <-got; err != nil {
+		t.Fatalf("receiver: %v", err)
 	}
 }

@@ -224,9 +224,16 @@ another update — a stream stalled for good while keepalive kept the
 session up. Now `Stream.sendLatestWindow` sends every update under the
 per-stream `updMu`, reading consumed/window at send time, and the shaper
 releases equal-priority frames first-in, first-out (`writeRequest.seq`; a
-heap is not stable). Pinned by `TestWindowUpdates_NeverGoBackwards` (a
-test hook pauses the shrink between deciding and sending) and
-`TestShaper_EqualPriorityIsFIFO`.
+heap is not stable). The shrink holds `updMu` for at most `tuneInterval`,
+so a reader queued behind it overruns its read deadline by at most that;
+the reader itself never gives up on `updMu` (its consumed count is already
+reset, so a dropped update could be the stall itself). Pinned by
+`TestWindowUpdates_NeverGoBackwards` (a test hook pauses the shrink between
+deciding and sending), `TestWindowUpdates_StaleShrinkDoesNotStallSender`
+(end to end: on the old order the sender stays stuck past 15 s; it needs
+the reader's catch-up to be under a window, so the window does not grow
+back and re-arm the shrink, and the sender to pause past `tuneInterval`)
+and `TestShaper_EqualPriorityIsFIFO`.
 
 ## 7. A write's own result wins over the session closing (session.go)
 
