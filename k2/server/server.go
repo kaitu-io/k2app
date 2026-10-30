@@ -49,6 +49,11 @@ type Server struct {
 	// credential the node admits. nil when cert_dir is unset.
 	provisionedAuth *wire.AuthInfo
 
+	// quicResetKey is the persisted QUIC stateless-reset key (cert_dir), so a
+	// restarted process can reset connections its predecessor left behind.
+	// nil when cert_dir is unset.
+	quicResetKey *quic.StatelessResetKey
+
 	// camouflageName is this node's cover domain — the `public_name` of its own
 	// ECH config. It is the ONLY outer SNI learnOuterSNI will trust; see there.
 	camouflageName string
@@ -352,6 +357,12 @@ func (s *Server) setupAutoProvision(cfg *config.ServerConfig) error {
 	}
 	s.provisionedAuth = auth
 
+	resetKey, err := wire.EnsureStatelessResetKey(cfg.CertDir)
+	if err != nil {
+		return fmt.Errorf("quic reset key: %w", err)
+	}
+	s.quicResetKey = resetKey
+
 	// 11. Log connection info.
 	slog.Info("server: cert pins", "pins", pair.FormatPins())
 	if len(allConfigs) > 0 {
@@ -474,7 +485,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	defer udpConn.Close()
 
-	quicTransport := &quic.Transport{Conn: udpConn}
+	quicTransport := &quic.Transport{Conn: udpConn, StatelessResetKey: s.quicResetKey}
 	defer quicTransport.Close()
 
 	quicLn, err := quicTransport.Listen(s.TLSConfig.Clone(), wire.ServerQUICConfig())
@@ -575,14 +586,29 @@ func (s *Server) Run(ctx context.Context) error {
 	<-ctx.Done()
 	slog.Info("k2s server shutting down")
 
+	// Shutdown order is what makes a restart cheap for clients (docker gives
+	// us `-t 2` seconds before SIGKILL):
+	//  1. stop accepting — closing tcpLn is also what lets tcpListenLoop's
+	//     blocking Accept return; without it wg.Wait never finishes and every
+	//     stop ends in SIGKILL with nothing said to clients;
+	//  2. tell every live connection we are going (QUIC CONNECTION_CLOSE
+	//     0x04, TCP-WS close_notify + FIN) BEFORE anything that can block —
+	//     quicSrv.Close waits on an in-flight revalidation call (up to the
+	//     validator's 5s timeout). Clients then redial at once and land on the
+	//     replacement process instead of waiting out MaxIdleTimeout;
+	//  3. then release proxied sockets and background goroutines.
+	close(s.done)
+	tcpLn.Close()
+	quicLn.Close()
+	closed := s.quicSrv.CloseConnections() + s.tcpwsSrv.CloseConnections()
+	slog.Info("k2s server: closed client connections", "count", closed)
+	s.handler.Close() // force-close all active proxy connections
+
 	if usageSrv != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = usageSrv.Shutdown(shutdownCtx)
 		cancel()
 	}
-
-	close(s.done)
-	s.handler.Close() // force-close all active proxy connections
 	s.quicSrv.Close()
 	s.tcpwsSrv.Close()
 

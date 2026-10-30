@@ -1235,6 +1235,25 @@ func (s *QUICServer) EnableRevalidation(v Validator) {
 	s.sessions = newAuthSessions(v, authSweepInterval)
 }
 
+// quicCloseShutdown is the QUIC application close code for "this server is
+// exiting" (0x01 = unauthorized at admission, 0x03 = revoked by
+// revalidation). Clients treat any close as a dead connection and redial on
+// the next stream; the distinct code is for logs and for a client that wants
+// to retry faster on a planned restart.
+const quicCloseShutdown = 0x04
+
+// CloseConnections severs every live connection with quicCloseShutdown, so
+// clients learn at once that the server is going away instead of waiting out
+// MaxIdleTimeout. Call it on shutdown after the listener stops accepting. It
+// returns the number of connections closed and is bounded by
+// closeConnectionsTimeout. A no-op before EnableRevalidation.
+func (s *QUICServer) CloseConnections() int {
+	if s.sessions == nil {
+		return 0
+	}
+	return s.sessions.closeAll(closeShutdown)
+}
+
 // SetEnforce toggles QUIC device-auth enforcement. k2s (server.New) always
 // sets true; false (the zero value, permissive) remains only for wire-level
 // tests and the k2p P2P path, where the metadata stream never blocks a
@@ -1397,7 +1416,11 @@ func (s *QUICServer) handleConn(conn *quic.Conn, cc *k2cc.K2CCSender) {
 	}()
 
 	if s.sessions != nil {
-		as := newAuthSession(ctx.auth, func() {
+		as := newAuthSession(ctx.auth, func(r closeReason) {
+			if r == closeShutdown {
+				conn.CloseWithError(quicCloseShutdown, "server restarting")
+				return
+			}
 			// 0x03: revoked-by-revalidation (0x01 = unauthorized at admission).
 			conn.CloseWithError(0x03, "session revoked")
 		})

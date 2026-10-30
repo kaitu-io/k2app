@@ -62,7 +62,7 @@ const (
 // makes this a valid release/acquire publish; go test -race stays clean.
 type authSession struct {
 	auth *connAuth
-	kill func() // severs the connection; called with NO lock held (Rule #1/#4)
+	kill func(closeReason) // severs the connection; called with NO lock held (Rule #1/#4)
 
 	once  sync.Once // one-time identity publish
 	udid  string
@@ -85,7 +85,7 @@ type authSession struct {
 // gets revalJitter == 0, which silently puts it back in lockstep with every
 // other zero-jitter session — the exact failure authRevalJitterMax exists to
 // prevent, and one that no test of a single session can see.
-func newAuthSession(auth *connAuth, kill func()) *authSession {
+func newAuthSession(auth *connAuth, kill func(closeReason)) *authSession {
 	return &authSession{
 		auth:        auth,
 		kill:        kill,
@@ -182,6 +182,51 @@ func (a *authSessions) register(s *authSession) (unregister func()) {
 	}
 }
 
+// closeReason tells a session's kill func why it is being severed, so a
+// transport can put a distinct close code on the wire.
+type closeReason int
+
+const (
+	closeRevoked  closeReason = iota // revalidation said no
+	closeShutdown                    // the server process is exiting
+)
+
+// closeConnectionsTimeout bounds closeAll: a peer that stops reading can block
+// a TLS close_notify write, and shutdown must not wait on it.
+const closeConnectionsTimeout = time.Second
+
+// closeAll severs every registered connection with the given reason and
+// returns how many it closed. Snapshot under mu, kill with no lock held
+// (Rule #1/#4): a kill makes the connection's handler return and unregister,
+// which takes mu. Kills run concurrently — QUIC CloseWithError waits for the
+// connection's run loop to flush CONNECTION_CLOSE — and the whole call gives
+// up after closeConnectionsTimeout.
+func (a *authSessions) closeAll(r closeReason) int {
+	a.mu.Lock()
+	snap := make([]*authSession, 0, len(a.set))
+	for s := range a.set {
+		snap = append(snap, s)
+	}
+	a.mu.Unlock()
+	var wg sync.WaitGroup
+	for _, s := range snap {
+		wg.Add(1)
+		safego.Go(func() {
+			defer wg.Done()
+			s.kill(r)
+		})
+	}
+	done := make(chan struct{})
+	safego.Go(func() { wg.Wait(); close(done) })
+	timer := time.NewTimer(closeConnectionsTimeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+	}
+	return len(snap)
+}
+
 // Close stops the sweeper and waits for it to exit. Idempotent. Never called
 // with a lock held (wg.Wait — Rule #3).
 func (a *authSessions) Close() error {
@@ -276,7 +321,7 @@ func (a *authSessions) reviewSession(s *authSession) {
 	// 1. Subscription clock expired → drop. Zero Center round trips.
 	if svc := s.svcExp.Load(); svc != 0 && now.Unix() >= svc {
 		slog.Info("DIAG: auth-session-expired", "udid", s.udid, "svcExp", svc)
-		s.kill()
+		s.kill(closeRevoked)
 		return
 	}
 	// 2. Endorsement still inside this session's (jittered) window → nothing to
@@ -300,7 +345,7 @@ func (a *authSessions) reviewSession(s *authSession) {
 		s.graceStart.Store(0)
 	case v.Code == 401 || v.Code == 402 || v.Code == 403:
 		slog.Warn("DIAG: auth-session-revoked", "udid", s.udid, "code", v.Code)
-		s.kill()
+		s.kill(closeRevoked)
 	default:
 		// Code == -1 (undecidable) and anything unclassified: do NOT disconnect.
 		// Advance the REGISTRY's authAt by one window — the client's cookie still
@@ -313,7 +358,7 @@ func (a *authSessions) reviewSession(s *authSession) {
 		}
 		if now.Unix()-gs > int64(cookieGraceMax.Seconds()) {
 			slog.Warn("DIAG: auth-grace-exhausted", "udid", s.udid, "graceS", now.Unix()-gs)
-			s.kill()
+			s.kill(closeRevoked)
 			return
 		}
 		s.authAt.Store(authAt + int64(cookieTTL.Seconds()))

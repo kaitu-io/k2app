@@ -37,7 +37,7 @@ func newSweepFixture(t *testing.T, v Validator) *sweepFixture {
 }
 
 func (f *sweepFixture) addSession(authAt, svcExp int64) *authSession {
-	s := &authSession{auth: newConnAuth(), kill: func() { f.killed.Add(1) }}
+	s := &authSession{auth: newConnAuth(), kill: func(closeReason) { f.killed.Add(1) }}
 	f.a.register(s)
 	s.markAuthed("dev-1", "tok", "", authAt, svcExp)
 	return s
@@ -201,7 +201,7 @@ func TestSweep_GraceMaxKills(t *testing.T) {
 // Sessions that never authenticated (permissive legacy) are skipped entirely.
 func TestSweep_UnauthedSessionSkipped(t *testing.T) {
 	f := newSweepFixture(t, okV())
-	s := &authSession{auth: newConnAuth(), kill: func() { f.killed.Add(1) }}
+	s := &authSession{auth: newConnAuth(), kill: func(closeReason) { f.killed.Add(1) }}
 	f.a.register(s) // markAuthed never called → authAt == 0
 	f.a.sweepOnce()
 	if f.calls.Load() != 0 || f.killed.Load() != 0 {
@@ -216,7 +216,7 @@ func TestAuthSessions_RegisterUnregister(t *testing.T) {
 	s := f.addSession(f.clock.Unix()-int64(cookieTTL.Seconds())-10, 0)
 	_ = s
 	// Grab the unregister func through a second registration to prove idempotency.
-	s2 := &authSession{auth: newConnAuth(), kill: func() { f.killed.Add(1) }}
+	s2 := &authSession{auth: newConnAuth(), kill: func(closeReason) { f.killed.Add(1) }}
 	unreg := f.a.register(s2)
 	s2.markAuthed("dev-2", "tok", "", f.clock.Unix()-int64(cookieTTL.Seconds())-10, 0)
 	unreg()

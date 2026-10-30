@@ -859,6 +859,16 @@ func (s *TCPWSServer) SetValidator(v Validator) {
 	s.validate = v
 }
 
+// CloseConnections closes every live smux session (TLS close_notify + FIN), so
+// clients see the server go away at once. Call it on shutdown; see
+// QUICServer.CloseConnections.
+func (s *TCPWSServer) CloseConnections() int {
+	if s.sessions == nil {
+		return 0
+	}
+	return s.sessions.closeAll(closeShutdown)
+}
+
 // SetEnforce toggles TCP-WS device-auth enforcement. k2s (server.New) always
 // sets true on both transports — enforcement must cover BOTH, else an attacker
 // forces TCP-WS fallback to bypass QUIC auth. When true, proxy streams on a
@@ -971,7 +981,7 @@ func (s *TCPWSServer) handleSession(sess *smux.Session, connLog *slog.Logger, re
 	}()
 	var as *authSession
 	if s.sessions != nil {
-		as = newAuthSession(auth, func() { sess.Close() })
+		as = newAuthSession(auth, func(closeReason) { sess.Close() })
 		unregister := s.sessions.register(as)
 		defer unregister()
 	}

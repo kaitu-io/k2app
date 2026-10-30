@@ -6,12 +6,14 @@
 #   → phase B: recreate k2s → wait for "k2s server ready" in the file log.
 #
 # Single-phase `docker compose up -d` puts the sidecar healthcheck wait INSIDE
-# the k2s gap; splitting it keeps the gap at stop-grace + k2s start. On SIGTERM
-# k2s closes its listeners immediately and only drains existing connections
-# until it is killed, so the stop grace is pure no-accept time: compose's 10 s
-# default gave a 13–18 s window (2026-09-07, 25 nodes); -t 2 gives 5.0–7.0 s
-# (2026-10-03, measured SIGTERM → "server ready" from the k2s log). Clients
-# reconnect on their own.
+# the k2s gap; splitting it keeps the gap at stop-grace + k2s start.
+# Until 2026-10-30 k2s never exited on SIGTERM by itself (tcpListenLoop sat in
+# Accept), so every stop ran the full grace and ended in SIGKILL with nothing
+# said to clients: 13–18 s with compose's 10 s default (2026-09-07), 5.0–7.0 s
+# with -t 2 (2026-10-03). Since then k2s stops accepting, sends every client
+# QUIC CONNECTION_CLOSE 0x04 / TCP-WS close, and exits in milliseconds, so the
+# gap is ~ container recreate + k2s start; clients redial at once. A QUIC
+# stateless-reset key in cert_dir covers SIGKILL/crash from the second restart on.
 #
 # Usage (from the kaitu-center MCP, runs ON the node; exit != 0 ⇒ stop the sweep):
 #   exec_on_node(ip, "sudo bash -s v0.4.10-<commit8>", scriptPath="docker/scripts/node-upgrade.sh", timeout=300)
@@ -42,9 +44,8 @@ echo "k2s_still_old=$OLD_K2S_IMG"
 # Phase B: k2s. Gap starts now.
 CUTSTR=$(date -u -d @"$TA" +%Y-%m-%dT%H:%M:%S)
 TB=$(date -u +%s)
-# Stop grace 2 s instead of compose's 10 s default: on SIGTERM k2s closes its listeners at once and
-# only drains existing connections, which are killed anyway — the extra 8 s only lengthens the window
-# in which new connections are refused.
+# Stop grace 2 s instead of compose's 10 s default: k2s exits on SIGTERM in milliseconds; the grace
+# only matters for an older image that still hangs until SIGKILL.
 docker compose up -d --remove-orphans -t "${STOP_T:-2}" 2>&1 | tail -3
 READY=""
 for i in $(seq 1 300); do

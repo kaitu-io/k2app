@@ -465,7 +465,7 @@ func TestDeadlock_AuthSessionsStandalone(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 50; j++ {
-				s := &authSession{auth: newConnAuth(), kill: func() {}}
+				s := &authSession{auth: newConnAuth(), kill: func(closeReason) {}}
 				unreg := a.register(s)
 				s.markAuthed("d", "t", "", time.Now().Unix(), 0)
 				a.sweepOnce()

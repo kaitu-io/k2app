@@ -22,7 +22,7 @@ func TestAuthSession_JitterIsAssignedAndSpread(t *testing.T) {
 	maxJitter := int64(authRevalJitterMax.Seconds())
 	seen := make(map[int64]bool)
 	for i := 0; i < 200; i++ {
-		s := newAuthSession(newConnAuth(), func() {})
+		s := newAuthSession(newConnAuth(), func(closeReason) {})
 		if s.revalJitter < 0 || s.revalJitter >= maxJitter {
 			t.Fatalf("jitter %d out of band [0,%d)", s.revalJitter, maxJitter)
 		}
@@ -44,7 +44,7 @@ func TestAuthSession_JitterOnlyShortensWindow(t *testing.T) {
 
 	// A session with the maximum possible jitter, checked exactly at the
 	// un-jittered TTL boundary: it must already be considered stale.
-	s := newAuthSession(newConnAuth(), func() {})
+	s := newAuthSession(newConnAuth(), func(closeReason) {})
 	s.revalJitter = int64(authRevalJitterMax.Seconds()) - 1
 	s.markAuthed("dev", "tok", "", base.Unix(), 0)
 
