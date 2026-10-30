@@ -1852,3 +1852,55 @@ describe('self_hosted activeTunnel follows the self-hosted tunnel', () => {
     cleanup();
   });
 });
+
+// Cloud-side events must not wipe a self-hosted selection: CloudTunnelList stays
+// mounted on the other tab, and for an account without membership its fetch
+// answers 402 right after launch. That cleared activeTunnel even in self_hosted
+// mode, so a non-member self-hosting user was stuck on "select a server".
+describe('cloud events leave a self_hosted selection alone', () => {
+  const URI_A = 'k2v5://alice:token@1.2.3.4:443?country=JP#tokyo';
+  const cloud = { id: 1, domain: 'tokyo.example.com', name: 'Tokyo', protocol: 'k2v5', port: 443,
+    serverUrl: 'k2v5://tokyo.example.com:443', node: { country: 'JP' } } as any;
+
+  async function selfHostedWithStaleCloudPick() {
+    const sh = await import('../self-hosted.store');
+    sh.useSelfHostedStore.setState({ tunnel: { uri: URI_A, name: 'tokyo', country: 'JP' }, loaded: true });
+    const stores = await getStores();
+    stores.useConnectionStore.getState().selectCloudTunnel(cloud); // picked earlier, then switched away
+    stores.useConnectionStore.getState().selectSelfHosted();
+    return stores;
+  }
+
+  it('402 (setCloudAccess(false)) in self_hosted mode keeps activeTunnel', async () => {
+    const { useConnectionStore, hasConnectableSelection } = await selfHostedWithStaleCloudPick();
+    useConnectionStore.getState().setCloudAccess(false);
+    const s = useConnectionStore.getState();
+    expect(s.cloudAccessRevoked).toBe(true);
+    expect(s.selectedCloudTunnel).toBeNull();
+    expect(s.activeTunnel?.serverUrl).toBe(URI_A);
+    expect(hasConnectableSelection(s)).toBe(true);
+  });
+
+  it('402 in manual mode still clears the cloud selection', async () => {
+    const { useConnectionStore } = await getStores();
+    useConnectionStore.getState().selectCloudTunnel(cloud);
+    useConnectionStore.getState().setCloudAccess(false);
+    expect(useConnectionStore.getState().activeTunnel).toBeNull();
+    expect(useConnectionStore.getState().selectedCloudTunnel).toBeNull();
+  });
+
+  it('a stale cloud pick going offline in self_hosted mode keeps activeTunnel', async () => {
+    const { useConnectionStore } = await selfHostedWithStaleCloudPick();
+    useConnectionStore.getState().reconcileSelection([]);
+    expect(useConnectionStore.getState().selectedCloudTunnel).toBeNull();
+    expect(useConnectionStore.getState().activeTunnel?.serverUrl).toBe(URI_A);
+  });
+
+  it('the cloud pick going offline in manual mode still falls back to Auto', async () => {
+    const { useConnectionStore } = await getStores();
+    useConnectionStore.getState().selectCloudTunnel(cloud);
+    useConnectionStore.getState().reconcileSelection([]);
+    expect(useConnectionStore.getState().activeTunnel).toBeNull();
+    expect(useConnectionStore.getState().selectedCloudTunnel).toBeNull();
+  });
+});

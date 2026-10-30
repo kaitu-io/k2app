@@ -326,7 +326,11 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     if (!stillExists) {
       console.info('[Connection] selected tunnel ' + selectedCloudTunnel.domain
         + ' offline, falling back to Auto');
-      set({ selectedCloudTunnel: null, activeTunnel: null });
+      // A cloud pick left over from before switching to self_hosted: drop it,
+      // but activeTunnel is the self-hosted one there and stays.
+      set(get().serverMode === 'self_hosted'
+        ? { selectedCloudTunnel: null }
+        : { selectedCloudTunnel: null, activeTunnel: null });
     }
   },
 
@@ -343,7 +347,11 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     if (get().cloudAccessRevoked) return;
     console.warn('[Connection] cloud access revoked (402) — clearing cloud selection + tunnel cache');
     cacheStore.delete('api:tunnels');
-    set({ selectedCloudTunnel: null, activeTunnel: null, cloudAccessRevoked: true });
+    // CloudTunnelList stays mounted behind the self-hosted tab, so a non-member
+    // gets this 402 while self-hosting: their activeTunnel is not a cloud one.
+    set(get().serverMode === 'self_hosted'
+      ? { selectedCloudTunnel: null, cloudAccessRevoked: true }
+      : { selectedCloudTunnel: null, activeTunnel: null, cloudAccessRevoked: true });
   },
 
   selectSelfHosted: () => {
