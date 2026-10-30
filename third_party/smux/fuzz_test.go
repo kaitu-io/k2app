@@ -148,7 +148,7 @@ func checkAccounting(t *testing.T, s *Session) bool {
 	var b int32
 	var g int64
 	for i := 0; i < 50; i++ {
-		b, g = atomic.LoadInt32(&s.bucket), atomic.LoadInt64(&s.grown)
+		b, g = atomic.LoadInt32(&s.bucket), s.grown.Load()
 		if b <= int32(s.config.MaxReceiveBuffer) && g >= 0 {
 			return true
 		}

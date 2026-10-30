@@ -169,7 +169,7 @@ func TestAutoTune_GrowthPoolCappedAndReleased(t *testing.T) {
 		sum += rcvWnd(st) - 16<<10
 	}
 	pool := int64(cfg.MaxReceiveBuffer / 2) // the documented cap
-	if g := atomic.LoadInt64(&cs.grown); g != int64(sum) || g > pool {
+	if g := cs.grown.Load(); g != int64(sum) || g > pool {
 		t.Fatalf("grown = %d, sum of stream growth = %d, cap = %d", g, sum, pool)
 	}
 	if sum == 0 {
@@ -178,7 +178,7 @@ func TestAutoTune_GrowthPoolCappedAndReleased(t *testing.T) {
 	for _, st := range streams {
 		st.Close()
 	}
-	if g := atomic.LoadInt64(&cs.grown); g != 0 {
+	if g := cs.grown.Load(); g != 0 {
 		t.Fatalf("grown = %d after all streams closed; want 0", g)
 	}
 }
@@ -269,9 +269,9 @@ func TestAutoTune_IdleStreamGivesGrowthBack(t *testing.T) {
 		t.Fatalf("stream A did not grow (window %d)", w)
 	}
 	deadline := time.Now().Add(3 * tuneInterval)
-	for rcvWnd(a) > 16<<10 || atomic.LoadInt64(&cs.grown) != int64(charged(a)) {
+	for rcvWnd(a) > 16<<10 || cs.grown.Load() != int64(charged(a)) {
 		if time.Now().After(deadline) {
-			t.Fatalf("idle stream A kept window %d, session grown %d", rcvWnd(a), atomic.LoadInt64(&cs.grown))
+			t.Fatalf("idle stream A kept window %d, session grown %d", rcvWnd(a), cs.grown.Load())
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -279,7 +279,7 @@ func TestAutoTune_IdleStreamGivesGrowthBack(t *testing.T) {
 	// them gives the rest of the charge back.
 	a.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 	io.ReadFull(a, make([]byte, bufferedLen(a)))
-	if g := atomic.LoadInt64(&cs.grown); g != int64(charged(a)) {
+	if g := cs.grown.Load(); g != int64(charged(a)) {
 		t.Fatalf("grown = %d, A charged %d", g, charged(a))
 	}
 
@@ -317,7 +317,7 @@ func TestAutoTune_BytesPastShrunkWindowAreCharged(t *testing.T) {
 	if !a.decayIfIdle(time.Now().Add(time.Hour)) {
 		t.Fatal("decayIfIdle did not shrink a grown window")
 	}
-	atomic.StoreInt64(&cs.grown, cs.growPool) // pool exhausted by others
+	cs.grown.Store(cs.growPool) // pool exhausted by others
 	base := charged(a)
 	a.pushBytes(make([]byte, 64<<10))
 	held := bufferedLen(a)
@@ -328,7 +328,7 @@ func TestAutoTune_BytesPastShrunkWindowAreCharged(t *testing.T) {
 	if c := charged(a); c != wantCharge {
 		t.Fatalf("charged %d with %d bytes buffered; want %d", c, held, wantCharge)
 	}
-	if g := atomic.LoadInt64(&cs.grown); g != cs.growPool+int64(wantCharge)-int64(base) {
+	if g := cs.grown.Load(); g != cs.growPool+int64(wantCharge)-int64(base) {
 		t.Fatalf("grown = %d; want pool %d + %d - %d", g, cs.growPool, wantCharge, base)
 	}
 	a.SetReadDeadline(time.Now().Add(100 * time.Millisecond))

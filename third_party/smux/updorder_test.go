@@ -188,3 +188,91 @@ func TestWindowUpdates_StaleShrinkDoesNotStallSender(t *testing.T) {
 		t.Fatalf("receiver: %v", err)
 	}
 }
+
+// updMu is what keeps a snapshot and its send together: the shrink has read
+// consumed/window but not yet enqueued, and the reader consumes more and
+// sends. Without updMu the reader's newer update goes out first and the
+// shrink's older one lands last.
+func TestWindowUpdates_SnapshotAndSendAreAtomic(t *testing.T) {
+	var shrinking, armed atomic.Bool
+	snapped := make(chan struct{})
+	var once sync.Once
+	testHookDecaySend = func() { shrinking.Store(armed.Load()) }
+	testHookUpdSnapshot = func() {
+		if !shrinking.Load() {
+			return
+		}
+		once.Do(func() {
+			shrinking.Store(false)
+			close(snapped)
+			time.Sleep(300 * time.Millisecond) // the reader gets every chance to overtake
+		})
+	}
+	defer func() { testHookDecaySend, testHookUpdSnapshot = nil, nil }()
+
+	cfg := DefaultConfig()
+	cfg.MaxReceiveBuffer = 1 << 20
+	cfg.MaxStreamBuffer = 64 << 10
+	cfg.MinStreamBuffer = 4 << 10
+	peer, conn := net.Pipe()
+	sess, err := Server(conn, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sess.Close()
+	defer peer.Close()
+	var mu sync.Mutex
+	var consumed []uint32
+	go func() {
+		hdr := make([]byte, headerSize)
+		for {
+			if _, err := io.ReadFull(peer, hdr); err != nil {
+				return
+			}
+			body := make([]byte, binary.LittleEndian.Uint16(hdr[2:]))
+			if _, err := io.ReadFull(peer, body); err != nil {
+				return
+			}
+			if hdr[1] == cmdUPD && binary.LittleEndian.Uint32(hdr[4:]) == 1 {
+				mu.Lock()
+				consumed = append(consumed, binary.LittleEndian.Uint32(body))
+				mu.Unlock()
+			}
+		}
+	}()
+	send := func(b []byte) {
+		if _, err := peer.Write(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	send(rawFrame(cmdSYN, 1, 0, nil))
+	st, err := sess.AcceptStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	send(rawFrame(cmdPSH, 1, 4<<10, make([]byte, 4<<10)))
+	if _, err := io.ReadFull(st, make([]byte, 4<<10)); err != nil {
+		t.Fatal(err)
+	}
+	armed.Store(true)
+	send(rawFrame(cmdPSH, 1, 6<<10, make([]byte, 6<<10)))
+	select {
+	case <-snapped: // the shrink has read its values
+	case <-time.After(5 * time.Second):
+		t.Fatal("idle shrink never sent")
+	}
+	if _, err := io.ReadFull(st, make([]byte, 6<<10)); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(500 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	for i := 1; i < len(consumed); i++ {
+		if consumed[i] < consumed[i-1] {
+			t.Fatalf("window update %d went backwards: consumed %v", i, consumed)
+		}
+	}
+	if len(consumed) == 0 || consumed[len(consumed)-1] != 10<<10 {
+		t.Fatalf("last update consumed=%v; want the reader's 10240 last", consumed)
+	}
+}

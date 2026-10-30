@@ -79,12 +79,12 @@ type Session struct {
 
 	halfClose int32 // peer keeps reading after its first FIN (SetPeerHalfClose)
 
-	reqSeq uint64 // writeRequest.seq source
+	reqSeq atomic.Uint64 // writeRequest.seq source
 
 	// receive-window auto-tuning (Config.MinStreamBuffer, k2 patch 6)
 	autoTune bool
-	grown    int64 // window growth granted to live streams, beyond MinStreamBuffer
-	growPool int64 // cap on grown
+	grown    atomic.Int64 // window growth granted to live streams, beyond MinStreamBuffer
+	growPool int64        // cap on grown
 
 	deadline atomic.Value
 
@@ -341,7 +341,7 @@ func (s *Session) streamClosed(sid uint32) {
 			}
 		}
 		if grown > 0 {
-			atomic.AddInt64(&s.grown, -int64(grown))
+			s.grown.Add(-int64(grown))
 		}
 	}
 	delete(s.streams, sid)
@@ -363,7 +363,7 @@ func (s *Session) reserveGrowth(cur uint32) uint32 {
 		want = max
 	}
 	for want > 0 {
-		grown := atomic.LoadInt64(&s.grown)
+		grown := s.grown.Load()
 		d := s.growPool - grown
 		if d <= 0 {
 			return 0
@@ -371,7 +371,7 @@ func (s *Session) reserveGrowth(cur uint32) uint32 {
 		if d > want {
 			d = want
 		}
-		if atomic.CompareAndSwapInt64(&s.grown, grown, grown+d) {
+		if s.grown.CompareAndSwap(grown, grown+d) {
 			return uint32(d)
 		}
 	}
@@ -380,18 +380,22 @@ func (s *Session) reserveGrowth(cur uint32) uint32 {
 
 // releaseGrowth returns n bytes of a stream's charge to the pool.
 func (s *Session) releaseGrowth(n uint32) {
-	atomic.AddInt64(&s.grown, -int64(n))
+	s.grown.Add(-int64(n))
 }
 
 // chargeGrowth charges n bytes the stream already holds, past the pool if
 // need be; reserveGrowth then grants nothing until enough is released.
 func (s *Session) chargeGrowth(n uint32) {
-	atomic.AddInt64(&s.grown, int64(n))
+	s.grown.Add(int64(n))
 }
 
 // testHookDecaySend, when set (tests only, before the session starts), runs
 // between an idle shrink being decided and its window update being sent.
 var testHookDecaySend func()
+
+// testHookUpdSnapshot, when set (tests only, before the session starts),
+// runs between a window update reading its values and enqueueing the frame.
+var testHookUpdSnapshot func()
 
 // tuneLoop shrinks idle streams' windows every tuneInterval. It runs apart
 // from keepalive because a window update can wait behind a slow conn.
@@ -686,7 +690,7 @@ func (s *Session) writeFrame(f Frame) (n int, err error) {
 func (s *Session) writeFrameInternal(f Frame, deadline <-chan time.Time, prio uint64) (int, error) {
 	req := writeRequest{
 		prio:   prio,
-		seq:    atomic.AddUint64(&s.reqSeq, 1),
+		seq:    s.reqSeq.Add(1),
 		frame:  f,
 		result: make(chan writeResult, 1),
 	}

@@ -2,6 +2,7 @@ package smux
 
 import (
 	"bytes"
+	"encoding/binary"
 	"io"
 	"net"
 	"sync/atomic"
@@ -299,6 +300,7 @@ func TestHalfClose_FINCount(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cs, ss := halfClosePair(t)
+			cs.SetPeerHalfClose(true) // else CloseWrite is a full Close and the FIN-by-FIN path goes untested
 			accepted := make(chan *Stream, 1)
 			go func() {
 				st, _ := ss.AcceptStream()
@@ -496,5 +498,51 @@ func TestHalfClose_CloseWriteToUnknownPeerClosesFully(t *testing.T) {
 	}
 	if _, err := st.Read(make([]byte, 1)); err == nil {
 		t.Fatal("read after CloseWrite to an unknown peer succeeded; want the stream closed")
+	}
+}
+
+// An upstream peer closes with exactly one FIN and then never sends a window
+// update again. Our writes must end at that single FIN (io.EOF), not wait
+// for an update that cannot come. Driven by a raw peer, because a k2 peer's
+// Close sends two FINs and would end writes through the second one instead.
+func TestHalfClose_SingleFINFromUpstreamPeerEndsWrites(t *testing.T) {
+	a, b := net.Pipe()
+	cs, err := Client(a, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cs.Close(); b.Close() })
+	go func() { // the upstream peer: after the stream's first data, one FIN, then only reads
+		hdr := make([]byte, headerSize)
+		finSent := false
+		for {
+			if _, err := io.ReadFull(b, hdr); err != nil {
+				return
+			}
+			body := make([]byte, binary.LittleEndian.Uint16(hdr[2:]))
+			if _, err := io.ReadFull(b, body); err != nil {
+				return
+			}
+			if hdr[1] == cmdPSH && !finSent {
+				finSent = true
+				b.Write(rawFrame(cmdFIN, binary.LittleEndian.Uint32(hdr[4:]), 0, nil))
+			}
+		}
+	}()
+	st, err := cs.OpenStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Write([]byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	waitRead(t, readAllAsync(st), "peer FIN")
+	wrote := make(chan error, 1)
+	go func() {
+		_, err := st.Write(halfClosePayload()) // more than the 256 KB initial window
+		wrote <- err
+	}()
+	if err := waitErr(t, wrote, "write after an upstream peer's single FIN"); err != io.EOF {
+		t.Fatalf("write after single FIN: err=%v; want io.EOF", err)
 	}
 }

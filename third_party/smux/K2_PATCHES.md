@@ -64,6 +64,10 @@ The patch:
 - `Write` now returns the bytes actually sent alongside `io.EOF` (upstream
   returned 0), so `io.Copy` byte counts stay right.
 
+An upstream peer's single FIN ending our writes is pinned by
+`TestHalfClose_SingleFINFromUpstreamPeerEndsWrites` (a raw peer: a k2
+peer's Close sends two FINs and would end writes the other way).
+
 Mixed versions: a session whose peer is not known to half-close (an old
 peer never offers `smux_hc`) keeps upstream semantics entirely: writes end
 at the peer's first FIN, and **`CloseWrite` is a full `Close`**, as k2's
@@ -233,7 +237,9 @@ deciding and sending), `TestWindowUpdates_StaleShrinkDoesNotStallSender`
 (end to end: on the old order the sender stays stuck past 15 s; it needs
 the reader's catch-up to be under a window, so the window does not grow
 back and re-arm the shrink, and the sender to pause past `tuneInterval`)
-and `TestShaper_EqualPriorityIsFIFO`.
+`TestWindowUpdates_SnapshotAndSendAreAtomic` (the shrink paused between
+reading its values and enqueueing; fails without `updMu`) and
+`TestShaper_EqualPriorityIsFIFO`.
 
 ## 7. A write's own result wins over the session closing (session.go)
 
@@ -242,6 +248,17 @@ frame's result, so the writer's `select` saw both ready and picked at
 random: `io.ErrClosedPipe` about a third of the time instead of the real
 error (`TestHardening_ShortConnWriteIsFatal` failed 84 / 500 runs).
 `writeFrameInternal` now takes the result when it is there.
+
+## 8. 64-bit counters are `atomic.Int64` / `atomic.Uint64` (session.go)
+
+`sync/atomic`'s 64-bit functions need an 8-byte-aligned address, which a
+struct field is not guaranteed on 32-bit targets — k2r's OpenWRT builds
+(armv7, mips, mipsle). `Session.reqSeq` (patch 6's FIFO seq) sat at offset
+148 on 386 and panicked "unaligned 64-bit atomic operation" on the first
+frame; `grown` was aligned only by field order. Both are typed atomics,
+which are always aligned, and `TestNo64BitAtomicFuncs` bans the functions
+in this package. The suite is run as a linux/386 binary before release
+(`GOOS=linux GOARCH=386 go test -c`, run on any x86-64 Linux host).
 
 ## Fuzzing
 

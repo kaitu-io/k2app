@@ -350,6 +350,9 @@ func (s *Stream) sendLatestWindowBy(deadline <-chan time.Time) error {
 	s.bufferLock.Lock()
 	consumed, window := s.numRead, s.rcvWnd
 	s.bufferLock.Unlock()
+	if testHookUpdSnapshot != nil {
+		testHookUpdSnapshot()
+	}
 
 	frame := newFrame(cmdUPD, s.id)
 	var hdr updHeader
