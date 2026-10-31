@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"sync"
 	"text/template"
 
 	"github.com/spf13/viper"
@@ -287,7 +286,12 @@ func resolveUserMailTarget(ctx context.Context, userID int64) (Brand, string, er
 	return brandOfUser(ctx, uint64(userID)), decEmail, nil
 }
 
-// emailTo 发送邮件到邮箱。b 决定发件身份（systemSenderForBrand），与模板选择相互独立：
+// emailVerificationCode 发验证码：同一邮箱重发时换通道，见 mailContextForCode。
+func emailVerificationCode(ctx context.Context, b Brand, email string, meta VerificationCodeMeta) error {
+	return emailTo(mailContextForCode(ctx, b, email), b, email, brandedVerificationCodeTemplate.For(b), meta)
+}
+
+// emailTo 发送邮件到邮箱。b 决定发件身份（mailChannelsFor），与模板选择相互独立：
 // 模板选错只是文案错，发件人选错会让 Overleap 用户收到 kaitu 域名的邮件。
 func emailTo[T any](ctx context.Context, b Brand, email string, tmpl EmailTemplate[T], meta T) error {
 	log.Debugf(ctx, "preparing to send email to %s", hideEmail(email))
@@ -319,7 +323,6 @@ func emailTo[T any](ctx context.Context, b Brand, email string, tmpl EmailTempla
 		return fmt.Errorf("failed to render body: %v", err)
 	}
 
-	// 按品牌选发件身份（kaitu = 全局 mail.send_from；overleap = mail_overleap.send_from）
 	log.Infof(ctx, "sending email with subject '%s' to %s", subjectBuf.String(), hideEmail(email))
 	err = sendSystemEmailAs(ctx, b, email, subjectBuf.String(), bodyBuf.String())
 	if err != nil {
@@ -334,76 +337,25 @@ func isMailDevMode() bool {
 	return viper.GetBool("mail.dev_mode")
 }
 
-// systemSenderOverleap sends transactional mail (codes, login alerts, password
-// notices, ticket replies) under the Overleap identity, bound to the
-// "mail_overleap" viper prefix — same shape as edm_overleap in
-// logic_email_task.go. qtoolkit/mail.Message has no From field, so a branded
-// From can only come from a second prefix.
-var systemSenderOverleap = mail.Config("mail_overleap")
-
-// systemSenderForBrand returns the brand's transactional sender, or nil for
-// "use the global mail.* prefix". Overleap falls back to nil until ops sets
-// mail_overleap.send_from (SES domain verification for overleap.io) — fail-open
-// so registration codes keep flowing under the shared identity meanwhile.
-// Unknown brands get kaitu semantics (same fallback rule as Brand.Config()).
-func systemSenderForBrand(b Brand) *mail.Sender {
-	if b == BrandOverleap && viper.GetString("mail_overleap.send_from") != "" {
-		return systemSenderOverleap
-	}
-	return nil
-}
-
-// overleapSenderFallbackWarnOnce 让 "overleap 回落全局发件人" 只在进程生命周期里
-// 告警一次：这是部署清单里的已知状态，不是每封邮件都值得一条 warn。
-var overleapSenderFallbackWarnOnce sync.Once
-
-// MailSend 统一邮件发送入口，dev 模式下仅打印日志
-// 所有 mail.Send() 调用都应使用此函数替代
-func MailSend(ctx context.Context, msg *mail.Message) error {
-	return MailSendWith(ctx, nil, msg)
-}
-
-// MailSendWith is MailSend with an explicit sender (nil = global mail.Send).
-// dev_mode is checked before the sender is touched, so both identities are
-// equally inert in development.
-func MailSendWith(ctx context.Context, sender *mail.Sender, msg *mail.Message) error {
-	if isMailDevMode() {
-		log.Infof(ctx, "[DEV-MAIL] TO: %s | SUBJECT: %s\n--- BODY ---\n%s\n--- END ---",
-			msg.To, msg.Subject, msg.Body)
-		return nil
-	}
-	if sender != nil {
-		return sender.Send(msg)
-	}
-	return mail.Send(msg)
-}
-
 // systemMailToHook 测试接缝：sendSystemEmailAs 入口回报收件地址。生产恒为 nil。
 var systemMailToHook func(to string)
 
-// sendSystemEmailAs 发送系统纯文本邮件（验证码、通知等），发件身份按品牌选择：
-// kaitu 走全局 mail.* 前缀（行为与历史 sendSystemEmail 完全一致），overleap 走
-// mail_overleap.* 前缀，未配置时回落全局并一次性告警。
+// sendSystemEmailAs 发送系统纯文本邮件（验证码、通知等），发件身份与通道按品牌选择。
+// Reply-To 设在邮件头：配在阿里云发件地址上时，地址未验证会导致发件报错。
 func sendSystemEmailAs(ctx context.Context, b Brand, to, subject, body string) error {
 	if systemMailToHook != nil {
 		systemMailToHook(to)
 	}
 	log.Debugf(ctx, "sending plain text system email to %s as brand %s", hideEmail(to), b)
 
-	sender := systemSenderForBrand(b)
-	if b == BrandOverleap && sender == nil {
-		overleapSenderFallbackWarnOnce.Do(func() {
-			log.Warnf(ctx, "mail_overleap.send_from not configured; overleap system mail falls back to the global mail.* sender")
-		})
-	}
-
-	err := MailSendWith(ctx, sender, &mail.Message{
+	err := sendMailWithFailover(ctx, b, &mail.Message{
 		To:      to,
 		Subject: subject,
 		Body:    body,
+		ReplyTo: configSupportEmail(b),
 	})
 	if err != nil {
-		log.Errorf(ctx, "failed to send system email to %s: %v", hideEmail(to), err)
+		log.Errorf(ctx, "failed to send system email to %s: %s", hideEmail(to), redactMailError(err))
 		return fmt.Errorf("failed to send system email: %w", err)
 	}
 

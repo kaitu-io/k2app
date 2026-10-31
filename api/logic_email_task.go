@@ -27,16 +27,21 @@ var edmSender = mail.Config("edm")
 var edmSenderOverleap = mail.Config("edm_overleap")
 
 // edmSenderForBrand picks the EDM sender identity for the recipient's brand.
-// Overleap's own sending domain requires Phase 0 domain verification with the
-// mail provider before edm_overleap.* can be filled in; edm.overleap_from_email
-// is the readiness signal ops flips once that's done. Until then this falls
-// back to the shared kaitu sender so Overleap EDM keeps sending (under the
-// kaitu identity) instead of failing outright on an unconfigured prefix.
+// Overleap without its own edm_overleap.send_from returns nil: EDM must never go
+// out under another brand's identity, so the caller refuses and alerts.
 func edmSenderForBrand(b Brand) *mail.Sender {
-	if b == BrandOverleap && viper.GetString("edm.overleap_from_email") != "" {
-		return edmSenderOverleap
+	if b != BrandOverleap {
+		return edmSender
 	}
-	return edmSender
+	if viper.GetString("edm_overleap.send_from") == "" {
+		return nil
+	}
+	return edmSenderOverleap
+}
+
+// edmChannelSend 测试接缝，生产恒为 sender.Send。
+var edmChannelSend = func(sender *mail.Sender, msg *mail.Message) error {
+	return sender.Send(msg)
 }
 
 // getUserEmailByUser 从用户对象获取邮箱地址
@@ -66,12 +71,21 @@ func sendEmail(ctx context.Context, to, subject, body string, brand Brand) error
 		return nil
 	}
 
-	if err := edmSenderForBrand(brand).Send(&mail.Message{
+	sender := edmSenderForBrand(brand)
+	if sender == nil {
+		alertMailFailure(ctx, brand, "edm", "EDM 通道未配置（edm_overleap.send_from 为空），邮件没有发出")
+		return fmt.Errorf("EDM send failed: no sender configured for brand %s", brand)
+	}
+	// EDM 不切通道二：免费额度小，群发也会污染事务通道的信誉。这里只报警。
+	if err := edmChannelSend(sender, &mail.Message{
 		To:      to,
 		Subject: subject,
 		Body:    body,
 	}); err != nil {
 		log.Errorf(ctx, "failed to send EDM email to %s (brand=%s): %v", to, brand, err)
+		if !isMailRecipientError(err) {
+			alertMailFailure(ctx, brand, "edm", "EDM 发送失败："+redactMailError(err))
+		}
 		return fmt.Errorf("EDM send failed: %w", err)
 	}
 

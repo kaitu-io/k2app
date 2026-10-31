@@ -252,7 +252,7 @@ Please reply to this email to respond to the user.
 	log.Infof(ctx, "sendTicketEmail: sending ticket to %s, reply-to: %s, cc: %s",
 		hideEmail(supportEmail), hideEmail(userEmail), hideEmail(userEmail))
 
-	if err := MailSend(ctx, &mail.Message{
+	if err := sendMailWithFailover(ctx, b, &mail.Message{
 		To:      supportEmail,
 		Subject: emailSubject,
 		Body:    emailBody,
