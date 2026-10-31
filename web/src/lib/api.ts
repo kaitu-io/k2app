@@ -2445,6 +2445,11 @@ export const api = {
     });
   },
 
+  // List account-wide traffic pools
+  async listCloudAccountUsages(): Promise<CloudAccountUsageListResponse> {
+    return this.request<CloudAccountUsageListResponse>('/app/cloud/account-usages');
+  },
+
   // List cloud accounts
   async listCloudAccounts(): Promise<CloudAccountListResponse> {
     return this.request<CloudAccountListResponse>('/app/cloud/accounts');
@@ -2920,6 +2925,32 @@ export interface CloudInstance {
   last_synced_at: number;
   sync_error?: string;
   node_name?: string;
+  meter?: CloudInstanceMeter;
+}
+
+// Matches backend DataCloudInstanceMeter struct
+export interface CloudInstanceMeter {
+  used_gb: number;
+  total_gb: number;          // 0 = unlimited
+  ratio: number;             // Pre-calculated usage ratio (0-1)
+  reset_at: number;
+  last_report_at: number;
+}
+
+// Matches backend DataCloudAccountUsage struct
+export interface CloudAccountUsage {
+  account_name: string;
+  provider: string;
+  used_gb: number;
+  total_gb: number;
+  ratio: number;             // Pre-calculated usage ratio (0-1)
+  reset_at: number;
+  last_synced_at: number;
+  sync_error?: string;
+}
+
+export interface CloudAccountUsageListResponse {
+  items: CloudAccountUsage[];
 }
 
 export interface CloudInstanceListResponse {

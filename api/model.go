@@ -1565,6 +1565,23 @@ type ConnectionRating struct {
 
 // ========================= Cloud Instance Management =========================
 
+// CloudAccountUsage is the traffic pool of a provider account that bills one pool
+// per account (Vultr). Per-instance figures stay on CloudInstance.
+type CloudAccountUsage struct {
+	ID        uint64 `gorm:"primarykey"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+
+	Provider    string `gorm:"type:varchar(20);not null"`
+	AccountName string `gorm:"type:varchar(50);not null;uniqueIndex"`
+
+	UsedBytes    int64  `gorm:"not null;default:0"`
+	TotalBytes   int64  `gorm:"not null;default:0"`
+	ResetAt      int64  `gorm:"not null;default:0"` // Next pool reset (Unix timestamp)
+	LastSyncedAt int64  `gorm:"not null;default:0"` // Last successful sync (Unix timestamp)
+	SyncError    string `gorm:"type:text"`
+}
+
 // CloudInstance represents a VPS instance from cloud providers
 // Linked to SlaveNode via ip_address field (no foreign key, query-time join)
 type CloudInstance struct {

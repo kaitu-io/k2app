@@ -490,6 +490,7 @@ func SetupRouter() *gin.Engine {
 		// 云实例（只读）
 		opsAdmin.GET("/cloud/instances", RoleRequired(viewOrEdit), api_admin_list_cloud_instances)
 		opsAdmin.GET("/cloud/instances/:id", RoleRequired(viewOrEdit), api_admin_get_cloud_instance)
+		opsAdmin.GET("/cloud/account-usages", RoleRequired(viewOrEdit), api_admin_list_cloud_account_usages)
 		opsAdmin.GET("/cloud/accounts", RoleRequired(viewOrEdit), api_admin_list_cloud_accounts)
 		opsAdmin.GET("/cloud/regions", RoleRequired(viewOrEdit), api_admin_list_cloud_regions)
 		opsAdmin.GET("/cloud/plans", RoleRequired(viewOrEdit), api_admin_list_cloud_plans)

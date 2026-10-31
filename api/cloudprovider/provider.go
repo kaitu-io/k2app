@@ -84,6 +84,19 @@ type ImageInfo struct {
 	Description string `json:"description"` // Description
 }
 
+// AccountPool is traffic shared by a whole provider account.
+type AccountPool struct {
+	UsedBytes  int64
+	TotalBytes int64
+	ResetAt    time.Time
+}
+
+// AccountPoolProvider is implemented by providers that bill one traffic pool per
+// account instead of per instance (Vultr).
+type AccountPoolProvider interface {
+	AccountPool(ctx context.Context) (*AccountPool, error)
+}
+
 // Provider defines the interface for cloud provider operations
 type Provider interface {
 	// Name returns the provider identifier

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -14,9 +15,9 @@ const vultrAPIBase = "https://api.vultr.com/v2"
 // VultrProvider implements Provider for Vultr (sync only).
 //
 // Vultr 的流量额度是全账号共享的池：只计出站，所有实例的额度与每账号赠送额度合并。
-// 所以这里每台实例上报的都是**账号池**的已用/总量，而不是单台数字：单台的
+// 所以每台实例只上报自己的当月出站量，额度恒为 0（无单台额度）：单台的
 // allowed_bandwidth 按开机小时折算（10/27 开的机器只有 277 GB），拿它算比例会把
-// 一台远未超额的新机器显示成告急。单台实际用量看节点自报（NodeUsage）。
+// 一台远未超额的新机器显示成告急。账号池的已用/总量由 AccountPool 单独给出。
 type VultrProvider struct {
 	apiKey  string
 	baseURL string
@@ -78,10 +79,10 @@ func (p *VultrProvider) get(ctx context.Context, path string, out any) error {
 	return nil
 }
 
-// fetchPool returns the account pool's outbound usage and allowance in bytes.
+// AccountPool returns the account pool's outbound usage and allowance in bytes.
 // Allowance uses the month's projection, which already counts every instance's
 // hours through month end; month-to-date would understate it until the last day.
-func (p *VultrProvider) fetchPool(ctx context.Context) (used, total int64, err error) {
+func (p *VultrProvider) AccountPool(ctx context.Context) (*AccountPool, error) {
 	var resp struct {
 		Bandwidth struct {
 			CurrentMonthToDate    vultrBandwidthMonth `json:"current_month_to_date"`
@@ -89,19 +90,44 @@ func (p *VultrProvider) fetchPool(ctx context.Context) (used, total int64, err e
 		} `json:"bandwidth"`
 	}
 	if err := p.get(ctx, "/account/bandwidth", &resp); err != nil {
-		return 0, 0, err
+		return nil, err
 	}
 	month := resp.Bandwidth.CurrentMonthProjected
 	totalGB := month.InstanceBandwidthCredits + month.FreeBandwidthCredits + month.PurchasedBandwidthCredits
-	return resp.Bandwidth.CurrentMonthToDate.GBOut << 30, totalGB << 30, nil
+	return &AccountPool{
+		UsedBytes:  resp.Bandwidth.CurrentMonthToDate.GBOut << 30,
+		TotalBytes: totalGB << 30,
+		ResetAt:    vultrNextReset(time.Now()),
+	}, nil
+}
+
+func vultrNextReset(now time.Time) time.Time {
+	now = now.UTC()
+	return time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC)
+}
+
+// monthOutbound sums one instance's outbound bytes for now's calendar month (UTC).
+// The endpoint returns a rolling day window, so days from last month are skipped.
+func (p *VultrProvider) monthOutbound(ctx context.Context, instanceID string, now time.Time) (int64, error) {
+	var resp struct {
+		Bandwidth map[string]struct {
+			OutgoingBytes int64 `json:"outgoing_bytes"`
+		} `json:"bandwidth"`
+	}
+	if err := p.get(ctx, "/instances/"+instanceID+"/bandwidth?date_range=31", &resp); err != nil {
+		return 0, err
+	}
+	month := now.UTC().Format("2006-01-")
+	var used int64
+	for day, usage := range resp.Bandwidth {
+		if strings.HasPrefix(day, month) {
+			used += usage.OutgoingBytes
+		}
+	}
+	return used, nil
 }
 
 func (p *VultrProvider) ListInstances(ctx context.Context) ([]*InstanceStatus, error) {
-	used, total, err := p.fetchPool(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	var resp struct {
 		Instances []vultrInstance `json:"instances"`
 	}
@@ -109,21 +135,26 @@ func (p *VultrProvider) ListInstances(ctx context.Context) ([]*InstanceStatus, e
 		return nil, err
 	}
 
-	now := time.Now().UTC()
-	resetAt := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Now()
+	resetAt := vultrNextReset(now)
 
 	statuses := make([]*InstanceStatus, 0, len(resp.Instances))
 	for _, inst := range resp.Instances {
+		// One failed lookup fails the whole list: the sync then keeps last known
+		// figures instead of overwriting this instance with 0.
+		used, err := p.monthOutbound(ctx, inst.ID, now)
+		if err != nil {
+			return nil, err
+		}
 		statuses = append(statuses, &InstanceStatus{
-			InstanceID:        inst.ID,
-			Name:              inst.Label,
-			IPAddress:         inst.MainIP,
-			IPv6Address:       inst.V6MainIP,
-			Region:            inst.Region,
-			TrafficUsedBytes:  used,
-			TrafficTotalBytes: total,
-			TrafficResetAt:    resetAt,
-			State:             inst.Status,
+			InstanceID:       inst.ID,
+			Name:             inst.Label,
+			IPAddress:        inst.MainIP,
+			IPv6Address:      inst.V6MainIP,
+			Region:           inst.Region,
+			TrafficUsedBytes: used,
+			TrafficResetAt:   resetAt,
+			State:            inst.Status,
 		})
 	}
 	return statuses, nil

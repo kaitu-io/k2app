@@ -31,6 +31,54 @@ type DataCloudInstance struct {
 	LastSyncedAt   int64   `json:"last_synced_at"`
 	SyncError      string  `json:"sync_error,omitempty"`
 	NodeName       string  `json:"node_name,omitempty"`
+	// Meter is the node's own traffic measurement (NodeUsage), shown next to the
+	// provider figures above. Absent when no linked node has reported.
+	Meter *DataCloudInstanceMeter `json:"meter,omitempty"`
+}
+
+// DataCloudInstanceMeter represents a node's self-measured traffic.
+type DataCloudInstanceMeter struct {
+	UsedGB       float64 `json:"used_gb"`
+	TotalGB      float64 `json:"total_gb"` // 0 = unlimited
+	Ratio        float64 `json:"ratio"`    // Pre-calculated usage ratio (0-1)
+	ResetAt      int64   `json:"reset_at"`
+	LastReportAt int64   `json:"last_report_at"`
+}
+
+// DataCloudAccountUsage represents an account-wide traffic pool.
+type DataCloudAccountUsage struct {
+	AccountName  string  `json:"account_name"`
+	Provider     string  `json:"provider"`
+	UsedGB       float64 `json:"used_gb"`
+	TotalGB      float64 `json:"total_gb"`
+	Ratio        float64 `json:"ratio"` // Pre-calculated usage ratio (0-1)
+	ResetAt      int64   `json:"reset_at"`
+	LastSyncedAt int64   `json:"last_synced_at"`
+	SyncError    string  `json:"sync_error,omitempty"`
+}
+
+// cappedRatio returns used/total in 0-1, or 0 when there is no allowance.
+func cappedRatio(used, total int64) float64 {
+	if total <= 0 {
+		return 0
+	}
+	return min(float64(used)/float64(total), 1)
+}
+
+// attachNodeMeter adds the node's own measurement to a cloud instance item. A
+// standalone row has no provider cycle, so its time ratio follows the node's.
+func attachNodeMeter(item *DataCloudInstance, u *NodeUsage) {
+	const gib = 1024 * 1024 * 1024
+	item.Meter = &DataCloudInstanceMeter{
+		UsedGB:       float64(u.UsedBytes) / gib,
+		TotalGB:      float64(u.QuotaTotalBytes) / gib,
+		Ratio:        cappedRatio(u.UsedBytes, u.QuotaTotalBytes),
+		ResetAt:      u.Epoch,
+		LastReportAt: u.LastReportAt,
+	}
+	if item.Provider == cloudprovider.ProviderSSHStandalone {
+		item.TimeRatio = calculateTimeRatio(u.Epoch)
+	}
 }
 
 // DataCloudAccount represents cloud account in API response (no secrets)
@@ -56,6 +104,13 @@ func api_admin_list_cloud_instances(c *gin.Context) {
 	if account := c.Query("account"); account != "" {
 		query = query.Where("account_name = ?", account)
 	}
+
+	// A standalone row is only a placeholder once a provider row covers the same IP.
+	query = query.Where(`NOT (provider = ? AND EXISTS (
+		SELECT 1 FROM cloud_instances covering
+		WHERE covering.ip_address = cloud_instances.ip_address
+			AND covering.provider <> ? AND covering.deleted_at IS NULL))`,
+		cloudprovider.ProviderSSHStandalone, cloudprovider.ProviderSSHStandalone)
 
 	if err := query.Count(&pagination.Total).Error; err != nil {
 		log.Errorf(c, "failed to count cloud instances: %v", err)
@@ -85,6 +140,15 @@ func api_admin_list_cloud_instances(c *gin.Context) {
 		db.Get().Where("ipv4 IN ?", ips).Find(&nodes)
 		for i := range nodes {
 			nodeMap[nodes[i].Ipv4] = &nodes[i]
+		}
+	}
+
+	var usages []NodeUsage
+	usageMap := make(map[string]*NodeUsage)
+	if len(ips) > 0 {
+		db.Get().Where("ipv4 IN ?", ips).Find(&usages)
+		for i := range usages {
+			usageMap[usages[i].Ipv4] = &usages[i]
 		}
 	}
 
@@ -129,6 +193,9 @@ func api_admin_list_cloud_instances(c *gin.Context) {
 		// Add node info if exists
 		if node, exists := nodeMap[inst.IPAddress]; exists {
 			items[i].NodeName = node.Name
+			if usage, reported := usageMap[inst.IPAddress]; reported {
+				attachNodeMeter(&items[i], usage)
+			}
 		}
 	}
 
@@ -192,6 +259,10 @@ func api_admin_get_cloud_instance(c *gin.Context) {
 
 	if nodeExists {
 		result.NodeName = node.Name
+		var usage NodeUsage
+		if db.Get().Where("ipv4 = ?", instance.IPAddress).First(&usage).Error == nil {
+			attachNodeMeter(&result, &usage)
+		}
 	}
 
 	Success(c, &result)
@@ -371,6 +442,32 @@ func api_admin_list_cloud_accounts(c *gin.Context) {
 		})
 	}
 
+	ListWithData(c, items, &Pagination{Total: int64(len(items))})
+}
+
+// api_admin_list_cloud_account_usages returns account-wide traffic pools.
+func api_admin_list_cloud_account_usages(c *gin.Context) {
+	var usages []CloudAccountUsage
+	if err := db.Get().Order("account_name").Find(&usages).Error; err != nil {
+		log.Errorf(c, "failed to list cloud account usages: %v", err)
+		Error(c, ErrorSystemError, "failed to list account usages")
+		return
+	}
+
+	const gib = 1024 * 1024 * 1024
+	items := make([]DataCloudAccountUsage, len(usages))
+	for i, u := range usages {
+		items[i] = DataCloudAccountUsage{
+			AccountName:  u.AccountName,
+			Provider:     u.Provider,
+			UsedGB:       float64(u.UsedBytes) / gib,
+			TotalGB:      float64(u.TotalBytes) / gib,
+			Ratio:        cappedRatio(u.UsedBytes, u.TotalBytes),
+			ResetAt:      u.ResetAt,
+			LastSyncedAt: u.LastSyncedAt,
+			SyncError:    u.SyncError,
+		}
+	}
 	ListWithData(c, items, &Pagination{Total: int64(len(items))})
 }
 

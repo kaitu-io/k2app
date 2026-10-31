@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   Table,
@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { api, CloudInstance, CloudAccount, CloudRegion } from "@/lib/api";
+import { api, CloudInstance, CloudAccount, CloudAccountUsage, CloudRegion } from "@/lib/api";
 import { toast } from "sonner";
 import { RefreshCw, Globe, Loader2, AlertCircle, Plus, Trash2, Server } from "lucide-react";
 import {
@@ -81,6 +81,77 @@ function ratioToPercent(ratio: number): number {
   return Math.min(100, Math.max(0, ratio * 100));
 }
 
+// Standalone rows are placeholders: they carry no provider traffic data.
+function hasProviderTraffic(instance: CloudInstance): boolean {
+  return instance.provider !== "ssh_standalone";
+}
+
+function UsageBar({ label, ratio }: { label: string; ratio: number }) {
+  const percent = ratioToPercent(ratio);
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-muted-foreground w-6">{label}</span>
+      <div className="flex-1 bg-muted rounded-full h-2 max-w-[80px]">
+        <div
+          className={`h-2 rounded-full ${
+            percent > 90 ? "bg-red-500" : percent > 70 ? "bg-yellow-500" : "bg-green-500"
+          }`}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+      <span className="text-xs text-muted-foreground w-10">{percent.toFixed(0)}%</span>
+    </div>
+  );
+}
+
+function UsageNote({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <span className="w-6">{label}</span>
+      <span>{children}</span>
+    </div>
+  );
+}
+
+function ProviderUsage({ instance }: { instance: CloudInstance }) {
+  if (!hasProviderTraffic(instance)) {
+    return <UsageNote label="厂商">{"未接入"}</UsageNote>;
+  }
+  if (instance.traffic_total_gb <= 0) {
+    return (
+      <UsageNote label="厂商">
+        {formatTraffic(instance.traffic_used_gb)}{" 出站 · 共享账号池"}
+      </UsageNote>
+    );
+  }
+  return (
+    <div className="space-y-1">
+      <UsageBar label="厂商" ratio={instance.traffic_ratio} />
+      <div className="text-xs text-muted-foreground">
+        {formatTraffic(instance.traffic_used_gb)}{" / "}{formatTraffic(instance.traffic_total_gb)}
+      </div>
+    </div>
+  );
+}
+
+function MeterUsage({ instance }: { instance: CloudInstance }) {
+  const meter = instance.meter;
+  if (!meter) {
+    return <UsageNote label="自测">{"无节点上报"}</UsageNote>;
+  }
+  if (meter.total_gb <= 0) {
+    return <UsageNote label="自测">{formatTraffic(meter.used_gb)}{" · 不限量"}</UsageNote>;
+  }
+  return (
+    <div className="space-y-1">
+      <UsageBar label="自测" ratio={meter.ratio} />
+      <div className="text-xs text-muted-foreground">
+        {formatTraffic(meter.used_gb)}{" / "}{formatTraffic(meter.total_gb)}
+      </div>
+    </div>
+  );
+}
+
 // Get region display name (prefer Chinese)
 function getRegionName(region: string, regions: CloudRegion[]): string {
   const found = regions.find(r => r.slug === region || r.providerId === region);
@@ -96,6 +167,7 @@ export default function CloudInstancesPage() {
 
   const [instances, setInstances] = useState<CloudInstance[]>([]);
   const [accounts, setAccounts] = useState<CloudAccount[]>([]);
+  const [accountUsages, setAccountUsages] = useState<CloudAccountUsage[]>([]);
   const [regions, setRegions] = useState<CloudRegion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -142,13 +214,17 @@ export default function CloudInstancesPage() {
   const fetchInstances = async () => {
     setIsLoading(true);
     try {
-      const response = await api.getCloudInstances({
-        page,
-        pageSize,
-        provider: provider || undefined,
-      });
+      const [response, usagesRes] = await Promise.all([
+        api.getCloudInstances({
+          page,
+          pageSize,
+          provider: provider || undefined,
+        }),
+        api.listCloudAccountUsages(),
+      ]);
       setInstances(response.items || []);
       setPagination(response.pagination);
+      setAccountUsages(usagesRes.items || []);
     } catch (error) {
       console.error("Failed to fetch cloud instances:", error);
       toast.error("获取云实例列表失败");
@@ -264,6 +340,28 @@ export default function CloudInstancesPage() {
           </div>
         </div>
 
+        {accountUsages.length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-3">
+            {accountUsages.map((usage) => (
+              <div key={usage.account_name} className="rounded-md border px-4 py-3 min-w-[260px]">
+                <div className="text-sm font-medium">
+                  {providerNames[usage.provider] || usage.provider}{" 账号池 · "}{usage.account_name}
+                </div>
+                <div className="mt-2">
+                  <UsageBar label="出站" ratio={usage.ratio} />
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {formatTraffic(usage.used_gb)}{" / "}{formatTraffic(usage.total_gb)}
+                  {" · 🔄"}{formatDateISO(usage.reset_at)}
+                </div>
+                {usage.sync_error && (
+                  <div className="text-xs text-destructive mt-1">{"同步错误，显示的是上次数据"}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Filter toolbar */}
         <div className="flex items-center gap-4 mb-4">
           <Select value={localAccount} onValueChange={setLocalAccount}>
@@ -309,7 +407,6 @@ export default function CloudInstancesPage() {
                 {instances.length > 0 ? (
                   instances.map((instance) => {
                     // Use API-provided ratios (0-1) converted to percentages (0-100)
-                    const trafficPercent = ratioToPercent(instance.traffic_ratio);
                     const timePercent = ratioToPercent(instance.time_ratio);
                     return (
                       <TableRow key={instance.id}>
@@ -367,25 +464,8 @@ export default function CloudInstancesPage() {
                         </TableCell>
                         <TableCell>
                           <div className="space-y-1">
-                            {/* Traffic progress bar */}
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-muted-foreground w-6">流量</span>
-                              <div className="flex-1 bg-muted rounded-full h-2 max-w-[80px]">
-                                <div
-                                  className={`h-2 rounded-full ${
-                                    trafficPercent > 90
-                                      ? "bg-red-500"
-                                      : trafficPercent > 70
-                                      ? "bg-yellow-500"
-                                      : "bg-green-500"
-                                  }`}
-                                  style={{ width: `${trafficPercent}%` }}
-                                />
-                              </div>
-                              <span className="text-xs text-muted-foreground w-10">
-                                {trafficPercent.toFixed(0)}%
-                              </span>
-                            </div>
+                            <ProviderUsage instance={instance} />
+                            <MeterUsage instance={instance} />
                             {/* Time progress bar - fills from left */}
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-muted-foreground w-6">时间</span>
@@ -399,10 +479,6 @@ export default function CloudInstancesPage() {
                                 {timePercent.toFixed(0)}%
                               </span>
                             </div>
-                            <div className="text-xs text-muted-foreground">
-                              {formatTraffic(instance.traffic_used_gb)} /{" "}
-                              {formatTraffic(instance.traffic_total_gb)}
-                            </div>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -412,12 +488,16 @@ export default function CloudInstancesPage() {
                                 📅{formatDateISO(instance.expires_at)}
                               </div>
                             )}
-                            {instance.traffic_reset_at > 0 && (
+                            {hasProviderTraffic(instance) && instance.traffic_reset_at > 0 && (
                               <div className="text-muted-foreground">
-                                🔄{formatDateISO(instance.traffic_reset_at)}
+                                {"厂商 🔄"}{formatDateISO(instance.traffic_reset_at)}
                               </div>
                             )}
-                            {!instance.expires_at && !instance.traffic_reset_at && "-"}
+                            {instance.meter && instance.meter.reset_at > 0 && (
+                              <div className="text-muted-foreground">
+                                {"自测 🔄"}{formatDateISO(instance.meter.reset_at)}
+                              </div>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>

@@ -185,16 +185,15 @@ func vultrPoolAlertLevel(used, total int64) (title, col string) {
 	return "", ""
 }
 
-// checkVultrPool warns once per cycle per level. status carries the account pool
-// figures (every Vultr instance reports the same ones, see cloudprovider.VultrProvider).
-// The dedup stamp lives on any one instance of the account.
-func checkVultrPool(ctx context.Context, accountName string, status *cloudprovider.InstanceStatus) {
-	title, col := vultrPoolAlertLevel(status.TrafficUsedBytes, status.TrafficTotalBytes)
+// checkVultrPool warns once per cycle per level. The dedup stamp lives on any one
+// instance of the account.
+func checkVultrPool(ctx context.Context, accountName string, pool *cloudprovider.AccountPool) {
+	title, col := vultrPoolAlertLevel(pool.UsedBytes, pool.TotalBytes)
 	if title == "" {
 		return
 	}
 
-	cycleID := status.TrafficResetAt.Unix()
+	cycleID := pool.ResetAt.Unix()
 	query := db.Get().Where("provider = ? AND account_name = ?", cloudprovider.ProviderVultr, accountName)
 
 	var sent int64
@@ -212,6 +211,6 @@ func checkVultrPool(ctx context.Context, accountName string, status *cloudprovid
 		return
 	}
 	sendCloudSlackNotification(ctx, title, fmt.Sprintf("%s: %.0f/%.0fGB outbound",
-		accountName, float64(status.TrafficUsedBytes)/float64(1<<30), float64(status.TrafficTotalBytes)/float64(1<<30)))
+		accountName, float64(pool.UsedBytes)/float64(1<<30), float64(pool.TotalBytes)/float64(1<<30)))
 	markOverageSent(ctx, ci.ID, col, cycleID)
 }

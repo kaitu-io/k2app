@@ -12,6 +12,7 @@ import (
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/qtoolkit/slack"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/kaitu-io/k2app/api/cloudprovider"
 )
@@ -303,10 +304,8 @@ func syncAccount(ctx context.Context, database *gorm.DB, account CloudInstanceAc
 		}
 	}
 
-	// Vultr shares one transfer pool across the account, so it is checked once
-	// per sync rather than per instance (worker_cloud_overage.go).
-	if account.Provider == cloudprovider.ProviderVultr && len(instances) > 0 {
-		checkVultrPool(ctx, account.Name, instances[0])
+	if poolProvider, ok := provider.(cloudprovider.AccountPoolProvider); ok {
+		syncAccountPool(ctx, account, poolProvider)
 	}
 
 	// Orphan detection: mark instances that no longer exist as deleted
@@ -315,6 +314,41 @@ func syncAccount(ctx context.Context, database *gorm.DB, account CloudInstanceAc
 	}
 
 	return nil
+}
+
+// syncAccountPool records an account-wide traffic pool once per sync and checks its
+// alert thresholds. On failure the last known figures stay and only sync_error changes.
+func syncAccountPool(ctx context.Context, account CloudInstanceAccount, provider cloudprovider.AccountPoolProvider) {
+	pool, err := provider.AccountPool(ctx)
+	if err != nil {
+		log.Errorf(ctx, "[CLOUD] Failed to fetch account pool %s: %v", account.Name, err)
+		if err := db.Get().Model(&CloudAccountUsage{}).Where("account_name = ?", account.Name).
+			Update("sync_error", err.Error()).Error; err != nil {
+			log.Errorf(ctx, "[CLOUD] Failed to record account pool error %s: %v", account.Name, err)
+		}
+		return
+	}
+
+	usage := CloudAccountUsage{
+		Provider:     account.Provider,
+		AccountName:  account.Name,
+		UsedBytes:    pool.UsedBytes,
+		TotalBytes:   pool.TotalBytes,
+		ResetAt:      pool.ResetAt.Unix(),
+		LastSyncedAt: time.Now().Unix(),
+	}
+	if err := db.Get().Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "account_name"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"provider", "used_bytes", "total_bytes", "reset_at", "last_synced_at", "sync_error", "updated_at",
+		}),
+	}).Create(&usage).Error; err != nil {
+		log.Errorf(ctx, "[CLOUD] Failed to save account pool %s: %v", account.Name, err)
+	}
+
+	if account.Provider == cloudprovider.ProviderVultr {
+		checkVultrPool(ctx, account.Name, pool)
+	}
 }
 
 // markOrphanedInstances marks instances as "deleted" if they no longer exist in the provider
