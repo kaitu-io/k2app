@@ -131,6 +131,7 @@ type DataUser struct {
 	Device             *DataDevice         `json:"device"`
 	DeviceCount        int64               `json:"deviceCount"`
 	Language           string              `json:"language"`                     // 用户语言偏好
+	InTrial            bool                `json:"inTrial,omitempty"`            // 是否在 Apple 免费试用中（仅管理员可见）
 	IsRetailer         bool                `json:"isRetailer,omitempty"`         // 是否为分销商（仅管理员可见）
 	RetailerConfig     *DataRetailerConfig `json:"retailerConfig,omitempty"`     // 分销商配置（仅管理员可见）
 	Wallet             *DataWallet         `json:"wallet,omitempty"`             // 钱包信息（仅管理员可见）

@@ -46,6 +46,7 @@ interface UserListItem {
   brand?: string;
   expiredAt: number;
   isFirstOrderDone: boolean;
+  inTrial?: boolean;
   loginIdentifies: { type: string; value: string }[];
   isRetailer?: boolean;
   roles?: number;
@@ -115,6 +116,7 @@ export default function UsersPage() {
   const email = searchParams.get("email") || "";
   const hasOrdered = searchParams.get("has_ordered") || "";
   const isRetailer = searchParams.get("is_retailer") || "";
+  const inTrial = searchParams.get("in_trial") || "";
   const expiredAtStart = searchParams.get("expired_at_start") || "";
   const expiredAtEnd = searchParams.get("expired_at_end") || "";
 
@@ -126,6 +128,7 @@ export default function UsersPage() {
   const [isRetailerChecked, setIsRetailerChecked] = useState(
     isRetailer === "true"
   );
+  const [inTrialChecked, setInTrialChecked] = useState(inTrial === "true");
   const [startDate, setStartDate] = useState(
     expiredAtStart
       ? format(new Date(parseInt(expiredAtStart) * 1000), "yyyy-MM-dd")
@@ -179,9 +182,20 @@ export default function UsersPage() {
       header: "会员过期时间",
       cell: ({ row }: { row: Row<UserListItem> }) => {
         const expiredAt = row.getValue("expiredAt") as number;
-        return expiredAt > 0
-          ? format(new Date(expiredAt * 1000), "yyyy-MM-dd HH:mm:ss")
-          : "N/A";
+        return (
+          <div className="flex items-center gap-1.5 whitespace-nowrap">
+            <span>
+              {expiredAt > 0
+                ? format(new Date(expiredAt * 1000), "yyyy-MM-dd HH:mm:ss")
+                : "N/A"}
+            </span>
+            {row.original.inTrial && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-primary/10 text-primary">
+                {"试用"}
+              </span>
+            )}
+          </div>
+        );
       },
     },
     {
@@ -282,6 +296,7 @@ export default function UsersPage() {
       if (brandParam) params.append("brand", brandParam);
       if (hasOrdered) params.append("has_ordered", hasOrdered);
       if (isRetailer) params.append("is_retailer", isRetailer);
+      if (inTrial) params.append("in_trial", inTrial);
       if (startDate)
         params.append(
           "expired_at_start",
@@ -313,7 +328,7 @@ export default function UsersPage() {
       }
     };
     fetchUsers();
-  }, [page, pageSize, email, hasOrdered, isRetailer, startDate, endDate, brandParam]);
+  }, [page, pageSize, email, hasOrdered, isRetailer, inTrial, startDate, endDate, brandParam]);
 
   const table = useReactTable({
     data,
@@ -341,6 +356,7 @@ export default function UsersPage() {
     if (emailInput) params.set("email", emailInput.trim());
     if (hasOrderedChecked) params.set("has_ordered", "true");
     if (isRetailerChecked) params.set("is_retailer", "true");
+    if (inTrialChecked) params.set("in_trial", "true");
     if (startDate)
       params.set(
         "expired_at_start",
@@ -419,6 +435,7 @@ export default function UsersPage() {
       if (brandParam) params.append("brand", brandParam);
       if (hasOrdered) params.append("has_ordered", hasOrdered);
       if (isRetailer) params.append("is_retailer", isRetailer);
+      if (inTrial) params.append("in_trial", inTrial);
       if (startDate)
         params.append(
           "expired_at_start",
@@ -497,6 +514,21 @@ export default function UsersPage() {
             className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
           >
             {"只看分销用户"}
+          </label>
+        </div>
+        <div className="flex items-center space-x-2">
+          <Checkbox
+            id="in_trial"
+            checked={inTrialChecked}
+            onCheckedChange={(checked) =>
+              setInTrialChecked(checked as boolean)
+            }
+          />
+          <label
+            htmlFor="in_trial"
+            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+          >
+            {"只看试用用户"}
           </label>
         </div>
         <div className="flex items-center gap-2">

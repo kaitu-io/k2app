@@ -35,6 +35,7 @@ func adminUserScalars(u *User) DataUser {
 		UUID:               u.UUID,
 		ExpiredAt:          u.ExpiredAt,
 		IsFirstOrderDone:   u.IsFirstOrderDone != nil && *u.IsFirstOrderDone,
+		InTrial:            u.InTrial,
 		IsRetailer:         u.IsRetailer != nil && *u.IsRetailer,
 		Roles:              u.Roles,
 		IsAdmin:            u.IsAdmin != nil && *u.IsAdmin,
@@ -93,6 +94,12 @@ func api_admin_list_users(c *gin.Context) {
 	if isRetailer := c.Query("is_retailer"); isRetailer != "" {
 		log.Infof(c, "Filtering users by retailer status: %s", isRetailer)
 		dbQuery = dbQuery.Where(&User{IsRetailer: BoolPtr(isRetailer == "true")})
+	}
+
+	// 根据试用状态搜索
+	if inTrial := c.Query("in_trial"); inTrial != "" {
+		log.Infof(c, "Filtering users by trial status: %s", inTrial)
+		dbQuery = dbQuery.Where("in_trial = ?", inTrial == "true")
 	}
 
 	var total int64

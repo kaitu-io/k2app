@@ -233,6 +233,32 @@ func TestAdminListUsers_EmailLookupReturnsEveryBrand(t *testing.T) {
 	assert.Equal(t, "overleap", items[0]["brand"])
 }
 
+func TestAdminListUsers_TrialTagAndFilter(t *testing.T) {
+	skipIfNoConfig(t)
+	email := "admin-trial-" + generateId("t") + "@test.local"
+	trial := createBrandUserWithEmail(t, BrandKaitu, email)
+	require.NoError(t, db.Get().Model(&User{}).Where("id = ?", trial.ID).Update("in_trial", true).Error)
+	plain := createBrandUserWithEmail(t, BrandOverleap, email)
+
+	items := adminListItems(t, "/app/users", api_admin_list_users, "email="+email)
+	require.Len(t, items, 2)
+	for _, it := range items {
+		if it["uuid"] == trial.UUID {
+			assert.Equal(t, true, it["inTrial"], "试用用户要带标签字段")
+		} else {
+			assert.NotContains(t, it, "inTrial", "非试用用户不带标签字段")
+		}
+	}
+
+	items = adminListItems(t, "/app/users", api_admin_list_users, "in_trial=true&email="+email)
+	require.Len(t, items, 1)
+	assert.Equal(t, trial.UUID, items[0]["uuid"])
+
+	items = adminListItems(t, "/app/users", api_admin_list_users, "in_trial=false&email="+email)
+	require.Len(t, items, 1)
+	assert.Equal(t, plain.UUID, items[0]["uuid"])
+}
+
 func TestAdminListOrders_EmailFilterMatches(t *testing.T) {
 	skipIfNoConfig(t)
 	email := "admin-order-lookup-" + generateId("t") + "@test.local"
