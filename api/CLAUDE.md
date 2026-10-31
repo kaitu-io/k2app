@@ -269,6 +269,7 @@ Campaign `matcherType` gates who may redeem a code (`logic_campaign.go getCampai
 
 - **Model = time-gated usage-sensitivity**: `score = 1 − trafficRatio · w(timeRatio)`, `w(t) = 0.15 + 0.85·t²` — generous early in the cycle, strict late. **Not an exhaustion check**: exhaustion is the hard cutoff / hide path (`isNodeOverQuota`), never score 0. Replaced an earlier `trafficRatio − timeRatio` pacing model plus warmup/headroom terms; don't reintroduce those.
 - **Single authority**: `ComputeRecommendScore(inst *DataTunnelInstance) float64` (`logic_tunnel_score.go`); `/api/tunnels` and `/api/subs` both call it — never inline a formula.
+- **List vs subs**: `/api/tunnels` returns `listRecommendScore` (healthy projected into `[0.6, 1]`, exhausted 0.45, so the client shows yellow only when a node is out of quota); `/api/subs` keeps the raw score, because the daemon splits traffic by its proportions.
 - **Nil instance = 0.5** (non-cloud nodes neutral; 0 would blacklist them from `pickWeighted` / `Subscription.Pick`).
 - **Dual-emit**: `/api/subs` emits `recommendScore` and legacy `weight = round(score*100)` for pre-e210564 daemons; drop `weight` one release after rollout is confirmed.
 - **No Redis penalty layer** (`subsPenalty*` / `applyPenaltyWeights` removed in `9e12d0b`) — no request-side rate-limiting in the subscription response; compute a score server-side instead.

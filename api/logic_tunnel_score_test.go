@@ -122,3 +122,23 @@ func TestShouldHideTunnelForUser_AdminBypassAndOffline(t *testing.T) {
 	assert.False(t, shouldHideTunnelForUser(over, true, now), "admin sees over-quota")
 	assert.False(t, shouldHideTunnelForUser(offline, true, now), "admin sees offline")
 }
+
+// TestListRecommendScore pins the client color contract (webapp RecommendBar:
+// success >= 0.6, warning >= 0.3): only exhausted nodes leave the green band.
+func TestListRecommendScore(t *testing.T) {
+	healthy := &NodeUsage{QuotaTotalBytes: 2000 << 30, UsedBytes: 1500 << 30}
+	cutoff := &NodeUsage{QuotaTotalBytes: 2000 << 30, UsedBytes: (2000 << 30) - quotaCutoffReserveBytes}
+
+	for _, raw := range []float64{0.01, 0.26, 0.45, 0.59, 1} {
+		assert.GreaterOrEqual(t, listRecommendScore(healthy, raw), 0.6, "raw=%v", raw)
+		assert.LessOrEqual(t, listRecommendScore(healthy, raw), 1.0, "raw=%v", raw)
+	}
+	assert.GreaterOrEqual(t, listRecommendScore(nil, ComputeRecommendScore(nil)), 0.6, "unmetered node stays green")
+
+	exhausted := listRecommendScore(cutoff, 0.8)
+	assert.Less(t, exhausted, 0.6, "exhausted is below green")
+	assert.GreaterOrEqual(t, exhausted, 0.3, "exhausted is yellow, not red")
+
+	assert.Less(t, listRecommendScore(healthy, 0.2), listRecommendScore(healthy, 0.3), "order preserved")
+	assert.Equal(t, 0.0, listRecommendScore(healthy, 0), "blacklist score stays 0")
+}

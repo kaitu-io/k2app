@@ -182,7 +182,10 @@ func api_k2_tunnels(c *gin.Context) {
 
 		// Top-level recommendScore — non-cloud nodes get the neutral 0.5 default
 		// from ComputeRecommendScore(nil), so UI doesn't need instance null checks.
-		item.RecommendScore = ComputeRecommendScore(item.Instance)
+		item.RecommendScore = listRecommendScore(u, ComputeRecommendScore(item.Instance))
+		if item.Instance != nil {
+			item.Instance.RecommendScore = item.RecommendScore
+		}
 
 		// Always pass through serverUrl for k2v5 tunnels (needed by client regardless of protocol param)
 		if tunnel.Protocol == TunnelProtocolK2V5 && tunnel.ServerURL != "" {

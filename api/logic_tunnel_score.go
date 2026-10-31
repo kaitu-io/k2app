@@ -77,6 +77,29 @@ func ComputeRecommendScore(inst *DataTunnelInstance) float64 {
 	return score
 }
 
+// Tunnel-list scores are projected onto the bands the client colors by: green
+// from 0.6, yellow below it. Only an exhausted node may look yellow; a low score
+// on a node with quota left is a routine month-end effect, not a warning.
+const (
+	listScoreHealthyFloor = 0.6
+	listScoreExhausted    = 0.45
+)
+
+// listRecommendScore is what /api/tunnels returns, and it only ever reorders
+// within the client's list: it is monotonic in the raw score, so sorting and
+// top-N auto pick are unchanged. /api/subs must keep the raw score, since the
+// daemon splits traffic by its proportions and compressing them would weaken
+// the steering away from nearly-spent nodes.
+func listRecommendScore(u *NodeUsage, raw float64) float64 {
+	if u != nil && isNodeOverQuota(u) {
+		return listScoreExhausted
+	}
+	if raw <= 0 {
+		return 0
+	}
+	return listScoreHealthyFloor + (1-listScoreHealthyFloor)*raw
+}
+
 // shouldHideTunnelForUser is the single hide decision for /api/tunnels and
 // /api/subs. Admins see everything (triage); non-admins are shielded from
 // over-quota or offline nodes so weighted-pick never lands on a dead/overage
