@@ -214,13 +214,17 @@ export default function CloudInstancesPage() {
   const fetchInstances = async () => {
     setIsLoading(true);
     try {
+      // The pool card is optional: its failure must not take the instance list down.
       const [response, usagesRes] = await Promise.all([
         api.getCloudInstances({
           page,
           pageSize,
           provider: provider || undefined,
         }),
-        api.listCloudAccountUsages(),
+        api.listCloudAccountUsages().catch((error) => {
+          console.error("Failed to fetch cloud account usages:", error);
+          return { items: [] };
+        }),
       ]);
       setInstances(response.items || []);
       setPagination(response.pagination);
