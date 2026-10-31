@@ -138,9 +138,10 @@ One table for every `.env` var across ops / provisioning / metering. "Set by": w
 | `K2_NODE_NAME` | Human name, `{region}.{provider}.wm{NN}` (private: `pn-<subId>`) | provision | registration meta. |
 | `K2_NODE_REGION` | Region id, e.g. `jp-tokyo.aws` | provision | registration meta. |
 | `K2_NODE_ARCH` | Protocol arch tag (default `k2v5`) | ops | registration meta. |
+| `K2_NODE_BRANDS` | Brands this node serves | ops | Compose default `kaitu,overleap`. Set `kaitu` only for a node whose SNI impersonates `www.<省份>.people.cn`. Sidecar-only env: `sudo docker compose up -d k2-sidecar --no-deps` applies it without touching k2s. |
 | `K2_IP_TYPE` | `residential` / `non_residential` / `unknown` | provision | Sidecar reports → Center `SlaveNode.ip_type` (drives 住宅IP visibility). Last-writer-wins with ops `update_node`. |
 | **`K2_NODE_BILLING_START_DATE`** | Monthly cycle anchor, **`yyyy-MM-dd`** (day-of-month extracted) | provision/ops | **REQUIRED to meter.** Empty → metering OFF, node runs **uncapped**. Day **must** match the provider's reset day (Lightsail=`01`; 搬瓦工=KiwiVM "Next reset" day — **don't assume `01`**) — derive per provider in `references/metering.md` **Part B**. |
-| **`K2_NODE_TRAFFIC_LIMIT_GB`** | Monthly quota (GiB). Node pauses k2s at `used ≥ limit − 500 MiB` | provision/ops | `0` = unlimited (safe fallback). |
+| **`K2_NODE_TRAFFIC_LIMIT_GB`** | Monthly quota (GiB). Node pauses k2s at `used ≥ limit − 500 MiB` | provision/ops | `0` = unlimited (safe fallback). **Vultr = 4000**: a per-node safety line, not the bill; the bill is the account pool (`references/metering.md` Part B). |
 | **`K2_NODE_TRAFFIC_BILLING_MODE`** | How rx/tx deltas combine: `sum` = in+out, empty/`max` = greater direction | provision/ops | **AWS Lightsail MUST be `sum`** (allowance consumed by in+out) — empty defaults to `max` and under-counts ~½ (the 2026-06→08 overage bills). `max` only for outbound-billed providers. Unknown non-empty value → fail-closed `sum`. |
 | `K2_NODE_TRAFFIC_USED_GB` | Mid-cycle onboarding seed (GiB already used) | provision | Applied **once** on first boot (no state). Prefer `set-usage` later — see `references/metering.md` Part C. |
 | `K2_CUTOFF_POLL_INTERVAL` | Enforcer poll period | ops | default `5s`. |

@@ -78,6 +78,12 @@ func NewProvider(cfg ProviderConfig) (Provider, error) {
 		}
 		return NewQCloudLighthouseProvider(secretId, secretKey, cfg.Region)
 
+	case ProviderVultr:
+		if cfg.APIKey == "" {
+			return nil, fmt.Errorf("vultr requires api_key")
+		}
+		return NewVultrProvider(cfg.APIKey), nil
+
 	case ProviderSSHStandalone:
 		// SSH Standalone requires DB access, which is passed separately
 		// Use NewSSHStandaloneProvider() directly instead of this factory

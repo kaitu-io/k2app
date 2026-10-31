@@ -303,6 +303,12 @@ func syncAccount(ctx context.Context, database *gorm.DB, account CloudInstanceAc
 		}
 	}
 
+	// Vultr shares one transfer pool across the account, so it is checked once
+	// per sync rather than per instance (worker_cloud_overage.go).
+	if account.Provider == cloudprovider.ProviderVultr && len(instances) > 0 {
+		checkVultrPool(ctx, account.Name, instances[0])
+	}
+
 	// Orphan detection: mark instances that no longer exist as deleted
 	if err := markOrphanedInstances(ctx, account, syncedIDs); err != nil {
 		log.Errorf(ctx, "[CLOUD] Failed to mark orphaned instances: %v", err)

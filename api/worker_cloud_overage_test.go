@@ -233,3 +233,22 @@ func TestReconcileAWSNodeUsage(t *testing.T) {
 		assert.Zero(t, loadCloudInstance(t, id).ReconcileAlertSentResetAt)
 	})
 }
+
+func TestVultrPoolAlertLevel(t *testing.T) {
+	const gib = int64(1) << 30
+	cases := []struct {
+		used, total int64
+		wantCol     string
+	}{
+		{7080 * gib, 23204 * gib, ""},
+		{7999 * gib, 10000 * gib, ""},
+		{8000 * gib, 10000 * gib, "overage_warn80_sent_reset_at"},
+		{9500 * gib, 10000 * gib, "overage_warn95_sent_reset_at"},
+		{10000 * gib, 10000 * gib, "overage_stop_sent_reset_at"},
+		{1 * gib, 0, ""},
+	}
+	for _, c := range cases {
+		_, col := vultrPoolAlertLevel(c.used, c.total)
+		assert.Equal(t, c.wantCol, col, "used=%d total=%d", c.used/gib, c.total/gib)
+	}
+}

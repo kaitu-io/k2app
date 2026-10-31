@@ -16,6 +16,7 @@ const (
 	ProviderTencentLighthouse = "tencent_lighthouse" // Tencent Cloud International regions
 	ProviderQCloudLighthouse  = "qcloud_lighthouse"  // Tencent Cloud Domestic regions
 	ProviderSSHStandalone     = "ssh_standalone"     // SSH-only hosts without cloud API
+	ProviderVultr             = "vultr"              // Account-wide outbound transfer pool
 )
 
 // InstanceStatus represents current state of a cloud instance

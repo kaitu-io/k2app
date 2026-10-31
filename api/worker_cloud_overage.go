@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/viper"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
+	"gorm.io/gorm"
 
 	"github.com/kaitu-io/k2app/api/cloudprovider"
 )
@@ -163,4 +164,54 @@ func markOverageSent(ctx context.Context, ciID uint64, col string, cycleID int64
 		Update(col, cycleID).Error; err != nil {
 		log.Errorf(ctx, "[CLOUD] overage check: persist %s for instance id=%d: %v", col, ciID, err)
 	}
+}
+
+// vultrPoolAlertLevel picks the alert for a pool usage ratio. Vultr pool overage
+// costs $0.01/GB, so this only ever warns: stopping a node would cost more than
+// the traffic it saves.
+func vultrPoolAlertLevel(used, total int64) (title, col string) {
+	if total <= 0 {
+		return "", ""
+	}
+	ratio := float64(used) / float64(total)
+	switch {
+	case ratio >= 1:
+		return "Vultr Pool Overage", "overage_stop_sent_reset_at"
+	case ratio >= awsOverageWarn95Ratio:
+		return "Vultr Pool 95%", "overage_warn95_sent_reset_at"
+	case ratio >= awsOverageWarn80Ratio:
+		return "Vultr Pool 80%", "overage_warn80_sent_reset_at"
+	}
+	return "", ""
+}
+
+// checkVultrPool warns once per cycle per level. status carries the account pool
+// figures (every Vultr instance reports the same ones, see cloudprovider.VultrProvider).
+// The dedup stamp lives on any one instance of the account.
+func checkVultrPool(ctx context.Context, accountName string, status *cloudprovider.InstanceStatus) {
+	title, col := vultrPoolAlertLevel(status.TrafficUsedBytes, status.TrafficTotalBytes)
+	if title == "" {
+		return
+	}
+
+	cycleID := status.TrafficResetAt.Unix()
+	query := db.Get().Where("provider = ? AND account_name = ?", cloudprovider.ProviderVultr, accountName)
+
+	var sent int64
+	if err := query.Session(&gorm.Session{}).Model(&CloudInstance{}).Where(col+" = ?", cycleID).Count(&sent).Error; err != nil {
+		log.Errorf(ctx, "[CLOUD] vultr pool check: query %s: %v", col, err)
+		return
+	}
+	if sent > 0 {
+		return
+	}
+
+	var ci CloudInstance
+	if err := query.Session(&gorm.Session{}).First(&ci).Error; err != nil {
+		log.Errorf(ctx, "[CLOUD] vultr pool check: load instance: %v", err)
+		return
+	}
+	sendCloudSlackNotification(ctx, title, fmt.Sprintf("%s: %.0f/%.0fGB outbound",
+		accountName, float64(status.TrafficUsedBytes)/float64(1<<30), float64(status.TrafficTotalBytes)/float64(1<<30)))
+	markOverageSent(ctx, ci.ID, col, cycleID)
 }
