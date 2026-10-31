@@ -47,7 +47,7 @@
 | 开途 | `mail`：`开途 <noreply@notify.kaitu.io>`（账号 5158；旧地址 `joshua@mail.allnationconnect.com` 先并行，切换时间由 David 确认） | `mail_backup`：`开途 <noreply@kaitu.io>`（账号 anc-intl） |
 | Overleap | `mail_overleap`：`Overleap <noreply@notify.overleap.io>`（账号 5158，**新增线上配置**） | `mail_backup_overleap`：`Overleap <noreply@overleap.io>`（账号 anc-intl） |
 
-EDM 独立域名：`开途 <news@news.kaitu.io>`、`Overleap <news@news.overleap.io>`，账号 5158。`edm_overleap.send_from` 为空时 Overleap EDM 拒发并报警。
+EDM 独立域名：`开途 <hello@service.kaitu.io>`、`Overleap <hello@service.overleap.io>`，账号 5158，地址类型 trigger。不用 `news` 这类营销命名。真实模板内容实测（2026-10-31，Gmail）trigger 地址进收件箱主标签，含优惠码的一封也是；同内容的 batch 地址没有进收件箱。EDM 同样设 `Reply-To`，因为模板普遍让用户直接回复。`edm_overleap.send_from` 为空时 Overleap EDM 拒发并报警。
 
 通道配置按 viper 前缀读取，`send_from` 缺失视为通道未配置。
 
@@ -98,7 +98,7 @@ EDM 独立域名：`开途 <news@news.kaitu.io>`、`Overleap <news@news.overleap
 
 1. 两台 Center 的 `config.yml` 写入 `mail_overleap`、`mail_backup`、`mail_backup_overleap`、`edm_overleap`，`send_from` 带显示名，确认 Slack `alert` 可用。
 2. 部署 API。**必须先配置再部署**：回落逻辑删除后，缺配置的 Overleap 邮件会发不出去。
-3. 线上验证：两个品牌各发一次验证码、重发一次，确认发件人和通道；用错误密码验证切换和报警；实发一封真实 EDM，看 `news.*` 是否进收件箱。
+3. 线上验证：两个品牌各发一次验证码、重发一次，确认发件人和通道；用错误密码验证切换和报警；实发一封真实 EDM，确认 `service.*` 进收件箱且回复能到客服信箱。
 4. David 确认后，把开途 `mail` 从 `joshua@mail.allnationconnect.com` 切到 `noreply@notify.kaitu.io`。
 
 ## 留给实现者

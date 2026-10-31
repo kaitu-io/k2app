@@ -81,6 +81,8 @@ func sendEmail(ctx context.Context, to, subject, body string, brand Brand) error
 		To:      to,
 		Subject: subject,
 		Body:    body,
+		// 模板普遍写着「直接回复这封邮件」，回复必须落到客服信箱。
+		ReplyTo: configSupportEmail(brand),
 	}); err != nil {
 		log.Errorf(ctx, "failed to send EDM email to %s (brand=%s): %v", to, brand, err)
 		if !isMailRecipientError(err) {

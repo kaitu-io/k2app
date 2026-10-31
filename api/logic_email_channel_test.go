@@ -189,6 +189,16 @@ func TestSendEmail_FailureAlerts(t *testing.T) {
 	assert.Contains(t, h.alerts[0], "EDM")
 }
 
+func TestSendEmail_SetsBrandReplyTo(t *testing.T) {
+	newMailHarness(t)
+	var got *mail.Message
+	orig := edmChannelSend
+	edmChannelSend = func(_ *mail.Sender, m *mail.Message) error { got = m; return nil }
+	t.Cleanup(func() { edmChannelSend = orig })
+	require.NoError(t, sendEmail(context.Background(), "u@example.com", "s", "b", BrandKaitu))
+	assert.Equal(t, configSupportEmail(BrandKaitu), got.ReplyTo)
+}
+
 func TestSendSystemEmailAs_SetsBrandReplyTo(t *testing.T) {
 	newMailHarness(t)
 	var got *mail.Message
