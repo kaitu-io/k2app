@@ -3,8 +3,10 @@ package center
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
@@ -49,6 +51,11 @@ func newMailHarness(t *testing.T) *mailHarness {
 		}
 	}
 	return h
+}
+
+// uniqueTestEmail 让 Redis 计数器不受上一次运行残留影响（TTL 有 30 分钟）。
+func uniqueTestEmail(t *testing.T) string {
+	return fmt.Sprintf("%d-%s@example.com", time.Now().UnixNano(), t.Name())
 }
 
 var testMsg = &mail.Message{To: "u@example.com", Subject: "s", Body: "b"}
@@ -131,7 +138,7 @@ func TestFailover_DevModeTouchesNothing(t *testing.T) {
 
 func TestCodeResendAlternatesChannels(t *testing.T) {
 	h := newMailHarness(t)
-	email := "resend-" + t.Name() + "@example.com"
+	email := uniqueTestEmail(t)
 	for range 3 {
 		ctx := mailContextForCode(context.Background(), BrandOverleap, email)
 		require.NoError(t, sendMailWithFailover(ctx, BrandOverleap, testMsg))
@@ -141,7 +148,7 @@ func TestCodeResendAlternatesChannels(t *testing.T) {
 
 func TestCodeResendCounterIsPerBrandAndTimeBound(t *testing.T) {
 	newMailHarness(t)
-	email := "scope-" + t.Name() + "@example.com"
+	email := uniqueTestEmail(t)
 	mailContextForCode(context.Background(), BrandKaitu, email)
 	ctx := mailContextForCode(context.Background(), BrandOverleap, email)
 	assert.Nil(t, ctx.Value(mailBackupFirstKey{}), "first send for this brand")
@@ -152,6 +159,106 @@ func TestCodeResendCounterIsPerBrandAndTimeBound(t *testing.T) {
 	ttl, err := redis.Client().TTL(context.Background(), keys[0]).Result()
 	require.NoError(t, err)
 	assert.Greater(t, ttl.Seconds(), 0.0)
+}
+
+func TestFailover_HungChannelTimesOutAndSwitches(t *testing.T) {
+	h := newMailHarness(t)
+	orig, origTimeout := mailChannelSend, mailSendTimeout
+	mailSendTimeout = 50 * time.Millisecond
+	release := make(chan struct{})
+	mailChannelSend = func(ch mailChannel, m *mail.Message) error {
+		if ch.prefix == "mail" {
+			<-release
+			return nil
+		}
+		return orig(ch, m)
+	}
+	t.Cleanup(func() { close(release); mailChannelSend, mailSendTimeout = orig, origTimeout })
+	require.NoError(t, sendMailWithFailover(context.Background(), BrandKaitu, testMsg))
+	assert.Equal(t, []string{"mail_backup"}, h.sent)
+	require.Len(t, h.alerts, 1)
+	assert.Contains(t, h.alerts[0], "timed out")
+}
+
+func TestFailover_PanickingChannelSwitches(t *testing.T) {
+	h := newMailHarness(t)
+	orig := mailChannelSend
+	mailChannelSend = func(ch mailChannel, m *mail.Message) error {
+		if ch.prefix == "mail" {
+			panic("boom")
+		}
+		return orig(ch, m)
+	}
+	t.Cleanup(func() { mailChannelSend = orig })
+	require.NoError(t, sendMailWithFailover(context.Background(), BrandKaitu, testMsg))
+	assert.Equal(t, []string{"mail_backup"}, h.sent)
+	require.Len(t, h.alerts, 1)
+}
+
+func TestFailover_AccountFailureStillAlertsWhenBackupBlamesRecipient(t *testing.T) {
+	h := newMailHarness(t)
+	h.fail["mail"] = errBalance
+	h.fail["mail_backup"] = errors.New("550 mailbox not found")
+	require.Error(t, sendMailWithFailover(context.Background(), BrandKaitu, testMsg))
+	require.Len(t, h.alerts, 1)
+	assert.Contains(t, h.alerts[0], "551")
+}
+
+func TestFailover_ReturnedErrorHidesProviderDetail(t *testing.T) {
+	h := newMailHarness(t)
+	h.fail["mail"] = errors.New("451 temporary failure for victim@example.com")
+	h.fail["mail_backup"] = errBalance
+	err := sendMailWithFailover(context.Background(), BrandKaitu, testMsg)
+	require.ErrorIs(t, err, errMailAllChannelsFailed)
+	assert.NotContains(t, err.Error(), "victim")
+	assert.NotContains(t, err.Error(), "mail_backup")
+	assert.NotContains(t, err.Error(), "551")
+}
+
+func TestFailover_NonASCIISendFromIsRejectedLoudly(t *testing.T) {
+	h := newMailHarness(t)
+	viper.Set("mail.send_from", "开途 <a@kaitu.test>")
+	require.NoError(t, sendMailWithFailover(context.Background(), BrandKaitu, testMsg))
+	assert.Equal(t, []string{"mail_backup"}, h.sent)
+	require.Len(t, h.alerts, 1)
+	assert.Contains(t, h.alerts[0], "RFC 2047")
+}
+
+func TestFailover_MalformedRecipientNoSendNoAlert(t *testing.T) {
+	h := newMailHarness(t)
+	m := &mail.Message{To: "notanemail", Subject: "s", Body: "b"}
+	require.Error(t, sendMailWithFailover(context.Background(), BrandKaitu, m))
+	assert.Empty(t, h.sent)
+	assert.Empty(t, h.alerts)
+}
+
+func TestSendEmail_MalformedRecipientNoAlert(t *testing.T) {
+	h := newMailHarness(t)
+	require.Error(t, sendEmail(context.Background(), "notanemail", "s", "b", BrandKaitu))
+	assert.Empty(t, h.alerts)
+}
+
+func TestSendEmail_HungSenderTimesOutAndAlerts(t *testing.T) {
+	h := newMailHarness(t)
+	orig, origTimeout := edmChannelSend, mailSendTimeout
+	mailSendTimeout = 50 * time.Millisecond
+	release := make(chan struct{})
+	edmChannelSend = func(*mail.Sender, *mail.Message) error { <-release; return nil }
+	t.Cleanup(func() { close(release); edmChannelSend, mailSendTimeout = orig, origTimeout })
+	require.Error(t, sendEmail(context.Background(), "u@example.com", "s", "b", BrandKaitu))
+	require.Len(t, h.alerts, 1)
+}
+
+func TestCodeContext_DevModeSkipsRedis(t *testing.T) {
+	newMailHarness(t)
+	viper.Set("mail.dev_mode", true)
+	ctx := context.Background()
+	email := uniqueTestEmail(t)
+	got := mailContextForCode(ctx, BrandKaitu, email)
+	assert.Equal(t, ctx, got)
+	viper.Set("mail.dev_mode", false)
+	again := mailContextForCode(ctx, BrandKaitu, email)
+	assert.Nil(t, again.Value(mailBackupFirstKey{}), "dev mode must not have counted a send")
 }
 
 func TestIsMailRecipientError(t *testing.T) {

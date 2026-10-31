@@ -71,19 +71,23 @@ func sendEmail(ctx context.Context, to, subject, body string, brand Brand) error
 		return nil
 	}
 
+	if err := validateMailRecipient(to); err != nil {
+		return fmt.Errorf("EDM send failed: %w", err)
+	}
 	sender := edmSenderForBrand(brand)
 	if sender == nil {
 		alertMailFailure(ctx, brand, "edm", "EDM 通道未配置（edm_overleap.send_from 为空），邮件没有发出")
 		return fmt.Errorf("EDM send failed: no sender configured for brand %s", brand)
 	}
 	// EDM 不切通道二：免费额度小，群发也会污染事务通道的信誉。这里只报警。
-	if err := edmChannelSend(sender, &mail.Message{
+	msg := &mail.Message{
 		To:      to,
 		Subject: subject,
 		Body:    body,
 		// 模板普遍写着「直接回复这封邮件」，回复必须落到客服信箱。
 		ReplyTo: configSupportEmail(brand),
-	}); err != nil {
+	}
+	if err := sendWithTimeout(func() error { return edmChannelSend(sender, msg) }); err != nil {
 		log.Errorf(ctx, "failed to send EDM email to %s (brand=%s): %v", to, brand, err)
 		if !isMailRecipientError(err) {
 			alertMailFailure(ctx, brand, "edm", "EDM 发送失败："+redactMailError(err))

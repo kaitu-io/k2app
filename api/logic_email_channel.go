@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	netmail "net/mail"
 	"regexp"
 	"strings"
 	"time"
@@ -25,14 +26,30 @@ import (
 // mailAlertWindowSeconds 同一品牌同一通道的报警间隔，防止一次故障刷屏。
 const mailAlertWindowSeconds = 600
 
+// mailSendTimeout 单次发送的上限。gomail 只有 10 秒拨号超时，连上后没有读写超时，
+// 服务端挂起时不设上限就永远切不到另一个通道。变量是为了测试能缩短。
+var mailSendTimeout = 20 * time.Second
+
 // mailChannel 是一个发信通道，对应一个 viper 配置前缀。
 type mailChannel struct {
 	name   string // 报警和日志里显示的名字
 	prefix string
 }
 
-func (c mailChannel) configured() bool {
-	return viper.GetString(c.prefix+".send_from") != ""
+// configProblem 返回通道配置的问题，没有问题时返回空串。
+//
+// gomail 会把含非 ASCII 字符的 From 整串编码，地址也被编进去，然后解析失败。
+// 所以中文显示名必须写成 RFC 2047 形式：
+// "=?UTF-8?B?5byA6YCU?= <noreply@notify.kaitu.io>"（「开途」）。
+func (c mailChannel) configProblem() string {
+	from := viper.GetString(c.prefix + ".send_from")
+	if from == "" {
+		return fmt.Sprintf("通道未配置（%s.send_from 为空）", c.prefix)
+	}
+	if strings.IndexFunc(from, func(r rune) bool { return r > 127 }) >= 0 {
+		return fmt.Sprintf("%s.send_from 含非 ASCII 字符，显示名要写成 RFC 2047 编码", c.prefix)
+	}
+	return ""
 }
 
 // mailChannelsFor 返回品牌的主备通道。未知品牌按 kaitu 处理，与 Brand.Config() 一致。
@@ -59,6 +76,9 @@ type mailBackupFirstKey struct{}
 // 在前，偶数次通道二在前。这样能覆盖「已接收但没送达」——这种情况发送方不报错，
 // 只有用户点重发才知道。Redis 出错时走默认顺序，不阻断发信。
 func mailContextForCode(ctx context.Context, b Brand, email string) context.Context {
+	if isMailDevMode() {
+		return ctx // redis.Client() 未配置时会 panic，而 dev 模式本来就不碰通道
+	}
 	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(email))))
 	key := fmt.Sprintf("mail:code_send:%s:%s", b, hex.EncodeToString(sum[:]))
 	client := redis.Client()
@@ -76,6 +96,10 @@ func mailContextForCode(ctx context.Context, b Brand, email string) context.Cont
 	return ctx
 }
 
+// errMailAllChannelsFailed 不带供应商错误和配置前缀：验证码接口会把错误文本返回给
+// 客户端，细节只进日志和报警。
+var errMailAllChannelsFailed = errors.New("all mail channels failed")
+
 // sendMailWithFailover 是系统邮件的唯一出口：一个通道失败就换另一个并报警，
 // 两个都失败才返回错误。dev_mode 下只打印，不碰任何通道。
 func sendMailWithFailover(ctx context.Context, b Brand, msg *mail.Message) error {
@@ -83,6 +107,11 @@ func sendMailWithFailover(ctx context.Context, b Brand, msg *mail.Message) error
 		log.Infof(ctx, "[DEV-MAIL] TO: %s | SUBJECT: %s\n--- BODY ---\n%s\n--- END ---",
 			msg.To, msg.Subject, msg.Body)
 		return nil
+	}
+
+	// 收件地址语法错误换通道也没用。这里先拦，gomail 的报错分不清是 From 还是 To。
+	if err := validateMailRecipient(msg.To); err != nil {
+		return err
 	}
 
 	first, second := mailChannelsFor(b)
@@ -93,14 +122,14 @@ func sendMailWithFailover(ctx context.Context, b Brand, msg *mail.Message) error
 	var failed error
 	var failedChannel mailChannel
 	for _, ch := range []mailChannel{first, second} {
-		if !ch.configured() {
-			alertMailFailure(ctx, b, ch.name, fmt.Sprintf("通道未配置（%s.send_from 为空）", ch.prefix))
+		if problem := ch.configProblem(); problem != "" {
+			alertMailFailure(ctx, b, ch.name, problem)
 			if failed == nil {
-				failed, failedChannel = fmt.Errorf("mail channel %s not configured", ch.prefix), ch
+				failed, failedChannel = fmt.Errorf("mail channel %s unusable", ch.prefix), ch
 			}
 			continue
 		}
-		err := mailChannelSend(ch, msg)
+		err := sendWithTimeout(func() error { return mailChannelSend(ch, msg) })
 		if err == nil {
 			if failed != nil {
 				alertMailFailure(ctx, b, failedChannel.name, fmt.Sprintf(
@@ -110,14 +139,52 @@ func sendMailWithFailover(ctx context.Context, b Brand, msg *mail.Message) error
 		}
 		// 收件人自己的问题换通道也没用，也不是我们的故障。
 		if isMailRecipientError(err) {
-			return err
+			// 前一个通道的失败不能因为这封信的收件人有问题就被吞掉。
+			if failed != nil {
+				alertMailFailure(ctx, b, failedChannel.name, "通道失败："+redactMailError(failed))
+			}
+			return errors.New(redactMailError(err))
 		}
 		log.Errorf(ctx, "mail channel %s failed (brand=%s): %s", ch.prefix, b, redactMailError(err))
 		failed, failedChannel = errors.Join(failed, err), ch
 	}
 
-	alertMailFailure(ctx, b, "all", "两个通道都失败，邮件没有发出："+redactMailError(failed))
-	return failed
+	detail := redactMailError(failed)
+	log.Errorf(ctx, "all mail channels failed (brand=%s): %s", b, detail)
+	alertMailFailure(ctx, b, "all", "两个通道都失败，邮件没有发出："+detail)
+	return errMailAllChannelsFailed
+}
+
+// validateMailRecipient 检查收件地址语法，空地址交给 qtoolkit 的校验报错。
+func validateMailRecipient(to string) error {
+	if to == "" {
+		return nil
+	}
+	if _, err := netmail.ParseAddress(to); err != nil {
+		return fmt.Errorf("invalid recipient: %w", err)
+	}
+	return nil
+}
+
+// sendWithTimeout 给一次发送加上限。超时后后台的发送不能取消，那封信可能仍会送达，
+// 用户最多收到两封，好过收不到。
+func sendWithTimeout(send func() error) error {
+	done := make(chan error, 1)
+	go func() {
+		// 这里在 gin 和 asynq 的 recover 之外，panic 会打崩整个进程。
+		defer func() {
+			if r := recover(); r != nil {
+				done <- fmt.Errorf("mail send panicked: %v", r)
+			}
+		}()
+		done <- send()
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(mailSendTimeout):
+		return fmt.Errorf("mail send timed out after %s", mailSendTimeout)
+	}
 }
 
 // alertMailFailure 发 Slack 报警。限频键写失败时照发，宁可多发也不能漏。
