@@ -158,8 +158,6 @@ func Migrate() error {
 		&StrategyRules{},
 		&TelemetryEvent{},
 		&TelemetryRateLimit{},
-		// Route diagnosis
-		&IPRouteInfo{},
 		// Cloud instance management
 		&CloudInstance{},
 		&CloudAccountUsage{},

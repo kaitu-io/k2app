@@ -107,9 +107,6 @@ func InitWorker() {
 	// 注册 ECH 相关的 worker
 	RegisterECHWorker()
 
-	// 注册路由诊断 worker
-	RegisterDiagnosisWorker()
-
 	// 注册云同步 worker
 	RegisterCloudWorker()
 

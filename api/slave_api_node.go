@@ -357,13 +357,6 @@ func api_slave_node_upsert(c *gin.Context) {
 
 		nodeCreated = true
 		log.Infof(c, "node created successfully: ipv4=%s", ipv4Param)
-
-		// Trigger outbound diagnosis for new node (async)
-		go func() {
-			if _, err := EnqueueDiagnosisOutbound(c.Request.Context(), node.Ipv4); err != nil {
-				log.Warnf(c, "failed to enqueue diagnosis for new node %s: %v", node.Ipv4, err)
-			}
-		}()
 	} else {
 		log.Errorf(c, "failed to query node: %v, ipv4: %s", err, ipv4Param)
 		Error(c, ErrorSystemError, fmt.Sprintf("failed to query node: %v", err))
@@ -693,56 +686,4 @@ func generateSecret() string {
 	b := make([]byte, 32)
 	rand.Read(b)
 	return hex.EncodeToString(b)
-}
-
-// ========================= Route Diagnosis API =========================
-
-// SlaveRouteDiagnosisRequest inbound route diagnosis report from Slave
-type SlaveRouteDiagnosisRequest struct {
-	Direction    string            `json:"direction" binding:"required"`   // "inbound"
-	RouteMatrix  map[string]string `json:"routeMatrix" binding:"required"` // {"carrier:province": "route_type", ...}
-	ProbeCount   int               `json:"probeCount" binding:"required"`
-	SuccessCount int               `json:"successCount" binding:"required"`
-}
-
-// api_slave_report_route_diagnosis handles inbound diagnosis report from Slave
-// POST /slave/nodes/{ipv4}/route-diagnosis
-func api_slave_report_route_diagnosis(c *gin.Context) {
-	// Validate node authentication
-	node := ReqSlaveNode(c)
-	if node == nil {
-		Error(c, ErrorNotLogin, "node authentication required")
-		return
-	}
-
-	// Validate IPv4 parameter matches authenticated node
-	ipv4Param := c.Param("ipv4")
-	if ipv4Param != node.Ipv4 {
-		Error(c, ErrorForbidden, "ipv4 mismatch with authenticated node")
-		return
-	}
-
-	var req SlaveRouteDiagnosisRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		Error(c, ErrorInvalidArgument, err.Error())
-		return
-	}
-
-	// Only accept inbound diagnosis from Slave
-	if req.Direction != string(DiagnosisDirectionInbound) {
-		Error(c, ErrorInvalidArgument, "only inbound diagnosis is accepted from Slave")
-		return
-	}
-
-	log.Infof(c, "[DIAGNOSIS] Received inbound diagnosis report: ip=%s, probes=%d, success=%d",
-		node.Ipv4, req.ProbeCount, req.SuccessCount)
-
-	// Save inbound diagnosis
-	if err := SaveInboundDiagnosis(c, node.Ipv4, req.RouteMatrix, req.ProbeCount, req.SuccessCount); err != nil {
-		log.Errorf(c, "[DIAGNOSIS] Failed to save inbound diagnosis: %v", err)
-		Error(c, ErrorSystemError, "failed to save diagnosis")
-		return
-	}
-
-	SuccessEmpty(c)
 }

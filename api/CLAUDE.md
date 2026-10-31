@@ -133,7 +133,7 @@ Base codes are HTTP-aligned (`0` none, `202` pending approval, `400`/`401`/`402`
 | `GET /api/orders/:uuid/pay` | body | None (uuid is the credential) | 代付邮件耐久支付链接 → 302 checkout |
 | `/api/wallet/*` | body | Auth + Wallet | Wallet, withdrawals |
 | `/api/retailer/*` | body | Auth + Retailer | Retailer stats |
-| `/api/strategy/*`, `/api/diagnosis/*`, `POST /api/telemetry/batch` | body | Auth + DeviceClass + Device | Rules, outbound diagnosis, telemetry |
+| `/api/strategy/*`, `POST /api/telemetry/batch` | body | Auth + DeviceClass + Device | Rules, telemetry |
 | `/api/router/*` | body | Auth + DeviceClass + Router | Router quota |
 | `POST /api/telemetry/rule_miss`, `/api/stats/*`, `/api/px*`, `POST /api/pair/beacon` | body | **None** | Rule-miss, stats ingest, funnel pixel, pairing beacon (`/pair/discover`: Auth) |
 | `/api/push/*`, `/api/survey/*` | body | Auth | Push tokens, survey |

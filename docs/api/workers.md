@@ -8,7 +8,6 @@
 | `worker_cloud.go` | Cloud instance sync, change-IP, create, delete |
 | `worker_cloud_overage.go` | AWS Lightsail overage guard, tail step of `syncAccount` per instance (three layers, provider-reported usage is authoritative) |
 | `worker_ech.go` | ECH key rotation |
-| `worker_diagnosis.go` | Route diagnosis aggregation |
 | `worker_renewal_reminder.go` | Membership renewal reminders + winback campaigns (daily 02:30) |
 | `worker_abandoned_order.go` | Unpaid-order recall emails (hourly + daily) |
 | `worker_retailer_followup.go` | Retailer follow-up notifications (every minute) |

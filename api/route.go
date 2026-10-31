@@ -300,15 +300,6 @@ func SetupRouter() *gin.Engine {
 			pair.GET("/discover", AuthRequired(), api_pair_discover)
 		}
 
-		// Route diagnosis routes (requires device auth)
-		diagnosis := api.Group("/diagnosis")
-		log.Debugf(ctx, "registering /api/diagnosis group")
-		diagnosis.Use(AuthRequired(), EnforceDeviceClass(), DeviceAuthRequired())
-		{
-			// Get outbound route for a specific node
-			diagnosis.GET("/outbound-route", api_outbound_route)
-		}
-
 		// Usage analytics (no auth)
 		stats := api.Group("/stats")
 		log.Debugf(ctx, "registering /api/stats group")
@@ -644,8 +635,6 @@ func SetupRouter() *gin.Engine {
 		// ECH 密钥同步（内部接口，需要 SlaveAuthRequired）
 		slaveManage.GET("/ech/keys", SlaveAuthRequired(), api_slave_fetch_ech_keys)
 
-		// Route diagnosis - Slave reports inbound diagnosis results
-		slaveManage.POST("/nodes/:ipv4/route-diagnosis", SlaveAuthRequired(), api_slave_report_route_diagnosis)
 	}
 
 	// CSR (Certificate Signing Request) for sslip.io/nip.io IP-encoded domains

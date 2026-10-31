@@ -1434,63 +1434,6 @@ type TelemetryRateLimit struct {
 	EventCount int    `gorm:"not null;default:0" json:"eventCount"`
 }
 
-// ========================= Route Diagnosis Models =========================
-
-// RouteDiagnosisDirection represents the direction of route diagnosis
-type RouteDiagnosisDirection string
-
-const (
-	// DiagnosisDirectionOutbound represents client → slave direction
-	DiagnosisDirectionOutbound RouteDiagnosisDirection = "outbound"
-	// DiagnosisDirectionInbound represents slave → client direction
-	DiagnosisDirectionInbound RouteDiagnosisDirection = "inbound"
-)
-
-// IPRouteInfo stores route diagnosis results for an IP address
-// Data is completely independent from SlaveNode - stored by IP directly
-// Each IP has two records: one for outbound (client→IP) and one for inbound (IP→client)
-type IPRouteInfo struct {
-	ID        uint64    `gorm:"primarykey"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
-
-	// IP address being diagnosed (independent, not linked to SlaveNode)
-	IP string `gorm:"uniqueIndex:idx_ip_direction;type:varchar(45);not null" json:"ip"`
-
-	// Direction: "outbound" (client→IP via Alibaba probes) or "inbound" (IP→client)
-	Direction RouteDiagnosisDirection `gorm:"uniqueIndex:idx_ip_direction;type:varchar(10);not null" json:"direction"`
-
-	// Route matrix JSON: {"china_telecom:guangdong": "cn2_gia", "china_unicom:beijing": "as9929", ...}
-	RouteMatrix string `gorm:"type:text;not null" json:"routeMatrix"`
-
-	// Diagnosis metadata
-	ProbeCount   int       `gorm:"not null" json:"probeCount"`   // Total number of probes attempted
-	SuccessCount int       `gorm:"not null" json:"successCount"` // Number of successful probes
-	DiagnosedAt  time.Time `gorm:"not null" json:"diagnosedAt"`  // When diagnosis was performed
-}
-
-// GetRouteMap parses RouteMatrix JSON into a map
-func (r *IPRouteInfo) GetRouteMap() (map[string]string, error) {
-	var routeMap map[string]string
-	if r.RouteMatrix == "" {
-		return make(map[string]string), nil
-	}
-	if err := json.Unmarshal([]byte(r.RouteMatrix), &routeMap); err != nil {
-		return nil, fmt.Errorf("failed to parse route matrix: %w", err)
-	}
-	return routeMap, nil
-}
-
-// SetRouteMap serializes a map to RouteMatrix JSON
-func (r *IPRouteInfo) SetRouteMap(routeMap map[string]string) error {
-	data, err := json.Marshal(routeMap)
-	if err != nil {
-		return fmt.Errorf("failed to serialize route matrix: %w", err)
-	}
-	r.RouteMatrix = string(data)
-	return nil
-}
-
 // ========================= Device Log & Feedback Ticket =========================
 
 // DeviceLog 设备日志上传记录（索引元数据，内容留在 S3）

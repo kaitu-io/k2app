@@ -217,64 +217,6 @@ func configInviteBaseURL(b Brand) string {
 	return fmt.Sprintf("%s/s", webBaseURL)
 }
 
-// AliyunConfig Alibaba Cloud configuration for route diagnosis
-type AliyunConfig struct {
-	AccessKeyID     string
-	AccessKeySecret string
-}
-
-// DiagnosisConfig route diagnosis configuration
-type DiagnosisConfig struct {
-	Enabled   bool   // Whether to enable route diagnosis
-	Cron      string // Cron expression for scheduled diagnosis (e.g., "0 3 * * 0" for weekly)
-	StaleDays int    // Days after which diagnosis data is considered stale (default: 7)
-}
-
-// configAliyunForService gets Alibaba Cloud configuration for a specific service
-// Priority: aliyun.{service}.* > aliyun.*
-// Example: aliyun.cms.access_key_id > aliyun.access_key_id
-func configAliyunForService(service string) AliyunConfig {
-	// Try service-specific config first
-	accessKeyID := viper.GetString(fmt.Sprintf("aliyun.%s.access_key_id", service))
-	accessKeySecret := viper.GetString(fmt.Sprintf("aliyun.%s.access_key_secret", service))
-
-	// Fall back to global aliyun config
-	if accessKeyID == "" {
-		accessKeyID = viper.GetString("aliyun.access_key_id")
-	}
-	if accessKeySecret == "" {
-		accessKeySecret = viper.GetString("aliyun.access_key_secret")
-	}
-
-	return AliyunConfig{
-		AccessKeyID:     accessKeyID,
-		AccessKeySecret: accessKeySecret,
-	}
-}
-
-// configAliyunCMS gets Alibaba Cloud CMS (Cloud Monitor Service) configuration
-// Used for site monitoring / traceroute diagnosis
-func configAliyunCMS() AliyunConfig {
-	return configAliyunForService("cms")
-}
-
-// configDiagnosis gets route diagnosis configuration
-func configDiagnosis() DiagnosisConfig {
-	cron := viper.GetString("diagnosis.cron")
-	if cron == "" {
-		cron = "0 19 * * 0" // Default: Sunday 3:00 AM Beijing time (19:00 UTC Saturday)
-	}
-	staleDays := viper.GetInt("diagnosis.stale_days")
-	if staleDays <= 0 {
-		staleDays = 7 // Default: 7 days
-	}
-	return DiagnosisConfig{
-		Enabled:   viper.GetBool("diagnosis.enabled"),
-		Cron:      cron,
-		StaleDays: staleDays,
-	}
-}
-
 // BandwagonInstance represents a single Bandwagon VPS instance
 type BandwagonInstance struct {
 	VEID   string `json:"veid"`
