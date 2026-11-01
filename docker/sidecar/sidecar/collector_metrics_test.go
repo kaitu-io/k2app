@@ -23,6 +23,28 @@ func TestParseCPUSample(t *testing.T) {
 	}
 }
 
+func TestParseCPUSample_ExcludesGuest(t *testing.T) {
+	s, ok := parseCPUSample("cpu 100 0 50 800 10 0 20 20 30 5")
+	if !ok {
+		t.Fatal("parse failed")
+	}
+	if s.total != 1000 || s.busy != 190 {
+		t.Fatalf("got %+v, want total=1000 busy=190 (guest excluded)", s)
+	}
+}
+
+func TestReadNICStats_SkipsDockerBridge(t *testing.T) {
+	body := sampleNetDev + ` br-abc123: 9000000    9000    0    5    0     0          0         0   8000000    8000    0    0    0     0       0          0
+`
+	st, err := readNICStats(writeProcNetDev(t, body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.rx != 1000000 || st.tx != 500000 || st.rxPackets != 2000 || st.rxDropped != 0 {
+		t.Fatalf("br- counted: %+v", st)
+	}
+}
+
 func TestCPUDelta_Interval(t *testing.T) {
 	prev := cpuSample{busy: 190, steal: 20, total: 1000}
 	cur := cpuSample{busy: 290, steal: 30, total: 1200}

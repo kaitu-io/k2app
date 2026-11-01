@@ -82,7 +82,8 @@ func readNICStats(procPath string) (nicStats, error) {
 			continue
 		}
 		iface := strings.TrimSuffix(fields[0], ":")
-		if iface == "lo" || strings.HasPrefix(iface, "veth") || strings.HasPrefix(iface, "docker") {
+		// br-* docker bridges mirror the physical NIC's traffic; counting them doubles Mbps.
+		if iface == "lo" || strings.HasPrefix(iface, "veth") || strings.HasPrefix(iface, "docker") || strings.HasPrefix(iface, "br-") {
 			continue
 		}
 		rx, _ := strconv.ParseUint(fields[1], 10, 64)

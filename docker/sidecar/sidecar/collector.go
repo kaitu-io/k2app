@@ -53,7 +53,8 @@ func parseCPUSample(line string) (cpuSample, bool) {
 		v[i-1] = n
 	}
 	var total uint64
-	for _, n := range v {
+	// guest / guest_nice (fields 9,10) are already counted in user / nice.
+	for _, n := range v[:8] {
 		total += n
 	}
 	return cpuSample{
