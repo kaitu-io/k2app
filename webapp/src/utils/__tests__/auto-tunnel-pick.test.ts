@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickAutoTunnel } from '../auto-tunnel-pick';
+import { pickAutoTunnel, type TunnelProbe } from '../auto-tunnel-pick';
 import type { Tunnel } from '../../services/api-types';
 
 function tunnel(id: number, domain: string, recommendScore: number, serverUrl?: string, country = ''): Tunnel {
@@ -13,6 +13,12 @@ function tunnel(id: number, domain: string, recommendScore: number, serverUrl?: 
     node: { name: '', country, region: '', ipv4: '', ipv6: '', load: 0, trafficUsagePercent: 0, bandwidthUsagePercent: 0 },
     recommendScore,
   };
+}
+
+/** rng returning the given values in order, then repeating the last. */
+function seq(...v: number[]): () => number {
+  let i = 0;
+  return () => v[Math.min(i++, v.length - 1)];
 }
 
 describe('pickAutoTunnel', () => {
@@ -30,63 +36,108 @@ describe('pickAutoTunnel', () => {
     expect(pickAutoTunnel(t, [], () => 0.999)?.domain).toBe('a');
   });
 
-  it('picks index 0 of top-5 when rng=0', () => {
-    const t = [
-      tunnel(1, 'a', 0.9),
-      tunnel(2, 'b', 0.8),
-      tunnel(3, 'c', 0.7),
-      tunnel(4, 'd', 0.6),
-      tunnel(5, 'e', 0.5),
-    ];
-    expect(pickAutoTunnel(t, [], () => 0)?.domain).toBe('a');
+  describe('power of two choices', () => {
+    it('compares two random candidates and takes the higher score', () => {
+      const t = [tunnel(1, 'a', 0.5), tunnel(2, 'b', 0.9), tunnel(3, 'c', 0.1)];
+      // first draw idx 0 (a); second draw from the other two: 0.4*2=0 → shifted? idx0 is taken so j=0 → 1 (b)
+      expect(pickAutoTunnel(t, [], seq(0, 0.4))?.domain).toBe('b');
+      // reversed order of draws still yields the higher score
+      expect(pickAutoTunnel(t, [], seq(0.4, 0))?.domain).toBe('b');
+    });
+
+    it('tie keeps the first drawn', () => {
+      const t = [tunnel(1, 'a', 0.5), tunnel(2, 'b', 0.5), tunnel(3, 'c', 0.5)];
+      expect(pickAutoTunnel(t, [], seq(0.4, 0))?.domain).toBe('b'); // first draw idx 1
+      expect(pickAutoTunnel(t, [], seq(0, 0))?.domain).toBe('a');
+    });
+
+    it('draws two distinct candidates', () => {
+      const t = [tunnel(1, 'a', 0.5), tunnel(2, 'b', 0.9)];
+      // rng constant 0 must neither loop forever nor compare a node with itself
+      expect(pickAutoTunnel(t, [], () => 0)?.domain).toBe('b');
+      expect(pickAutoTunnel(t, [], () => 0.999999)?.domain).toBe('b');
+    });
+
+    it('can reach nodes outside the top five', () => {
+      const t = Array.from({ length: 10 }, (_, i) => tunnel(i + 1, `t${i}`, 0.9 - i * 0.05));
+      // draw t8 (idx 8: 0.85*10=8) then second from 9 others: 0.99*9=8 → idx 8>=8 → 9 (t9)
+      expect(pickAutoTunnel(t, [], seq(0.85, 0.99))?.domain).toBe('t8');
+    });
+
+    it('single candidate returns directly', () => {
+      const t = [tunnel(1, 'a', 0.5), tunnel(2, 'z', 0)];
+      expect(pickAutoTunnel(t, [], () => 0.7)?.domain).toBe('a');
+    });
   });
 
-  it('picks middle of top-5 when rng=0.5', () => {
-    const t = [
-      tunnel(1, 'a', 0.9),
-      tunnel(2, 'b', 0.8),
-      tunnel(3, 'c', 0.7),
-      tunnel(4, 'd', 0.6),
-      tunnel(5, 'e', 0.5),
-    ];
-    // floor(0.5 * 5) = 2 → 'c'
-    expect(pickAutoTunnel(t, [], () => 0.5)?.domain).toBe('c');
-  });
+  describe('probe filtering', () => {
+    const probes = (m: Record<string, TunnelProbe>) => (t: Tunnel) => m[t.domain] ?? null;
 
-  it('picks last of top-5 when rng=0.99', () => {
-    const t = [
-      tunnel(1, 'a', 0.9),
-      tunnel(2, 'b', 0.8),
-      tunnel(3, 'c', 0.7),
-      tunnel(4, 'd', 0.6),
-      tunnel(5, 'e', 0.5),
-    ];
-    // floor(0.99 * 5) = 4 → 'e'
-    expect(pickAutoTunnel(t, [], () => 0.99)?.domain).toBe('e');
-  });
+    it('drops confirmed unreachable nodes', () => {
+      const t = [tunnel(1, 'a', 0.9), tunnel(2, 'b', 0.5)];
+      const p = probes({ a: { avgRttMs: 0, reachable: false } });
+      for (const r of [0, 0.5, 0.99]) expect(pickAutoTunnel(t, [], () => r, p)?.domain).toBe('b');
+    });
 
-  it('never picks the 6th tunnel (top-5 boundary)', () => {
-    const t = [
-      tunnel(1, 'a', 0.9),
-      tunnel(2, 'b', 0.8),
-      tunnel(3, 'c', 0.7),
-      tunnel(4, 'd', 0.6),
-      tunnel(5, 'e', 0.5),
-      tunnel(6, 'f', 0.4), // outside top-5
-    ];
-    // Even with rng pushed to its highest non-1 value, 'f' must never be picked.
-    for (const r of [0, 0.2, 0.5, 0.8, 0.99]) {
-      const picked = pickAutoTunnel(t, [], () => r);
-      expect(picked?.domain).not.toBe('f');
-    }
-  });
+    it('ignores unreachable filter when it would empty the pool', () => {
+      const t = [tunnel(1, 'a', 0.9), tunnel(2, 'b', 0.5)];
+      const p = probes({
+        a: { avgRttMs: 0, reachable: false },
+        b: { avgRttMs: 0, reachable: false },
+      });
+      expect(pickAutoTunnel(t, [], () => 0, p)?.domain).toBe('a');
+    });
 
-  it('treats 0.5 entries as ordinary scores (no special handling)', () => {
-    const t = Array.from({ length: 10 }, (_, i) => tunnel(i + 1, `t${i}`, 0.5));
-    // Top-5 = first 5 in stable input order; rng indexes within that window.
-    expect(pickAutoTunnel(t, [], () => 0)?.domain).toBe('t0');
-    expect(pickAutoTunnel(t, [], () => 0.5)?.domain).toBe('t2'); // floor(0.5 * 5) = 2
-    expect(pickAutoTunnel(t, [], () => 0.99)?.domain).toBe('t4'); // floor(0.99 * 5) = 4
+    it('keeps only near nodes when 3+ are probed', () => {
+      const t = [tunnel(1, 'a', 0.5), tunnel(2, 'b', 0.5), tunnel(3, 'far', 0.99)];
+      const p = probes({
+        a: { avgRttMs: 100, reachable: true },
+        b: { avgRttMs: 120, reachable: true },
+        far: { avgRttMs: 400, reachable: true },
+      });
+      for (const r of [0, 0.3, 0.6, 0.99]) {
+        expect(pickAutoTunnel(t, [], () => r, p)?.domain).not.toBe('far');
+      }
+    });
+
+    it('near gate allows best + 30ms', () => {
+      // best=10: limit = max(15, 40) = 40 → 35 stays, 100 goes
+      const t = [tunnel(1, 'a', 0.1), tunnel(2, 'b', 0.2), tunnel(3, 'c', 0.99)];
+      const p = probes({
+        a: { avgRttMs: 10, reachable: true },
+        b: { avgRttMs: 35, reachable: true },
+        c: { avgRttMs: 100, reachable: true },
+      });
+      const seen = new Set<string>();
+      for (const r of [0, 0.3, 0.6, 0.99]) seen.add(pickAutoTunnel(t, [], () => r, p)!.domain);
+      expect(seen.has('c')).toBe(false);
+      expect(pickAutoTunnel(t, [], () => 0, p)?.domain).toBe('b');
+    });
+
+    it('skips the gate with fewer than 3 probed', () => {
+      const t = [tunnel(1, 'a', 0.5), tunnel(2, 'far', 0.99), tunnel(3, 'c', 0.1)];
+      const p = probes({
+        a: { avgRttMs: 10, reachable: true },
+        far: { avgRttMs: 900, reachable: true },
+      });
+      // far is a candidate: draw far then c → far wins
+      expect(pickAutoTunnel(t, [], seq(0.4, 0.99), p)?.domain).toBe('far');
+    });
+
+    it('unprobed nodes are dropped once the gate applies', () => {
+      const t = [
+        tunnel(1, 'a', 0.2), tunnel(2, 'b', 0.2), tunnel(3, 'c', 0.2),
+        tunnel(4, 'unprobed', 0.99),
+      ];
+      const p = probes({
+        a: { avgRttMs: 50, reachable: true },
+        b: { avgRttMs: 60, reachable: true },
+        c: { avgRttMs: 70, reachable: true },
+      });
+      for (const r of [0, 0.3, 0.6, 0.99]) {
+        expect(pickAutoTunnel(t, [], () => r, p)?.domain).not.toBe('unprobed');
+      }
+    });
   });
 
   it('excludes tunnels with score=0 from primary pool', () => {

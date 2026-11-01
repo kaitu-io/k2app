@@ -13,6 +13,20 @@ function domainOf(rawUrl: string): string {
   }
 }
 
+/**
+ * Fresh (within STALE_MS) probe result usable for tunnel selection, or null.
+ * The -1 sentinel (reachable but unmeasured) is "no data" unless the result
+ * says unreachable, which is a real signal.
+ */
+export function freshProbeOf(r: ProbeResult | null | undefined): { avgRttMs: number; reachable: boolean } | null {
+  if (!r) return null;
+  const age = Date.now() - Date.parse(r.measuredAt);
+  if (!(age <= STALE_MS)) return null;
+  if (!r.reachable) return { avgRttMs: r.avgRttMs, reachable: false };
+  if (r.probeScore < 0) return null;
+  return { avgRttMs: r.avgRttMs, reachable: true };
+}
+
 interface ProbeState {
   results: Map<string, ProbeResult>;
   inFlight: Set<string>;
