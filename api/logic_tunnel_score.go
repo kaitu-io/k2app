@@ -125,9 +125,7 @@ func fleetPressure(usages map[string]*NodeUsage, now int64) float64 {
 
 // effectivePressure returns the pressure to score u with: nil when the switch
 // is off, u's own value when fresh, otherwise the fleet median. A node with no
-// usage row never reaches scoring with pressure (buildTunnelInstanceDataFromUsage
-// returns nil → neutral 0.5); the median only backs stale/missing pressure on
-// an existing row.
+// usage row takes the fleet median too (scored via recommendScoreForUsage).
 func effectivePressure(u *NodeUsage, fleet float64, now int64) *float64 {
 	if !nodePressureEnabled() {
 		return nil
@@ -171,6 +169,20 @@ func shouldHideTunnelForUser(u *NodeUsage, isAdmin bool, now int64) bool {
 		return false
 	}
 	return isNodeOverQuota(u) || isNodeOffline(u, now)
+}
+
+// recommendScoreForUsage is the single scoring entry for the four handlers.
+// Switch off, or a usage row present: exactly ComputeRecommendScore of the
+// usage DTO (nil usage -> 0.5, bit-identical to before). Switch on with no usage
+// row: missing data takes the fleet median pressure with a neutral quota
+// (quotaScore 1.0 = TrafficRatio 0) - never penalised, never fixed at 0.5.
+func recommendScoreForUsage(u *NodeUsage, fleet float64, now int64) float64 {
+	p := effectivePressure(u, fleet, now)
+	inst := buildTunnelInstanceDataFromUsage(u, p)
+	if inst == nil && p != nil {
+		inst = &DataTunnelInstance{Pressure: p}
+	}
+	return ComputeRecommendScore(inst)
 }
 
 // buildTunnelInstanceDataFromUsage builds the scoring DTO from NodeUsage.

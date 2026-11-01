@@ -182,12 +182,12 @@ func api_k2_tunnels(c *gin.Context) {
 			Node:         nodeData,
 		}
 
-		// Instance scoring DTO from NodeUsage (nil usage → nil → neutral 0.5).
+		// Instance scoring DTO from NodeUsage (nil usage → nil).
 		item.Instance = buildTunnelInstanceDataFromUsage(u, effectivePressure(u, fleet, now))
 
 		// Top-level recommendScore — non-cloud nodes get the neutral 0.5 default
 		// from ComputeRecommendScore(nil), so UI doesn't need instance null checks.
-		item.RecommendScore = listRecommendScore(u, ComputeRecommendScore(item.Instance))
+		item.RecommendScore = listRecommendScore(u, recommendScoreForUsage(u, fleet, now))
 		if item.Instance != nil {
 			item.Instance.RecommendScore = item.RecommendScore
 		}

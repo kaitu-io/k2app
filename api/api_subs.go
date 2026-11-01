@@ -325,8 +325,8 @@ func api_subs(c *gin.Context) {
 
 	// Batch-fetch NodeUsage rows by ipv4 (durable key, node-authority metering mirror) so we
 	// can compute per-tunnel RecommendScore via the same code path /api/tunnels
-	// uses. Non-metered nodes fall through to ComputeRecommendScore(nil) → 0.5
-	// (neutral), keeping them eligible in pickWeighted without being favored.
+	// uses. Non-metered nodes score a neutral 0.5 with the pressure switch off
+	// (fleet-median pressure when on), keeping them eligible in pickWeighted.
 	nodeIPs := make([]string, 0, len(tunnels))
 	for _, t := range tunnels {
 		// Private nodes are skipped later; keep them out of the usage map so
@@ -383,7 +383,7 @@ func api_subs(c *gin.Context) {
 			continue
 		}
 
-		score := ComputeRecommendScore(buildTunnelInstanceDataFromUsage(u, effectivePressure(u, fleet, now)))
+		score := recommendScoreForUsage(u, fleet, now)
 
 		items = append(items, SubsTunnel{
 			URL:            injectSubsCreds(t.ServerURL, udid, urlToken),

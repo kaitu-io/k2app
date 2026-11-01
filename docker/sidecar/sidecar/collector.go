@@ -26,6 +26,10 @@ type Collector struct {
 	trafficMonitor *TrafficMonitor // traffic monitor
 
 	procRoot string // host proc root for net/dev (injectable in tests)
+	// hostNIC: procRoot is the real host netns (/host/proc/1). False when
+	// hostProcPath fell back to /proc (container veth → fake ~0 Mbps), in which
+	// case metrics are not trustworthy and MetricsVersion stays 0.
+	hostNIC  bool
 	statPath string // path of the aggregate cpu stat file
 	lastCPU  cpuSample
 	lastNIC  nicStats
@@ -89,11 +93,13 @@ func readCPUSample(path string) (cpuSample, bool) {
 // initialUsedGB: declared already-used traffic (GB) to seed the baseline on first boot (mid-cycle onboarding); 0 = none
 // billingMode: BillingModeSum / BillingModeMax (empty = max) — must match how the provider bills
 func NewCollector(node *Node, reportInterval time.Duration, billingStartDate string, trafficLimitGB int64, initialUsedGB int64, billingMode string) *Collector {
+	procRoot := hostProcPath()
 	c := &Collector{
 		node:           node,
 		reportInterval: reportInterval,
 		lastNetStats:   NetworkStats{Timestamp: time.Now()},
-		procRoot:       hostProcPath(),
+		procRoot:       procRoot,
+		hostNIC:        procRoot != "/proc",
 		statPath:       "/proc/stat",
 	}
 
@@ -189,7 +195,9 @@ func (c *Collector) collectMetrics() Health {
 			health.CPUPercent, health.StealPercent = cpuPct, stealPct
 			health.BandwidthUpMbps, health.BandwidthDownMbps = up, down
 			health.PacketLossPercent = loss
-			health.MetricsVersion = 1
+			if c.hostNIC {
+				health.MetricsVersion = 1
+			}
 		}
 	}
 	c.hasBaseline = cpuOK && nicErr == nil

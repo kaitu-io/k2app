@@ -5,7 +5,8 @@
 --
 -- 口径：窗口 14 天；metrics_version >= 1（新 sidecar）；steal_percent <= 5（宿主机抢占会扭曲 busy%）；
 --       Mbps = bandwidth_up_mbps + bandwidth_down_mbps；busy = cpu_percent。
---       拟合只用 Mbps >= 20 的样本（低流量时 CPU 被基线噪声主导）。
+--       与上线代码 api/logic_node_pressure.go fitNodeCapacity 同口径：拟合用全部保留样本（steal<=5），
+--       Mbps >= 20 只用于判定“合格”（>=30 个这样的样本），且要求斜率 > 0；不满足者无 M，不计入门。
 -- 表为空时每条语句都返回结果（分母为 0 时比例为 NULL，不报错）。
 
 -- ---------------------------------------------------------------------
@@ -18,15 +19,15 @@ WITH s AS (
     AND metrics_version >= 1
     AND steal_percent <= 5
 ),
-q AS (SELECT * FROM s WHERE x >= 20),
 agg AS (
   SELECT ipv4,
          COUNT(*) AS n,
+         SUM(x >= 20) AS n_busy,
          SUM(x) AS sx, SUM(y) AS sy, SUM(x*x) AS sxx, SUM(y*y) AS syy, SUM(x*y) AS sxy
-  FROM q GROUP BY ipv4
+  FROM s GROUP BY ipv4
 ),
 fit AS (
-  SELECT ipv4, n,
+  SELECT ipv4, n, n_busy,
          (n*sxy - sx*sy) / NULLIF(n*sxx - sx*sx, 0) AS slope,
          (sy - (n*sxy - sx*sy) / NULLIF(n*sxx - sx*sx, 0) * sx) / n AS intercept,
          CASE WHEN (n*sxx - sx*sx) > 0 AND (n*syy - sy*sy) > 0
@@ -41,15 +42,18 @@ ranked AS (
 ),
 peak AS (SELECT ipv4, x AS peak_mbps, y AS busy_at_peak, created_at AS peak_at FROM ranked WHERE rn = 1)
 SELECT p.ipv4,
-       COALESCE(f.n, 0)                         AS samples_ge20mbps,
+       COALESCE(f.n_busy, 0)                    AS samples_ge20mbps,
+       COALESCE(f.n_busy >= 30 AND f.slope > 0, 0) AS qualified,
        ROUND(f.r2, 3)                           AS r2,
        ROUND(f.slope, 4)                        AS slope_busy_per_mbps,
        ROUND(f.intercept, 2)                    AS intercept,
        ROUND(p.peak_mbps, 1)                    AS peak_mbps,
        p.peak_at,
        ROUND(p.busy_at_peak, 1)                 AS busy_at_peak,
-       ROUND(f.intercept + f.slope * p.peak_mbps, 1)               AS fit_busy_at_peak,
-       ROUND(p.busy_at_peak - (f.intercept + f.slope * p.peak_mbps), 1) AS busy_minus_fit,
+       CASE WHEN f.n_busy >= 30 AND f.slope > 0
+            THEN ROUND(f.intercept + f.slope * p.peak_mbps, 1) END AS fit_busy_at_peak,
+       CASE WHEN f.n_busy >= 30 AND f.slope > 0
+            THEN ROUND(p.busy_at_peak - (f.intercept + f.slope * p.peak_mbps), 1) END AS busy_minus_fit,
        u.capacity_mbps,
        u.capacity_source
 FROM peak p
@@ -66,10 +70,9 @@ WITH q AS (
   WHERE created_at >= NOW() - INTERVAL 14 DAY
     AND metrics_version >= 1
     AND steal_percent <= 5
-    AND (bandwidth_up_mbps + bandwidth_down_mbps) >= 20
 ),
 agg AS (
-  SELECT ipv4, COUNT(*) AS n,
+  SELECT ipv4, COUNT(*) AS n, SUM(x >= 20) AS n_busy,
          SUM(x) AS sx, SUM(y) AS sy, SUM(x*x) AS sxx, SUM(y*y) AS syy, SUM(x*y) AS sxy
   FROM q GROUP BY ipv4
 ),
@@ -78,7 +81,7 @@ r AS (
          CASE WHEN (n*sxx - sx*sx) > 0 AND (n*syy - sy*sy) > 0
               THEN POW(n*sxy - sx*sy, 2) / ((n*sxx - sx*sx) * (n*syy - sy*sy))
          END AS r2
-  FROM agg WHERE n >= 30
+  FROM agg WHERE n_busy >= 30
 )
 SELECT COUNT(*)                                   AS qualified_nodes,
        COALESCE(SUM(r2 >= 0.6), 0)                AS nodes_r2_ge_0_6,
@@ -100,12 +103,12 @@ WITH s AS (
     AND steal_percent <= 5
 ),
 agg AS (
-  SELECT ipv4, COUNT(*) AS n,
+  SELECT ipv4, COUNT(*) AS n, SUM(x >= 20) AS n_busy,
          SUM(x) AS sx, SUM(y) AS sy, SUM(x*x) AS sxx, SUM(y*y) AS syy, SUM(x*y) AS sxy
-  FROM s WHERE x >= 20 GROUP BY ipv4
+  FROM s GROUP BY ipv4
 ),
 fit AS (
-  SELECT ipv4,
+  SELECT ipv4, n_busy,
          (n*sxy - sx*sy) / NULLIF(n*sxx - sx*sx, 0) AS slope,
          (sy - (n*sxy - sx*sy) / NULLIF(n*sxx - sx*sx, 0) * sx) / n AS intercept
   FROM agg
@@ -122,7 +125,7 @@ SELECT COUNT(*)                                            AS nodes_peak_ge_100m
        '目标 >= 3（且均在 15pp 内）'                         AS target,
        COALESCE(SUM(ABS(p.busy_at_peak - (f.intercept + f.slope * p.peak_mbps)) <= 15) >= 3, 0) AS pass
 FROM peak p
-LEFT JOIN fit f ON f.ipv4 = p.ipv4;
+LEFT JOIN fit f ON f.ipv4 = p.ipv4 AND f.n_busy >= 30 AND f.slope > 0;
 
 -- ---------------------------------------------------------------------
 -- 3. 门 3：在线节点中近 1 小时内有 metrics_version >= 1 样本的比例（目标 >= 80%）

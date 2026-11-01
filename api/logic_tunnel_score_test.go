@@ -228,3 +228,18 @@ func TestListRecommendScore(t *testing.T) {
 	assert.Less(t, listRecommendScore(healthy, 0.2), listRecommendScore(healthy, 0.3), "order preserved")
 	assert.Equal(t, 0.0, listRecommendScore(healthy, 0), "blacklist score stays 0")
 }
+
+func TestRecommendScoreForUsage_NilUsage(t *testing.T) {
+	restoreViper(t, "node_pressure.enabled")
+
+	viper.Set("node_pressure.enabled", false)
+	assert.Equal(t, 0.5, recommendScoreForUsage(nil, 0.4, 1000))
+
+	// Switch on: missing data takes the fleet median with a neutral quota
+	// (1.0), i.e. 0.9*(1-0.4)+0.1 = 0.64 - not the fixed 0.5.
+	viper.Set("node_pressure.enabled", true)
+	assert.InDelta(t, 0.64, recommendScoreForUsage(nil, 0.4, 1000), 1e-9)
+	// Same as an existing-but-pressureless healthy node at fleet median.
+	healthy := &NodeUsage{}
+	assert.InDelta(t, recommendScoreForUsage(healthy, 0.4, 1000), recommendScoreForUsage(nil, 0.4, 1000), 1e-9)
+}

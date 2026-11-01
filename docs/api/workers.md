@@ -18,7 +18,8 @@
 | `worker_subscription_reconcile.go` | Daily Apple/Stripe subscription reconcile — the fallback when webhooks are lost (spec 2026-08-22) |
 | `worker_traffic_abuse.go` | 每小时聚合当月 per-user 流量，超阈值（`traffic.abuse_monthly_gb`，缺省 100GB）Slack 告警 + 用户警告邮件（模板 `traffic-abuse-warning`，月度去重）+ 60 天保留清理（隐私政策承诺 2 个月） |
 | `worker_chat.go` | 客服聊天：`RegisterChatWorker()`（由 `InitWorker()` 调用）注册 `chatCronSpecs` —— 每分钟 `chat:slack-sweep`（补镜像实时路径漏发的消息 / 状态卡 / 归档，超 10 分钟未镜像告警），每 10 分钟 `chat:close-idle`（AI 处理中 24h、人工处理中 72h 无消息自动关闭并归档 Slack 频道） |
-| `worker_stats_retention.go` | 每日分批清扫无界时序表：`slave_node_loads` >30d（读取端只取每节点最新一条）、`stat_*`/`connection_ratings` >120d（admin 报表最大回看 90d）；stat 表按 `reported_at`（服务端权威，`created_at` 是客户端时钟含脏数据） |
+| `worker_node_capacity.go` | 每日 04:50 用近 14 天 `slave_node_loads` 样本拟合每节点吞吐容量 M（`node:capacity_refresh`），供压力评分（`node_pressure.enabled`）使用 |
+| `worker_stats_retention.go` | 每日分批清扫无界时序表：`slave_node_loads` >30d（评分取每节点最新一条，容量 worker 回看 14d，保留期须 >=14d）、`stat_*`/`connection_ratings` >120d（admin 报表最大回看 90d）；stat 表按 `reported_at`（服务端权威，`created_at` 是客户端时钟含脏数据） |
 | `handler_edm.go` | `createEmailSendLog` / `updateEmailSendLogStatus` helpers — not an Asynq handler despite the prefix |
 
 Asynqmon UI available at `/app/asynqmon` (admin auth required).

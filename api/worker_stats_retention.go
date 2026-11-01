@@ -17,7 +17,8 @@ const TaskTypeStatsRetentionCleanup = "stats:retention_cleanup"
 
 // Retention windows, derived from what readers actually consume:
 //   - slave_node_loads: scoring reads only MAX(id) per node (logic_node_load.go),
-//     no historical queries exist — 30 days is pure slack.
+//     but the capacity worker (worker_node_capacity.go) fits M over the last
+//     14 days of samples — retention must stay >= 14 days (30 leaves slack).
 //   - stat_* / connection_ratings: admin reports look back at most 90 days
 //     (parseRangeDays caps at "90d") — 120 days keeps a 30-day buffer.
 const (

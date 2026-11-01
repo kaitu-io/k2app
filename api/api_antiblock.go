@@ -149,11 +149,9 @@ func handleAntiblockSeed(c *gin.Context) {
 		seen[ip] = true
 
 		// Score via the single authority (ComputeRecommendScore).
-		// No usage row → buildTunnelInstanceDataFromUsage(nil, …) → nil →
-		// neutral 0.5; the fleet median only backs stale/missing pressure on
-		// an existing row.
-		inst := buildTunnelInstanceDataFromUsage(u, effectivePressure(u, fleet, now))
-		score := ComputeRecommendScore(inst)
+		// No usage row: 0.5 with the switch off; with it on, fleet-median
+		// pressure and a neutral quota (recommendScoreForUsage).
+		score := recommendScoreForUsage(u, fleet, now)
 
 		candidates = append(candidates, candidate{
 			desc:  seedNodeDescriptor{IP: ip, Pin: pin, ECH: ech},

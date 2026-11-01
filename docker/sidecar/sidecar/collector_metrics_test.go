@@ -113,7 +113,7 @@ func newTestCollector(t *testing.T, netDev string) (*Collector, string, string) 
 	root := writeProcNetDev(t, netDev)
 	stat := filepath.Join(t.TempDir(), "stat")
 	writeStat(t, stat, "cpu 100 0 50 800 10 0 20 20 0 0")
-	c := &Collector{procRoot: root, statPath: stat}
+	c := &Collector{procRoot: root, statPath: stat, hostNIC: true}
 	return c, root, stat
 }
 
@@ -160,5 +160,26 @@ func TestCollectMetrics_SecondCycleIsVersionOne(t *testing.T) {
 	}
 	if h.CPUPercent <= 0 || h.StealPercent <= 0 {
 		t.Fatalf("cpu=%v steal=%v", h.CPUPercent, h.StealPercent)
+	}
+}
+
+// Without the host proc mount, hostProcPath falls back to /proc (the container
+// veth): the numbers are fake near-zero, so the sample must not claim version 1.
+func TestCollectMetrics_NoHostNICStaysVersionZero(t *testing.T) {
+	c, root, stat := newTestCollector(t, sampleNetDev)
+	c.hostNIC = false
+	c.collectMetrics()
+	next := `Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo:  100000     500    0    0    0     0          0         0   100000     500    0    0    0     0       0          0
+  eth0: 2000000    3000    0   10    0     0          0         0  1000000    2500    0    0    0     0       0          0
+`
+	if err := os.WriteFile(filepath.Join(root, "net", "dev"), []byte(next), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeStat(t, stat, "cpu 200 0 100 1600 20 0 40 40 0 0")
+	c.lastAt = c.lastAt.Add(-time.Second)
+	if h := c.collectMetrics(); h.MetricsVersion != 0 {
+		t.Fatalf("MetricsVersion = %d, want 0 without host NIC", h.MetricsVersion)
 	}
 }

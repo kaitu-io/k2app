@@ -107,7 +107,7 @@ func api_v20260717_tunnels(c *gin.Context) {
 			HopPortEnd:     tunnel.HopPortEnd,
 			Node:           nodeData,
 			IPType:         tunnel.Node.IPType,
-			RecommendScore: listRecommendScore(u, ComputeRecommendScore(buildTunnelInstanceDataFromUsage(u, effectivePressure(u, fleet, now)))),
+			RecommendScore: listRecommendScore(u, recommendScoreForUsage(u, fleet, now)),
 			ServerUrl:      tunnel.ServerURL,
 		}
 		items = append(items, item)
