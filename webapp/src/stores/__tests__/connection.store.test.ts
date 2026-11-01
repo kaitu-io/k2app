@@ -1904,3 +1904,84 @@ describe('cloud events leave a self_hosted selection alone', () => {
     expect(useConnectionStore.getState().selectedCloudTunnel).toBeNull();
   });
 });
+
+// ==================== Auto picker: real probe store + real pickAutoTunnel ====================
+
+describe('connect() Auto picker with real probe store', () => {
+  afterEach(async () => {
+    const { cacheStore } = await import('../../services/cache-store');
+    cacheStore.clear();
+  });
+
+  const mkTunnel = (id: number, domain: string, score: number, country = 'JP') => ({
+    id, domain, name: domain, protocol: 'k2v5', port: 443,
+    serverUrl: `k2v5://${domain}:443`, recommendScore: score, node: { country },
+  }) as any;
+  const mkProbe = (domain: string, o: Record<string, unknown> = {}) => ({
+    url: `k2v5://${domain}:443`, avgRttMs: 50, minRttMs: 40, maxRttMs: 60, jitterMs: 1, lossRate: 0,
+    reachable: true, echoSupported: true, probeScore: 0.9, measuredAt: new Date().toISOString(), ...o,
+  });
+
+  async function setup(tunnels: any[], probes: any[]) {
+    const stores = await getStores();
+    const { useProbeStore } = await import('../probe.store');
+    const { cacheStore } = await import('../../services/cache-store');
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildTunnelUrl).mockImplementation(async (u: string) => u);
+    mockRun.mockResolvedValue({ code: 0 });
+    useProbeStore.getState().record(probes);
+    cacheStore.set('api:tunnels', { items: tunnels });
+    return stores;
+  }
+
+  it('passes the picked tunnel serverUrl to up() and never a near-gate-rejected node', async () => {
+    const tunnels = [
+      mkTunnel(1, 'near1.example.com', 0.5), mkTunnel(2, 'near2.example.com', 0.6),
+      mkTunnel(3, 'near3.example.com', 0.7), mkTunnel(4, 'far.example.com', 0.99),
+    ];
+    const probes = [
+      mkProbe('near1.example.com', { avgRttMs: 40 }), mkProbe('near2.example.com', { avgRttMs: 50 }),
+      mkProbe('near3.example.com', { avgRttMs: 55 }), mkProbe('far.example.com', { avgRttMs: 400 }),
+    ];
+    for (let k = 0; k < 12; k++) {
+      vi.resetModules();
+      mockRun.mockReset();
+      const { useConnectionStore } = await setup(tunnels, probes);
+      await useConnectionStore.getState().connect();
+      const up = mockRun.mock.calls.find((c: any[]) => c[0] === 'up');
+      expect(up).toBeDefined();
+      const routes = up![1].config.routes as Array<{ via: string }>;
+      expect(routes.some(r => r.via.includes('far.example.com'))).toBe(false);
+      expect(routes.some(r => /near[123]\.example\.com/.test(r.via))).toBe(true);
+    }
+  });
+
+  it('pool non-empty only via the unreachable fallback still connects (no FILTERED)', async () => {
+    const tunnels = [mkTunnel(1, 'a.example.com', 0.8), mkTunnel(2, 'b.example.com', 0.5)];
+    const probes = [
+      mkProbe('a.example.com', { reachable: false, avgRttMs: 0 }),
+      mkProbe('b.example.com', { reachable: false, avgRttMs: 0 }),
+    ];
+    const { useConnectionStore, vpn } = await setup(tunnels, probes);
+    await useConnectionStore.getState().connect();
+    expect(mockRun).toHaveBeenCalledWith('up', expect.anything());
+    expect(vpn.useVPNMachineStore.getState().error?.code).not.toBe(573);
+  });
+
+  it('all excluded by country -> 573 FILTERED', async () => {
+    const tunnels = [mkTunnel(1, 'hk1.example.com', 0.8, 'HK'), mkTunnel(2, 'hk2.example.com', 0.5, 'HK')];
+    const probes = [mkProbe('hk1.example.com'), mkProbe('hk2.example.com')];
+    const { useConnectionStore, vpn } = await setup(tunnels, probes);
+    await useConnectionStore.getState().setExcludedCountries(['hk']);
+    await useConnectionStore.getState().connect();
+    expect(mockRun).not.toHaveBeenCalledWith('up', expect.anything());
+    expect(vpn.useVPNMachineStore.getState().error?.code).toBe(573);
+  });
+
+  it('empty list -> 572 AUTO', async () => {
+    const { useConnectionStore, vpn } = await setup([], []);
+    await useConnectionStore.getState().connect();
+    expect(mockRun).not.toHaveBeenCalledWith('up', expect.anything());
+    expect(vpn.useVPNMachineStore.getState().error?.code).toBe(572);
+  });
+});

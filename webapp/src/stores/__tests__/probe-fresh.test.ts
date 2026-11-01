@@ -10,7 +10,7 @@ const old = () => new Date(Date.now() - 16 * 60 * 1000).toISOString();
 
 describe('freshProbeOf', () => {
   it('returns RTT for a fresh measured result', () => {
-    expect(freshProbeOf(base({}))).toEqual({ avgRttMs: 50, reachable: true });
+    expect(freshProbeOf(base({}))).toMatchObject({ avgRttMs: 50, reachable: true });
   });
   it('treats stale results as no data', () => {
     expect(freshProbeOf(base({ measuredAt: old() }))).toBeNull();
