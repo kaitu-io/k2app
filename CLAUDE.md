@@ -51,7 +51,7 @@ A directory's `CLAUDE.md` auto-loads once you read a file under it; under `k2/` 
 | `tessera/` | Tessera protocol proving ground, own module | `tessera/CLAUDE.md` |
 | `docker/` | `k2s/` node image; `sidecar/` metering + quota cutoff (Go module); `scripts/` node ops | `docker/sidecar/CLAUDE.md`, skill `kaitu-node-ops` |
 | `packaging/linux/` | Linux tarball `install.sh` + systemd unit | none |
-| `contracts/` | Committed goldens: `api-contract.json` ← `api/contract_export_test.go`; `bridge-api.json` ← webapp `bridge-contract.test.ts`; `webapp-support-floor.json` hand-edited, read by `scripts/ci/web-ota-manifest.mjs` | — |
+| `contracts/` | Committed goldens: `api-contract.json` ← `api/contract_export_test.go`; `bridge-api.json` ← webapp `bridge-contract.test.ts`; `webapp-support-floor.json` hand-edited, read by `scripts/ci/web-ota-manifest.mjs`; `tunnel-list-wire.json` hand-edited wire body of `/api/v20260717/tunnels`, round-tripped by `api/api_tunnel_v20260717_test.go`, fed into Auto connect by webapp `auto-connect-wire.test.ts` | — |
 | `scripts/` | Build / deploy / CI / labtest | `scripts/CLAUDE.md` |
 | `.github/` | Workflows | `.github/CLAUDE.md` |
 | `docs/` | `superpowers/specs/` current designs (`plans/` older); `marketing/`, `customer-service/`; layer reference in `docs/<layer>/` | — |

@@ -11,20 +11,22 @@ function randomIndex(rng: () => number, n: number): number {
 }
 
 /**
- * Pick one tunnel for Auto mode: top 80% by score, then power of two choices.
+ * Pick one tunnel for Auto mode: top 80% by score, then power of two choices
+ * (uniform when at most two remain).
  *
  * 1. Candidates: `recommendScore > 0` (hard blacklist, NO fallback — see
  *    api/CLAUDE.md "Tunnel Scoring"), has `serverUrl`, `node.country` not in
  *    `excludedCountries` (NO fallback — the user excluded it on purpose).
  * 2. Top 80%: shuffle, stable sort by score descending, keep ceil(n * 4/5).
  *    The shuffle comes first so ties at the cut do not depend on API order.
- * 3. Power of two choices: draw two DISTINCT candidates at random and take the
- *    higher `recommendScore` (tie keeps the first drawn). A single remaining
- *    candidate is returned directly.
+ * 3. One or two kept candidates: uniform pick. P2C on two always returns the
+ *    higher score, so a retry could never leave a node blocked on the user's
+ *    network.
+ * 4. Three or more: power of two choices. Draw two DISTINCT candidates at random
+ *    and take the higher `recommendScore` (tie keeps the first drawn).
  *
- * Consequence of step 3: with distinct scores the lowest kept candidate loses
- * every comparison, so it is never returned; two kept candidates always resolve
- * to the higher one.
+ * Consequence of step 4: with distinct scores the lowest kept candidate loses
+ * every comparison, so it is never returned.
  *
  * There is NO line or geo awareness here. `recommendScore` only measures a
  * node's traffic budget (api/logic_tunnel_score.go), not its distance from the
@@ -64,7 +66,7 @@ export function pickAutoTunnel(
   const pool = candidates.slice(0, keep);
 
   const n = pool.length;
-  if (n === 1) return pool[0];
+  if (n <= 2) return pool[randomIndex(rng, n)];
   const i = randomIndex(rng, n);
   // Second index drawn from the n-1 others and shifted past i: no rejection loop.
   let j = randomIndex(rng, n - 1);

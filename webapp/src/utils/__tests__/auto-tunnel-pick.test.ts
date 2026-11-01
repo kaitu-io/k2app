@@ -104,15 +104,16 @@ describe('pickAutoTunnel eligibility', () => {
   });
 
   it('filtering happens before the cut, so excluded nodes do not use up the top 80%', () => {
-    // Without the bad nodes, 2 candidates remain and the better one always wins.
+    // Five real candidates keep 4 and return the top 3, whatever the bad nodes score.
     const t = [
       tunnel(1, 'zero', 0),
       tunnel(2, 'no-url', 0.99, ''),
       tunnel(3, 'hk', 0.98, undefined, 'HK'),
-      tunnel(4, 'good', 0.5),
-      tunnel(5, 'ok', 0.4),
+      ...[0.5, 0.4, 0.3, 0.2, 0.1].map((score, i) => tunnel(i + 4, `g${i}`, score)),
     ];
-    for (let s = 0; s < 200; s++) expect(pickAutoTunnel(t, ['hk'], prng(s))?.domain).toBe('good');
+    const seen = new Set<string>();
+    for (let s = 0; s < 500; s++) seen.add(pickAutoTunnel(t, ['hk'], prng(s))!.domain);
+    expect([...seen].sort()).toEqual(['g0', 'g1', 'g2']);
   });
 
   it('does not mutate the input array', () => {
@@ -125,9 +126,9 @@ describe('pickAutoTunnel eligibility', () => {
 
 describe('pickAutoTunnel top 80% cut', () => {
   it.each([
-    // n, kept m, ranks ever returned. The lowest kept rank can never win a comparison.
+    // n, kept m, ranks ever returned. From three kept up, the lowest kept rank never wins.
     [1, 1, 1],
-    [2, 2, 1],
+    [2, 2, 2],
     [4, 4, 3],
     [5, 4, 3],
     [6, 5, 4],
@@ -149,10 +150,11 @@ describe('pickAutoTunnel top 80% cut', () => {
   it('kept size is integer ceil(4n/5) for every n in 1..200', () => {
     for (let n = 1; n <= 200; n++) {
       // A constant rng just below 1 skips every swap and draws the two lowest kept
-      // nodes, so the winner is rank m-1: the result reveals m for each n.
+      // nodes, so the winner is rank m-1: the result reveals m for each n. Pools of
+      // one or two are uniform instead, so the same rng lands on the last index.
       const picked = pickAutoTunnel(distinct(n), [], () => 0.9999999999)!;
       const m = keptCount(n);
-      expect(picked.domain, `n=${n}`).toBe(`r${Math.max(m - 2, 0)}`);
+      expect(picked.domain, `n=${n}`).toBe(`r${m <= 2 ? m - 1 : m - 2}`);
     }
   });
 });
@@ -198,19 +200,31 @@ describe('pickAutoTunnel ties across the cut', () => {
 });
 
 describe('pickAutoTunnel power of two choices', () => {
-  it('two candidates always resolve to the higher score, for any rng', () => {
+  it('two candidates are a uniform pick, so a retry can leave a blocked node', () => {
     const t = [tunnel(1, 'low', 0.5), tunnel(2, 'high', 0.9)];
-    for (const r of [0, 0.25, 0.5, 0.75, 0.9999999999]) {
-      expect(pickAutoTunnel(t, [], () => r)?.domain).toBe('high');
+    const N = 100000;
+    const counts = draw(t, N, 5);
+    for (const d of ['low', 'high']) {
+      expect(Math.abs((counts.get(d) ?? 0) - N / 2), d).toBeLessThanOrEqual(fiveSigma(N, 0.5));
     }
-    for (let s = 0; s < 500; s++) expect(pickAutoTunnel(t, [], prng(s))?.domain).toBe('high');
+  });
+
+  it('three candidates still use P2C: lowest never, top two follow the formula', () => {
+    const N = 100000;
+    const counts = draw(reversed(distinct(3)), N, 6);
+    expect(counts.get('r2') ?? 0).toBe(0);
+    for (const rank of [1, 2]) {
+      const p = p2c(rank, 3);
+      const c = counts.get(`r${rank - 1}`) ?? 0;
+      expect(Math.abs(c - N * p), `rank ${rank}`).toBeLessThanOrEqual(fiveSigma(N, p));
+    }
   });
 
   it('tie keeps the first drawn', () => {
-    const t = [tunnel(1, 'a', 0.5), tunnel(2, 'b', 0.5)];
-    // First value is the single shuffle swap (0.99 keeps a,b); the next two are the draws.
-    expect(pickAutoTunnel(t, [], seq(0.99, 0, 0))?.domain).toBe('a');
-    expect(pickAutoTunnel(t, [], seq(0.99, 0.99, 0))?.domain).toBe('b');
+    const t = [tunnel(1, 'a', 0.5), tunnel(2, 'b', 0.5), tunnel(3, 'c', 0.5)];
+    // The first two values are shuffle swaps (0.99 keeps a,b,c); the next two are the draws.
+    expect(pickAutoTunnel(t, [], seq(0.99, 0.99, 0, 0))?.domain).toBe('a');
+    expect(pickAutoTunnel(t, [], seq(0.99, 0.99, 0.5, 0))?.domain).toBe('b');
   });
 
   it('survives rng extremes without looping or returning a filtered node', () => {

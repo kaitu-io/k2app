@@ -86,8 +86,8 @@ const (
 )
 
 // listRecommendScore is what /api/tunnels returns, and it only ever reorders
-// within the client's list: it is monotonic in the raw score, so sorting and
-// top-N auto pick are unchanged. /api/subs must keep the raw score, since the
+// within the client's list: it is monotonic in the raw score, so sorting and the
+// client's top-80% auto pick are unchanged. /api/subs must keep the raw score, since the
 // daemon splits traffic by its proportions and compressing them would weaken
 // the steering away from nearly-spent nodes.
 func listRecommendScore(u *NodeUsage, raw float64) float64 {

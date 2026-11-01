@@ -113,7 +113,7 @@ App process (`K2Plugin.swift`, `NETunnelProviderManager.startVPNTunnel(options:)
 
 ## Server Selection — Manual only on mobile
 
-Mobile has **no smart-mode / k2subs resolution**: users pick a tunnel on Dashboard and the webapp passes that single `k2v5://` URL as `_k2.run('up', {routes:[{via:'k2v5://...'}]})` — the NE's 50 MB jetsam limit rules out an in-extension resolver, and a webapp-side one would fetch `/api/subs` through the tunnel it is trying to establish. Failure mode: any raw `k2subs://` leaked to appext is dropped by `engine.buildOutboundMap` as a reserved scheme → code 570 "no k2v5 outbound configured" — always a webapp bug; the only legitimate `via` on mobile is `k2v5://` or `direct`. `probe.store` + `ProbeChip` populate RTT/loss via the webapp-triggered `runProbe()`; the daemon-side background probe loop is desktop-only.
+Mobile has **no smart-mode / k2subs resolution**: users pick a tunnel on Dashboard and the webapp passes that single `k2v5://` URL as `_k2.run('up', {routes:[{via:'k2v5://...'}]})` — the NE's 50 MB jetsam limit rules out an in-extension resolver, and a webapp-side one would fetch `/api/subs` through the tunnel it is trying to establish. Failure mode: any raw `k2subs://` leaked to appext is dropped by `engine.buildOutboundMap` as a reserved scheme → code 570 "no k2v5 outbound configured" — always a webapp bug; the only legitimate `via` on mobile is `k2v5://` or `direct`. Mobile has no probe capability: webapp `runProbe()` has no production caller and `ProbeChip` has no importer, so nothing shows RTT/loss here; the daemon-side background probe loop is desktop-only.
 
 ## Router LAN Bridge
 

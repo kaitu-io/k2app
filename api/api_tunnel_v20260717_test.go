@@ -3,6 +3,8 @@ package center
 import (
 	"encoding/json"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -211,4 +213,40 @@ func TestV20260717TunnelsCarriesTunnelToken(t *testing.T) {
 	r2.ServeHTTP(w2, httptest.NewRequest("GET", "/api/v20260717/tunnels", nil))
 	require.Equal(t, 200, w2.Code)
 	require.NotContains(t, w2.Body.String(), "tunnelToken", "无设备上下文时字段应 omitempty")
+}
+
+// TestTunnelListWireGolden pins the real response type to the body the webapp's
+// auto-connect-wire test consumes. Auto drops every node without recommendScore, so
+// a renamed key gives every Auto user 572 while each layer's own tests stay green.
+// Round-tripping detects it: a key the struct no longer knows is lost on the way back.
+func TestTunnelListWireGolden(t *testing.T) {
+	golden, err := os.ReadFile(filepath.Join("..", "contracts", "tunnel-list-wire.json"))
+	require.NoError(t, err)
+
+	var parsed Response[DataSlaveTunnelListV20260717]
+	require.NoError(t, json.Unmarshal(golden, &parsed))
+	out, err := json.Marshal(parsed)
+	require.NoError(t, err)
+	require.JSONEq(t, string(golden), string(out))
+}
+
+// TestTunnelV20260717_AutoPickKeys marshals a value built here, so it does not
+// depend on the golden file's contents.
+func TestTunnelV20260717_AutoPickKeys(t *testing.T) {
+	raw, err := json.Marshal(DataSlaveTunnelListV20260717{Items: []DataSlaveTunnelV20260717{{
+		Node:           DataSlaveNode{Country: "JP"},
+		RecommendScore: 0.7,
+		ServerUrl:      "k2v5://a.example.com:443",
+	}}})
+	require.NoError(t, err)
+
+	var decoded struct {
+		Items []map[string]any `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &decoded))
+	require.Len(t, decoded.Items, 1)
+	item := decoded.Items[0]
+	require.Equal(t, 0.7, item["recommendScore"])
+	require.Equal(t, "k2v5://a.example.com:443", item["serverUrl"])
+	require.Equal(t, "JP", item["node"].(map[string]any)["country"])
 }
