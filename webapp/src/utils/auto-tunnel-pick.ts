@@ -52,7 +52,8 @@ export function pickAutoTunnel(
   const rtts = new Map<Tunnel, number>();
   for (const t of pool) {
     const p = probeOf(t);
-    if (p) rtts.set(t, p.avgRttMs);
+    // Only real measurements rank: unreachable / zero-RTT probes never set the best or count.
+    if (p && p.reachable === true && p.avgRttMs > 0) rtts.set(t, p.avgRttMs);
   }
   if (rtts.size >= NEAR_GATE_MIN_PROBED) {
     const best = Math.min(...rtts.values());

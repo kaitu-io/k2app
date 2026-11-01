@@ -88,6 +88,24 @@ describe('pickAutoTunnel', () => {
       expect(pickAutoTunnel(t, [], () => 0, p)?.domain).toBe('a');
     });
 
+    it('all candidates fresh-unreachable with zero RTT: gate skipped, still returns one', () => {
+      const t = [tunnel(1, 'a', 0.9), tunnel(2, 'b', 0.5), tunnel(3, 'c', 0.4)];
+      const dead = { avgRttMs: 0, reachable: false };
+      const p = probes({ a: dead, b: dead, c: dead });
+      expect(pickAutoTunnel(t, [], () => 0, p)).not.toBeNull();
+    });
+
+    it('zero-RTT probes do not count toward the threshold or become best', () => {
+      const t = [tunnel(1, 'a', 0.5), tunnel(2, 'far', 0.99), tunnel(3, 'z', 0.1)];
+      const p = probes({
+        a: { avgRttMs: 10, reachable: true },
+        far: { avgRttMs: 900, reachable: true },
+        z: { avgRttMs: 0, reachable: true },
+      });
+      // only 2 real probes -> gate skipped, far stays a candidate
+      expect(pickAutoTunnel(t, [], seq(0.4, 0.99), p)?.domain).toBe('far');
+    });
+
     it('keeps only near nodes when 3+ are probed', () => {
       const t = [tunnel(1, 'a', 0.5), tunnel(2, 'b', 0.5), tunnel(3, 'far', 0.99)];
       const p = probes({
