@@ -13,23 +13,6 @@ function domainOf(rawUrl: string): string {
   }
 }
 
-/**
- * Fresh (within STALE_MS) probe result usable for tunnel selection, or null.
- * The -1 sentinel (reachable but unmeasured) is "no data" unless the result
- * says unreachable, which is a real signal.
- */
-export function freshProbeOf(
-  r: ProbeResult | null | undefined,
-): { avgRttMs: number; reachable: boolean; lossRate: number; probeScore: number } | null {
-  if (!r) return null;
-  const age = Date.now() - Date.parse(r.measuredAt);
-  if (!(age <= STALE_MS)) return null;
-  const out = { avgRttMs: r.avgRttMs, reachable: r.reachable, lossRate: r.lossRate, probeScore: r.probeScore };
-  if (!r.reachable) return out;
-  if (r.probeScore < 0) return null;
-  return out;
-}
-
 interface ProbeState {
   results: Map<string, ProbeResult>;
   inFlight: Set<string>;
@@ -78,9 +61,12 @@ export const useProbeStore = create<ProbeState>((set, get) => ({
   },
 
   getScore: (domain) => {
-    const f = freshProbeOf(get().results.get(domain.toLowerCase()));
-    if (!f || f.probeScore < 0) return null;
-    return f.probeScore;
+    const r = get().results.get(domain.toLowerCase());
+    if (!r) return null;
+    const age = Date.now() - Date.parse(r.measuredAt);
+    if (age > STALE_MS) return null;
+    if (r.probeScore < 0) return null;
+    return r.probeScore;
   },
 
   getResult: (domain) => get().results.get(domain.toLowerCase()) ?? null,

@@ -27,7 +27,6 @@ import { useAppRoutesStore } from './app-routes.store';
 import { useVPNMachineStore, dispatch as vpnDispatch, type VPNState } from './vpn-machine.store';
 import { useAuthStore } from './auth.store';
 import { pickAutoTunnel } from '../utils/auto-tunnel-pick';
-import { useProbeStore, freshProbeOf } from './probe.store';
 import { ERROR_CODES } from '../utils/errorCode';
 
 // Minimum connection duration to surface the post-disconnect feedback dialog.
@@ -478,13 +477,11 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     if (serverMode === 'manual' && selectedCloudTunnel === null) {
       const cached = cacheStore.get<TunnelListResponse>('api:tunnels');
       const tunnelList = cached?.items ?? [];
-      const probes = useProbeStore.getState();
-      const probeOf = (t: Tunnel) => freshProbeOf(probes.getResult(t.domain));
-      resolvedTunnel = pickAutoTunnel(tunnelList, excludedCountries, Math.random, probeOf);
+      resolvedTunnel = pickAutoTunnel(tunnelList, excludedCountries);
       if (!resolvedTunnel) {
         // Distinguish "list genuinely empty" from "emptied by the user's
         // country filter" — the latter gets an actionable message (573).
-        const filteredOut = excludedCountries.length > 0 && pickAutoTunnel(tunnelList, [], Math.random, probeOf) !== null;
+        const filteredOut = excludedCountries.length > 0 && pickAutoTunnel(tunnelList) !== null;
         console.warn('[Connection] connect: Auto mode but no tunnel available'
           + (filteredOut ? ' (all candidates excluded by country filter)' : '') + ', aborting');
         vpnDispatch('BACKEND_ERROR', {

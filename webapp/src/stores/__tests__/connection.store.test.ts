@@ -1905,9 +1905,9 @@ describe('cloud events leave a self_hosted selection alone', () => {
   });
 });
 
-// ==================== Auto picker: real probe store + real pickAutoTunnel ====================
+// ==================== Auto picker: real pickAutoTunnel, real caches ====================
 
-describe('connect() Auto picker with real probe store', () => {
+describe('connect() Auto with the real picker', () => {
   afterEach(async () => {
     const { cacheStore } = await import('../../services/cache-store');
     cacheStore.clear();
@@ -1921,57 +1921,70 @@ describe('connect() Auto picker with real probe store', () => {
     url: `k2v5://${domain}:443`, avgRttMs: 50, minRttMs: 40, maxRttMs: 60, jitterMs: 1, lossRate: 0,
     reachable: true, echoSupported: true, probeScore: 0.9, measuredAt: new Date().toISOString(), ...o,
   });
+  /** mulberry32, so a run can be replayed exactly through Math.random. */
+  const prng = (seed: number) => {
+    let a = seed >>> 0;
+    return () => {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  };
 
-  async function setup(tunnels: any[], probes: any[]) {
+  async function setup(tunnels: any[]) {
     const stores = await getStores();
-    const { useProbeStore } = await import('../probe.store');
     const { cacheStore } = await import('../../services/cache-store');
     const { authService } = await import('../../services/auth-service');
     vi.mocked(authService.buildTunnelUrl).mockImplementation(async (u: string) => u);
     mockRun.mockResolvedValue({ code: 0 });
-    useProbeStore.getState().record(probes);
     cacheStore.set('api:tunnels', { items: tunnels });
     return stores;
   }
 
-  it('passes the picked tunnel serverUrl to up() and never a near-gate-rejected node', async () => {
-    const tunnels = [
-      mkTunnel(1, 'near1.example.com', 0.5), mkTunnel(2, 'near2.example.com', 0.6),
-      mkTunnel(3, 'near3.example.com', 0.7), mkTunnel(4, 'far.example.com', 0.99),
-    ];
-    const probes = [
-      mkProbe('near1.example.com', { avgRttMs: 40 }), mkProbe('near2.example.com', { avgRttMs: 50 }),
-      mkProbe('near3.example.com', { avgRttMs: 55 }), mkProbe('far.example.com', { avgRttMs: 400 }),
-    ];
-    for (let k = 0; k < 12; k++) {
-      vi.resetModules();
-      mockRun.mockReset();
-      const { useConnectionStore } = await setup(tunnels, probes);
-      await useConnectionStore.getState().connect();
-      const up = mockRun.mock.calls.find((c: any[]) => c[0] === 'up');
-      expect(up).toBeDefined();
-      const routes = up![1].config.routes as Array<{ via: string }>;
-      expect(routes.some(r => r.via.includes('far.example.com'))).toBe(false);
-      expect(routes.some(r => /near[123]\.example\.com/.test(r.via))).toBe(true);
-    }
-  });
-
-  it('pool non-empty only via the unreachable fallback still connects (no FILTERED)', async () => {
-    const tunnels = [mkTunnel(1, 'a.example.com', 0.8), mkTunnel(2, 'b.example.com', 0.5)];
-    const probes = [
-      mkProbe('a.example.com', { reachable: false, avgRttMs: 0 }),
-      mkProbe('b.example.com', { reachable: false, avgRttMs: 0 }),
-    ];
-    const { useConnectionStore, vpn } = await setup(tunnels, probes);
+  /** One fresh connect() with a seeded Math.random; returns the domain sent to up(). */
+  async function connectOnce(tunnels: any[], seed: number, probes: any[]) {
+    vi.resetModules();
+    mockRun.mockReset();
+    const { useConnectionStore } = await setup(tunnels);
+    const { useProbeStore } = await import('../probe.store');
+    useProbeStore.getState().record(probes);
+    const spy = vi.spyOn(Math, 'random').mockImplementation(prng(seed));
     await useConnectionStore.getState().connect();
-    expect(mockRun).toHaveBeenCalledWith('up', expect.anything());
-    expect(vpn.useVPNMachineStore.getState().error?.code).not.toBe(573);
+    spy.mockRestore();
+    const up = mockRun.mock.calls.find((c: any[]) => c[0] === 'up');
+    expect(up).toBeDefined();
+    const routes = up![1].config.routes as Array<{ via: string }>;
+    const hit = tunnels.find(t => routes.some(r => r.via === t.serverUrl));
+    expect(hit).toBeDefined();
+    return hit.domain as string;
+  }
+
+  it('sends a top-80% tunnel to up(), and a populated probe store changes nothing', async () => {
+    // n=10 keeps 8. Probes favour the two cut nodes and condemn everything else, so any
+    // consumer of the probe store would send different tunnels for the same seed.
+    const tunnels = Array.from({ length: 10 }, (_, i) =>
+      mkTunnel(i + 1, `n${i}.example.com`, 0.95 - i * 0.05));
+    const cut = new Set(['n8.example.com', 'n9.example.com']);
+    const probes = tunnels.map(t => (cut.has(t.domain)
+      ? mkProbe(t.domain, { avgRttMs: 5, probeScore: 1 })
+      : mkProbe(t.domain, { reachable: false, avgRttMs: 0, lossRate: 1, probeScore: 0 })));
+
+    const seen = new Set<string>();
+    for (let seed = 1; seed <= 8; seed++) {
+      const withoutProbes = await connectOnce(tunnels, seed, []);
+      const withProbes = await connectOnce(tunnels, seed, probes);
+      expect(withProbes).toBe(withoutProbes);
+      expect(cut.has(withProbes)).toBe(false);
+      seen.add(withProbes);
+    }
+    expect(seen.size).toBeGreaterThan(1);
   });
 
   it('all excluded by country -> 573 FILTERED', async () => {
     const tunnels = [mkTunnel(1, 'hk1.example.com', 0.8, 'HK'), mkTunnel(2, 'hk2.example.com', 0.5, 'HK')];
-    const probes = [mkProbe('hk1.example.com'), mkProbe('hk2.example.com')];
-    const { useConnectionStore, vpn } = await setup(tunnels, probes);
+    const { useConnectionStore, vpn } = await setup(tunnels);
     await useConnectionStore.getState().setExcludedCountries(['hk']);
     await useConnectionStore.getState().connect();
     expect(mockRun).not.toHaveBeenCalledWith('up', expect.anything());
@@ -1979,7 +1992,7 @@ describe('connect() Auto picker with real probe store', () => {
   });
 
   it('empty list -> 572 AUTO', async () => {
-    const { useConnectionStore, vpn } = await setup([], []);
+    const { useConnectionStore, vpn } = await setup([]);
     await useConnectionStore.getState().connect();
     expect(mockRun).not.toHaveBeenCalledWith('up', expect.anything());
     expect(vpn.useVPNMachineStore.getState().error?.code).toBe(572);
