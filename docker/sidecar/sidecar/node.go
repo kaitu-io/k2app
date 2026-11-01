@@ -600,6 +600,14 @@ type Health struct {
 	BillingCycleEndAt        int64 `json:"billingCycleEndAt"`        // Billing cycle end timestamp (Unix seconds)
 	MonthlyTrafficLimitBytes int64 `json:"monthlyTrafficLimitBytes"` // Monthly traffic limit (bytes), 0 = unlimited
 	UsedTrafficBytes         int64 `json:"usedTrafficBytes"`         // Traffic used in current cycle (bytes)
+
+	// Trustworthy host metrics. MetricsVersion=1 means bandwidth*/packetLoss are
+	// host-NIC interval values and cpuPercent/stealPercent are interval values;
+	// 0 = no baseline yet (or counter reset) and those fields are not reliable.
+	MetricsVersion int     `json:"metricsVersion"`
+	CPUPercent     float64 `json:"cpuPercent"`
+	StealPercent   float64 `json:"stealPercent"`
+	CPUCores       int     `json:"cpuCores"`
 }
 
 // ReportRequest report request

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +24,62 @@ type Collector struct {
 	reportInterval time.Duration
 	lastNetStats   NetworkStats
 	trafficMonitor *TrafficMonitor // traffic monitor
+
+	procRoot string // host proc root for net/dev (injectable in tests)
+	statPath string // path of the aggregate cpu stat file
+	lastCPU  cpuSample
+	lastNIC  nicStats
+	lastAt   time.Time
+	// hasBaseline: lastCPU/lastNIC/lastAt hold a valid previous sample.
+	hasBaseline bool
+}
+
+// cpuSample is one aggregate "cpu" line from /proc/stat (jiffies).
+type cpuSample struct{ busy, steal, total uint64 }
+
+// parseCPUSample parses the aggregate "cpu " line. busy counts user, nice,
+// system, irq, softirq and steal (fields 1,2,3,6,7,8).
+func parseCPUSample(line string) (cpuSample, bool) {
+	f := strings.Fields(line)
+	if len(f) < 9 || f[0] != "cpu" {
+		return cpuSample{}, false
+	}
+	var v [10]uint64
+	for i := 1; i < len(f) && i <= 10; i++ {
+		n, err := strconv.ParseUint(f[i], 10, 64)
+		if err != nil {
+			return cpuSample{}, false
+		}
+		v[i-1] = n
+	}
+	var total uint64
+	for _, n := range v {
+		total += n
+	}
+	return cpuSample{
+		busy:  v[0] + v[1] + v[2] + v[5] + v[6] + v[7],
+		steal: v[7],
+		total: total,
+	}, true
+}
+
+// cpuDelta returns interval CPU and steal percentages; ok=false on counter
+// reset or an empty interval.
+func cpuDelta(prev, cur cpuSample) (cpuPct, stealPct float64, ok bool) {
+	if cur.total <= prev.total || cur.busy < prev.busy || cur.steal < prev.steal {
+		return 0, 0, false
+	}
+	dt := float64(cur.total - prev.total)
+	return float64(cur.busy-prev.busy) / dt * 100, float64(cur.steal-prev.steal) / dt * 100, true
+}
+
+func readCPUSample(path string) (cpuSample, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return cpuSample{}, false
+	}
+	line, _, _ := strings.Cut(string(data), "\n")
+	return parseCPUSample(line)
 }
 
 // NewCollector creates a metrics collector
@@ -35,6 +92,8 @@ func NewCollector(node *Node, reportInterval time.Duration, billingStartDate str
 		node:           node,
 		reportInterval: reportInterval,
 		lastNetStats:   NetworkStats{Timestamp: time.Now()},
+		procRoot:       hostProcPath(),
+		statPath:       "/proc/stat",
 	}
 
 	// If billing date is provided, initialize traffic monitor
@@ -116,6 +175,26 @@ func (c *Collector) collectMetrics() Health {
 	health.NetworkIn = int64(netStats.RxBytes)
 	health.NetworkOut = int64(netStats.TxBytes)
 	c.lastNetStats = netStats
+
+	// Trustworthy host metrics: host NIC (not the container veth) + interval CPU.
+	health.CPUCores = runtime.NumCPU()
+	now := time.Now()
+	cpuCur, cpuOK := readCPUSample(c.statPath)
+	nicCur, nicErr := readNICStats(c.procRoot)
+	if c.hasBaseline && cpuOK && nicErr == nil {
+		cpuPct, stealPct, ok1 := cpuDelta(c.lastCPU, cpuCur)
+		up, down, loss, ok2 := nicDelta(c.lastNIC, nicCur, now.Sub(c.lastAt).Seconds())
+		if ok1 && ok2 {
+			health.CPUPercent, health.StealPercent = cpuPct, stealPct
+			health.BandwidthUpMbps, health.BandwidthDownMbps = up, down
+			health.PacketLossPercent = loss
+			health.MetricsVersion = 1
+		}
+	}
+	c.hasBaseline = cpuOK && nicErr == nil
+	if c.hasBaseline {
+		c.lastCPU, c.lastNIC, c.lastAt = cpuCur, nicCur, now
+	}
 
 	// Get traffic statistics data
 	if c.trafficMonitor != nil {
