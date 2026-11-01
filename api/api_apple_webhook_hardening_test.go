@@ -113,16 +113,27 @@ func TestAppleWebhookRoute_BodyLimitBeforeRequestLog(t *testing.T) {
 
 func TestAppleWebhookDrift(t *testing.T) {
 	live := appleWebhookLiveSince.Add(time.Hour)
-	mk := func(autoRenew bool, env string, created time.Time) *Subscription {
-		return &Subscription{Provider: SubscriptionProviderApple, AutoRenew: autoRenew, Environment: env, CreatedAt: created}
+	before := func() *Subscription {
+		return &Subscription{Provider: SubscriptionProviderApple, AutoRenew: true, Environment: "Production",
+			Status: "active", CreatedAt: live, LastEventID: "evt-1"}
 	}
-	assert.True(t, appleWebhookDrift(true, mk(false, "Production", live)), "对账才发现关续费 = webhook 本该送达")
-	assert.False(t, appleWebhookDrift(false, mk(false, "Production", live)), "无变化")
-	assert.False(t, appleWebhookDrift(true, mk(false, "Sandbox", live)), "沙盒不算")
-	assert.False(t, appleWebhookDrift(true, mk(false, "Production", appleWebhookLiveSince.Add(-time.Hour))), "配置 webhook 之前的链是存量陈旧值")
-	stripe := mk(false, "Production", live)
-	stripe.Provider = SubscriptionProviderStripe
-	assert.False(t, appleWebhookDrift(true, stripe), "Stripe 不算")
+	after := func(mut func(*Subscription)) *Subscription {
+		s := before()
+		s.AutoRenew = false
+		if mut != nil {
+			mut(s)
+		}
+		return s
+	}
+	assert.True(t, appleWebhookDrift(before(), after(nil)), "对账才发现关续费 = webhook 本该送达")
+	assert.False(t, appleWebhookDrift(before(), before()), "无变化")
+	assert.False(t, appleWebhookDrift(before(), after(func(s *Subscription) { s.Environment = "Sandbox" })), "沙盒不算")
+	assert.False(t, appleWebhookDrift(before(), after(func(s *Subscription) { s.CreatedAt = appleWebhookLiveSince.Add(-time.Hour) })), "配置 webhook 之前的链是存量陈旧值")
+	assert.False(t, appleWebhookDrift(before(), after(func(s *Subscription) { s.Provider = SubscriptionProviderStripe })), "Stripe 不算")
+	assert.False(t, appleWebhookDrift(before(), after(func(s *Subscription) { s.LastEventID = "evt-2" })), "扫描途中 webhook 刚写过")
+	expired := before()
+	expired.Status = "expired"
+	assert.False(t, appleWebhookDrift(expired, after(nil)), "过期行由对账补写开关，Apple 不发通知")
 }
 
 // 迟到 / 重投的 EXPIRED 不能把已重新订阅的链打回过期，也不能清试用标志。

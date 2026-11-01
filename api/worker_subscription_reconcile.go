@@ -251,7 +251,7 @@ func handleSubscriptionReconcileTask(ctx context.Context, _ []byte) error {
 	}
 	var changed, failed, drift int
 	for i := range subs {
-		autoRenewBefore := subs[i].AutoRenew
+		before := subs[i]
 		c, err := reconcileSubscription(ctx, &subs[i], now)
 		if err != nil {
 			failed++
@@ -262,7 +262,7 @@ func handleSubscriptionReconcileTask(ctx context.Context, _ []byte) error {
 		if c {
 			changed++
 		}
-		if appleWebhookDrift(autoRenewBefore, &subs[i]) {
+		if appleWebhookDrift(&before, &subs[i]) {
 			drift++
 		}
 	}
@@ -283,11 +283,16 @@ const appleWebhookDriftAlertMin = 3
 
 // appleWebhookDrift 这条订阅的续费开关是对账才发现变化的，说明 webhook 没把它送到。
 // webhook 静默时一切照常运转、没有任何报错，这是唯一看得见它的信号（开途曾因此静默一个月）。
-func appleWebhookDrift(autoRenewBefore bool, sub *Subscription) bool {
-	return sub.Provider == SubscriptionProviderApple &&
-		sub.Environment == string(appstore.Environment_Production) &&
-		sub.CreatedAt.After(appleWebhookLiveSince) &&
-		sub.AutoRenew != autoRenewBefore
+//
+// before 是本轮扫描开始时的快照，after 是对账后重载的行。只算活跃的行：过期行的开关由对账补写，
+// Apple 不为它发通知。LastEventID 变了说明扫描途中 webhook 刚处理过这条，变化是它写的。
+func appleWebhookDrift(before, after *Subscription) bool {
+	return after.Provider == SubscriptionProviderApple &&
+		after.Environment == string(appstore.Environment_Production) &&
+		after.CreatedAt.After(appleWebhookLiveSince) &&
+		before.Status == "active" &&
+		before.LastEventID == after.LastEventID &&
+		before.AutoRenew != after.AutoRenew
 }
 
 // subscriptionsToReconcile 本轮要对账的订阅:临期/陈旧的活跃行(全部 provider)∪ Apple 生产订阅的
