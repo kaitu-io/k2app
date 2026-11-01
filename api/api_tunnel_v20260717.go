@@ -59,6 +59,7 @@ func api_v20260717_tunnels(c *gin.Context) {
 	nodeLoadDetails := GetNodeLoadDetails(c, nodeIDs)
 	usageMap := getNodeUsagesByIPs(nodeIPs)
 	now := time.Now().Unix()
+	fleet := fleetPressure(usageMap, now)
 
 	items := make([]DataSlaveTunnelV20260717, 0, len(tunnels))
 	for _, tunnel := range tunnels {
@@ -102,7 +103,7 @@ func api_v20260717_tunnels(c *gin.Context) {
 			HopPortEnd:     tunnel.HopPortEnd,
 			Node:           nodeData,
 			IPType:         tunnel.Node.IPType,
-			RecommendScore: listRecommendScore(u, ComputeRecommendScore(buildTunnelInstanceDataFromUsage(u))),
+			RecommendScore: listRecommendScore(u, ComputeRecommendScore(buildTunnelInstanceDataFromUsage(u, effectivePressure(u, fleet, now)))),
 			ServerUrl:      tunnel.ServerURL,
 		}
 		items = append(items, item)

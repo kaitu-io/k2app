@@ -107,6 +107,7 @@ func api_k2_tunnels(c *gin.Context) {
 	// over-quota/offline hide + recommend-score source.
 	usageMap := getNodeUsagesByIPs(nodeIPs)
 	now := time.Now().Unix()
+	fleet := fleetPressure(usageMap, now)
 
 	// Convert to API response format, filter out tunnels without nodes
 	items := make([]DataSlaveTunnel, 0, len(tunnels))
@@ -178,7 +179,7 @@ func api_k2_tunnels(c *gin.Context) {
 		}
 
 		// Instance scoring DTO from NodeUsage (nil usage → nil → neutral 0.5).
-		item.Instance = buildTunnelInstanceDataFromUsage(u)
+		item.Instance = buildTunnelInstanceDataFromUsage(u, effectivePressure(u, fleet, now))
 
 		// Top-level recommendScore — non-cloud nodes get the neutral 0.5 default
 		// from ComputeRecommendScore(nil), so UI doesn't need instance null checks.

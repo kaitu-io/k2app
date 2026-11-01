@@ -272,7 +272,7 @@ func TestBuildTunnelInstanceDataFromUsage_BudgetScore(t *testing.T) {
 			QuotaTotalBytes: 1000,
 			Epoch:           now + 15*86400,
 		}
-		result := buildTunnelInstanceDataFromUsage(u)
+		result := buildTunnelInstanceDataFromUsage(u, nil)
 		require.NotNil(t, result)
 
 		expected := result.TrafficRatio - result.TimeRatio
@@ -281,7 +281,7 @@ func TestBuildTunnelInstanceDataFromUsage_BudgetScore(t *testing.T) {
 	})
 
 	t.Run("returns nil for nil input", func(t *testing.T) {
-		result := buildTunnelInstanceDataFromUsage(nil)
+		result := buildTunnelInstanceDataFromUsage(nil, nil)
 		assert.Nil(t, result)
 	})
 
@@ -292,7 +292,7 @@ func TestBuildTunnelInstanceDataFromUsage_BudgetScore(t *testing.T) {
 			QuotaTotalBytes: 0,
 			Epoch:           now + 15*86400,
 		}
-		result := buildTunnelInstanceDataFromUsage(u)
+		result := buildTunnelInstanceDataFromUsage(u, nil)
 		require.NotNil(t, result)
 		assert.Equal(t, 0.0, result.TrafficRatio)
 		assert.LessOrEqual(t, result.BudgetScore, 0.0)
@@ -310,7 +310,7 @@ func TestBuildTunnelInstanceDataFromUsage_PopulatesRecommendScore(t *testing.T) 
 		QuotaTotalBytes: 1000,
 		Epoch:           now + 15*86400, // ~15 days into a 30-day cycle
 	}
-	result := buildTunnelInstanceDataFromUsage(u)
+	result := buildTunnelInstanceDataFromUsage(u, nil)
 	require.NotNil(t, result)
 
 	// RecommendScore must equal the canonical ComputeRecommendScore of the same

@@ -335,6 +335,7 @@ func api_subs(c *gin.Context) {
 	}
 	usageMap := getNodeUsagesByIPs(nodeIPs)
 	now := time.Now().Unix()
+	fleet := fleetPressure(usageMap, now)
 
 	items := make([]SubsTunnel, 0, len(tunnels))
 	for _, t := range tunnels {
@@ -380,7 +381,7 @@ func api_subs(c *gin.Context) {
 			continue
 		}
 
-		score := ComputeRecommendScore(buildTunnelInstanceDataFromUsage(u))
+		score := ComputeRecommendScore(buildTunnelInstanceDataFromUsage(u, effectivePressure(u, fleet, now)))
 
 		items = append(items, SubsTunnel{
 			URL:            injectSubsCreds(t.ServerURL, udid, urlToken),

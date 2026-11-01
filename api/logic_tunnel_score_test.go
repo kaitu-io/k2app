@@ -1,10 +1,96 @@
 package center
 
 import (
+	"math"
 	"testing"
 
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
+
+// pinst builds a scoring DTO whose quota-only score is exactly q (timeRatio=1
+// gives w=1, so score = 1 - trafficRatio), carrying pressure p.
+func pinst(q float64, p *float64) *DataTunnelInstance {
+	return &DataTunnelInstance{TrafficRatio: 1 - q, TimeRatio: 1, Pressure: p}
+}
+
+func fp(v float64) *float64 { return &v }
+
+func TestScore_PressureNilMatchesQuotaFormula(t *testing.T) {
+	for _, tr := range []float64{0, 0.2, 0.6, 1} {
+		for _, tm := range []float64{0, 0.3, 0.9, 1} {
+			inst := &DataTunnelInstance{TrafficRatio: tr, TimeRatio: tm}
+			w := usageSensitivityFloor + (1-usageSensitivityFloor)*math.Pow(tm, usageSensitivityGamma)
+			assert.Equal(t, 1-tr*w, ComputeRecommendScore(inst))
+		}
+	}
+}
+
+func TestScore_PressureDominates(t *testing.T) {
+	assert.InDelta(t, 0.55, ComputeRecommendScore(pinst(1, fp(0.5))), 1e-9)
+	assert.InDelta(t, 0.95, ComputeRecommendScore(pinst(0.5, fp(0))), 1e-9)
+}
+
+func TestScore_BucketTies(t *testing.T) {
+	assert.Equal(t, ComputeRecommendScore(pinst(1, fp(0.02))), ComputeRecommendScore(pinst(1, fp(0.03))))
+	assert.NotEqual(t, ComputeRecommendScore(pinst(1, fp(0.02))), ComputeRecommendScore(pinst(1, fp(0.06))))
+}
+
+func TestScore_QuotaGuard(t *testing.T) {
+	assert.InDelta(t, 0.1, ComputeRecommendScore(pinst(0.1, fp(0))), 1e-9)
+}
+
+func TestScore_Floor(t *testing.T) {
+	assert.InDelta(t, 0.05, ComputeRecommendScore(pinst(0, fp(1))), 1e-9)
+}
+
+func TestScore_NilInstanceStillNeutral(t *testing.T) {
+	assert.Equal(t, 0.5, ComputeRecommendScore(nil))
+}
+
+func TestEffectivePressure_DisabledIsNil(t *testing.T) {
+	restoreViper(t, "node_pressure.enabled")
+	viper.Set("node_pressure.enabled", false)
+	u := &NodeUsage{PressureRatio: 0.4, PressureAt: 1000}
+	assert.Nil(t, effectivePressure(u, 0.2, 1000))
+}
+
+func TestEffectivePressure_StaleUsesFleetMedian(t *testing.T) {
+	restoreViper(t, "node_pressure.enabled")
+	viper.Set("node_pressure.enabled", true)
+	fresh := &NodeUsage{PressureRatio: 0.4, PressureAt: 1000}
+	stale := &NodeUsage{PressureRatio: 0.9, PressureAt: 1000 - pressureStaleSeconds - 1}
+	if p := effectivePressure(fresh, 0.2, 1000); assert.NotNil(t, p) {
+		assert.Equal(t, 0.4, *p)
+	}
+	if p := effectivePressure(stale, 0.2, 1000); assert.NotNil(t, p) {
+		assert.Equal(t, 0.2, *p)
+	}
+	if p := effectivePressure(nil, 0.2, 1000); assert.NotNil(t, p) {
+		assert.Equal(t, 0.2, *p)
+	}
+}
+
+func TestFleetPressure_NoneFreshIsZero(t *testing.T) {
+	m := map[string]*NodeUsage{
+		"a": {PressureRatio: 0.9, PressureAt: 1},
+		"b": nil,
+	}
+	assert.Equal(t, 0.0, fleetPressure(m, 100000))
+	m["c"] = &NodeUsage{PressureRatio: 0.2, PressureAt: 100000}
+	m["d"] = &NodeUsage{PressureRatio: 0.6, PressureAt: 100000}
+	assert.InDelta(t, 0.4, fleetPressure(m, 100000), 1e-9)
+}
+
+func TestListRecommendScore_OrderPreservedWithPressure(t *testing.T) {
+	u := &NodeUsage{}
+	hi := ComputeRecommendScore(pinst(1, fp(0.1)))
+	lo := ComputeRecommendScore(pinst(1, fp(0.7)))
+	assert.Greater(t, hi, lo)
+	assert.Greater(t, listRecommendScore(u, hi), listRecommendScore(u, lo))
+	ex := &NodeUsage{QuotaTotalBytes: 100, UsedBytes: 100}
+	assert.Equal(t, listScoreExhausted, listRecommendScore(ex, hi))
+}
 
 func TestComputeRecommendScore_NilInstance(t *testing.T) {
 	// Non-cloud nodes (no CloudInstance) must return the neutral 0.5 so they

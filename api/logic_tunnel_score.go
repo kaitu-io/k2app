@@ -1,6 +1,10 @@
 package center
 
-import "math"
+import (
+	"math"
+
+	"github.com/spf13/viper"
+)
 
 // usageSensitivityFloor is the minimum usage-sensitivity weight w(t), applied
 // at the very start of a billing cycle (timeRatio == 0). A small non-zero floor
@@ -59,6 +63,15 @@ const usageSensitivityGamma = 2.0
 //	day 15, 60% used:  w=0.363 → score 0.78 (🟢)
 //	day 30, 50% used:  w=1.000 → score 0.50 (🟡)
 //	day 30, 90% used:  w=1.000 → score 0.10 (🔴, steered away)
+//
+// Pressure mode: when inst.Pressure != nil (node_pressure.enabled) the score
+// above becomes quotaScore and the result is
+//
+//	p := quantizePressure(*inst.Pressure)
+//	score := 0.9·(1−p) + 0.1·quotaScore; if quotaScore<0.3 { min(score, quotaScore) }
+//	clamp to [0.05, 1]
+//
+// i.e. score is the main line, quota is the defence.
 func ComputeRecommendScore(inst *DataTunnelInstance) float64 {
 	if inst == nil {
 		return 0.5
@@ -74,7 +87,53 @@ func ComputeRecommendScore(inst *DataTunnelInstance) float64 {
 	if score > 1 {
 		score = 1
 	}
-	return score
+	quotaScore := score
+
+	// Pressure-driven mode (node_pressure.enabled): the quantized pressure is
+	// the main line, quota is a defence. score = 0.9*(1-p) + 0.1*quotaScore,
+	// capped by quotaScore once quota is nearly gone (<0.3), floored at 0.05
+	// so no node ever hits 0 (weighted pick treats 0 as disqualified).
+	if inst.Pressure == nil {
+		return quotaScore
+	}
+	p := quantizePressure(*inst.Pressure)
+	ps := 0.9*(1-p) + 0.1*quotaScore
+	if quotaScore < 0.3 {
+		ps = math.Min(ps, quotaScore)
+	}
+	return math.Min(math.Max(ps, 0.05), 1)
+}
+
+// nodePressureEnabled reports whether pressure drives recommendScore
+// (viper node_pressure.enabled, default off).
+func nodePressureEnabled() bool {
+	return viper.GetBool("node_pressure.enabled")
+}
+
+// fleetPressure is the median of fresh pressure values across usages; 0 when
+// none are fresh.
+func fleetPressure(usages map[string]*NodeUsage, now int64) float64 {
+	var vals []float64
+	for _, u := range usages {
+		if pressureFresh(u, now) {
+			vals = append(vals, u.PressureRatio)
+		}
+	}
+	m, _ := medianFloat(vals)
+	return m
+}
+
+// effectivePressure returns the pressure to score u with: nil when the switch
+// is off, u's own value when fresh, otherwise the fleet median.
+func effectivePressure(u *NodeUsage, fleet float64, now int64) *float64 {
+	if !nodePressureEnabled() {
+		return nil
+	}
+	if pressureFresh(u, now) {
+		v := u.PressureRatio
+		return &v
+	}
+	return &fleet
 }
 
 // Tunnel-list scores are projected onto the bands the client colors by: green
@@ -115,7 +174,7 @@ func shouldHideTunnelForUser(u *NodeUsage, isAdmin bool, now int64) bool {
 // nil usage → nil (ComputeRecommendScore(nil)=0.5 neutral). TimeRatio uses the
 // node-reported billing-cycle end (Epoch). Mirrors the old buildTunnelInstanceData
 // by also stamping the DTO's own RecommendScore.
-func buildTunnelInstanceDataFromUsage(u *NodeUsage) *DataTunnelInstance {
+func buildTunnelInstanceDataFromUsage(u *NodeUsage, pressure *float64) *DataTunnelInstance {
 	if u == nil {
 		return nil
 	}
@@ -133,6 +192,7 @@ func buildTunnelInstanceDataFromUsage(u *NodeUsage) *DataTunnelInstance {
 		BillingCycleEndAt: u.Epoch,
 		TimeRatio:         timeRatio,
 		BudgetScore:       trafficRatio - timeRatio,
+		Pressure:          pressure,
 	}
 	d.RecommendScore = ComputeRecommendScore(d)
 	return d

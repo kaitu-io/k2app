@@ -109,6 +109,7 @@ func handleAntiblockSeed(c *gin.Context) {
 	}
 	usageMap := getNodeUsagesByIPs(nodeIPs)
 	now := time.Now().Unix()
+	fleet := fleetPressure(usageMap, now)
 
 	type candidate struct {
 		desc  seedNodeDescriptor
@@ -148,7 +149,7 @@ func handleAntiblockSeed(c *gin.Context) {
 
 		// Score via the single authority (ComputeRecommendScore).
 		// buildTunnelInstanceDataFromUsage(nil) → nil → neutral 0.5.
-		inst := buildTunnelInstanceDataFromUsage(u)
+		inst := buildTunnelInstanceDataFromUsage(u, effectivePressure(u, fleet, now))
 		score := ComputeRecommendScore(inst)
 
 		candidates = append(candidates, candidate{

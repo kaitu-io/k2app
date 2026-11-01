@@ -381,12 +381,13 @@ type DataSlaveNode struct {
 // DataTunnelInstance contains cloud instance info for a tunnel
 // This provides billing and traffic data from the associated CloudInstance
 type DataTunnelInstance struct {
-	TrafficTotalBytes int64   `json:"trafficTotalBytes"` // Total traffic allowance in bytes
-	TrafficRatio      float64 `json:"trafficRatio"`      // Traffic consumption ratio (0-1, e.g., 0.75 = 75% used)
-	BillingCycleEndAt int64   `json:"billingCycleEndAt"` // Billing cycle end timestamp (Unix seconds)
-	TimeRatio         float64 `json:"timeRatio"`         // Time consumption ratio (0-1, e.g., 0.5 = 50% of cycle elapsed)
-	BudgetScore       float64 `json:"budgetScore"`       // Deprecated: kept for admin/diagnostics. New code uses RecommendScore. TrafficRatio - TimeRatio. [-1,+1]. Negative = under budget.
-	RecommendScore    float64 `json:"recommendScore"`    // Canonical [0,1] recommendation signal, higher = better. Computed via ComputeRecommendScore.
+	TrafficTotalBytes int64    `json:"trafficTotalBytes"` // Total traffic allowance in bytes
+	TrafficRatio      float64  `json:"trafficRatio"`      // Traffic consumption ratio (0-1, e.g., 0.75 = 75% used)
+	BillingCycleEndAt int64    `json:"billingCycleEndAt"` // Billing cycle end timestamp (Unix seconds)
+	TimeRatio         float64  `json:"timeRatio"`         // Time consumption ratio (0-1, e.g., 0.5 = 50% of cycle elapsed)
+	BudgetScore       float64  `json:"budgetScore"`       // Deprecated: kept for admin/diagnostics. New code uses RecommendScore. TrafficRatio - TimeRatio. [-1,+1]. Negative = under budget.
+	RecommendScore    float64  `json:"recommendScore"`    // Canonical [0,1] recommendation signal, higher = better. Computed via ComputeRecommendScore.
+	Pressure          *float64 `json:"-"`                 // Node pressure [0,1] used by ComputeRecommendScore; nil = pressure not used (switch off).
 }
 
 // DataSlaveTunnel API tunnel data structure
