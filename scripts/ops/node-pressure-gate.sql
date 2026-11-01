@@ -81,7 +81,7 @@ r AS (
          CASE WHEN (n*sxx - sx*sx) > 0 AND (n*syy - sy*sy) > 0
               THEN POW(n*sxy - sx*sy, 2) / ((n*sxx - sx*sx) * (n*syy - sy*sy))
          END AS r2
-  FROM agg WHERE n_busy >= 30
+  FROM agg WHERE n_busy >= 30 AND (n*sxy - sx*sy) / NULLIF(n*sxx - sx*sx, 0) > 0
 )
 SELECT COUNT(*)                                   AS qualified_nodes,
        COALESCE(SUM(r2 >= 0.6), 0)                AS nodes_r2_ge_0_6,
