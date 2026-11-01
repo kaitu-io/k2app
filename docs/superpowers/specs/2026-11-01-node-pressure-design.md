@@ -66,7 +66,7 @@
 
 **Center**（`api/slave_api_report.go`、`api/model.go`）：
 - `SlaveNodeLoad` 增加 `ipv4`、`metrics_version`、`steal_percent`、`cpu_percent`、`cpu_cores`。
-- **注意**：节点每次重启都重新注册并换 NodeID，`api_slave_node_unregister` 还会删掉 `slave_node_loads`，这正是线上数据只回溯到 10/28 的原因。计算 M 必须按 `ipv4` 取历史，且自注销路径不再删负载行（`api_admin_node.go` 的管理员删除路径不变；过期由现有 30 天清理兜底）。
+- **注意**：普通重新注册是原地更新、NodeID 不变，但节点自注销（`api_slave_node_unregister`）会删节点行和 `slave_node_loads`，再注册时换新 NodeID。计算 M 必须按 `ipv4` 取历史，且自注销路径不再删负载行（`api_admin_node.go` 的管理员删除路径不变；过期由现有 30 天清理兜底）。
 
 **发布**：`make publish-docker` 后 canary + 分批（`kaitu-node-ops`）。sidecar 无测试门，须自跑 `go test ./...`。
 
@@ -82,7 +82,7 @@ M = (80 − b) / k        # 80% CPU 视为容量上限
 - **口径**：主机网卡 rx+tx 之和，M、压力、下列阈值全部用它。本文「现状」里的历史数字来自 `used_traffic_bytes`，各厂商计量方式不同（sum / max），差约 2 倍，仅供参考。
 - **M 指持续能力，不是突发能力**：steal > 5% 的样本不进拟合，避免突发额度耗尽时的样本扭曲斜率；这类时刻由压力公式里的 CPU 项兜住。
 - 样本够（Mbps ≥ 20 的样本 ≥ 30 个，且 k > 0）→ `source = fitted`。
-- 合理性上限：M 不超过该节点观测峰值的 5 倍，超出时截断并记录，避免从几十 Mbps 外推出离谱的值。
+- 合理范围：M 不低于该节点观测峰值，不超过峰值的 5 倍，超出时截断并记录，避免从几十 Mbps 外推出离谱的值。
 - 否则 → 取同组（`provider + cpuCores`）fitted 节点的 M 中位数，`source = group`。
 - 组内也没有 → `source = none`，无 M，压力只看 CPU 和内存项。
 - 不用厂商标称值做上限。
@@ -103,7 +103,8 @@ M 写入 `NodeUsage`（已按 ipv4 持久）：`capacity_mbps`、`capacity_sourc
 每次状态上报时计算并写入 `NodeUsage.pressure_ratio`、`pressure_at`：
 
 ```
-raw = max(Mbps / M, busy% / 80, mem% / 90)   # 取大：任一资源先到顶都算压力；无 M 时跳过第一项
+memTerm = clamp((mem% − 80) / 15, 0, 1)      # 内存常态 45–75%，只有逼近耗尽才计入，否则压力又会约等于内存
+raw = max(Mbps / M, busy% / 80, memTerm)     # 取大：任一资源先到顶都算压力；无 M 时跳过第一项
 pressure = EWMA(raw, α=0.3)，clamp [0, 1]
 ```
 
