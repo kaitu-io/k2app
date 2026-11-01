@@ -97,6 +97,7 @@ func TestV20260717TunnelsShape(t *testing.T) {
 		}
 	}
 	require.NotNil(t, it, "could not find the tunnel we created in response items")
+	require.Contains(t, it, "recommendScore")
 
 	if it["protocol"] != "k2s" {
 		t.Errorf("protocol=%v want k2s (ProtocolDisplay)", it["protocol"])
