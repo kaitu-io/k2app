@@ -103,7 +103,8 @@ func handleAntiblockSeed(c *gin.Context) {
 	// Batch-load NodeUsage by IP for over-quota/offline gating and scoring.
 	nodeIPs := make([]string, 0, len(tunnels))
 	for _, t := range tunnels {
-		if t.Node != nil {
+		// Only shared nodes are served; keep others out of the fleet median.
+		if t.Node != nil && t.Node.Class == NodeClassShared {
 			nodeIPs = append(nodeIPs, t.Node.Ipv4)
 		}
 	}
@@ -148,7 +149,9 @@ func handleAntiblockSeed(c *gin.Context) {
 		seen[ip] = true
 
 		// Score via the single authority (ComputeRecommendScore).
-		// buildTunnelInstanceDataFromUsage(nil) → nil → neutral 0.5.
+		// No usage row → buildTunnelInstanceDataFromUsage(nil, …) → nil →
+		// neutral 0.5; the fleet median only backs stale/missing pressure on
+		// an existing row.
 		inst := buildTunnelInstanceDataFromUsage(u, effectivePressure(u, fleet, now))
 		score := ComputeRecommendScore(inst)
 

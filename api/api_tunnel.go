@@ -95,7 +95,11 @@ func api_k2_tunnels(c *gin.Context) {
 	for _, tunnel := range tunnels {
 		if tunnel.Node != nil && tunnel.Node.ID != 0 {
 			nodeIDs = append(nodeIDs, tunnel.Node.ID)
-			nodeIPs = append(nodeIPs, tunnel.Node.Ipv4)
+			// Private nodes are filtered out below; keep them out of the usage
+			// map so their pressure never feeds the fleet median.
+			if tunnel.Node.Class != NodeClassPrivate {
+				nodeIPs = append(nodeIPs, tunnel.Node.Ipv4)
+			}
 		}
 	}
 

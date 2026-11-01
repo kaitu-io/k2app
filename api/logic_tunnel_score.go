@@ -124,7 +124,10 @@ func fleetPressure(usages map[string]*NodeUsage, now int64) float64 {
 }
 
 // effectivePressure returns the pressure to score u with: nil when the switch
-// is off, u's own value when fresh, otherwise the fleet median.
+// is off, u's own value when fresh, otherwise the fleet median. A node with no
+// usage row never reaches scoring with pressure (buildTunnelInstanceDataFromUsage
+// returns nil → neutral 0.5); the median only backs stale/missing pressure on
+// an existing row.
 func effectivePressure(u *NodeUsage, fleet float64, now int64) *float64 {
 	if !nodePressureEnabled() {
 		return nil

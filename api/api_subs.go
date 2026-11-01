@@ -329,7 +329,9 @@ func api_subs(c *gin.Context) {
 	// (neutral), keeping them eligible in pickWeighted without being favored.
 	nodeIPs := make([]string, 0, len(tunnels))
 	for _, t := range tunnels {
-		if t.Node != nil && t.Node.ID != 0 {
+		// Private nodes are skipped later; keep them out of the usage map so
+		// their pressure never feeds the fleet median.
+		if t.Node != nil && t.Node.ID != 0 && t.Node.Class != NodeClassPrivate {
 			nodeIPs = append(nodeIPs, t.Node.Ipv4)
 		}
 	}
