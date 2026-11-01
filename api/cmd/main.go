@@ -161,6 +161,19 @@ var migrateCmd = &cobra.Command{
 	},
 }
 
+var reconcileAppleCmd = &cobra.Command{
+	Use:   "reconcile-apple",
+	Short: "Reconcile every active Apple production subscription now (idempotent)",
+	Run: func(cmd *cobra.Command, args []string) {
+		util.SetConfigFile(configFile)
+		scanned, changed, failed, off, err := center.ReconcileAppleActive(context.Background())
+		if err != nil {
+			log.Fatalf(context.Background(), "reconcile-apple failed: %v", err)
+		}
+		fmt.Printf("scanned=%d changed=%d failed=%d auto_renew_on_to_off=%d\n", scanned, changed, failed, off)
+	},
+}
+
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "显示版本信息",
@@ -415,6 +428,8 @@ func init() {
 	rootCmd.AddCommand(userCmd)
 	rootCmd.AddCommand(startCmd)
 	rootCmd.AddCommand(migrateCmd)
+	reconcileAppleCmd.Flags().StringVarP(&configFile, "config", "c", "./config.yml", "配置文件路径")
+	rootCmd.AddCommand(reconcileAppleCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(stopCmd)

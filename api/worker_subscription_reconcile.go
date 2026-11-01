@@ -274,6 +274,36 @@ func handleSubscriptionReconcileTask(ctx context.Context, _ []byte) error {
 	return nil
 }
 
+// ReconcileAppleActive 不分桶地对账全部 Apple 生产有效订阅，走与每日 cron 相同的路径，所以幂等、可重跑。
+// 用于漏通知后要立刻拿到准确状态的场合（CLI reconcile-apple）。autoRenewOff 是本次从开变关的条数。
+func ReconcileAppleActive(ctx context.Context) (scanned, changed, failed, autoRenewOff int, err error) {
+	var subs []Subscription
+	if err = db.Get().Where("provider = ? AND environment = ? AND status IN ?",
+		SubscriptionProviderApple, appstore.Environment_Production, activeSubStatuses).
+		Order("id").Find(&subs).Error; err != nil {
+		return
+	}
+	now := time.Now().Unix()
+	for i := range subs {
+		wasOn := subs[i].AutoRenew
+		c, rerr := reconcileSubscription(ctx, &subs[i], now)
+		scanned++
+		if rerr != nil {
+			failed++
+			log.Errorf(ctx, "[SUB-RECONCILE] sub %s (user=%d) reconcile failed: %v",
+				subs[i].ProviderSubscriptionID, subs[i].UserID, rerr)
+			continue
+		}
+		if c {
+			changed++
+		}
+		if wasOn && !subs[i].AutoRenew {
+			autoRenewOff++
+		}
+	}
+	return
+}
+
 // appleWebhookLiveSince 开途 ASC 配上服务器通知的日子（此前从未配置）。更早的链 auto_renew 是陈旧默认值，
 // 对账逐桶修正它们不代表 webhook 坏了。
 var appleWebhookLiveSince = time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)

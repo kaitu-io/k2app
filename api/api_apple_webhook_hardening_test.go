@@ -177,6 +177,54 @@ func TestApplyRenewalInfo_IgnoresOlderSignedState(t *testing.T) {
 	assert.False(t, f.subNow(t).AutoRenew, "更新的状态正常落地")
 }
 
+// 全量对账不看 id 分桶：连着 7 个 id 必然跨遍所有桶。沙盒和已过期行不碰。
+func TestReconcileAppleActive_CoversEveryBucketOnlyActiveProduction(t *testing.T) {
+	trialDB(t)
+	setTestAppleBundleID(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	now := time.Now()
+
+	polled := map[string]bool{}
+	oldFetch := fetchAppleSubStatus
+	fetchAppleSubStatus = func(_ context.Context, _, otx string) (*appleSubStatus, error) {
+		polled[otx] = true
+		if !strings.HasPrefix(otx, "HD-ALL-") {
+			return nil, errors.New("not part of this test")
+		}
+		return &appleSubStatus{status: 1, renewal: &appstore.RenewalInfo{
+			AutoRenewStatus: appstore.AutoRenewStatus_Off, SignedDate: now.UnixMilli(),
+		}}, nil
+	}
+	t.Cleanup(func() { fetchAppleSubStatus = oldFetch })
+
+	seed := func(prefix, env, status string, i int) string {
+		otx := fmt.Sprintf("%s%d-%d", prefix, now.UnixNano(), i)
+		sub := Subscription{
+			UserID: f.buyer.ID, Provider: SubscriptionProviderApple, ProviderSubscriptionID: otx,
+			ProductID: f.plan.AppleProductID, CurrentPeriodEnd: now.Unix() + 30*86400, AutoRenew: true,
+			Environment: env, Status: status,
+		}
+		require.NoError(t, db.Get().Create(&sub).Error)
+		t.Cleanup(func() { db.Get().Delete(&Subscription{}, sub.ID) })
+		return otx
+	}
+	var want []string
+	for i := 0; i < appleReconcileBuckets; i++ {
+		want = append(want, seed("HD-ALL-", "Production", "active", i))
+	}
+	sandbox := seed("HD-SKIP-", "Sandbox", "active", 0)
+	expired := seed("HD-SKIP-", "Production", "expired", 1)
+
+	_, _, _, off, err := ReconcileAppleActive(context.Background())
+	require.NoError(t, err)
+	for _, otx := range want {
+		assert.True(t, polled[otx], otx)
+	}
+	assert.False(t, polled[sandbox])
+	assert.False(t, polled[expired])
+	assert.GreaterOrEqual(t, off, appleReconcileBuckets)
+}
+
 // 告警走完整的每日对账：对账发现 webhook 本该送达的开关变化 → 发 APPLE-WEBHOOK-SILENT；少于阈值不发。
 func TestReconcileSweep_AlertsWhenWebhookSilent(t *testing.T) {
 	trialDB(t)
