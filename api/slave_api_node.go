@@ -625,7 +625,7 @@ func api_slave_node_delete_tunnel(c *gin.Context) {
 }
 
 // api_slave_node_unregister handles node self-unregistration during sidecar graceful shutdown.
-// Cascading hard-delete: SlaveTunnel + SlaveNodeLoad + SlaveNode.
+// Cascading hard-delete: SlaveTunnel + SlaveNode (SlaveNodeLoad samples are kept, keyed by ipv4).
 // Idempotent: returns success even if the node doesn't exist.
 // DELETE /slave/nodes/:ipv4
 func api_slave_node_unregister(c *gin.Context) {
@@ -654,13 +654,6 @@ func api_slave_node_unregister(c *gin.Context) {
 		tx.Rollback()
 		log.Errorf(c, "failed to delete tunnels for node %s: %v", ipv4Param, err)
 		Error(c, ErrorSystemError, "failed to delete tunnels")
-		return
-	}
-
-	if err := tx.Unscoped().Where("node_id = ?", node.ID).Delete(&SlaveNodeLoad{}).Error; err != nil {
-		tx.Rollback()
-		log.Errorf(c, "failed to delete load records for node %s: %v", ipv4Param, err)
-		Error(c, ErrorSystemError, "failed to delete load records")
 		return
 	}
 

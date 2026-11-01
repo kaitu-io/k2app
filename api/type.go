@@ -440,6 +440,12 @@ type SlaveTunnelHealth struct {
 	BillingCycleEndAt        int64 `json:"billingCycleEndAt"`        // 计费周期结束时间戳（Unix秒）
 	MonthlyTrafficLimitBytes int64 `json:"monthlyTrafficLimitBytes"` // 月度流量限制（字节），0表示无限制
 	UsedTrafficBytes         int64 `json:"usedTrafficBytes"`         // 当前周期已使用流量（字节）
+
+	// 指标版本 1+（sidecar 上报主机网卡与区间 CPU）；旧 sidecar 缺省为 0
+	MetricsVersion int     `json:"metricsVersion"` // 0 = 旧 sidecar
+	CPUPercent     float64 `json:"cpuPercent"`     // 区间 CPU 使用率 (%)
+	StealPercent   float64 `json:"stealPercent"`   // 区间 steal (%)
+	CPUCores       int     `json:"cpuCores"`       // CPU 核数
 }
 
 // SlaveReportRequest 节点报告请求

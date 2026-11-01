@@ -695,8 +695,8 @@ type SlaveTunnel struct {
 
 // SlaveNodeLoad 节点负载历史记录
 type SlaveNodeLoad struct {
-	ID        uint64 `gorm:"primarykey"`
-	CreatedAt time.Time
+	ID        uint64     `gorm:"primarykey"`
+	CreatedAt time.Time  `gorm:"index:idx_snl_ipv4_created,priority:2"`
 	NodeID    uint64     `gorm:"not null;index"`    // 关联的节点ID
 	Load      int        `gorm:"not null"`          // 负载值（CPU使用率百分比）
 	Node      *SlaveNode `gorm:"foreignKey:NodeID"` // 关联的节点
@@ -721,6 +721,15 @@ type SlaveNodeLoad struct {
 	BillingCycleEndAt        int64 `gorm:"not null;default:0"` // 计费周期截止时间戳（Unix秒）
 	MonthlyTrafficLimitBytes int64 `gorm:"not null;default:0"` // 月度流量限制（字节），0表示无限制
 	UsedTrafficBytes         int64 `gorm:"not null;default:0"` // 当前计费周期已使用流量（字节）
+
+	// Ipv4 是样本的耐久键：节点每次重启会以新 NodeID 重新注册，历史按 ipv4 保留。
+	Ipv4 string `gorm:"type:varchar(20);not null;default:'';index:idx_snl_ipv4_created,priority:1"`
+
+	// 指标版本 1+（sidecar 上报）；MetricsVersion==0 为旧 sidecar，下列字段无意义
+	MetricsVersion int     `gorm:"not null;default:0"`
+	CPUPercent     float64 `gorm:"not null;default:0"` // 区间 CPU 使用率 (%)
+	StealPercent   float64 `gorm:"not null;default:0"` // 区间 steal (%)
+	CPUCores       int     `gorm:"not null;default:0"` // CPU 核数
 }
 
 // NodeUsage is the runtime traffic-metering MIRROR of a node (1:1 SlaveNode).
@@ -729,8 +738,9 @@ type SlaveNodeLoad struct {
 // display / warnings / visibility / offline derivation — it NEVER drives the
 // node-side cut. Covers all nodes (shared + private). Keyed by Ipv4 (durable),
 // not NodeID: usage is a property of "what this node's NIC did", and a node
-// re-registers (hard delete + recreate) with a fresh NodeID on every restart,
-// so NodeID is not stable. The node holds the real counter (persisted baseline)
+// that restarts or re-registers gets a fresh NodeID (the sidecar self-unregisters
+// on graceful shutdown, which hard-deletes the SlaveNode row), so NodeID is not
+// stable. Samples in SlaveNodeLoad are likewise keyed by Ipv4 and survive it. The node holds the real counter (persisted baseline)
 // and re-reports each cycle, so any transient mirror gap is display-layer
 // cosmetic only. See spec §3.1.
 type NodeUsage struct {
@@ -739,7 +749,7 @@ type NodeUsage struct {
 	UpdatedAt int64  `gorm:"autoUpdateTime" json:"updatedAt"`
 
 	// NodeID is the CURRENT SlaveNode.ID — kept for debugging/joins only. It is
-	// NOT the key: a node re-registers on every restart (hard delete + recreate,
+	// NOT the key: a node re-registers after a self-unregister (hard delete + recreate,
 	// slave_api_node.go:259) and gets a new id, which orphaned the old NodeUsage
 	// row and reset score/hide to neutral. Ipv4 is the durable key instead.
 	NodeID uint64 `gorm:"index;not null" json:"nodeId"`
@@ -758,6 +768,14 @@ type NodeUsage struct {
 	Warn80SentEpoch       int64 `gorm:"not null;default:0" json:"-"`
 	Warn90SentEpoch       int64 `gorm:"not null;default:0" json:"-"`
 	Exhausted100SentEpoch int64 `gorm:"not null;default:0" json:"-"`
+
+	// 容量与压力（节点真实压力设计）；仅内部使用
+	CapacityMbps    float64 `gorm:"not null;default:0" json:"-"`
+	CapacitySource  string  `gorm:"type:varchar(16);not null;default:'none'" json:"-"` // fitted|group|none
+	CapacitySamples int     `gorm:"not null;default:0" json:"-"`
+	CapacityAt      int64   `gorm:"not null;default:0" json:"-"`
+	PressureRatio   float64 `gorm:"not null;default:0" json:"-"`
+	PressureAt      int64   `gorm:"not null;default:0" json:"-"`
 }
 
 // GetTrafficUsagePercent 获取流量使用率百分比 (0-100)

@@ -44,7 +44,14 @@ func api_slave_report_status(c *gin.Context) {
 	// 创建负载记录（包含所有指标）
 	load := SlaveNodeLoad{
 		NodeID: physicalNode.ID,
+		Ipv4:   physicalNode.Ipv4,
 		Load:   serverLoad,
+
+		// 指标版本（旧 sidecar 缺省 0）
+		MetricsVersion: req.Health.MetricsVersion,
+		CPUPercent:     req.Health.CPUPercent,
+		StealPercent:   req.Health.StealPercent,
+		CPUCores:       req.Health.CPUCores,
 
 		// 网络性能指标
 		NetworkSpeedMbps:  req.Health.NetworkSpeedMbps,
