@@ -9,5 +9,6 @@ Standalone Go module `github.com/kaitu-io/k2-sidecar` (does not import k2) runni
 - **`quotaCutoffReserveBytes` (500 MiB) must equal Center's copy** in `api/logic_node_usage.go` — two modules, no shared code or test; drift makes node-side and Center-side cutoffs disagree.
 - The enforcer fails closed: after 3 consecutive meter-read errors with a known limit it pauses traffic. Cutoff state is persisted, so a restart mid-cut re-applies it.
 - `k2-sidecar -c <cfg> set-usage <GB>` rewrites the persisted baseline; restart the sidecar to load it.
+- **Canary check via logs** (`Collected metrics`): `cpu` is cumulative-since-boot (legacy); trust `metricsVersion` (1 = host-NIC interval metrics), `cpuPercent`, `stealPercent`, `cpuCores`, `hostNIC`. `hostNIC=false` (no `/host/proc/1/net/dev`) logs one startup Warn and stays version 0; a lost v1 sample logs one Warn per outage. `udpInDatagrams/udpRcvbufErrors/udpDropPct` are **log-only** interval drops read from the k2s process's `net/snmp` (comm `k2s` under `/host/proc`; absent when k2s is missing/unreadable). None of this changes the Health JSON.
 
 Fleet operation, env vars, Lightsail billing rules and troubleshooting: project skill `kaitu-node-ops` (`.claude/skills/kaitu-node-ops/`).

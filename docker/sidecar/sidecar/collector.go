@@ -36,6 +36,11 @@ type Collector struct {
 	lastAt   time.Time
 	// hasBaseline: lastCPU/lastNIC/lastAt hold a valid previous sample.
 	hasBaseline bool
+	// skipWarned dedupes the "v1 sample skipped" Warn: set when logged, cleared
+	// by the next successful v1 sample.
+	skipWarned bool
+
+	udp udpWatcher // log-only k2s UDP drop stats
 }
 
 // cpuSample is one aggregate "cpu" line from /proc/stat (jiffies).
@@ -102,6 +107,12 @@ func NewCollector(node *Node, reportInterval time.Duration, billingStartDate str
 		hostNIC:        procRoot != "/proc",
 		statPath:       "/proc/stat",
 	}
+	if c.hostNIC {
+		c.udp.procDir = "/host/proc"
+	} else {
+		slog.Warn("Host NIC not visible (/host/proc/1/net/dev missing); falling back to /proc, metrics stay version 0 and UDP drop stats are off",
+			"component", "metrics", "procRoot", procRoot)
+	}
 
 	// If billing date is provided, initialize traffic monitor
 	if billingStartDate != "" {
@@ -143,16 +154,29 @@ func (c *Collector) Run() error {
 // collectAndReport collects and reports metrics
 func (c *Collector) collectAndReport() error {
 	health := c.collectMetrics()
+	c.logCollected(health)
+	return c.report(health)
+}
 
-	slog.Info("Collected metrics",
+// logCollected logs the sample. "cpu" is the legacy cumulative-since-boot value;
+// cpuPercent/stealPercent are the trustworthy interval values (metricsVersion 1).
+// UDP fields are log-only and omitted whenever unavailable.
+func (c *Collector) logCollected(health Health) {
+	attrs := []any{
 		"component", "metrics",
 		"cpu", health.CPUUsage,
 		"memory", health.MemoryUsage,
 		"disk", health.DiskUsage,
 		"networkUpMbps", health.BandwidthUpMbps,
-		"networkDownMbps", health.BandwidthDownMbps)
-
-	return c.report(health)
+		"networkDownMbps", health.BandwidthDownMbps,
+		"metricsVersion", health.MetricsVersion,
+		"cpuPercent", health.CPUPercent,
+		"stealPercent", health.StealPercent,
+		"cpuCores", health.CPUCores,
+		"hostNIC", c.hostNIC,
+	}
+	attrs = append(attrs, c.udp.sample()...)
+	slog.Info("Collected metrics", attrs...)
 }
 
 // collectMetrics collects system metrics
@@ -188,15 +212,22 @@ func (c *Collector) collectMetrics() Health {
 	now := time.Now()
 	cpuCur, cpuOK := readCPUSample(c.statPath)
 	nicCur, nicErr := readNICStats(c.procRoot)
+	if c.hostNIC && (!cpuOK || nicErr != nil) {
+		c.warnSkipped("read failure", "cpuOK", cpuOK, "err", nicErr)
+	}
 	if c.hasBaseline && cpuOK && nicErr == nil {
 		cpuPct, stealPct, ok1 := cpuDelta(c.lastCPU, cpuCur)
 		up, down, loss, ok2 := nicDelta(c.lastNIC, nicCur, now.Sub(c.lastAt).Seconds())
+		if c.hostNIC && !(ok1 && ok2) {
+			c.warnSkipped("counter reset", "cpuOK", ok1, "nicOK", ok2)
+		}
 		if ok1 && ok2 {
 			health.CPUPercent, health.StealPercent = cpuPct, stealPct
 			health.BandwidthUpMbps, health.BandwidthDownMbps = up, down
 			health.PacketLossPercent = loss
 			if c.hostNIC {
 				health.MetricsVersion = 1
+				c.skipWarned = false
 			}
 		}
 	}
@@ -218,6 +249,17 @@ func (c *Collector) collectMetrics() Health {
 	}
 
 	return health
+}
+
+// warnSkipped logs once per outage that a v1 sample was lost. A missing
+// baseline right after startup is not a skip and never reaches here.
+func (c *Collector) warnSkipped(reason string, kv ...any) {
+	if c.skipWarned {
+		return
+	}
+	c.skipWarned = true
+	slog.Warn("Metrics v1 sample skipped, reporting metricsVersion 0",
+		append([]any{"component", "metrics", "reason", reason}, kv...)...)
 }
 
 // report reports metrics to Center
