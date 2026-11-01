@@ -1,0 +1,81 @@
+{
+  "code": 0,
+  "data": {
+    "items": [
+      {
+        "id": 101,
+        "domain": "tokyo-1.example.com",
+        "name": "Tokyo 1",
+        "protocol": "k2s",
+        "port": 443,
+        "hopPortStart": 0,
+        "hopPortEnd": 0,
+        "node": {
+          "id": 11,
+          "name": "tokyo-1",
+          "country": "JP",
+          "region": "ap-northeast-1",
+          "ipv4": "203.0.113.11",
+          "ipv6": "",
+          "ipType": "residential",
+          "load": 20,
+          "updatedAt": 1790000000,
+          "trafficUsagePercent": 12.5,
+          "bandwidthUsagePercent": 8.25
+        },
+        "ipType": "residential",
+        "recommendScore": 0.92,
+        "serverUrl": "k2v5://tokyo-1.example.com:443"
+      },
+      {
+        "id": 102,
+        "domain": "seoul-1.example.com",
+        "name": "Seoul 1",
+        "protocol": "k2s",
+        "port": 443,
+        "hopPortStart": 0,
+        "hopPortEnd": 0,
+        "node": {
+          "id": 12,
+          "name": "seoul-1",
+          "country": "KR",
+          "region": "ap-northeast-2",
+          "ipv4": "203.0.113.12",
+          "ipv6": "",
+          "load": 35,
+          "updatedAt": 1790000000,
+          "trafficUsagePercent": 12.5,
+          "bandwidthUsagePercent": 8.25
+        },
+        "ipType": "non_residential",
+        "recommendScore": 0.81,
+        "serverUrl": "k2v5://seoul-1.example.com:443"
+      },
+      {
+        "id": 103,
+        "domain": "exhausted-1.example.com",
+        "name": "Exhausted 1",
+        "protocol": "k2s",
+        "port": 443,
+        "hopPortStart": 0,
+        "hopPortEnd": 0,
+        "node": {
+          "id": 13,
+          "name": "exhausted-1",
+          "country": "SG",
+          "region": "ap-southeast-1",
+          "ipv4": "203.0.113.13",
+          "ipv6": "",
+          "load": 90,
+          "updatedAt": 1790000000,
+          "trafficUsagePercent": 12.5,
+          "bandwidthUsagePercent": 8.25
+        },
+        "ipType": "unknown",
+        "recommendScore": 0.45,
+        "serverUrl": "k2v5://exhausted-1.example.com:443"
+      }
+    ],
+    "tunnelToken": "fixture-tunnel-token"
+  }
+}

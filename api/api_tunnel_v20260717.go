@@ -28,6 +28,18 @@ type DataSlaveTunnelV20260717 struct {
 	ServerUrl      string        `json:"serverUrl"`      // k2v5:// wire scheme kept as-is
 }
 
+// DataSlaveTunnelListV20260717 is the data payload of GET /api/v20260717/tunnels.
+// Its wire shape is pinned by contracts/tunnel-list-wire.json, which the webapp
+// feeds into Auto connect: an unknown recommendScore key would blacklist every node.
+type DataSlaveTunnelListV20260717 struct {
+	Items []DataSlaveTunnelV20260717 `json:"items"`
+	// TunnelToken 是该设备的 90 天隧道专用凭据（Phase 0，spec §4.2）。
+	// webapp authService 持久化后用于拼接 k2v5:// URL。请求以 access
+	// token 认证、不携带 tunnel token，无法做 50% 条件续期——每次成功
+	// 响应按当前锚点重签（无条件续期，锚点不变故旧 token 不失效）。
+	TunnelToken string `json:"tunnelToken,omitempty"`
+}
+
 // api_v20260717_tunnels returns all serviceable shared-pool tunnels.
 // No :protocol path param (C3). No echConfigList (C3). Mirrors the query
 // and scoring logic of api_k2_tunnels without the legacy/admin branches.
@@ -114,15 +126,7 @@ func api_v20260717_tunnels(c *gin.Context) {
 	}
 
 	log.Infof(c, "v20260717 tunnels: returned %d items", len(items))
-	type response struct {
-		Items []DataSlaveTunnelV20260717 `json:"items"`
-		// TunnelToken 是该设备的 90 天隧道专用凭据（Phase 0，spec §4.2）。
-		// webapp authService 持久化后用于拼接 k2v5:// URL。请求以 access
-		// token 认证、不携带 tunnel token，无法做 50% 条件续期——每次成功
-		// 响应按当前锚点重签（无条件续期，锚点不变故旧 token 不失效）。
-		TunnelToken string `json:"tunnelToken,omitempty"`
-	}
-	resp := response{Items: items}
+	resp := DataSlaveTunnelListV20260717{Items: items}
 	if dev := ReqDevice(c); dev != nil && user != nil {
 		if tok, err := issueTunnelTokenForDevice(c, dev, user.Roles); err != nil {
 			// 凭据升级失败不拖垮隧道列表（同 subs 的降级哲学）。
