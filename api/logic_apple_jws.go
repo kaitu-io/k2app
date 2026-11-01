@@ -52,35 +52,12 @@ func verifyAppleSignedTransaction(jws string) (*appleSignedTxn, error) {
 	if err := json.Unmarshal(rawHeader, &header); err != nil {
 		return nil, fmt.Errorf("%w: header: %v", errAppleJWSInvalid, err)
 	}
-	if header.Alg != "ES256" || len(header.X5c) < 2 {
-		return nil, fmt.Errorf("%w: alg %q with %d certs", errAppleJWSInvalid, header.Alg, len(header.X5c))
+	if header.Alg != "ES256" {
+		return nil, fmt.Errorf("%w: alg %q", errAppleJWSInvalid, header.Alg)
 	}
-	certs := make([]*x509.Certificate, 2)
-	for i := range certs {
-		der, err := base64.StdEncoding.DecodeString(header.X5c[i])
-		if err != nil {
-			return nil, fmt.Errorf("%w: x5c[%d]: %v", errAppleJWSInvalid, i, err)
-		}
-		if certs[i], err = x509.ParseCertificate(der); err != nil {
-			return nil, fmt.Errorf("%w: x5c[%d]: %v", errAppleJWSInvalid, i, err)
-		}
-	}
-	leaf, intermediate := certs[0], certs[1]
-	if !certHasExtension(leaf, appleJWSLeafOID) || !certHasExtension(intermediate, appleJWSIntermediateOID) {
-		return nil, fmt.Errorf("%w: not an App Store signing chain", errAppleJWSInvalid)
-	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(appleJWSRootPEM) {
-		return nil, fmt.Errorf("%w: bad trust root", errAppleJWSInvalid)
-	}
-	inters := x509.NewCertPool()
-	inters.AddCert(intermediate)
-	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: inters, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}); err != nil {
-		return nil, fmt.Errorf("%w: chain: %v", errAppleJWSInvalid, err)
-	}
-	pub, ok := leaf.PublicKey.(*ecdsa.PublicKey)
-	if !ok {
-		return nil, fmt.Errorf("%w: leaf key is not ECDSA", errAppleJWSInvalid)
+	pub, err := verifyAppleCertChain(header.X5c, appleJWSRootPEM)
+	if err != nil {
+		return nil, err
 	}
 	// 交易 JWS 没有 exp：只验签名，不做 claims 时效校验。
 	if _, err := jwt.NewParser(jwt.WithValidMethods([]string{"ES256"}), jwt.WithoutClaimsValidation()).
@@ -99,6 +76,42 @@ func verifyAppleSignedTransaction(jws string) (*appleSignedTxn, error) {
 		return nil, fmt.Errorf("%w: missing transaction ids", errAppleJWSInvalid)
 	}
 	return &txn, nil
+}
+
+// verifyAppleCertChain 校验 x5c 是一条 App Store 签名链，返回叶子公钥：叶子与中间带 Apple 用途扩展、
+// 链到 rootPEM。客户端交易 JWS 与 webhook 通知共用这一处——两边各写一份时 webhook 漏了用途扩展。
+func verifyAppleCertChain(x5c []string, rootPEM []byte) (*ecdsa.PublicKey, error) {
+	if len(x5c) < 2 {
+		return nil, fmt.Errorf("%w: x5c chain has %d cert(s); leaf + intermediate required", errAppleJWSInvalid, len(x5c))
+	}
+	certs := make([]*x509.Certificate, 2)
+	for i := range certs {
+		der, err := base64.StdEncoding.DecodeString(x5c[i])
+		if err != nil {
+			return nil, fmt.Errorf("%w: x5c[%d]: %v", errAppleJWSInvalid, i, err)
+		}
+		if certs[i], err = x509.ParseCertificate(der); err != nil {
+			return nil, fmt.Errorf("%w: x5c[%d]: %v", errAppleJWSInvalid, i, err)
+		}
+	}
+	leaf, intermediate := certs[0], certs[1]
+	if !certHasExtension(leaf, appleJWSLeafOID) || !certHasExtension(intermediate, appleJWSIntermediateOID) {
+		return nil, fmt.Errorf("%w: not an App Store signing chain", errAppleJWSInvalid)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(rootPEM) {
+		return nil, fmt.Errorf("%w: bad trust root", errAppleJWSInvalid)
+	}
+	inters := x509.NewCertPool()
+	inters.AddCert(intermediate)
+	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: inters, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}); err != nil {
+		return nil, fmt.Errorf("%w: chain: %v", errAppleJWSInvalid, err)
+	}
+	pub, ok := leaf.PublicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("%w: leaf key is not ECDSA", errAppleJWSInvalid)
+	}
+	return pub, nil
 }
 
 func certHasExtension(c *x509.Certificate, oid asn1.ObjectIdentifier) bool {

@@ -249,8 +249,9 @@ func handleSubscriptionReconcileTask(ctx context.Context, _ []byte) error {
 	if err != nil {
 		return err
 	}
-	var changed, failed int
+	var changed, failed, drift int
 	for i := range subs {
+		autoRenewBefore := subs[i].AutoRenew
 		c, err := reconcileSubscription(ctx, &subs[i], now)
 		if err != nil {
 			failed++
@@ -261,9 +262,32 @@ func handleSubscriptionReconcileTask(ctx context.Context, _ []byte) error {
 		if c {
 			changed++
 		}
+		if appleWebhookDrift(autoRenewBefore, &subs[i]) {
+			drift++
+		}
 	}
-	log.Infof(ctx, "[SUB-RECONCILE] daily sweep done: scanned=%d changed=%d failed=%d", len(subs), changed, failed)
+	log.Infof(ctx, "[SUB-RECONCILE] daily sweep done: scanned=%d changed=%d failed=%d apple_webhook_drift=%d", len(subs), changed, failed, drift)
+	if drift >= appleWebhookDriftAlertMin {
+		alertPaymentAnomaly(ctx, "APPLE-WEBHOOK-SILENT",
+			"今日对账发现 %d 条 Apple 订阅的自动续费开关与本地不一致——这本该由 webhook 实时更新。先查 ASC 通知 URL 与 center 日志 [AppleWebhook]", drift)
+	}
 	return nil
+}
+
+// appleWebhookLiveSince 开途 ASC 配上服务器通知的日子（此前从未配置）。更早的链 auto_renew 是陈旧默认值，
+// 对账逐桶修正它们不代表 webhook 坏了。
+var appleWebhookLiveSince = time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+
+// appleWebhookDriftAlertMin 同一轮对账发现几条漂移才告警。webhook 重投窗口内偶有一两条是正常的。
+const appleWebhookDriftAlertMin = 3
+
+// appleWebhookDrift 这条订阅的续费开关是对账才发现变化的，说明 webhook 没把它送到。
+// webhook 静默时一切照常运转、没有任何报错，这是唯一看得见它的信号（开途曾因此静默一个月）。
+func appleWebhookDrift(autoRenewBefore bool, sub *Subscription) bool {
+	return sub.Provider == SubscriptionProviderApple &&
+		sub.Environment == string(appstore.Environment_Production) &&
+		sub.CreatedAt.After(appleWebhookLiveSince) &&
+		sub.AutoRenew != autoRenewBefore
 }
 
 // subscriptionsToReconcile 本轮要对账的订阅:临期/陈旧的活跃行(全部 provider)∪ Apple 生产订阅的

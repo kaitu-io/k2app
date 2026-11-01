@@ -70,13 +70,13 @@ func TestComputeRenewalState(t *testing.T) {
 		},
 		{
 			name: "nil RenewalInfo falls back to subtype disabled",
-			curStatus: "active", ri: nil, subtype: appstore.Subtype_AUTO_RENEW_DISABLED,
-			wantAutoRenew: bptr(false), wantStatus: "active",
+			curStatus: "billing_retry", ri: nil, subtype: appstore.Subtype_AUTO_RENEW_DISABLED,
+			wantAutoRenew: bptr(false), wantStatus: "", // 没有计费信息：不许把 billing_retry 洗成 active
 		},
 		{
 			name: "nil RenewalInfo + no informative subtype -> no auto_renew change",
 			curStatus: "active", ri: nil, subtype: appstore.Subtype_BILLING_RETRY,
-			wantAutoRenew: nil, wantStatus: "active",
+			wantAutoRenew: nil, wantStatus: "",
 		},
 		{
 			name: "expired grace date in the past -> active (grace already over)",

@@ -4,13 +4,13 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math/big"
+	"net/http"
 	"strings"
 	"time"
 
@@ -24,8 +24,8 @@ import (
 //
 // 与 wordgate webhook 一致，使用 HTTP 状态码表达 S2S 重试语义（非 JSON code）：
 //   - 200 = 已处理，勿重试
-//   - 4xx = 坏请求，停止重试（Apple 不再重试）
-//   - 5xx = 临时失败，请重试
+//   - 4xx / 5xx = 处理失败。Apple 对任何非 2xx 都会重投（2026-11-01 线上实测：TEST 回 400，1 小时后
+//     重投），所以 4xx 不是"别再发了"——能确认无需处理的通知必须回 200。
 //
 // 安全（双层防御）：
 //  1. verifyAppleJWS：x5c 链校验到内置 Apple Root CA G3，硬拒非 Apple 来源。
@@ -56,8 +56,20 @@ func api_apple_webhook(c *gin.Context) {
 	}
 
 	asn, err := appstore.NewNotification(c, req.SignedPayload)
-	if err != nil || asn.Payload == nil || asn.TransactionInfo == nil {
+	if err != nil || asn.Payload == nil {
 		log.Warnf(c, "[AppleWebhook] parse failed: %v", err)
+		c.AbortWithStatus(400)
+		return
+	}
+	if asn.TransactionInfo == nil {
+		// 本来就不带交易的通知（TEST、SUMMARY 等）：签名已过，没有可处理的内容，回 200 免得 Apple 重投。
+		// 带了交易却解不开才是坏请求。
+		if asn.Payload.Data.SignedTransactionInfo == "" {
+			log.Infof(c, "[AppleWebhook] type=%s subtype=%s carries no transaction, no action", asn.Payload.NotificationType, asn.Payload.Subtype)
+			c.Status(200)
+			return
+		}
+		log.Warnf(c, "[AppleWebhook] undecodable transaction in type=%s", asn.Payload.NotificationType)
 		c.AbortWithStatus(400)
 		return
 	}
@@ -219,24 +231,42 @@ func appleWebhookGrant(c *gin.Context, sub *Subscription, txnID string) bool {
 	return true
 }
 
-// setSubStatus 不覆盖 revoked：Apple 在退款后照常发 EXPIRED，把 revoked 改成 expired 会丢失
-// 复活判据（spec 2026-10-08 §3.4）。
-func setSubStatus(ctx context.Context, id uint64, status string) error {
-	return db.Get().Model(&Subscription{}).Where("id = ? AND status <> ?", id, "revoked").Update("status", status).Error
-}
-
 // applyAppleExpired 落地 EXPIRED / GRACE_PERIOD_EXPIRED：expired_at 已等于 Apple expiresDate，
 // 自然过期，只标记状态；试用链顺带清 in_trial（不动 expired_at，叠加的赠送照常保留）。
-// 两步都幂等，失败由 webhook 500 → Apple 重投整体重来。
+//
+// 守卫进 SQL（与对账的 Expired 分支同一判据）：
+//   - status<>revoked：Apple 在退款后照常发 EXPIRED，改成 expired 会丢失复活判据（spec 2026-10-08 §3.4）；
+//   - current_period_end<=now：迟到 / 重投的 EXPIRED 不能把已经重新订阅的链打回过期。
+//
+// 幂等，失败由 webhook 500 → Apple 重投整体重来。
 func applyAppleExpired(ctx context.Context, sub *Subscription) error {
-	if err := setSubStatus(ctx, sub.ID, "expired"); err != nil {
-		return err
+	res := db.Get().Model(&Subscription{}).
+		Where("id = ? AND status <> ? AND current_period_end <= ?", sub.ID, "revoked", time.Now().Unix()).
+		Update("status", "expired")
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		log.Infof(ctx, "[AppleWebhook] EXPIRED ignored for sub %s: revoked or a newer period is live", sub.ProviderSubscriptionID)
+		return nil
 	}
 	return clearInTrialIfTrialChain(db.Get(), sub)
 }
 
 func recordSubEventID(ctx context.Context, id uint64, eventID string) error {
 	return db.Get().Model(&Subscription{}).Where("id = ?", id).Update("last_event_id", eventID).Error
+}
+
+// appleWebhookMaxBody 通知实测约 19KB，留足余量。
+const appleWebhookMaxBody = 1 << 20
+
+// appleWebhookBodyLimit 限制公开端点的请求体。必须挂在 log.MiddlewareRequestLog 之前——它会先读完整个
+// body 并写进 app.log。超限时后续读到的是截断内容，handler 按坏请求返回 400。
+func appleWebhookBodyLimit() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, appleWebhookMaxBody)
+		c.Next()
+	}
 }
 
 // appleNotificationRefundReversed qtoolkit v1.5.32 尚无此常量（Apple 2023-06 起下发）。
@@ -252,7 +282,8 @@ func verifyAppleJWS(payload string) error {
 }
 
 // verifyAppleJWSWithRoot performs full two-stage JWS verification:
-//  1. Certificate chain: x5c[leaf]→x5c[intermediate]→rootPEM (Apple Root CA G3 in prod).
+//  1. Certificate chain: x5c[leaf]→x5c[intermediate]→rootPEM (Apple Root CA G3 in prod), with
+//     Apple's App Store purpose extensions on leaf and intermediate.
 //  2. Signature: ES256 (ECDSA P-256 + SHA-256) over header.payload using the leaf key.
 //     Apple uses RFC 7518 §3.4 raw R||S encoding (64 bytes), not ASN.1 DER.
 //
@@ -276,39 +307,10 @@ func verifyAppleJWSWithRoot(payload string, rootPEM []byte) error {
 	if header.Alg != "ES256" {
 		return fmt.Errorf("unexpected JWS algorithm %q; only ES256 accepted", header.Alg)
 	}
-	if len(header.X5c) < 2 {
-		return fmt.Errorf("x5c chain has %d cert(s); leaf + intermediate required", len(header.X5c))
-	}
-	leafDER, err := base64.StdEncoding.DecodeString(header.X5c[0])
+	// Stage 1: App Store signing chain rooted at the trust anchor.
+	ecKey, err := verifyAppleCertChain(header.X5c, rootPEM)
 	if err != nil {
-		return fmt.Errorf("decode leaf cert: %w", err)
-	}
-	intDER, err := base64.StdEncoding.DecodeString(header.X5c[1])
-	if err != nil {
-		return fmt.Errorf("decode intermediate cert: %w", err)
-	}
-	leaf, err := x509.ParseCertificate(leafDER)
-	if err != nil {
-		return fmt.Errorf("parse leaf cert: %w", err)
-	}
-	intermediate, err := x509.ParseCertificate(intDER)
-	if err != nil {
-		return fmt.Errorf("parse intermediate cert: %w", err)
-	}
-
-	// Stage 1: certificate chain must root at the injected trust anchor.
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(rootPEM) {
-		return errors.New("load root CA: PEM parse failed")
-	}
-	intermediates := x509.NewCertPool()
-	intermediates.AddCert(intermediate)
-	if _, err := leaf.Verify(x509.VerifyOptions{
-		Roots:         roots,
-		Intermediates: intermediates,
-		CurrentTime:   time.Now(),
-	}); err != nil {
-		return fmt.Errorf("chain: %w", err)
+		return err
 	}
 
 	// Stage 2: ECDSA signature over header.payload using the leaf's public key.
@@ -319,10 +321,6 @@ func verifyAppleJWSWithRoot(payload string, rootPEM []byte) error {
 	}
 	if len(sigBytes) != 64 {
 		return fmt.Errorf("ES256 signature must be 64 bytes, got %d", len(sigBytes))
-	}
-	ecKey, ok := leaf.PublicKey.(*ecdsa.PublicKey)
-	if !ok {
-		return errors.New("leaf cert: expected ECDSA public key")
 	}
 	digest := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
 	r := new(big.Int).SetBytes(sigBytes[:32])

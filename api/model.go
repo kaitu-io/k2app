@@ -940,6 +940,9 @@ type Subscription struct {
 	// IsTrial 当前处于 Apple 免费试用期；TrialEndsAt 试用结束时刻（unix 秒）。
 	IsTrial     bool  `gorm:"column:is_trial;not null;default:false" json:"isTrial"`
 	TrialEndsAt int64 `gorm:"column:trial_ends_at" json:"trialEndsAt"`
+	// LastRenewalSignedAt 已落地的 Apple RenewalInfo 里最新的 signedDate（毫秒）。Apple 不保证通知顺序，
+	// 重投的旧通知靠它拦下。
+	LastRenewalSignedAt int64 `gorm:"column:last_renewal_signed_at;not null;default:0" json:"-"`
 }
 
 // Subscription.Provider / SubscriptionCredit.Provider 的取值域。二者共用同一套字面量——

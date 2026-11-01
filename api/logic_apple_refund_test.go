@@ -514,7 +514,7 @@ func TestAppleRefund_TerminalGuards(t *testing.T) {
 	stale := sub
 	stale.Status = "active" // 事务外读到的旧快照
 
-	require.NoError(t, setSubStatus(context.Background(), sub.ID, "expired"))
+	require.NoError(t, applyAppleExpired(context.Background(), &sub))
 	assert.Equal(t, "revoked", f.subNow(t).Status)
 
 	ea := f.userNow(t, f.buyer.ID).ExpiredAt

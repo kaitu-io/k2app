@@ -32,7 +32,7 @@ func SetupRouter() *gin.Engine {
 	// Webhook 相关路由
 	r.POST("/webhook/wordgate", log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), api_wordgate_webhook)
 	// Apple App Store Server Notifications V2（自动续订订阅续费/退款/撤销）
-	r.POST("/webhook/appstore", log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), api_apple_webhook)
+	r.POST("/webhook/appstore", appleWebhookBodyLimit(), log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), api_apple_webhook)
 	// Stripe webhook（overleap 官网 Checkout 的入账通道：invoice.paid 单一入账事件）
 	r.POST("/webhook/stripe", log.MiddlewareRequestLog(true), MiddleRecovery(), BrandResolver(), api_stripe_webhook)
 	// NextPay webhook（kaitu 一次性购买入账：order.paid 单一入账事件，2026-09-22 起）

@@ -710,7 +710,7 @@ func verifyAndGrantTransaction(ctx context.Context, userID uint64, transactionID
 // 推导订阅的自动续订开关与计费状态。provider 无关、无副作用。
 //   - autoRenew：RenewalInfo.AutoRenewStatus 为权威；RenewalInfo 缺失时退回 subtype；
 //     两者都无信息则返回 nil（表示"不改"）。
-//   - status：terminal（expired/revoked）一律返回 ""（绝不复活已终结订阅）；否则按
+//   - status：terminal（expired/revoked）或 RenewalInfo 缺失一律返回 ""（不改）；否则按
 //     计费重试 / 宽限期 / 正常 推导为 billing_retry|grace|active。
 //
 // 关键：此函数绝不触碰权益到期——取消自动续订 / 扣费失败都不缩短用户已购周期，
@@ -734,13 +734,14 @@ func computeRenewalState(currentStatus string, ri *appstore.RenewalInfo, subtype
 		return autoRenew, "" // terminal：绝不复活
 	}
 
+	if ri == nil {
+		return autoRenew, "" // 没有计费信息：只改开关，不许把 billing_retry / grace 洗成 active
+	}
 	status = "active"
-	if ri != nil {
-		if ri.IsInBillingRetryPeriod {
-			status = "billing_retry"
-		} else if ri.GracePeriodExpiresDate/1000 > nowSec {
-			status = "grace"
-		}
+	if ri.IsInBillingRetryPeriod {
+		status = "billing_retry"
+	} else if ri.GracePeriodExpiresDate/1000 > nowSec {
+		status = "grace"
 	}
 	return autoRenew, status
 }
@@ -765,8 +766,21 @@ func applyRenewalInfo(ctx context.Context, sub *Subscription, ri *appstore.Renew
 	}
 	// status<>'revoked' 进 SQL：sub 是事务外读到的快照，与并发的 REFUND 赛跑时不能把 revoked
 	// 覆盖成 grace/active（会丢失复活判据并重新延长权益，spec 2026-10-08 §3.4）。
-	if err := getDB().Model(&Subscription{}).Where("id = ? AND status <> ?", sub.ID, "revoked").Updates(updates).Error; err != nil {
-		return err
+	// Apple 不保证通知顺序：signedDate 更早的状态不落地（守卫进 SQL，同样防并发）。没有 signedDate
+	// （subtype 兜底）不设此门。
+	q := getDB().Model(&Subscription{}).Where("id = ? AND status <> ?", sub.ID, "revoked")
+	if ri != nil && ri.SignedDate > 0 {
+		q = q.Where("last_renewal_signed_at <= ?", ri.SignedDate)
+		updates["last_renewal_signed_at"] = ri.SignedDate
+	}
+	res := q.Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		log.Infof(ctx, "[applyRenewalInfo] sub %s skipped: revoked or older than the applied state (subtype=%s)",
+			sub.ProviderSubscriptionID, subtype)
+		return nil
 	}
 	log.Infof(ctx, "[applyRenewalInfo] sub %s autoRenew=%v status=%v (subtype=%s)",
 		sub.ProviderSubscriptionID, updates["auto_renew"], updates["status"], subtype)

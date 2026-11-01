@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
@@ -22,6 +23,18 @@ import (
 // signing test JWS), and the DER bytes of leaf and intermediate (for x5c).
 func makeTestChain(t *testing.T) (rootPEM []byte, leafKey *ecdsa.PrivateKey, leafDER, intDER []byte) {
 	t.Helper()
+	return makeTestChainWithOIDs(t, appleJWSLeafOID, appleJWSIntermediateOID)
+}
+
+// makeTestChainWithOIDs 同 makeTestChain，可指定叶子 / 中间证书的 Apple 用途扩展（nil = 不带）。
+func makeTestChainWithOIDs(t *testing.T, leafOID, interOID asn1.ObjectIdentifier) (rootPEM []byte, leafKey *ecdsa.PrivateKey, leafDER, intDER []byte) {
+	t.Helper()
+	exts := func(oid asn1.ObjectIdentifier) []pkix.Extension {
+		if oid == nil {
+			return nil
+		}
+		return []pkix.Extension{{Id: oid, Value: []byte{0x05, 0x00}}}
+	}
 	mk := func() *ecdsa.PrivateKey {
 		k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		require.NoError(t, err)
@@ -54,6 +67,7 @@ func makeTestChain(t *testing.T) (rootPEM []byte, leafKey *ecdsa.PrivateKey, lea
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
+		ExtraExtensions:       exts(interOID),
 	}
 	intDER, err = x509.CreateCertificate(rand.Reader, intTmpl, rootCert, &intKey.PublicKey, rootKey)
 	require.NoError(t, err)
@@ -62,10 +76,11 @@ func makeTestChain(t *testing.T) (rootPEM []byte, leafKey *ecdsa.PrivateKey, lea
 
 	leafKey = mk()
 	leafTmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(3),
-		Subject:      pkix.Name{CommonName: "Test Leaf"},
-		NotBefore:    now.Add(-time.Hour),
-		NotAfter:     now.Add(24 * time.Hour),
+		SerialNumber:    big.NewInt(3),
+		Subject:         pkix.Name{CommonName: "Test Leaf"},
+		NotBefore:       now.Add(-time.Hour),
+		NotAfter:        now.Add(24 * time.Hour),
+		ExtraExtensions: exts(leafOID),
 	}
 	leafDER, err = x509.CreateCertificate(rand.Reader, leafTmpl, intCert, &leafKey.PublicKey, intKey)
 	require.NoError(t, err)
