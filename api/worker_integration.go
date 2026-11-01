@@ -53,6 +53,7 @@ func InitWorker() {
 	asynq.Handle(TaskTypeTrafficAbuseCheck, handleTrafficAbuseCheck)
 	asynq.Handle(TaskTypeStatsRetentionCleanup, handleStatsRetentionCleanup)
 	asynq.Handle(TaskTypeSubscriptionReconcile, handleSubscriptionReconcileTask)
+	asynq.Handle(TaskTypeNodeCapacityRefresh, handleNodeCapacityRefresh)
 
 	// 注册续费提醒 Cron 任务
 	// 每天北京时间 10:30 执行（UTC 02:30）
@@ -98,6 +99,9 @@ func InitWorker() {
 	// 这些表此前无任何清理、无限增长(slave_node_loads 曾达 160 万行/297MB)
 	// Unique(25h) 防止多实例重复入队
 	asynq.Cron("20 4 * * *", TaskTypeStatsRetentionCleanup, nil, hibikenAsynq.Unique(25*time.Hour))
+
+	// 每日 04:50 用近 14 天指标样本重拟合各节点吞吐容量 M（node_usages.capacity_*）
+	asynq.Cron("50 4 * * *", TaskTypeNodeCapacityRefresh, nil, hibikenAsynq.Unique(25*time.Hour))
 
 	// 注册订阅对账 Cron 任务(spec 2026-08-22):每日 03:40 UTC,兜底漏 webhook。
 	// 扫标活跃且周期临期/已过的订阅行,向 provider 核实真相并收敛 status/period/权益。

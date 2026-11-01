@@ -1,6 +1,8 @@
 package center
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
@@ -78,6 +80,13 @@ func api_slave_report_status(c *gin.Context) {
 		log.Errorf(c, "failed to save load record: %v", err)
 		Error(c, ErrorSystemError, "failed to save load record")
 		return
+	}
+
+	// 压力更新仅限新版 sidecar；失败只记日志，不影响上报
+	if req.Health.MetricsVersion >= 1 {
+		if err := updateNodePressure(c, physicalNode.Ipv4, req.Health, time.Now().Unix()); err != nil {
+			log.Errorf(c, "failed to update node pressure ipv4=%s: %v", physicalNode.Ipv4, err)
+		}
 	}
 
 	// 清除节点负载缓存，强制下次查询时重新计算
