@@ -1,6 +1,7 @@
 package center
 
 import (
+	"fmt"
 	"strconv"
 	"time"
 
@@ -155,17 +156,11 @@ func api_admin_node_distribution(c *gin.Context) {
 		Error(c, ErrorSystemError, "failed to load node activity")
 		return
 	}
-	buckets, err := loadNodeBucketCounts(now-24*3600, now)
+	peaks, err := loadNodePeaks(now)
 	if err != nil {
-		log.Errorf(c, "failed to load node buckets: %v", err)
+		log.Errorf(c, "failed to load node peaks: %v", err)
 		Error(c, ErrorSystemError, "failed to load node activity")
 		return
-	}
-	peaks := make(map[string]int, len(nodes))
-	for _, b := range buckets {
-		if b.Devices > peaks[b.NodeIpv4] {
-			peaks[b.NodeIpv4] = b.Devices
-		}
 	}
 	metrics, err := loadLatestNodeMetrics(ips, now)
 	if err != nil {
@@ -215,13 +210,19 @@ func api_admin_node_distribution_trend(c *gin.Context) {
 		names[n.Ipv4] = n.Name
 	}
 	now := time.Now().Unix()
-	rows, err := loadNodeBucketCounts(now-int64(hours)*3600, now)
+	key := fmt.Sprintf("node_dist:trend:%d:%s:%s:%d", hours, c.Query("brand"), country, nodePresenceBucket(now))
+	points, err := cachedForBucket(key, func() ([]NodeDistributionTrendPoint, error) {
+		rows, err := loadNodeBucketCounts(now-int64(hours)*3600, now)
+		if err != nil {
+			return nil, err
+		}
+		return buildNodeTrend(rows, names), nil
+	})
 	if err != nil {
 		log.Errorf(c, "failed to load node trend: %v", err)
 		Error(c, ErrorSystemError, "failed to load node trend")
 		return
 	}
-	points := buildNodeTrend(rows, names)
 	if points == nil {
 		points = []NodeDistributionTrendPoint{}
 	}

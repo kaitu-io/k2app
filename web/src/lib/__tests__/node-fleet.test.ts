@@ -4,7 +4,8 @@ import { fleetCountries, mergeFleetRows } from "@/lib/node-fleet";
 
 const node = (name: string, ipv4: string, country: string, activeDevices: number) =>
   ({ name, ipv4, country, activeDevices }) as NodeDistributionItem;
-const instance = (ip_address: string) => ({ ip_address }) as CloudInstance;
+let nextId = 1;
+const instance = (ip_address: string) => ({ id: nextId++, ip_address }) as CloudInstance;
 
 describe("mergeFleetRows", () => {
   const nodes = [
@@ -25,5 +26,13 @@ describe("mergeFleetRows", () => {
     const fresh = [instance("9.9.9.9")];
     expect(mergeFleetRows(nodes, fresh, { includeUnregistered: true }).at(-1)?.ipv4).toBe("9.9.9.9");
     expect(mergeFleetRows(nodes, fresh, { includeUnregistered: false })).toHaveLength(3);
+  });
+
+  it("never loses an instance to an empty or repeated IP", () => {
+    const pending = [instance(""), instance(""), instance("1.1.1.1"), instance("1.1.1.1")];
+    const rows = mergeFleetRows(nodes, pending, { includeUnregistered: true });
+    expect(rows).toHaveLength(6);
+    expect(rows.filter((r) => r.instance)).toHaveLength(4);
+    expect(new Set(rows.map((r) => r.key)).size).toBe(6);
   });
 });

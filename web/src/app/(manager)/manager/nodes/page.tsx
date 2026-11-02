@@ -362,6 +362,7 @@ export default function NodesPage() {
   const { brandParam } = useManagerBrand();
 
   const [distribution, setDistribution] = useState<NodeDistributionResponse | null>(null);
+  const [liveFailed, setLiveFailed] = useState(false);
   const [instances, setInstances] = useState<CloudInstance[]>([]);
   const [accounts, setAccounts] = useState<CloudAccount[]>([]);
   const [accountUsages, setAccountUsages] = useState<CloudAccountUsage[]>([]);
@@ -395,9 +396,11 @@ export default function NodesPage() {
   const fetchDistribution = async () => {
     try {
       setDistribution(await api.getNodeDistribution(brandParam));
+      setLiveFailed(false);
     } catch (error) {
+      // The banner carries this: a toast every 30 seconds would only be noise.
       console.error("Failed to fetch node distribution:", error);
-      toast.error("获取节点实时状态失败");
+      setLiveFailed(true);
     }
   };
 
@@ -427,7 +430,9 @@ export default function NodesPage() {
 
   useEffect(() => {
     fetchAll();
-    const timer = setInterval(fetchDistribution, LIVE_REFRESH_MS);
+    const timer = setInterval(() => {
+      if (!document.hidden) fetchDistribution();
+    }, LIVE_REFRESH_MS);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandParam]);
@@ -532,6 +537,15 @@ export default function NodesPage() {
           </div>
         </div>
 
+        {liveFailed && (
+          <div className="mb-4 flex items-center gap-2 rounded-md border border-destructive px-4 py-3 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {distribution
+              ? "实时数据获取失败，下方是上次的数据"
+              : "实时数据获取失败：云实例操作不受影响，但节点列表不完整，状态未知"}
+          </div>
+        )}
+
         <div className="mb-4 flex flex-wrap gap-2">
           {scopeCards.map((summary) => (
             <ScopeCard
@@ -605,15 +619,15 @@ export default function NodesPage() {
                     const { node, instance } = row;
                     const status = node ? statusLabels[node.status] : null;
                     const timePercent = instance ? ratioToPercent(instance.time_ratio) : 0;
-                    const isOpen = expanded === row.ipv4;
+                    const isOpen = expanded === row.key;
                     return (
-                      <Fragment key={row.ipv4}>
+                      <Fragment key={row.key}>
                         <TableRow className="align-top">
                           <TableCell>
                             <button
                               type="button"
                               aria-label={isOpen ? "收起" : "展开"}
-                              onClick={() => setExpanded(isOpen ? null : row.ipv4)}
+                              onClick={() => setExpanded(isOpen ? null : row.key)}
                             >
                               {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                             </button>
@@ -648,7 +662,7 @@ export default function NodesPage() {
                                 {status.label}
                               </span>
                             ) : (
-                              <span className="text-xs text-muted-foreground">未注册</span>
+                              <span className="text-xs text-muted-foreground">{distribution ? "未注册" : "未知"}</span>
                             )}
                           </TableCell>
                           <TableCell>

@@ -1,9 +1,16 @@
 package center
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	db "github.com/wordgate/qtoolkit/db"
@@ -114,8 +121,8 @@ func TestRecordNodePresence_AccumulatesAndCountsDistinctDevices(t *testing.T) {
 		{UDID: "u2", SessionID: "s3", Rx: 5, Tx: 5},
 		{UDID: "", SessionID: "", Rx: 9, Tx: 9},
 	}
-	require.NoError(t, recordNodePresence(ip, items, map[string]uint{"u1": 7}, now))
-	require.NoError(t, recordNodePresence(ip, items[:1], nil, now))
+	require.NoError(t, recordNodePresence(context.Background(), ip, items, map[string]uint{"u1": 7}, now))
+	require.NoError(t, recordNodePresence(context.Background(), ip, items[:1], nil, now))
 
 	var row NodeDevicePresence
 	require.NoError(t, db.Get().Where("node_ipv4 = ? AND udid = ? AND session_id = ?", ip, "u1", "s1").First(&row).Error)
@@ -147,10 +154,147 @@ func TestDeviceTrafficIngest_WritesPresenceOnce(t *testing.T) {
 	req := DeviceTrafficRequest{BootID: "b", BatchSeq: 1, Ts: time.Now().Unix(),
 		Devices: []DeviceTrafficItem{{UDID: "u1", SessionID: "s1", Rx: 10, Tx: 0}}}
 	require.NoError(t, ingestDeviceTraffic(nil, ip, &req))
-	require.NoError(t, ingestDeviceTraffic(nil, ip, &req)) // ack-lost resend
-
 	var rows []NodeDevicePresence
+	require.Eventually(t, func() bool {
+		db.Get().Where("node_ipv4 = ?", ip).Find(&rows)
+		return len(rows) == 1
+	}, 3*time.Second, 20*time.Millisecond)
+
+	require.NoError(t, ingestDeviceTraffic(nil, ip, &req)) // ack-lost resend
+	time.Sleep(100 * time.Millisecond)                     // would-be duplicate write settles
 	require.NoError(t, db.Get().Where("node_ipv4 = ?", ip).Find(&rows).Error)
 	require.Len(t, rows, 1)
 	assert.Equal(t, int64(10), rows[0].RxBytes, "a resend must not inflate presence")
+}
+
+// The billing ledger must not notice anything the observation path does.
+func TestDeviceTrafficIngest_LedgerSurvivesPresenceFailure(t *testing.T) {
+	skipIfNoConfig(t)
+	cases := map[string]func(context.Context, string, []DeviceTrafficItem, map[string]uint, int64) error{
+		"error": func(context.Context, string, []DeviceTrafficItem, map[string]uint, int64) error {
+			return errors.New("boom")
+		},
+		"panic": func(context.Context, string, []DeviceTrafficItem, map[string]uint, int64) error {
+			panic("boom")
+		},
+	}
+	for name, writer := range cases {
+		t.Run(name, func(t *testing.T) {
+			ip := "10.99.8.3"
+			t.Cleanup(func() {
+				db.Get().Where("node_ipv4 = ?", ip).Delete(&DeviceTrafficDaily{})
+				db.Get().Where("node_ipv4 = ?", ip).Delete(&DeviceSessionDaily{})
+				db.Get().Where("ipv4 = ?", ip).Delete(&DeviceTrafficCursor{})
+			})
+			var calls atomic.Int32
+			orig := nodePresenceWriter
+			nodePresenceWriter = func(ctx context.Context, i string, it []DeviceTrafficItem, u map[string]uint, n int64) error {
+				calls.Add(1)
+				return writer(ctx, i, it, u, n)
+			}
+			t.Cleanup(func() { nodePresenceWriter = orig })
+
+			req := DeviceTrafficRequest{BootID: "b", BatchSeq: 1, Ts: time.Now().Unix(),
+				Devices: []DeviceTrafficItem{{UDID: "u1", SessionID: "s1", Rx: 10, Tx: 5}}}
+			require.NoError(t, ingestDeviceTraffic(nil, ip, &req))
+			require.Eventually(t, func() bool { return calls.Load() == 1 }, 3*time.Second, 10*time.Millisecond)
+
+			var row DeviceTrafficDaily
+			require.NoError(t, db.Get().Where("node_ipv4 = ?", ip).First(&row).Error)
+			assert.Equal(t, int64(10), row.RxBytes)
+			var cur DeviceTrafficCursor
+			require.NoError(t, db.Get().Where("ipv4 = ?", ip).First(&cur).Error)
+			assert.Equal(t, int64(1), cur.BatchSeq)
+		})
+	}
+}
+
+// With every slot taken the ingest path still returns at once.
+func TestDispatchNodePresence_DropsInsteadOfBlocking(t *testing.T) {
+	release := make(chan struct{})
+	var calls atomic.Int32
+	orig := nodePresenceWriter
+	nodePresenceWriter = func(context.Context, string, []DeviceTrafficItem, map[string]uint, int64) error {
+		calls.Add(1)
+		<-release
+		return nil
+	}
+	t.Cleanup(func() { nodePresenceWriter = orig })
+
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < nodePresenceMaxInFlight*5; i++ {
+			dispatchNodePresence("10.99.8.4", nil, nil, 0)
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("dispatch blocked the caller")
+	}
+	require.Eventually(t, func() bool { return calls.Load() == nodePresenceMaxInFlight }, time.Second, 5*time.Millisecond)
+	close(release)
+	require.Eventually(t, func() bool { return len(nodePresenceSlots) == 0 }, time.Second, 5*time.Millisecond)
+	assert.Equal(t, int32(nodePresenceMaxInFlight), calls.Load())
+}
+
+func getDistribution[T any](t *testing.T, handler gin.HandlerFunc, url string) T {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, url, nil)
+	handler(c)
+	require.Equal(t, http.StatusOK, w.Code)
+	var env struct {
+		Code int `json:"code"`
+		Data T   `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &env), w.Body.String())
+	require.Equal(t, 0, env.Code, w.Body.String())
+	return env.Data
+}
+
+// Through the real handlers against a real database.
+func TestNodeDistribution_EndToEnd(t *testing.T) {
+	skipIfNoConfig(t)
+	require.NoError(t, db.Get().AutoMigrate(&NodeDevicePresence{}))
+	busy, quiet := "10.99.8.5", "10.99.8.6"
+	nodes := []SlaveNode{
+		{Name: "zz-test.vultr.wm01", Ipv4: busy, Country: "ZZ", Class: "shared", SecretToken: "t1"},
+		{Name: "zz-test.aws.wm01", Ipv4: quiet, Country: "ZZ", Class: "shared", SecretToken: "t2"},
+	}
+	require.NoError(t, db.Get().Create(&nodes).Error)
+	t.Cleanup(func() {
+		for _, n := range nodes {
+			db.Get().Unscoped().Delete(&n)
+		}
+		db.Get().Where("node_ipv4 IN ?", []string{busy, quiet}).Delete(&NodeDevicePresence{})
+	})
+	now := time.Now().Unix()
+	require.NoError(t, recordNodePresence(context.Background(), busy, []DeviceTrafficItem{
+		{UDID: "a", SessionID: "1", Rx: 1}, {UDID: "b", SessionID: "2", Rx: 1},
+	}, nil, now))
+
+	out := getDistribution[NodeDistributionResponse](t, api_admin_node_distribution, "/app/nodes/distribution")
+	byIP := map[string]NodeDistributionItem{}
+	for _, it := range out.Items {
+		byIP[it.Ipv4] = it
+	}
+	assert.Equal(t, 2, byIP[busy].ActiveDevices)
+	assert.Equal(t, nodeStatusIdle, byIP[quiet].Status)
+	assert.Nil(t, byIP[quiet].CPUPercent)
+	var zz *NodeDistributionSummary
+	for i := range out.Summaries {
+		if out.Summaries[i].Scope == "ZZ" {
+			zz = &out.Summaries[i]
+		}
+	}
+	require.NotNil(t, zz)
+	assert.Equal(t, nodeVerdictSkewed, zz.Verdict)
+
+	trend := getDistribution[NodeDistributionTrendResponse](t, api_admin_node_distribution_trend, "/app/nodes/distribution/trend?hours=999&country=ZZ")
+	assert.Equal(t, 168, trend.Hours)
+	assert.NotNil(t, trend.Points)
 }

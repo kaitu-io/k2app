@@ -1,7 +1,6 @@
 package center
 
 import (
-	"context"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -155,11 +154,9 @@ func ingestDeviceTraffic(c *gin.Context, ipv4 string, req *DeviceTrafficRequest)
 			return txErr
 		}
 
-		// Observation only: it runs after the commit so it can never roll back
-		// or re-trigger the billing ledger. A lost write costs one sample.
-		if perr := recordNodePresence(ipv4, req.Devices, userByUDID, time.Now().Unix()); perr != nil {
-			log.Warnf(context.Background(), "[DEVTRAFFIC] presence ip=%s: %v", ipv4, perr)
-		}
+		// Observation only: after the commit and off this goroutine, so it can
+		// neither roll back the ledger nor delay the ack.
+		dispatchNodePresence(ipv4, req.Devices, userByUDID, time.Now().Unix())
 		return nil
 	}
 

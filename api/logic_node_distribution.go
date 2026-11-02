@@ -1,10 +1,14 @@
 package center
 
 import (
+	"context"
+	"fmt"
 	"sort"
 	"time"
 
 	db "github.com/wordgate/qtoolkit/db"
+	"github.com/wordgate/qtoolkit/log"
+	"github.com/wordgate/qtoolkit/redis"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -15,6 +19,22 @@ const (
 	nodeMetricsFreshSeconds   = 600
 	// Pressure 1.0 means CPU at the 80% ceiling or throughput at capacity M.
 	nodeOverloadPressure = 0.9
+
+	// Presence writes are bounded so a slow database can never pile observation
+	// on top of the ingest path: at most this many in flight, each with a hard
+	// deadline; anything beyond is dropped.
+	nodePresenceMaxInFlight  = 4
+	nodePresenceWriteTimeout = 3 * time.Second
+
+	// Bucket aggregates only change when a bucket completes, so readers share one
+	// computed copy for that long. The database is shared with other services.
+	nodeBucketCacheSeconds = 2 * nodePresenceBucketSeconds
+	nodeBucketReadTimeout  = 10 * time.Second
+)
+
+var (
+	nodePresenceSlots  = make(chan struct{}, nodePresenceMaxInFlight)
+	nodePresenceWriter = recordNodePresence
 )
 
 // Node status values. Only idle, normal and overloaded count towards balance:
@@ -42,9 +62,34 @@ func nodePresenceBucket(unix int64) int64 {
 	return unix - unix%nodePresenceBucketSeconds
 }
 
+// dispatchNodePresence records a committed batch without touching the caller:
+// it never blocks, returns nothing and contains panics. A dropped or failed
+// write costs one sample and nothing else.
+func dispatchNodePresence(ipv4 string, items []DeviceTrafficItem, userByUDID map[string]uint, now int64) {
+	select {
+	case nodePresenceSlots <- struct{}{}:
+	default:
+		log.Warnf(context.Background(), "[DEVTRAFFIC] presence dropped ip=%s: writers busy", ipv4)
+		return
+	}
+	go func() {
+		defer func() { <-nodePresenceSlots }()
+		defer func() {
+			if r := recover(); r != nil {
+				log.Errorf(context.Background(), "[DEVTRAFFIC] presence panic ip=%s: %v", ipv4, r)
+			}
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), nodePresenceWriteTimeout)
+		defer cancel()
+		if err := nodePresenceWriter(ctx, ipv4, items, userByUDID, now); err != nil {
+			log.Warnf(ctx, "[DEVTRAFFIC] presence ip=%s: %v", ipv4, err)
+		}
+	}()
+}
+
 // recordNodePresence upserts one batch into the 5-minute ledger. Unattributed
 // traffic (empty udid) is skipped: it is not a device.
-func recordNodePresence(ipv4 string, items []DeviceTrafficItem, userByUDID map[string]uint, now int64) error {
+func recordNodePresence(ctx context.Context, ipv4 string, items []DeviceTrafficItem, userByUDID map[string]uint, now int64) error {
 	bucket := nodePresenceBucket(now)
 	rows := make([]NodeDevicePresence, 0, len(items))
 	for _, d := range items {
@@ -59,7 +104,7 @@ func recordNodePresence(ipv4 string, items []DeviceTrafficItem, userByUDID map[s
 	if len(rows) == 0 {
 		return nil
 	}
-	return db.Get().Clauses(clause.OnConflict{
+	return db.Get().WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "bucket"}, {Name: "node_ipv4"}, {Name: "udid"}, {Name: "session_id"}},
 		DoUpdates: clause.Assignments(map[string]any{
 			"rx_bytes":     gorm.Expr("rx_bytes + VALUES(rx_bytes)"),
@@ -107,12 +152,50 @@ type nodeBucketCount struct {
 // loadNodeBucketCounts returns completed buckets only: the current one is still
 // filling and would read as a false dip.
 func loadNodeBucketCounts(since, now int64) ([]nodeBucketCount, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), nodeBucketReadTimeout)
+	defer cancel()
 	var rows []nodeBucketCount
-	err := db.Get().Model(&NodeDevicePresence{}).
+	err := db.Get().WithContext(ctx).Model(&NodeDevicePresence{}).
 		Select("bucket, node_ipv4, COUNT(DISTINCT udid) AS devices").
 		Where("bucket >= ? AND bucket < ?", since, nodePresenceBucket(now)).
 		Group("bucket, node_ipv4").Order("bucket ASC").Scan(&rows).Error
 	return rows, err
+}
+
+// cachedForBucket returns compute's value, shared across readers and Center
+// instances until the next bucket completes. The key must include the bucket.
+// The cache is an optimisation only: on any cache failure it computes directly.
+func cachedForBucket[T any](key string, compute func() (T, error)) (T, error) {
+	var cached T
+	if ok, err := redis.CacheGet(key, &cached); err == nil && ok {
+		return cached, nil
+	}
+	value, err := compute()
+	if err != nil {
+		return value, err
+	}
+	if err := redis.CacheSet(key, value, nodeBucketCacheSeconds); err != nil {
+		log.Warnf(context.Background(), "failed to cache %s: %v", key, err)
+	}
+	return value, nil
+}
+
+// loadNodePeaks returns each node's highest device count over the last 24h.
+func loadNodePeaks(now int64) (map[string]int, error) {
+	key := fmt.Sprintf("node_dist:peaks:%d", nodePresenceBucket(now))
+	return cachedForBucket(key, func() (map[string]int, error) {
+		rows, err := loadNodeBucketCounts(now-24*3600, now)
+		if err != nil {
+			return nil, err
+		}
+		peaks := make(map[string]int)
+		for _, r := range rows {
+			if r.Devices > peaks[r.NodeIpv4] {
+				peaks[r.NodeIpv4] = r.Devices
+			}
+		}
+		return peaks, nil
+	})
 }
 
 // loadLatestNodeMetrics returns each node's newest sample inside the freshness

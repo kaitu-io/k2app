@@ -3,6 +3,7 @@ import type { CloudInstance, NodeDistributionItem } from "@/lib/api";
 // One machine on the node page. A row has a node, a cloud instance, or both:
 // self-hosted nodes have no instance, a fresh instance has no node yet.
 export interface FleetRow {
+  key: string; // an IP can be empty or shared, so it cannot identify a row
   ipv4: string;
   node?: NodeDistributionItem;
   instance?: CloudInstance;
@@ -24,11 +25,11 @@ export function mergeFleetRows(
   instances: CloudInstance[],
   { includeUnregistered }: { includeUnregistered: boolean },
 ): FleetRow[] {
-  const byIp = new Map(instances.map((instance) => [instance.ip_address, instance]));
+  const claimed = new Set<number>();
   const rows: FleetRow[] = nodes.map((node) => {
-    const instance = byIp.get(node.ipv4);
-    byIp.delete(node.ipv4);
-    return { ipv4: node.ipv4, node, instance };
+    const instance = instances.find((i) => i.ip_address === node.ipv4 && !claimed.has(i.id));
+    if (instance) claimed.add(instance.id);
+    return { key: `node-${node.ipv4}`, ipv4: node.ipv4, node, instance };
   });
   rows.sort(
     (a, b) =>
@@ -36,8 +37,13 @@ export function mergeFleetRows(
       (b.node?.activeDevices ?? 0) - (a.node?.activeDevices ?? 0) ||
       (a.node?.name ?? "").localeCompare(b.node?.name ?? ""),
   );
+  // Every instance stays reachable: this page is where it gets changed or deleted.
   if (includeUnregistered) {
-    for (const [ipv4, instance] of byIp) rows.push({ ipv4, instance });
+    for (const instance of instances) {
+      if (!claimed.has(instance.id)) {
+        rows.push({ key: `instance-${instance.id}`, ipv4: instance.ip_address, instance });
+      }
+    }
   }
   return rows;
 }

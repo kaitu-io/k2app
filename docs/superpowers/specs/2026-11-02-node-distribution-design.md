@@ -30,7 +30,9 @@
 
 **存储**：`node_device_presences`，5 分钟一个时间桶，键 `(bucket, node_ipv4, udid, session_id)`，带收发字节、`user_id`、`last_seen_at`。保留 7 天，与隐私政策 §4.2 一致，由 `statsRetentionTargets` 清理。`last_seen_at` 用 Center 时钟，所以 5 分钟窗口是精确滚动的，不是 5–10 分钟。
 
-**写入**：`ingestDeviceTraffic` 的账本事务提交之后尽力写入。失败只丢一个样本，不回滚账本，也不触发 k2s 重发。重发批次被游标拦下，不会重复计入。空 `udid` 不是设备，跳过。
+**写入**：`ingestDeviceTraffic` 的账本事务提交之后，在独立 goroutine 里尽力写入，最多 4 个并发，每次限时 3 秒，满了就丢弃，panic 被收住。观测路径既不回滚账本，也不拖慢 k2s 的确认。重发批次被游标拦下，不会重复计入。空 `udid` 不是设备，跳过。
+
+**读取成本**：60 万行实测，活跃设备 70–190 ms，24 小时聚合 180–340 ms，7 天聚合约 2 秒，都走覆盖索引。聚合结果按时间桶缓存在 Redis，读超时 10 秒；缓存故障时直接查库。
 
 **状态**（`classifyNodeStatus`，按序判断）：
 
@@ -68,4 +70,13 @@
 
 ## 部署
 
-需要 `RUN_MIGRATE=1 make deploy-api` 建表，然后发布 `website` 和 `kaitu-center` MCP。Center 发版后约 5 分钟才有实时数，24 小时峰值和趋势随数据积累增长。
+顺序固定：推 `main` → `RUN_MIGRATE=1 make deploy-api` → 验证 → 推 `website` → 发 `kaitu-center` MCP。网站不能先发，否则新页面拿不到实时数据，只能显示告警条和云实例。
+
+部署后验证（全部只读）：
+
+1. `grep -c 'presence' app.log` 只应有极少量或 0 条；出现 `presence dropped` 或持续的 presence 告警就回滚。
+2. 约 5 分钟后 `SELECT COUNT(DISTINCT node_ipv4) FROM node_device_presences` 接近 39。
+3. `/slave/device-traffic` 全部 `code:0`，`device_traffic_dailies` 当天流量继续增长。
+4. 网站上线后，在页面上核对活跃设备与 `get_node_distribution` 一致，并实际打开一次换 IP 和删除弹窗（不提交）。
+
+回滚：换回 `/apps/kaitu/kaitu-center.prev`。新表留着无害，旧代码不读它。
