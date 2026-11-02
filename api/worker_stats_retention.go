@@ -24,6 +24,8 @@ const TaskTypeStatsRetentionCleanup = "stats:retention_cleanup"
 const (
 	nodeLoadRetentionDays = 30
 	statsRetentionDays    = 120
+	// Matches the 7-day connection-log promise in the privacy policy (§4.2).
+	nodePresenceRetentionDays = 7
 )
 
 // statsRetentionBatchSize bounds each DELETE so the first run (clearing months
@@ -42,6 +44,7 @@ type statsRetentionTarget struct {
 
 var statsRetentionTargets = []statsRetentionTarget{
 	{"slave_node_loads", "created_at", nodeLoadRetentionDays},
+	{"node_device_presences", "created_at", nodePresenceRetentionDays},
 	{"stat_connections", "reported_at", statsRetentionDays},
 	{"stat_app_opens", "reported_at", statsRetentionDays},
 	{"stat_k2s_downloads", "created_at", statsRetentionDays},

@@ -475,6 +475,8 @@ func SetupRouter() *gin.Engine {
 
 		// 物理节点管理
 		opsAdmin.GET("/nodes", RoleRequired(viewOrEdit), api_admin_list_nodes)
+		opsAdmin.GET("/nodes/distribution", RoleRequired(viewOrEdit), api_admin_node_distribution)
+		opsAdmin.GET("/nodes/distribution/trend", RoleRequired(viewOrEdit), api_admin_node_distribution_trend)
 		opsAdmin.PUT("/nodes/:ipv4", RoleRequired(RoleDevopsEditor), api_admin_update_node)
 		opsAdmin.DELETE("/nodes/:ipv4", RoleRequired(RoleDevopsEditor), api_admin_delete_node)
 

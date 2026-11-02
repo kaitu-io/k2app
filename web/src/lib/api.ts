@@ -2581,6 +2581,12 @@ export const api = {
     return this.request<ListResult<AdminNodeItem>>(`/app/nodes?${queryParams.toString()}`);
   },
 
+  // Live device counts, load and balance verdicts for every node (not paginated).
+  async getNodeDistribution(brand?: BrandId): Promise<NodeDistributionResponse> {
+    const query = brand ? `?brand=${encodeURIComponent(brand)}` : '';
+    return this.request<NodeDistributionResponse>(`/app/nodes/distribution${query}`);
+  },
+
   // Delete slave node by IPv4
   async deleteSlaveNode(ipv4: string): Promise<void> {
     return this.request<void>(`/app/nodes/${encodeURIComponent(ipv4)}`, {
@@ -3113,6 +3119,53 @@ export interface AdminNodeItem {
   visibleOverleap?: boolean;
   updatedAt: number;
   tunnels: AdminNodeTunnel[];
+}
+
+export type NodeDistributionStatus =
+  | 'overloaded' | 'idle' | 'normal' | 'exhausted' | 'offline' | 'hidden' | 'private';
+
+export type NodeDistributionVerdict = 'ok' | 'skewed' | 'imbalanced';
+
+// Load fields are null when the node has no fresh trustworthy sample; null is
+// "unknown", never zero.
+export interface NodeDistributionItem extends AdminNodeItem {
+  status: NodeDistributionStatus;
+  activeDevices: number;
+  activeSessions: number;
+  peakDevices24h: number;
+  cpuPercent: number | null;
+  stealPercent: number | null;
+  cpuCores: number;
+  memoryPercent: number | null;
+  bandwidthMbps: number | null;
+  capacityMbps: number | null;
+  pressureRatio: number | null;
+  metricsVersion: number;
+  metricsAt: number;
+  usageReportAt: number;
+  usedBytes: number;
+  quotaBytes: number;
+}
+
+export interface NodeDistributionSummary {
+  scope: string; // "all" or a country code
+  nodes: number;
+  eligibleNodes: number;
+  idleNodes: number;
+  overloadedNodes: number;
+  activeDevices: number;
+  maxDevices: number;
+  maxNode: string;
+  medianDevices: number;
+  topShare: number;
+  verdict: NodeDistributionVerdict;
+}
+
+export interface NodeDistributionResponse {
+  generatedAt: number;
+  windowSeconds: number;
+  summaries: NodeDistributionSummary[];
+  items: NodeDistributionItem[];
 }
 
 // ============================================================

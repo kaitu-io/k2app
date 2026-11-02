@@ -151,7 +151,7 @@ export default function CreateCloudInstancePage() {
         name: instanceName,
       });
       toast.success(`创建任务已提交，任务 ID: ${response.task_id}`);
-      router.push("/manager/cloud");
+      router.push("/manager/nodes");
     } catch (error) {
       console.error("Failed to create instance:", error);
       toast.error("创建实例失败");
@@ -202,7 +202,7 @@ exec_on_node(ip, "cd /apps/k2s && docker compose up -d")`;
     <div className="container mx-auto py-10">
       <Button
         variant="ghost"
-        onClick={() => router.push("/manager/cloud")}
+        onClick={() => router.push("/manager/nodes")}
         className="mb-4"
       >
         <ArrowLeft className="h-4 w-4 mr-2" />

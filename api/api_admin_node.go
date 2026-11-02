@@ -67,34 +67,7 @@ func api_admin_list_nodes(c *gin.Context) {
 		if hasBrandFilter && !node.VisibleTo(brandFilter) {
 			continue
 		}
-		tunnels := make([]AdminNodeTunnel, 0, len(node.Tunnels))
-		for _, t := range node.Tunnels {
-			tunnels = append(tunnels, AdminNodeTunnel{
-				ID:        t.ID,
-				Name:      t.Name,
-				Domain:    t.Domain,
-				Protocol:  ProtocolDisplay(t.Protocol), // C2: k2v5 → "k2s"
-				Port:      t.Port,
-				ServerURL: t.ServerURL,
-			})
-		}
-
-		items = append(items, AdminNodeItem{
-			ID:                 node.ID,
-			Name:               node.Name,
-			Country:            node.Country,
-			Region:             node.Region,
-			Ipv4:               node.Ipv4,
-			Ipv6:               node.Ipv6,
-			IPType:             node.IPType, // C2: expose ip_type on admin node list
-			Class:              node.Class,
-			PrivateOwnerUserID: node.PrivateOwnerUserID,
-			Brands:             brandStrings(node.DeclaredBrands()),
-			VisibleKaitu:       node.VisibleTo(BrandKaitu),
-			VisibleOverleap:    node.VisibleTo(BrandOverleap),
-			UpdatedAt:          node.UpdatedAt.Unix(),
-			Tunnels:            tunnels,
-		})
+		items = append(items, buildAdminNodeItem(node))
 	}
 	if hasBrandFilter {
 		// The SQL count is brand-blind; with a filter the page is the universe.
@@ -103,6 +76,37 @@ func api_admin_list_nodes(c *gin.Context) {
 
 	log.Infof(c, "successfully listed %d physical nodes (%d after brand filter)", len(nodes), len(items))
 	ListWithData(c, items, pagination)
+}
+
+// buildAdminNodeItem renders one node row; the node must have Tunnels preloaded.
+func buildAdminNodeItem(node SlaveNode) AdminNodeItem {
+	tunnels := make([]AdminNodeTunnel, 0, len(node.Tunnels))
+	for _, t := range node.Tunnels {
+		tunnels = append(tunnels, AdminNodeTunnel{
+			ID:        t.ID,
+			Name:      t.Name,
+			Domain:    t.Domain,
+			Protocol:  ProtocolDisplay(t.Protocol), // C2: k2v5 → "k2s"
+			Port:      t.Port,
+			ServerURL: t.ServerURL,
+		})
+	}
+	return AdminNodeItem{
+		ID:                 node.ID,
+		Name:               node.Name,
+		Country:            node.Country,
+		Region:             node.Region,
+		Ipv4:               node.Ipv4,
+		Ipv6:               node.Ipv6,
+		IPType:             node.IPType, // C2: expose ip_type on admin node list
+		Class:              node.Class,
+		PrivateOwnerUserID: node.PrivateOwnerUserID,
+		Brands:             brandStrings(node.DeclaredBrands()),
+		VisibleKaitu:       node.VisibleTo(BrandKaitu),
+		VisibleOverleap:    node.VisibleTo(BrandOverleap),
+		UpdatedAt:          node.UpdatedAt.Unix(),
+		Tunnels:            tunnels,
+	}
 }
 
 // brandStrings renders a Brand slice as plain strings for JSON.

@@ -131,6 +131,7 @@ func Migrate() error {
 		&DeviceTrafficDaily{},
 		&DeviceTrafficCursor{},
 		&DeviceSessionDaily{},
+		&NodeDevicePresence{},
 		&TrafficAbuseAlert{},
 		&PrivateNodeSubscription{},
 		&PrivateNodePlanSpec{},

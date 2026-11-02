@@ -55,6 +55,27 @@ type DeviceSessionDaily struct {
 	UpdatedAt time.Time
 }
 
+// NodeDevicePresence is the short-lived, 5-minute activity ledger behind the
+// node distribution view: which device+session moved traffic on which node in
+// a bucket. Identity is (udid, session_id) because that is also the key a
+// future per-session action needs; see
+// docs/superpowers/specs/2026-11-02-device-control-foundation-design.md.
+// PURE OBSERVATION and written best-effort outside the billing transaction.
+// Holds no client IP and no destination; retention is 7 days (privacy policy
+// §4.2), swept by statsRetentionTargets.
+type NodeDevicePresence struct {
+	ID         uint64    `gorm:"primarykey"`
+	Bucket     int64     `gorm:"not null;uniqueIndex:idx_ndp_key,priority:1"` // Unix seconds, floored to 300s
+	NodeIpv4   string    `gorm:"type:varchar(15);not null;uniqueIndex:idx_ndp_key,priority:2"`
+	UDID       string    `gorm:"column:udid;type:varchar(64);not null;uniqueIndex:idx_ndp_key,priority:3"`
+	SessionID  string    `gorm:"type:varchar(32);not null;default:'';uniqueIndex:idx_ndp_key,priority:4"`
+	UserID     uint      `gorm:"not null;default:0"`
+	RxBytes    int64     `gorm:"not null;default:0"`
+	TxBytes    int64     `gorm:"not null;default:0"`
+	LastSeenAt int64     `gorm:"not null;default:0"` // Center clock, Unix seconds
+	CreatedAt  time.Time `gorm:"index"`
+}
+
 // DeviceTrafficCursor is the per-node idempotency cursor for device-traffic
 // batches: a report with the same boot_id and batch_seq <= BatchSeq has
 // already been ingested and must be skipped (ack-lost resend).

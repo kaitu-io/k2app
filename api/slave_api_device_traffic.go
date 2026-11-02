@@ -1,6 +1,7 @@
 package center
 
 import (
+	"context"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -121,7 +122,7 @@ func ingestDeviceTraffic(c *gin.Context, ipv4 string, req *DeviceTrafficRequest)
 		// same delta → double count. Wrapping both writes in one
 		// transaction guarantees they move together: either the batch is
 		// fully applied (rows + cursor) or fully rolled back for retry.
-		return db.Get().Transaction(func(tx *gorm.DB) error {
+		if txErr := db.Get().Transaction(func(tx *gorm.DB) error {
 			// A batch may contain multiple session rows sharing the same
 			// (date, udid, node_ipv4) — the daily-aggregate table's key is
 			// coarser than the per-session key. MySQL applies ON DUPLICATE
@@ -150,7 +151,16 @@ func ingestDeviceTraffic(c *gin.Context, ipv4 string, req *DeviceTrafficRequest)
 				}
 			}
 			return advanceDeviceTrafficCursor(tx, ipv4, req)
-		})
+		}); txErr != nil {
+			return txErr
+		}
+
+		// Observation only: it runs after the commit so it can never roll back
+		// or re-trigger the billing ledger. A lost write costs one sample.
+		if perr := recordNodePresence(ipv4, req.Devices, userByUDID, time.Now().Unix()); perr != nil {
+			log.Warnf(context.Background(), "[DEVTRAFFIC] presence ip=%s: %v", ipv4, perr)
+		}
+		return nil
 	}
 
 	// No devices in this batch: still advance the cursor so a resend of an
