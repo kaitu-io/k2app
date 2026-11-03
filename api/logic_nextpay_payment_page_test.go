@@ -248,7 +248,7 @@ func TestWithPaySource(t *testing.T) {
 func seedPaidOrder(t *testing.T, u *User, payAmount uint64, paidAt time.Time, refunded bool) {
 	t.Helper()
 	o := &Order{UUID: generateId("fpa"), Title: "fpa", OriginAmount: payAmount, PayAmount: payAmount,
-		UserID: u.ID, IsPaid: BoolPtr(true), PaidAt: &paidAt, IsRefunded: BoolPtr(refunded)}
+		UserID: u.ID, IsPaid: BoolPtr(true), PaidAt: &paidAt, IsRefunded: BoolPtr(refunded), Meta: "{}"}
 	require.NoError(t, db.Get().Create(o).Error)
 	t.Cleanup(func() { db.Get().Unscoped().Delete(o) })
 }
