@@ -38,7 +38,7 @@ func InitWorker() {
 	asynq.Handle(TaskTypeTemplatedEmailSend, handleTemplatedEmailTask)
 	asynq.Handle(TaskTypeRenewalReminder, handleRenewalReminderTask)
 	asynq.Handle(TaskTypeTrialRecall, handleTrialRecallTask)
-	asynq.Handle(TaskTypeAbandonedOrderHourly,handleAbandonedOrderHourlyTask)
+	asynq.Handle(TaskTypeAbandonedOrderHourly, handleAbandonedOrderHourlyTask)
 	asynq.Handle(TaskTypeAbandonedOrderDaily, handleAbandonedOrderDailyTask)
 	asynq.Handle(TaskTypeRetailerFollowup, handleRetailerFollowupTask)
 	asynq.Handle(TaskTypeTicketNotify, handleTicketNotify)
