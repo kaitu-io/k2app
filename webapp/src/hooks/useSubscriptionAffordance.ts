@@ -6,9 +6,12 @@ import {
 } from '../utils/subscriptionAffordance';
 
 /**
- * v1 = 方案 A：活跃会员不兜售订阅。方案 B 时把这里改成 30/60（或读远端配置）。
+ * 非订阅会员剩余 ≤ 该天数时显示订阅面板（而不是无按钮的 status）。
+ * 必须覆盖到期提醒的着陆：renewal_3d 推送（api/logic_push_triggers.go，候选人是
+ * UTC 当天+3 整天内到期，即发送时最多剩约 4 天）与 7 天提醒邮件都跳 /purchase，
+ * 窗口 < 它们 = 用户点进来找不到续费入口。
  */
-const RENEW_WINDOW_DAYS = 0;
+export const RENEW_WINDOW_DAYS = 7;
 
 /**
  * 全 iOS 购买 UI 的单一事实源：根据 user 决定 subscribe | manage | status。
