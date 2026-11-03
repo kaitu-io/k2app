@@ -81,7 +81,8 @@ func TestTrialRecallPush_S2MarketingSkipsHoldout(t *testing.T) {
 	assert.Equal(t, normal.ID, (*got)[0].userID)
 	assert.NotEqual(t, hold.ID, (*got)[0].userID)
 	assert.Equal(t, PushCategoryMarketing, (*got)[0].req.Category)
-	assert.Equal(t, "试用已结束，订阅后立即恢复使用", (*got)[0].req.Body)
+	_, wantBody := trialRecallPushCopy(trialRecallS2, "zh-CN", time.Time{})
+	assert.Equal(t, wantBody, (*got)[0].req.Body, "S2 推送正文来自文案表（zh-CN）")
 	assert.Equal(t, 1, r.PushQueued)
 }
 

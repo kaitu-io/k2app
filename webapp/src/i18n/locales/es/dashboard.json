@@ -159,7 +159,7 @@
       "message": "Inicia sesión para desbloquear más nodos en la nube",
       "viewPlans": "Ver Planes"
     },
-    "trialRenewOff": "Días de prueba restantes: {{days}}. Tras el {{date}} el servicio se detendrá. Activa la renovación automática para seguir usándolo.",
+    "trialRenewOff": "Días de prueba restantes: {{days}}. Tras el {{date}} el servicio se detendrá. Activa la renovación automática para seguir usándolo. Tras el cobro puedes desactivar la renovación automática en el App Store cuando quieras y seguir usando el periodo pagado.",
     "trialContinue": "Seguir usando"
   },
   "appBypass": {

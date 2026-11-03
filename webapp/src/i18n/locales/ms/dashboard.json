@@ -159,7 +159,7 @@
       "message": "Log masuk untuk buka kunci lebih banyak nod awan",
       "viewPlans": "Lihat Pelan"
     },
-    "trialRenewOff": "Baki hari percubaan: {{days}}. Selepas {{date}} perkhidmatan akan dihentikan. Hidupkan pembaharuan automatik untuk terus menggunakannya.",
+    "trialRenewOff": "Baki hari percubaan: {{days}}. Selepas {{date}} perkhidmatan akan dihentikan. Hidupkan pembaharuan automatik untuk terus menggunakannya. Selepas dicaj, anda masih boleh mematikan pembaharuan automatik di App Store pada bila-bila masa dan terus menggunakan tempoh yang telah dibayar.",
     "trialContinue": "Teruskan"
   },
   "appBypass": {

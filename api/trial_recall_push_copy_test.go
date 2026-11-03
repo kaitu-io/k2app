@@ -52,5 +52,5 @@ func TestTrialRecallPushCopy_S1Content(t *testing.T) {
 	_, body := trialRecallPushCopy(trialRecallS1, "zh-CN", ends)
 	assert.Equal(t, "试用将于 2026-11-06 结束，结束后将停止服务", body)
 	_, body = trialRecallPushCopy(trialRecallS2, "zh-CN", ends)
-	assert.Equal(t, "试用已结束，订阅后立即恢复使用", body)
+	assert.Equal(t, "试用已结束。订阅即恢复，之后可随时关闭续订", body)
 }

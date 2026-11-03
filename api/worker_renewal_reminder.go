@@ -264,24 +264,19 @@ func processWinback(ctx context.Context, daysAfter int) (sent, skipped, failed i
 
 	log.Infof(ctx, "[WINBACK] Found %d users expired %d days ago", len(users), daysAfter)
 
-	// 活动码/省钱区间必须按收件用户品牌计算（价格区间与 campaign 均品牌隔离），
-	// 按 brand 分组缓存一次，避免每封重查。
-	campaign, hasCampaign := winbackCampaigns[daysAfter]
-	varsByBrand := map[Brand]map[string]string{}
-	varsFor := func(b Brand) map[string]string {
-		if !b.Valid() {
-			b = BrandKaitu
-		}
-		if v, ok := varsByBrand[b]; ok {
-			return v
-		}
-		v := map[string]string{}
-		if hasCampaign {
-			v = campaignVarsForBrand(ctx, campaign.code, campaign.discountPct, campaign.validDaysStr, b)
-		}
-		varsByBrand[b] = v
-		return v
+	// 优惠变量按收件用户品牌计算（活动码与套餐均品牌隔离），recallMailer 内按品牌缓存。
+	offerCode := ""
+	if winbackOfferStages[daysAfter] {
+		offerCode = recallOfferBackCode
 	}
+	mailer := newRecallMailer(batchID, slug, offerCode)
+	defer func() {
+		if mailer.OfferMissing {
+			msg := fmt.Sprintf("[WINBACK] 活动码 %q 不可用或无在售年付 App 套餐，%s 本次跳过了部分收件人。", offerCode, slug)
+			log.Errorf(ctx, "%s", msg)
+			slack.Send("alert", msg)
+		}
+	}()
 
 	items := make([]SendEmailItem, 0, len(users))
 	for _, user := range users {
@@ -296,11 +291,21 @@ func processWinback(ctx context.Context, daysAfter int) (sent, skipped, failed i
 			continue
 		}
 
+		if mailer.Holdout(ctx, &user, email) {
+			skipped++
+			continue
+		}
+		vars, ok := mailer.Vars(ctx, &user, email)
+		if !ok {
+			skipped++
+			continue
+		}
+
 		items = append(items, SendEmailItem{
 			Email:  email,
 			UserID: user.ID,
 			Slug:   slug,
-			Vars:   varsFor(Brand(user.Brand)),
+			Vars:   vars,
 		})
 	}
 
@@ -320,61 +325,9 @@ func processWinback(ctx context.Context, daysAfter int) (sent, skipped, failed i
 	return result.Sent, skipped + result.Skipped, result.Failed
 }
 
-// winbackCampaign 召回邮件的活动码配置
-type winbackCampaign struct {
-	code         string // 活动码
-	discountPct  int    // 折扣百分比（90 = 九折）
-	validDaysStr string // 有效期描述
-}
-
-// 召回活动码配置：daysAfter → campaign
-var winbackCampaigns = map[int]winbackCampaign{
-	7:  {code: "BACK90", discountPct: 90, validDaysStr: "14 天内有效"},
-	30: {code: "BACK85", discountPct: 85, validDaysStr: "30 天内有效"},
-}
-
-// campaignVarsForBrand 按单个收件品牌计算生命周期邮件（winback / abandoned-order）
-// 的活动码模板变量。campaign 在该品牌下不存在（或不可用）、或该品牌无激活套餐时
-// 返回空 map——绝不把 kaitu 的价格区间/活动码发给 overleap 用户，反之亦然。
-func campaignVarsForBrand(ctx context.Context, code string, discountPct int, validDaysStr string, brand Brand) map[string]string {
-	vars := map[string]string{}
-	if getCampaignByCode(ctx, code, brand) == nil {
-		return vars
-	}
-	minPrice, maxPrice, ok := getPlanPriceRange(ctx, brand)
-	if !ok {
-		return vars
-	}
-	minSave := minPrice * uint64(100-discountPct) / 100
-	maxSave := maxPrice * uint64(100-discountPct) / 100
-	vars["SavingsText"] = fmt.Sprintf("立减 %s 起，最高立减 %s", formatCents(minSave), formatCents(maxSave))
-	vars["CampaignCode"] = code
-	vars["ValidDays"] = validDaysStr
-	return vars
-}
-
-// getPlanPriceRange 查询指定品牌当前激活套餐的最低和最高售价（美分）
-func getPlanPriceRange(ctx context.Context, brand Brand) (minPrice, maxPrice uint64, ok bool) {
-	var plans []Plan
-	if err := db.Get().Scopes(ScopeBrand(brand)).Where("is_active = ?", true).Select("price").Find(&plans).Error; err != nil {
-		log.Errorf(ctx, "[WINBACK] Failed to query plans: %v", err)
-		return 0, 0, false
-	}
-	if len(plans) == 0 {
-		return 0, 0, false
-	}
-	minPrice = plans[0].Price
-	maxPrice = plans[0].Price
-	for _, p := range plans[1:] {
-		if p.Price < minPrice {
-			minPrice = p.Price
-		}
-		if p.Price > maxPrice {
-			maxPrice = p.Price
-		}
-	}
-	return minPrice, maxPrice, true
-}
+// winbackOfferStages 过期召回带优惠的阶段：7 天、30 天给**同一个**老客优惠（BACK10），
+// 不再 9 折 → 85 折逐步加深（spec 2026-11-03-recall-offer-flatten）。1 天只提醒「连接已断开」，不带折扣。
+var winbackOfferStages = map[int]bool{7: true, 30: true}
 
 // formatCents 美分转美元字符串（如 390 → "$3.9", 2235 → "$22.35"）
 func formatCents(cents uint64) string {

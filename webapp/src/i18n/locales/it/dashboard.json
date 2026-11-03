@@ -159,7 +159,7 @@
       "message": "Accedi per sbloccare più nodi cloud",
       "viewPlans": "Visualizza Piani"
     },
-    "trialRenewOff": "Giorni di prova rimanenti: {{days}}. Dopo il {{date}} il servizio verrà interrotto. Attiva il rinnovo automatico per continuare a usarlo.",
+    "trialRenewOff": "Giorni di prova rimanenti: {{days}}. Dopo il {{date}} il servizio verrà interrotto. Attiva il rinnovo automatico per continuare a usarlo. Dopo l'addebito puoi disattivare il rinnovo automatico nell'App Store in qualsiasi momento e continuare a usare il periodo pagato.",
     "trialContinue": "Continua a usare"
   },
   "appBypass": {

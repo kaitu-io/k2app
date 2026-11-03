@@ -3,7 +3,6 @@ package center
 import (
 	"context"
 	"fmt"
-	"maps"
 	"time"
 
 	db "github.com/wordgate/qtoolkit/db"
@@ -18,21 +17,14 @@ const (
 
 var (
 	abandonedHourlyDelays = []int{1}
-	abandonedDailyDelays  = []int{1, 3, 7, 14, 30}
+	// 14 / 30 天两封已停发（spec 2026-11-03-recall-offer-flatten）：4~10 月它们之后 14 天内付款率 1%~2%，
+	// 「最后机会」「最大优惠」式的加码只会教用户等。
+	abandonedDailyDelays = []int{1, 3, 7}
 )
 
-type abandonedCampaign struct {
-	code         string
-	discountPct  int
-	validDaysStr string
-}
-
-var abandonedCampaigns = map[int]abandonedCampaign{
-	3:  {code: "READY4U", discountPct: 95, validDaysStr: "7 天内有效"},
-	7:  {code: "STAYFREE", discountPct: 90, validDaysStr: "14 天内有效"},
-	14: {code: "SMOOTHDAY", discountPct: 90, validDaysStr: "14 天内有效"},
-	30: {code: "KEEPGOING", discountPct: 85, validDaysStr: "30 天内有效"},
-}
+// abandonedOfferStages 带优惠的阶段：3 天第一次给新客统一优惠，7 天再提一次**同一个**码，不加码。
+// 1 小时 / 1 天只提醒、不带折扣——历史付款几乎都发生在这两封之后，此时给折扣只是补贴本来就会买的人。
+var abandonedOfferStages = map[int]bool{3: true, 7: true}
 
 func handleAbandonedOrderHourlyTask(ctx context.Context, _ []byte) error {
 	log.Infof(ctx, "[ABANDONED] Starting hourly abandoned order check")
@@ -170,24 +162,18 @@ func processAbandonedOrders(ctx context.Context, batchID, slug string, windowSta
 		userMap[users[i].ID] = &users[i]
 	}
 
-	// 活动码/省钱区间必须按收件用户品牌计算（价格区间与 campaign 均品牌隔离），
-	// 按 brand 分组缓存一次，避免每封重查。
-	campaign, hasCampaign := abandonedCampaigns[daysAfter]
-	varsByBrand := map[Brand]map[string]string{}
-	varsFor := func(b Brand) map[string]string {
-		if !b.Valid() {
-			b = BrandKaitu
-		}
-		if v, ok := varsByBrand[b]; ok {
-			return v
-		}
-		v := map[string]string{}
-		if hasCampaign {
-			v = campaignVarsForBrand(ctx, campaign.code, campaign.discountPct, campaign.validDaysStr, b)
-		}
-		varsByBrand[b] = v
-		return v
+	offerCode := ""
+	if abandonedOfferStages[daysAfter] {
+		offerCode = recallOfferNewCode
 	}
+	mailer := newRecallMailer(batchID, slug, offerCode)
+	defer func() {
+		if mailer.OfferMissing {
+			msg := fmt.Sprintf("[ABANDONED] 活动码 %q 不可用或无在售年付 App 套餐，%s 本次跳过了部分收件人。", offerCode, slug)
+			log.Errorf(ctx, "%s", msg)
+			slack.Send("alert", msg)
+		}
+	}()
 
 	items := make([]SendEmailItem, 0, len(orders))
 	for _, order := range orders {
@@ -208,9 +194,15 @@ func processAbandonedOrders(ctx context.Context, batchID, slug string, windowSta
 			continue
 		}
 
-		vars := varsFor(Brand(user.Brand))
-		itemVars := make(map[string]string, len(vars)+2)
-		maps.Copy(itemVars, vars)
+		if mailer.Holdout(ctx, user, email) {
+			skipped++
+			continue
+		}
+		itemVars, ok := mailer.Vars(ctx, user, email)
+		if !ok {
+			skipped++
+			continue
+		}
 		itemVars["PlanTitle"] = order.Title
 		itemVars["PayAmount"] = formatCents(order.PayAmount)
 

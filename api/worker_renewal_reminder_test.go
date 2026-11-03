@@ -63,64 +63,11 @@ func TestFormatCents(t *testing.T) {
 	}
 }
 
-// TestWinbackCampaigns_Config 验证召回活动码配置
-func TestWinbackCampaigns_Config(t *testing.T) {
-	// 7 天召回
-	c7, ok := winbackCampaigns[7]
-	require.True(t, ok, "7-day winback campaign must exist")
-	assert.Equal(t, "BACK90", c7.code)
-	assert.Equal(t, 90, c7.discountPct)
-	assert.Contains(t, c7.validDaysStr, "14 天")
-
-	// 30 天召回
-	c30, ok := winbackCampaigns[30]
-	require.True(t, ok, "30-day winback campaign must exist")
-	assert.Equal(t, "BACK85", c30.code)
-	assert.Equal(t, 85, c30.discountPct)
-	assert.Contains(t, c30.validDaysStr, "30 天")
-
-	// 1 天不应有活动码
-	_, ok = winbackCampaigns[1]
-	assert.False(t, ok, "1-day winback should have no campaign")
-}
-
-// TestSavingsCalculation 验证立减金额计算（模拟 getPlanPriceRange 的结果）
-func TestSavingsCalculation(t *testing.T) {
-	// 当前套餐: $39, $76, $109, $149 (美分: 3900, 7600, 10900, 14900)
-	tests := []struct {
-		name        string
-		minPrice    uint64
-		maxPrice    uint64
-		discountPct int
-		expectMin   string // 最低立减
-		expectMax   string // 最高立减
-	}{
-		{
-			name:        "BACK90_current_plans",
-			minPrice:    3900,
-			maxPrice:    14900,
-			discountPct: 90,
-			expectMin:   "$3.9",
-			expectMax:   "$14.9",
-		},
-		{
-			name:        "BACK85_current_plans",
-			minPrice:    3900,
-			maxPrice:    14900,
-			discountPct: 85,
-			expectMin:   "$5.85",
-			expectMax:   "$22.35",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			minSave := tt.minPrice * uint64(100-tt.discountPct) / 100
-			maxSave := tt.maxPrice * uint64(100-tt.discountPct) / 100
-			assert.Equal(t, tt.expectMin, formatCents(minSave))
-			assert.Equal(t, tt.expectMax, formatCents(maxSave))
-		})
-	}
+// TestWinbackOfferStages_NoEscalation 过期召回 7 天、30 天同一个老客码，1 天只提醒。
+func TestWinbackOfferStages_NoEscalation(t *testing.T) {
+	assert.Equal(t, map[int]bool{7: true, 30: true}, winbackOfferStages)
+	assert.False(t, winbackOfferStages[1])
+	assert.NotEqual(t, recallOfferNewCode, recallOfferBackCode, "新客码与老客码 matcher 不同，不能合并")
 }
 
 // TestBatchIDFormat 验证批次 ID 格式

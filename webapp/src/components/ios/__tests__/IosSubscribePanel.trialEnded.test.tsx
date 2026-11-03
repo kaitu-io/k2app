@@ -74,6 +74,7 @@ describe('IosSubscribePanel trial ended', () => {
     setProducts(USED);
     const { container } = renderPanel();
     expect(screen.getByTestId('iap-trial-ended').textContent).toBe('你的 7 天试用已结束，订阅后立即恢复使用');
+    expect(screen.getByTestId('iap-cancel-anytime').textContent).toContain('App Store 关闭自动续订');
     expect(container.textContent).not.toContain('免费');
     expect(screen.getByTestId('iap-subscribe-btn').textContent).toBe('立即订阅');
   });
@@ -94,6 +95,7 @@ describe('IosSubscribePanel trial ended', () => {
     setProducts(ELIGIBLE);
     renderPanel();
     expect(screen.queryByTestId('iap-trial-ended')).toBeNull();
+    expect(screen.queryByTestId('iap-cancel-anytime')).toBeNull();
   });
 
   it('hidden when paid before', () => {

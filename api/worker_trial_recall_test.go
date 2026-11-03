@@ -612,14 +612,7 @@ func TestProcessTrialRecall_MissingTemplateSendsNothing(t *testing.T) {
 	assert.Empty(t, trialRecallLogs(t, u.ID))
 }
 
-func TestTrialRecallSavingsText_Exact(t *testing.T) {
-	plans := []Plan{{Price: 3900}, {Price: 9900}, {Price: 1900}}
-	// 20% 立减：最低 1900 -> 380，最高 9900 -> 1980。
-	assert.Equal(t, "立减 $3.8 起，最高立减 $19.8", trialRecallSavingsText(plans))
-	assert.Equal(t, "立减 $7.8 起，最高立减 $7.8", trialRecallSavingsText([]Plan{{Price: 3900}}))
-}
-
-func TestTrialRecallEmailVars_SavingsIgnoresRouterPlans(t *testing.T) {
+func TestTrialRecallEmailVars_ConcreteOfferIgnoresRouterPlans(t *testing.T) {
 	code := setupTrialRecallEnv(t, true)
 	active := true
 	router := &Plan{PID: "trtr" + code[len(code)-10:], Label: "trt-router", Price: 35900, OriginPrice: 35900,
@@ -631,26 +624,23 @@ func TestTrialRecallEmailVars_SavingsIgnoresRouterPlans(t *testing.T) {
 	vars, ok := trialRecallEmailVars(context.Background(), trialRecallS1, c, "a@example.com")
 	require.True(t, ok)
 
-	// 共享开发库里可能还有别的在售 App 套餐，所以不断言字面金额：
-	// 断言文案恰好等于「当前在售 App 套餐」算出的值，且 router 套餐与本测试的 App 套餐的归属正确。
-	plans, err := trialRecallAppPlans(context.Background())
-	require.NoError(t, err)
-	var sawFixture bool
-	for _, p := range plans {
-		assert.NotEqual(t, router.PID, p.PID, "router 套餐不进区间")
-		assert.Equal(t, ProductApp, p.Product)
-		if p.Label == "trt-plan" {
-			sawFixture = true
-		}
-	}
-	assert.True(t, sawFixture, "本测试的 App 套餐应在区间内")
-	assert.Equal(t, trialRecallSavingsText(plans), vars["SavingsText"])
-	// 若 router 价格被误纳入，最高立减会 >= $71.8。
-	assert.NotContains(t, vars["SavingsText"], "$71.8")
+	// 文案必须等于「在售年付 App 套餐 + 活动码」经下单同一算法算出的值；共享开发库里可能有别的套餐，
+	// 所以从生产函数推导期望值，而不是写死金额。
+	plan := recallOfferPlan(context.Background(), BrandKaitu)
+	require.NotNil(t, plan)
+	assert.Equal(t, ProductApp, plan.Product, "router 套餐不能被当成召回推荐的年付套餐")
+	campaign := getCampaignByCode(context.Background(), code, BrandKaitu)
+	require.NotNil(t, campaign)
+	offer := recallOfferPrice(campaign, plan)
+	assert.Equal(t, recallOfferText(offer, plan.Price), vars["OfferText"])
+	assert.Equal(t, vars["OfferText"], vars["SavingsText"], "旧模板变量与新文案一致")
+	assert.NotContains(t, vars["OfferText"], "$359", "router 价格不得出现")
+	assert.NotContains(t, vars["OfferText"], "最高", "不再写「最高立减」")
 	assert.Equal(t, code, vars["CampaignCode"])
-	assert.Equal(t, "本周内有效", vars["ValidDays"])
+	assert.Equal(t, recallValidUntil(campaign.EndAt), vars["ValidDays"], "期限 = 活动码真实截止日")
 	assert.Equal(t, "2090-01-03", vars["TrialEndDate"], "Asia/Shanghai 日期")
 	assert.Contains(t, vars["PurchaseURL"], "campaign="+code)
+	assert.Contains(t, vars["PurchaseURL"], "plan="+plan.PID)
 }
 
 func TestTrialRecallPurchaseURL(t *testing.T) {

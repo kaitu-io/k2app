@@ -4,10 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"hash/fnv"
-	"net/url"
+	"maps"
 	"sort"
-	"strconv"
 	"sync"
 	"time"
 
@@ -160,11 +158,7 @@ func trialRecallCandidates(ctx context.Context, stage trialRecallStage, now time
 
 // inTrialRecallHoldout 10% 对照组：命中者不发邮件、不发营销推送（S1 交易类推送照发）。
 // 盐 "trial-recall-v1:" 固定，改盐会让对照组换人、破坏对照。
-func inTrialRecallHoldout(userID uint64) bool {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte("trial-recall-v1:" + strconv.FormatUint(userID, 10)))
-	return h.Sum32()%10 == 0
-}
+func inTrialRecallHoldout(userID uint64) bool { return inRecallHoldout(userID) }
 
 // trialRecallDedupKey 幂等键，如 "trial-recall:s1:123"。
 func trialRecallDedupKey(stage trialRecallStage, userID uint64) string {
@@ -175,10 +169,6 @@ func trialRecallDedupKey(stage trialRecallStage, userID uint64) string {
 
 const (
 	TaskTypeTrialRecall = "trial:recall"
-
-	// trialRecallDiscountPct TRIAL80 是 8 折：SavingsText 按 (100-80)% 计算立减。
-	trialRecallDiscountPct = 80
-	trialRecallValidDays   = "本周内有效"
 )
 
 // trialRecallSlugs 各阶段邮件模板 slug（kaitu）。包级 var 仅为测试可替换。
@@ -187,8 +177,8 @@ var trialRecallSlugs = map[trialRecallStage]string{
 	trialRecallS2: "trial-recall-after",
 }
 
-// trialRecallCampaignCode 召回活动码。包级 var 仅为测试可替换。
-var trialRecallCampaignCode = "TRIAL80"
+// trialRecallCampaignCode 召回活动码 = 新客统一优惠（logic_recall_offer.go）。包级 var 仅为测试可替换。
+var trialRecallCampaignCode = recallOfferNewCode
 
 type trialRecallResult struct {
 	Candidates, Holdout, AlreadySent, NoEmail, Sent, Skipped, Failed int
@@ -350,74 +340,19 @@ func trialRecallPurchaseURL(email, code, planPID string, stage trialRecallStage)
 }
 
 func trialRecallPurchaseURLLocale(locale, email, code, planPID string, stage trialRecallStage) string {
-	q := url.Values{}
-	q.Set("campaign", code)
-	if planPID != "" {
-		q.Set("plan", planPID)
-	}
-	q.Set("utm_source", "email")
-	q.Set("utm_medium", "lifecycle")
-	q.Set("utm_campaign", "trial-recall-"+string(stage))
-	// 邮箱放 fragment 而不是 query：fragment 不发服务器、不进 CDN/Amplify 访问日志，
-	// GA4 的 page_location 也不含它（query 会被原样采集 → 邮箱进 Google Analytics）。
-	// 官网 PurchaseClient 读完即用 history.replaceState 抹掉。
-	frag := url.Values{}
-	frag.Set("email", email)
-	return BrandKaitu.Config().BaseURL + "/" + locale + "/purchase?" + q.Encode() + "#" + frag.Encode()
+	return recallPurchaseURL(BrandKaitu, locale, email, code, planPID, "trial-recall-"+string(stage))
 }
 
-// trialRecallAppPlans 开途在售的 App 套餐（排除 router / private_node）。
-func trialRecallAppPlans(ctx context.Context) ([]Plan, error) {
-	var plans []Plan
-	err := db.Get().WithContext(ctx).Scopes(ScopeBrand(BrandKaitu)).
-		Where("is_active = ? AND product = ?", true, ProductApp).
-		Order("id ASC").Find(&plans).Error
-	return plans, err
-}
-
-// trialRecallSavingsText 由在售 App 套餐价格区间算出立减文案；plans 不能为空。
-func trialRecallSavingsText(plans []Plan) string {
-	minPrice, maxPrice := plans[0].Price, plans[0].Price
-	for _, p := range plans {
-		if p.Price < minPrice {
-			minPrice = p.Price
-		}
-		if p.Price > maxPrice {
-			maxPrice = p.Price
-		}
-	}
-	minSave := minPrice * uint64(100-trialRecallDiscountPct) / 100
-	maxSave := maxPrice * uint64(100-trialRecallDiscountPct) / 100
-	return fmt.Sprintf("立减 %s 起，最高立减 %s", formatCents(minSave), formatCents(maxSave))
-}
-
-// trialRecallEmailVars 计算邮件变量；false = 活动码不可用或没有在售 App 套餐，此时不应发信。
+// trialRecallEmailVars 计算邮件变量；false = 活动码不可用或没有在售年付 App 套餐，此时不应发信。
 func trialRecallEmailVars(ctx context.Context, stage trialRecallStage, c trialRecallCandidate, email string) (map[string]string, bool) {
-	if getCampaignByCode(ctx, trialRecallCampaignCode, BrandKaitu) == nil {
+	offer := loadRecallOffer(ctx, trialRecallCampaignCode, BrandKaitu)
+	if offer == nil {
 		return nil, false
 	}
-	plans, err := trialRecallAppPlans(ctx)
-	if err != nil {
-		log.Errorf(ctx, "[TRIAL-RECALL] query plans failed: %v", err)
-		return nil, false
-	}
-	if len(plans) == 0 {
-		return nil, false
-	}
-	planPID := ""
-	for _, p := range plans {
-		if p.Month == 12 {
-			planPID = p.PID
-			break
-		}
-	}
-	vars := map[string]string{
-		"CampaignCode": trialRecallCampaignCode,
-		"ValidDays":    trialRecallValidDays,
-		"SavingsText":  trialRecallSavingsText(plans),
-		"PurchaseURL": trialRecallPurchaseURLLocale(trialRecallLocale(c.User.Language), email,
-			trialRecallCampaignCode, planPID, stage),
-	}
+	vars := make(map[string]string, len(offer.Vars)+2)
+	maps.Copy(vars, offer.Vars)
+	vars["PurchaseURL"] = trialRecallPurchaseURLLocale(trialRecallLocale(c.User.Language), email,
+		offer.Code, offer.PlanPID, stage)
 	if stage == trialRecallS1 {
 		vars["TrialEndDate"] = trialRecallDateString(c.TrialEndsAt)
 	}
@@ -520,7 +455,7 @@ func processTrialRecall(ctx context.Context, stage trialRecallStage, now time.Ti
 		switch {
 		case inTrialRecallHoldout(c.User.ID):
 			res.Holdout++
-			record(c, email, "holdout")
+			record(c, email, recallHoldoutReason)
 			continue
 		case sentSet[c.User.ID]:
 			res.AlreadySent++

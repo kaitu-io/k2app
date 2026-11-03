@@ -159,7 +159,7 @@
       "message": "Se connecter pour déverrouiller plus de nœuds cloud",
       "viewPlans": "Voir les forfaits"
     },
-    "trialRenewOff": "Jours d'essai restants : {{days}}. Après le {{date}}, le service sera interrompu. Activez le renouvellement automatique pour continuer à l'utiliser.",
+    "trialRenewOff": "Jours d'essai restants : {{days}}. Après le {{date}}, le service sera interrompu. Activez le renouvellement automatique pour continuer à l'utiliser. Après le paiement, vous pouvez désactiver le renouvellement automatique dans l'App Store à tout moment et continuer à utiliser la période payée.",
     "trialContinue": "Continuer à utiliser"
   },
   "appBypass": {

@@ -38,10 +38,10 @@ var trialRecallPushTexts = map[trialRecallStage]map[string]trialRecallPushText{
 		"ja":    {"トライアル終了のお知らせ", "トライアルは %s に終了します。終了後はサービスが停止します。"},
 	},
 	trialRecallS2: {
-		"zh-CN": {"试用已结束", "试用已结束，订阅后立即恢复使用"},
-		"zh-TW": {"試用已結束", "試用已結束，訂閱後立即恢復使用"},
-		"en-US": {"Trial ended", "Your trial has ended. Subscribe to resume right away."},
-		"ja":    {"トライアルが終了しました", "トライアルは終了しました。ご購入後すぐにご利用を再開できます。"},
+		"zh-CN": {"试用已结束", "试用已结束。订阅即恢复，之后可随时关闭续订"},
+		"zh-TW": {"試用已結束", "試用已結束。訂閱即恢復，之後可隨時關閉續訂"},
+		"en-US": {"Trial ended", "Your trial has ended. Subscribe to resume now — you can turn off auto-renew any time."},
+		"ja":    {"トライアルが終了しました", "トライアルは終了しました。登録すればすぐ再開でき、自動更新はいつでもオフにできます。"},
 	},
 }
 

@@ -58,6 +58,14 @@ describe('renew-off trial copy (membership panel)', () => {
       expect(p.trialEnded).toContain('{{days}}');
       expect(p.trialEnded).not.toMatch(forbidden);
     });
+    // 82% 试用用户开通即关续订——怕被自动扣费。三处劝订阅的文案都要告诉他们「扣费后也能在 App Store 关」。
+    it(`${loc} renew-off / ended copy reassures that auto-renew can be turned off in the App Store`, () => {
+      const p = JSON.parse(readFileSync(join(base, loc, 'purchase.json'), 'utf8')).purchase.iap;
+      const d = JSON.parse(readFileSync(join(base, loc, 'dashboard.json'), 'utf8')).dashboard;
+      expect(p.trialEndsNoCharge).toContain('App Store');
+      expect(p.cancelAnytime).toContain('App Store');
+      expect(d.trialRenewOff).toContain('App Store');
+    });
   }
   it('zh-CN states the consequence and the action', () => {
     const p = JSON.parse(readFileSync(join(base, 'zh-CN', 'purchase.json'), 'utf8')).purchase.iap;

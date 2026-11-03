@@ -159,7 +159,7 @@
       "message": "Đăng nhập để mở khóa thêm nút đám mây",
       "viewPlans": "Xem gói"
     },
-    "trialRenewOff": "Số ngày dùng thử còn lại: {{days}}. Sau {{date}} dịch vụ sẽ dừng. Bật tự động gia hạn để tiếp tục sử dụng.",
+    "trialRenewOff": "Số ngày dùng thử còn lại: {{days}}. Sau {{date}} dịch vụ sẽ dừng. Bật tự động gia hạn để tiếp tục sử dụng. Sau khi bị tính phí, bạn vẫn có thể tắt tự động gia hạn trong App Store bất cứ lúc nào và tiếp tục dùng hết thời gian đã trả.",
     "trialContinue": "Tiếp tục sử dụng"
   },
   "appBypass": {
