@@ -17,16 +17,20 @@ let mockQuery = '';
 vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(mockQuery),
 }));
+// Stable identity like the real next-intl `t`: a fresh function per render would re-run every
+// effect that depends on `t` (plan fetch → preview) and mask missing dependencies.
+const stableT = (key: string) => key;
 vi.mock('next-intl', () => ({
-  useTranslations: () => (key: string) => key,
+  useTranslations: () => stableT,
   useLocale: () => 'zh-CN',
 }));
 vi.mock('@/i18n/routing', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   Link: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
 }));
+let mockAuthed = false;
 vi.mock('@/contexts/AuthContext', () => ({
-  useAuth: () => ({ isAuthenticated: false, isAuthLoading: false }),
+  useAuth: () => ({ isAuthenticated: mockAuthed, isAuthLoading: false }),
 }));
 vi.mock('@/contexts/AppConfigContext', () => ({
   useAppConfig: () => ({ appConfig: null, isLoading: false }),
@@ -75,6 +79,7 @@ describe('PurchaseClient URL prefill', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockQuery = '';
+    mockAuthed = false;
     window.history.replaceState(null, '', '/zh-CN/purchase');
     mockGetPlans.mockResolvedValue({ items: [{ pid: 'p1', highlight: true }, { pid: 'p12' }] });
     mockGetDelegate.mockResolvedValue(null);
@@ -128,6 +133,23 @@ describe('PurchaseClient URL prefill', () => {
     fireEvent.click(screen.getByTestId('login'));
     expect((screen.getByTestId('campaign') as HTMLInputElement).value).toBe('TRIAL80');
     expect(screen.getByTestId('selected-plan').textContent).toBe('p12');
+  });
+
+  it('re-prices with the campaign code once the visitor signs in', async () => {
+    // Signed-out preview is rejected (401); the page must ask again after login,
+    // otherwise a recall link keeps showing the undiscounted price.
+    mockQuery = 'campaign=TRIAL80&plan=p12';
+    mockCreateOrder.mockRejectedValue(new ApiError(401, 'authentication failed'));
+    const { rerender } = render(<PurchaseClient />);
+    await waitFor(() => expect(screen.getByTestId('selected-plan').textContent).toBe('p12'));
+    await new Promise((r) => setTimeout(r, 600)); // let the debounced signed-out previews settle
+    const before = mockCreateOrder.mock.calls.length;
+    expect(before).toBeGreaterThan(0);
+    mockCreateOrder.mockResolvedValue({ order: { uuid: 'o1', payAmount: 100 } });
+    mockAuthed = true;
+    rerender(<PurchaseClient />);
+    await waitFor(() => expect(mockCreateOrder.mock.calls.length).toBe(before + 1));
+    expect(mockCreateOrder.mock.calls[before][0]).toMatchObject({ preview: true, plan: 'p12', campaignCode: 'TRIAL80' });
   });
 
   it('shows the invalid-campaign message for a prefilled bad code', async () => {

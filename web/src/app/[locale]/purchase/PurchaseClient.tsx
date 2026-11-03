@@ -403,7 +403,7 @@ export default function PurchaseClient() {
   /**
    * 自动预览触发 (Auto Preview Trigger)
    *
-   * 当 selectedPlan 或 campaignCode 变化时，自动触发预览请求。
+   * 当 selectedPlan、campaignCode 或登录状态变化时，自动触发预览请求。
    * 使用 300ms 防抖，避免频繁请求。
    */
   useEffect(() => {
@@ -430,8 +430,10 @@ export default function PurchaseClient() {
         clearTimeout(previewTimeoutRef.current);
       }
     };
+    // isAuthenticated: preview needs a session (signed-out → 401), so a visitor who signs in
+    // inline must be re-priced — otherwise a ?campaign= link keeps showing the list price.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [campaignCode, selectedPlan, plansLoading]);
+  }, [campaignCode, selectedPlan, plansLoading, isAuthenticated]);
 
   const handleLoginSuccess = useCallback(() => {
     // Login succeeded - no need to navigate steps since all are shown
