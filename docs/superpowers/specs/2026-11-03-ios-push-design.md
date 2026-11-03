@@ -80,7 +80,7 @@
 - **校验 topic**：服务端以用户品牌的 `Brand.Config().Social.AppleBundleID` 作为 topic 写入 token。客户端上报的 topic 不为空且与之不符时，直接拒绝注册（400）。
 - **自动识别 sandbox 还是 production（实现时的决定）**：先按 production 发送；如果 APNs 返回 `BadDeviceToken`，再用 sandbox 发一次。sandbox 成功就把 token 的 `sandbox` 改为 true，sandbox 也明确拒绝才把 token 标为 inactive（sandbox 那边 5xx / 网络错误时按可重试处理，不停用）。同一台设备上报了**新的** token 时清掉 `sandbox` 标记——dev 构建换装 TestFlight / App Store 后 UDID 不变、token 换成生产 token，不清掉就会一直被发去 sandbox。这样 webapp 不需要判断自己是不是 dev 构建（各种签名方式下根本判断不准）。
 - **按设备归属过滤（实现时的决定）**：发送时只选 `push_tokens.user_id = devices.user_id AND push_tokens.device_udid = devices.udid` 的 token。设备被踢出、被删除，或已换绑到别的账号后，自动不再收到原账号的推送，不需要在每个删设备的地方单独去停用 token。登出时还会显式停用（设备账号登出时保留了设备行，靠上面的过滤挡不住）。
-- **处理 APNs 响应**：`410 Unregistered`、`400 BadDeviceToken`、`DeviceTokenNotForTopic` 这几种，把 token 标记为 `inactive`，不重试。5xx 和超时交给 asynq 重试。`403` 这类证书或 key 错误要**打 Error 并走现有的静默失败告警**（参考 Apple webhook 加固时的告警做法）。实现：告警每台 center 每 10 分钟最多一条（一次群发会对每个 token 各撞一次）；token 不停用，按**可重试**处理，配置修好后 asynq 退避重试能补发，重试用尽才标 failed。投递前对营销类再查一次营销同意（入队到投递之间用户可能撤回）。
+- **处理 APNs 响应**：`410 Unregistered`、`400 BadDeviceToken`、`DeviceTokenNotForTopic` 这几种，把 token 标记为 `inactive`，不重试。5xx 和超时交给 asynq 重试。`403` 这类证书或 key 错误要**打 Error 并走现有的静默失败告警**（参考 Apple webhook 加固时的告警做法）。实现：告警每台 center 每 10 分钟最多一条（一次群发会对每个 token 各撞一次）；token 不停用，按**可重试**处理；投递任务重试 8 次（asynq 默认退避，累计约 2.5 小时），这个窗口内修好配置能补发，重试用尽才标 failed——超窗的群发要换 `batch_id` 重发。投递前对营销类再查一次营销同意（入队到投递之间用户可能撤回）。
 - 消息体：`alert.title` / `alert.body`、`sound=default`；`data.route` 和 `data.push_id` 放在自定义字段里。
 
 ### 6.2 对外接口：`PushToUser` / `PushToUsers`

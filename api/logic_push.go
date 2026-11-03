@@ -73,7 +73,8 @@ var (
 	apnsClient apnsSender
 
 	enqueuePushTask = func(ctx context.Context, logID uint64) error {
-		_, err := asynq.EnqueueContext(ctx, TaskTypePushSend, pushTaskPayload{LogID: logID})
+		_, err := asynq.EnqueueContext(ctx, TaskTypePushSend, pushTaskPayload{LogID: logID},
+			hibikenAsynq.MaxRetry(pushSendMaxRetry))
 		return err
 	}
 
@@ -83,6 +84,11 @@ var (
 		}
 	}
 )
+
+// pushSendMaxRetry 投递任务的重试次数。asynq 默认退避约 n⁴ 秒，8 次累计约 2.5 小时：
+// 覆盖 APNs 5xx 风暴，也给「凭据 / App ID 能力配错」留出发现并修好的时间，
+// 修好后积压的推送靠重试补发。超过这个窗口仍未修好的标 failed，群发需换 batchId 重发。
+const pushSendMaxRetry = 8
 
 // pushTaskPayload asynq 载荷：只带日志 ID，内容从日志读。
 type pushTaskPayload struct {
@@ -208,7 +214,7 @@ type tokenOutcome int
 const (
 	outcomeSent      tokenOutcome = iota
 	outcomeDead                   // token 失效，已停用，不重试
-	outcomeAuth                   // 凭据 / 配置错误，已告警（限流）；按可重试处理，配置修好后 asynq 退避重试能补发
+	outcomeAuth                   // 凭据 / 配置错误，已告警（限流）；按可重试处理，在 pushSendMaxRetry 窗口（约 2.5 小时）内修好能补发
 	outcomeRetryable              // 5xx / 429 / 网络错误
 )
 
