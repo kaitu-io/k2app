@@ -168,6 +168,31 @@ func IsEchoNotProbed(err error) bool {
 	return errors.Is(err, ErrEchoNoConnection)
 }
 
+// isQUICConnClosedErr reports whether err is a QUIC CONNECTION-level close
+// (the whole connection is gone), as opposed to a stream-level outcome. A
+// pre-echo server only ever ends the echo STREAM — handleStream's `default:`
+// calls stream.Close(), which the client reads as EOF — and never closes the
+// connection over an unknown stream type, so none of these can be its
+// signature. *quic.StreamError (a stream reset) is deliberately absent.
+// IdleTimeoutError and HandshakeTimeoutError are listed for completeness but
+// report Timeout(), so echoNotProbed still passes them through as failures.
+func isQUICConnClosedErr(err error) bool {
+	var (
+		appErr       *quic.ApplicationError
+		transportErr *quic.TransportError
+		resetErr     *quic.StatelessResetError
+		vnErr        *quic.VersionNegotiationError
+		hsErr        *quic.HandshakeTimeoutError
+		idleErr      *quic.IdleTimeoutError
+	)
+	return errors.As(err, &appErr) ||
+		errors.As(err, &transportErr) ||
+		errors.As(err, &resetErr) ||
+		errors.As(err, &vnErr) ||
+		errors.As(err, &hsErr) ||
+		errors.As(err, &idleErr)
+}
+
 // echoNotProbed relabels err as ErrEchoNoConnection — but only an error that
 // IsEchoUnsupported would otherwise have read as "pre-echo server". Timeouts
 // pass through untouched: they stay failures that strike toward a re-race

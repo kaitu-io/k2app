@@ -403,11 +403,20 @@ func (c *QUICClient) RunEchoProbe(ctx context.Context) error {
 		return fmt.Errorf("%w: no cached connection", ErrEchoNoConnection)
 	}
 	_, err := EchoProbe(ctx, conn)
-	if err != nil && conn.Context().Err() != nil {
+	if err != nil && (conn.Context().Err() != nil || isQUICConnClosedErr(err)) {
 		// The connection is gone (closed locally by a Reset racing this probe,
-		// or already dead when we picked it up). A pre-echo server closes the
-		// echo STREAM on a live connection, so this is not that — but a
-		// timeout (idle timeout, read deadline) still counts as a failure.
+		// closed by the peer, or already dead when we picked it up). A pre-echo
+		// server closes the echo STREAM on a live connection, so this is not
+		// that — but a timeout (idle timeout, read deadline) still counts as a
+		// failure: echoNotProbed passes timeouts through untouched.
+		//
+		// The error-type check is not redundant with conn.Context(): on a
+		// remote CONNECTION_CLOSE quic-go's run loop wakes blocked stream
+		// reads (streamsMap.CloseWithError) BEFORE its deferred ctxCancel, so
+		// the probe can observe the close error while the context still reads
+		// alive (~1% of single probes on loopback, enough for all three
+		// runProbeOnce rounds to lose the race ~0.2% of the time and arm a
+		// rollback onto the dead connection).
 		return echoNotProbed(err)
 	}
 	return err
