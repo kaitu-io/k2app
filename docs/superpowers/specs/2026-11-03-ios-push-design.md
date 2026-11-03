@@ -103,7 +103,7 @@ func PushToUser(ctx context.Context, userID uint64, req PushRequest) error
 ```
 
 - **必须如实说明**：nil 只保证「资格判断通过、已入队」，不保证送达。异步阶段 token 全部失效时，调用方同步拿不到这个结果，只能从发送记录里查。调用方需要的「回退到邮件」只能基于这几种同步错误来做。这一点要写进函数注释。
-- **跟并行会话的分工（工程层面的约定，2026-11-03）：** 本设计负责改 `PushToUser` 的签名、错误类型和路由白名单，并且先合并。召回会话只调用 `PushToUser`，固定传 `category=marketing`，`route` 用 `/purchase`；遇到同步返回的错误就改发邮件。召回的判定逻辑、文案和合并都由对方负责。对方的 spec 还没写，接口以本节为准。
+- **跟并行会话的分工（工程层面的约定，2026-11-03）：** 本设计负责改 `PushToUser` 的签名、错误类型和路由白名单，并且先合并。召回会话只调用 `PushToUser`，`route` 用 `/purchase`。分类：到期前的 S1 只陈述账户状态（不带优惠、价格，不催购买），按 `transactional` 发，**而且只发给已经关闭自动续费的试用用户**；到期后的 S2 按 `marketing` 发（2026-11-03 与召回会话商定，David 认可增长评审的方向）；遇到同步返回的错误就改发邮件。召回的判定逻辑、文案和合并都由对方负责。对方的 spec 还没写，接口以本节为准。
 - `PushToUsers` 返回每个用户的结果（例如 `map[userID]error` 或结果切片）。
 - 营销类：用户的 `push_marketing_opt_in` 必须为 true，否则返回 `ErrPushNotConsented`。
 
