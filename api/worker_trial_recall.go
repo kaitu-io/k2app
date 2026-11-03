@@ -138,10 +138,11 @@ var trialRecallCampaignCode = "TRIAL80"
 
 type trialRecallResult struct {
 	Candidates, Holdout, AlreadySent, NoEmail, Sent, Skipped, Failed int
-	// PushQueued 已入队的推送数；PushErrors 按原因计数（no_token / not_consented / duplicate /
-	// channel_unavailable / invalid_route / invalid_request / other）。duplicate 表示此前已入队，不算失败。
-	PushQueued int
-	PushErrors map[string]int
+	// PushQueued 本次入队的推送数；PushAlreadyQueued 为 ErrPushDuplicate（此前已入队，不算失败）；
+	// PushErrors 按原因计数（no_token / not_consented / channel_unavailable / invalid_route / invalid_request / other）。
+	PushQueued        int
+	PushAlreadyQueued int
+	PushErrors        map[string]int
 }
 
 // 推送与告警出口，包级 var 仅为测试可替换。
@@ -179,7 +180,8 @@ func trialRecallPush(ctx context.Context, stage trialRecallStage, c trialRecallC
 	case errors.Is(err, ErrPushNotConsented):
 		reason = "not_consented"
 	case errors.Is(err, ErrPushDuplicate):
-		reason = "duplicate"
+		res.PushAlreadyQueued++
+		return true
 	case errors.Is(err, ErrPushChannelUnavailable):
 		reason = "channel_unavailable"
 		log.Warnf(ctx, "[TRIAL-RECALL] stage=%s push channel unavailable (APNs not configured), skipping pushes", stage)
@@ -346,8 +348,8 @@ func trialRecallEmailVars(ctx context.Context, stage trialRecallStage, c trialRe
 func processTrialRecall(ctx context.Context, stage trialRecallStage, now time.Time) trialRecallResult {
 	var res trialRecallResult
 	defer func() {
-		log.Infof(ctx, "[TRIAL-RECALL] stage=%s candidates=%d holdout=%d already_sent=%d no_email=%d sent=%d skipped=%d failed=%d push_queued=%d push_errors=%v",
-			stage, res.Candidates, res.Holdout, res.AlreadySent, res.NoEmail, res.Sent, res.Skipped, res.Failed, res.PushQueued, res.PushErrors)
+		log.Infof(ctx, "[TRIAL-RECALL] stage=%s candidates=%d holdout=%d already_sent=%d no_email=%d sent=%d skipped=%d failed=%d push_queued=%d push_already_queued=%d push_errors=%v",
+			stage, res.Candidates, res.Holdout, res.AlreadySent, res.NoEmail, res.Sent, res.Skipped, res.Failed, res.PushQueued, res.PushAlreadyQueued, res.PushErrors)
 		if res.Failed > 0 {
 			trialRecallAlert(fmt.Sprintf("[TRIAL-RECALL] 阶段 %s 有 %d 封发送失败（sent=%d，push_queued=%d），请查 email_send_logs 与模板变量。",
 				stage, res.Failed, res.Sent, res.PushQueued))

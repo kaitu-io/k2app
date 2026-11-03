@@ -113,7 +113,8 @@ func TestTrialRecallPush_ErrorsCounted(t *testing.T) {
 
 	r := processTrialRecall(context.Background(), trialRecallS1, now)
 	assert.Equal(t, 0, r.PushQueued, "%+v", r)
-	assert.Equal(t, map[string]int{"no_token": 1, "not_consented": 1, "duplicate": 1,
+	assert.Equal(t, 1, r.PushAlreadyQueued)
+	assert.Equal(t, map[string]int{"no_token": 1, "not_consented": 1,
 		"invalid_route": 1, "invalid_request": 1, "other": 1}, r.PushErrors)
 	assert.Equal(t, 1, *alerts, "非哨兵错误才告警")
 }

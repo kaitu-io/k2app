@@ -240,6 +240,12 @@ func setupTrialRecallEnv(t *testing.T, withCampaign bool) string {
 	skipIfNoConfig(t)
 	uniq := fmt.Sprintf("%d", time.Now().UnixNano())
 
+	// 默认把推送与告警出口换成空操作：绝不触达真 PushToUser / Slack；需要断言的测试再自行覆盖。
+	prevPush, prevAlert := trialRecallPushToUser, trialRecallAlert
+	trialRecallPushToUser = func(context.Context, uint64, PushRequest) error { return nil }
+	trialRecallAlert = func(string) {}
+	t.Cleanup(func() { trialRecallPushToUser, trialRecallAlert = prevPush, prevAlert })
+
 	prevDev := viper.Get("mail.dev_mode")
 	viper.Set("mail.dev_mode", true) // 绝不真发信
 	t.Cleanup(func() { viper.Set("mail.dev_mode", prevDev) })
@@ -475,6 +481,7 @@ func TestProcessTrialRecall_MissingTemplateSendsNothing(t *testing.T) {
 	u, _ := seedTrialRecallRecipient(t, false, now.Add(40*time.Hour).Unix())
 
 	r := processTrialRecall(context.Background(), trialRecallS1, now)
+	assert.Equal(t, 1, r.Candidates, "%+v", r)
 	assert.Equal(t, 0, r.Sent, "%+v", r)
 	assert.Empty(t, trialRecallLogs(t, u.ID))
 }

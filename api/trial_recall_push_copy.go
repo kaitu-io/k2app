@@ -45,7 +45,7 @@ var trialRecallPushTexts = map[trialRecallStage]map[string]trialRecallPushText{
 		"zh-CN": {"试用已结束", "试用已结束，订阅后立即恢复使用"},
 		"zh-TW": {"試用已結束", "試用已結束，訂閱後立即恢復使用"},
 		"en-US": {"Trial ended", "Your trial has ended. Subscribe to resume right away."},
-		"ja":    {"トライアルが終了しました", "トライアルは終了しました。ご登録後すぐにご利用を再開できます。"},
+		"ja":    {"トライアルが終了しました", "トライアルは終了しました。ご購入後すぐにご利用を再開できます。"},
 	},
 }
 
