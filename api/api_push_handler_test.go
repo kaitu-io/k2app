@@ -36,8 +36,9 @@ func pushTestRouter(u *User, udid string) *gin.Engine {
 }
 
 type apiResp struct {
-	Code int             `json:"code"`
-	Data json.RawMessage `json:"data"`
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data"`
 }
 
 func doJSON(t *testing.T, r *gin.Engine, method, path string, body any) apiResp {
@@ -128,6 +129,26 @@ func TestAPI_RegisterPushToken_Brand(t *testing.T) {
 		assert.Equal(t, b.ID, tok.UserID)
 		assert.Equal(t, "tok-sw-2", tok.Token)
 		assert.Equal(t, PushTokenStatusActive, tok.Status)
+	})
+
+	t.Run("a new token clears the remembered sandbox flag, the same token keeps it", func(t *testing.T) {
+		u, d := seedBrandUser(t, BrandKaitu)
+		r := pushTestRouter(&u, d.UDID)
+		require.Equal(t, 0, doJSON(t, r, "POST", "/api/push/token", iosTokenBody("tok-dev-build", "")).Code)
+		// 投递时识别出 sandbox（dev 构建）
+		require.NoError(t, db.Get().Model(&PushToken{}).Where("device_udid = ?", d.UDID).Update("sandbox", true).Error)
+
+		require.Equal(t, 0, doJSON(t, r, "POST", "/api/push/token", iosTokenBody("tok-dev-build", "")).Code)
+		tok := tokenOfDevice(t, d.UDID)
+		require.NotNil(t, tok.Sandbox)
+		assert.True(t, *tok.Sandbox, "同一个 token 重报不丢识别结果")
+
+		// 同一台设备换装 TestFlight：UDID 不变，token 换成生产 token
+		require.Equal(t, 0, doJSON(t, r, "POST", "/api/push/token", iosTokenBody("tok-prod-build", "")).Code)
+		tok = tokenOfDevice(t, d.UDID)
+		assert.Equal(t, "tok-prod-build", tok.Token)
+		require.NotNil(t, tok.Sandbox)
+		assert.False(t, *tok.Sandbox, "新 token 从生产环境开始")
 	})
 
 	t.Run("request without a device is rejected", func(t *testing.T) {

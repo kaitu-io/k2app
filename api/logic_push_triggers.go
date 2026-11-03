@@ -31,7 +31,8 @@ func sendTransactionalPush(ctx context.Context, userID uint64, kind pushCopyKind
 	switch {
 	case err == nil:
 		log.Infof(ctx, "[PUSH-TRIGGER] %s queued user=%d key=%s", kind, userID, dedupKey)
-	case errors.Is(err, ErrPushNoActiveToken), errors.Is(err, ErrPushDuplicate):
+	case errors.Is(err, ErrPushNoActiveToken), errors.Is(err, ErrPushDuplicate),
+		errors.Is(err, ErrPushChannelUnavailable): // 未配置 APNs 已在启动时报过 Error
 		log.Debugf(ctx, "[PUSH-TRIGGER] %s skipped user=%d: %v", kind, userID, err)
 	default:
 		log.Warnf(ctx, "[PUSH-TRIGGER] %s user=%d: %v", kind, userID, err)
@@ -67,6 +68,11 @@ var lifecyclePushKinds = map[int]struct {
 func processLifecyclePushes(ctx context.Context, days int) {
 	spec, ok := lifecyclePushKinds[days]
 	if !ok {
+		return
+	}
+	if apnsClient == nil {
+		// 未配置 APNs（initAPNs 启动时已打 Error）：整天一条日志，而不是每个候选人一条。
+		log.Warnf(ctx, "[PUSH-TRIGGER] lifecycle %d skipped: %v", days, ErrPushChannelUnavailable)
 		return
 	}
 	now := time.Now().UTC()

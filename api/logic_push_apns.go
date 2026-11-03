@@ -86,6 +86,10 @@ func (r apnsResult) isAuthError() bool {
 	return false
 }
 
+// isRetryable 既没成功、也不是确定的 token 失效或凭据错误：5xx / 429 / 网络。
+func (r apnsResult) isRetryable() bool {
+	return !r.ok() && !r.isDeadToken() && !r.isAuthError()
+}
 func (r apnsResult) describe() string {
 	if r.Err != nil {
 		return "network: " + r.Err.Error()

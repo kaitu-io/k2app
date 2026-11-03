@@ -60,6 +60,9 @@ func withPushHarness(t *testing.T) *pushHarness {
 	t.Helper()
 	h := &pushHarness{apns: &fakeAPNs{results: map[string]apnsResult{}}}
 	prevClient, prevEnqueue, prevAlert := apnsClient, enqueuePushTask, pushAlert
+	pushAuthAlertMu.Lock()
+	pushAuthAlertLast = time.Time{}
+	pushAuthAlertMu.Unlock()
 	apnsClient = h.apns
 	enqueuePushTask = func(_ context.Context, logID uint64) error {
 		h.enqueued = append(h.enqueued, logID)
@@ -181,10 +184,10 @@ func TestPushToUser_SyncResults(t *testing.T) {
 		withPushHarness(t)
 		u, _, _ := seedPushUser(t, true, true)
 		for _, req := range []PushRequest{
-			{Category: PushCategoryMarketing, Title: "t", Body: "b"},                     // 缺 DedupKey
-			{Category: PushCategoryMarketing, DedupKey: "k", Body: "b"},                  // 缺 Title
-			{Category: PushCategoryMarketing, DedupKey: "k", Title: "t"},                 // 缺 Body
-			{Category: "promo", DedupKey: "k", Title: "t", Body: "b"},                    // 未知分类
+			{Category: PushCategoryMarketing, Title: "t", Body: "b"},     // 缺 DedupKey
+			{Category: PushCategoryMarketing, DedupKey: "k", Body: "b"},  // 缺 Title
+			{Category: PushCategoryMarketing, DedupKey: "k", Title: "t"}, // 缺 Body
+			{Category: "promo", DedupKey: "k", Title: "t", Body: "b"},    // 未知分类
 		} {
 			assert.ErrorIs(t, PushToUser(context.Background(), u.ID, req), ErrPushInvalidRequest)
 		}
@@ -208,6 +211,25 @@ func TestPushToUser_SyncResults(t *testing.T) {
 		require.NoError(t, db.Get().Where("udid = ?", d.UDID).Delete(&Device{}).Error)
 		err := PushToUser(context.Background(), u.ID, pushReq(PushCategoryTransactional, fmt.Sprintf("t-deldev-%d", u.ID)))
 		assert.ErrorIs(t, err, ErrPushNoActiveToken)
+	})
+
+	t.Run("enqueue failure frees the dedup key for a replay", func(t *testing.T) {
+		h := withPushHarness(t)
+		u, _, _ := seedPushUser(t, true, true)
+		cleanupPushLogs(t, u.ID)
+		key := fmt.Sprintf("t-enqfail-%d", u.ID)
+		enqueuePushTask = func(context.Context, uint64) error { return fmt.Errorf("redis: connection refused") }
+		err := PushToUser(context.Background(), u.ID, pushReq(PushCategoryTransactional, key))
+		require.Error(t, err)
+		for _, sentinel := range []error{ErrPushDuplicate, ErrPushNoActiveToken, ErrPushNotConsented, ErrPushChannelUnavailable} {
+			assert.NotErrorIs(t, err, sentinel)
+		}
+		var n int64
+		db.Get().Model(&PushSendLog{}).Where("dedup_key = ?", key).Count(&n)
+		assert.Zero(t, n, "日志行必须删掉，否则重放永远是 duplicate")
+
+		enqueuePushTask = func(_ context.Context, id uint64) error { h.enqueued = append(h.enqueued, id); return nil }
+		assert.NoError(t, PushToUser(context.Background(), u.ID, pushReq(PushCategoryTransactional, key)), "同一个 key 可以重放")
 	})
 
 	t.Run("queued log records the request", func(t *testing.T) {
@@ -347,15 +369,56 @@ func TestDeliverPush(t *testing.T) {
 		assert.Error(t, deliverPush(context.Background(), logID))
 	})
 
-	t.Run("403 auth error alerts and does not deactivate", func(t *testing.T) {
+	t.Run("403 auth error alerts once, keeps the token and retries", func(t *testing.T) {
 		h := withPushHarness(t)
 		u, _, tok := seedPushUser(t, true, true)
 		h.apns.results[h.apns.key(tok.Token, false)] = apnsResult{StatusCode: 403, Reason: "InvalidProviderToken"}
 		logID := queueOne(t, h, u.ID)
-		require.NoError(t, deliverPush(context.Background(), logID), "凭据错误重试也没用")
+		assert.Error(t, deliverPush(context.Background(), logID), "配置修好后 asynq 退避重试能补发")
 		assert.Equal(t, PushTokenStatusActive, reloadToken(t, tok.ID).Status)
-		assert.NotEmpty(t, h.alerts, "凭据错误必须告警")
-		assert.Equal(t, PushSendStatusFailed, reloadLog(t, logID).Status)
+		assert.Len(t, h.alerts, 1, "凭据错误必须告警")
+		assert.Equal(t, PushSendStatusQueued, reloadLog(t, logID).Status, "不在第一次就把 dedup key 烧成 failed")
+
+		// 同一窗口内第二条日志（群发里的下一个人）撞上同样的错误：不再刷屏
+		u2, _, tok2 := seedPushUser(t, true, true)
+		h.apns.results[h.apns.key(tok2.Token, false)] = apnsResult{StatusCode: 403, Reason: "InvalidProviderToken"}
+		logID2 := queueOne(t, h, u2.ID)
+		assert.Error(t, deliverPush(context.Background(), logID2))
+		assert.Len(t, h.alerts, 1, "告警限流")
+	})
+
+	t.Run("auth alert throttle reopens after the interval", func(t *testing.T) {
+		withPushHarness(t)
+		t0 := time.Now()
+		assert.True(t, pushAuthAlertAllowed(t0))
+		assert.False(t, pushAuthAlertAllowed(t0.Add(pushAuthAlertInterval-time.Second)))
+		assert.True(t, pushAuthAlertAllowed(t0.Add(pushAuthAlertInterval)))
+	})
+
+	t.Run("inconclusive sandbox retry keeps the token and retries", func(t *testing.T) {
+		h := withPushHarness(t)
+		u, _, tok := seedPushUser(t, true, true)
+		h.apns.results[h.apns.key(tok.Token, false)] = apnsResult{StatusCode: 400, Reason: "BadDeviceToken"}
+		h.apns.results[h.apns.key(tok.Token, true)] = apnsResult{StatusCode: 503, Reason: "ServiceUnavailable"}
+		logID := queueOne(t, h, u.ID)
+		assert.Error(t, deliverPush(context.Background(), logID))
+		got := reloadToken(t, tok.ID)
+		assert.Equal(t, PushTokenStatusActive, got.Status, "可能是有效的 sandbox token，不能停用")
+		require.NotNil(t, got.Sandbox)
+		assert.False(t, *got.Sandbox)
+		assert.Equal(t, PushSendStatusQueued, reloadLog(t, logID).Status)
+	})
+
+	t.Run("marketing consent withdrawn before delivery is not sent", func(t *testing.T) {
+		h := withPushHarness(t)
+		u, _, _ := seedPushUser(t, true, true)
+		cleanupPushLogs(t, u.ID)
+		require.NoError(t, PushToUser(context.Background(), u.ID, pushReq(PushCategoryMarketing, fmt.Sprintf("t-withdraw-%d", u.ID))))
+		require.Len(t, h.enqueued, 1)
+		require.NoError(t, db.Get().Model(&User{}).Where("id = ?", u.ID).Update("push_marketing_opt_in", false).Error)
+		require.NoError(t, deliverPush(context.Background(), h.enqueued[0]))
+		assert.Empty(t, h.apns.calls)
+		assert.Equal(t, PushSendStatusFailed, reloadLog(t, h.enqueued[0]).Status)
 	})
 
 	t.Run("one success among several tokens does not retry", func(t *testing.T) {

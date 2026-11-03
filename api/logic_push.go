@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	hibikenAsynq "github.com/hibiken/asynq"
 	"github.com/wordgate/qtoolkit/asynq"
@@ -156,7 +158,13 @@ func PushToUser(ctx context.Context, userID uint64, req PushRequest) error {
 	}
 
 	if err := enqueuePushTask(ctx, entry.ID); err != nil {
-		markPushLogFailed(ctx, entry.ID, "enqueue: "+err.Error())
+		// 删掉日志行释放 DedupKey：调用方（webhook 重放、对账、批量重跑、次日重试）
+		// 可以用同一个 key 再来一次，而不是被 ErrPushDuplicate 永久挡掉。
+		// 删除也失败才退回标记 failed（此时 key 被占用，日志里留了原因）。
+		if derr := db.Get().Delete(&PushSendLog{}, entry.ID).Error; derr != nil {
+			log.Errorf(ctx, "[PUSH] log %d: enqueue failed and delete failed: %v", entry.ID, derr)
+			markPushLogFailed(ctx, entry.ID, "enqueue: "+err.Error())
+		}
 		return fmt.Errorf("push: enqueue: %w", err)
 	}
 	log.Infof(ctx, "[PUSH] queued log=%d user=%d category=%s key=%s devices=%d",
@@ -200,7 +208,7 @@ type tokenOutcome int
 const (
 	outcomeSent      tokenOutcome = iota
 	outcomeDead                   // token 失效，已停用，不重试
-	outcomeAuth                   // 凭据 / 配置错误，已告警，不重试
+	outcomeAuth                   // 凭据 / 配置错误，已告警（限流）；按可重试处理，配置修好后 asynq 退避重试能补发
 	outcomeRetryable              // 5xx / 429 / 网络错误
 )
 
@@ -223,6 +231,17 @@ func deliverPush(ctx context.Context, logID uint64) error {
 		markPushLogFailed(ctx, logID, ErrPushChannelUnavailable.Error())
 		return nil
 	}
+	// 入队到投递之间（重试时可能是几小时）用户可能撤回了营销同意：投递前再查一次（4.5.4）。
+	if entry.Category == string(PushCategoryMarketing) {
+		var u User
+		if err := db.Get().Select("id", "push_marketing_opt_in").First(&u, entry.UserID).Error; err != nil {
+			return fmt.Errorf("push: load user %d: %w", entry.UserID, err)
+		}
+		if !u.PushMarketingOptIn {
+			markPushLogFailed(ctx, logID, ErrPushNotConsented.Error()+" (withdrawn before delivery)")
+			return nil
+		}
+	}
 
 	tokens, err := activePushTokens(db.Get(), entry.UserID)
 	if err != nil {
@@ -240,7 +259,7 @@ func deliverPush(ctx context.Context, logID uint64) error {
 		switch outcome {
 		case outcomeSent:
 			sent++
-		case outcomeRetryable:
+		case outcomeRetryable, outcomeAuth:
 			retryable++
 			failed++
 			lastErr = detail
@@ -278,12 +297,19 @@ func deliverToToken(ctx context.Context, tok *PushToken, entry *PushSendLog) (to
 
 	if !sandbox && res.isBadDeviceToken() {
 		n.Sandbox = true
-		if alt := apnsClient.Send(ctx, n); alt.ok() {
+		alt := apnsClient.Send(ctx, n)
+		if alt.ok() {
 			if err := db.Get().Model(&PushToken{}).Where("id = ?", tok.ID).Update("sandbox", true).Error; err != nil {
 				log.Warnf(ctx, "[PUSH] token %d: flip to sandbox failed: %v", tok.ID, err)
 			}
 			log.Infof(ctx, "[PUSH] token %d is a sandbox token, remembered", tok.ID)
 			return outcomeSent, ""
+		}
+		// sandbox 那边没给结论（5xx / 网络）：不能据生产侧的 BadDeviceToken 停用，
+		// 它可能正是个有效的 sandbox token。重试。
+		if alt.isRetryable() {
+			log.Warnf(ctx, "[PUSH] token %d sandbox retry inconclusive: %s", tok.ID, alt.describe())
+			return outcomeRetryable, alt.describe()
 		}
 	}
 
@@ -300,12 +326,33 @@ func deliverToToken(ctx context.Context, tok *PushToken, entry *PushSendLog) (to
 		msg := fmt.Sprintf("[PUSH-APNS-AUTH] APNs 拒绝了服务端凭据（%s），推送全部发不出去。检查 config.yml apns.team_id / key_id / p8，以及 App ID 是否开启了 Push Notifications。topic=%s",
 			res.describe(), tok.Topic)
 		log.Errorf(ctx, "%s", msg)
-		pushAlert(msg)
+		if pushAuthAlertAllowed(time.Now()) {
+			pushAlert(msg)
+		}
 		return outcomeAuth, res.describe()
 	default:
 		log.Warnf(ctx, "[PUSH] token %d retryable: %s", tok.ID, res.describe())
 		return outcomeRetryable, res.describe()
 	}
+}
+
+// pushAuthAlertInterval 凭据错误告警的最短间隔。凭据错一次就是全量发不出去，
+// 一次群发会对每个 token 各撞一次——不限流就是几千条 Slack。
+const pushAuthAlertInterval = 10 * time.Minute
+
+var (
+	pushAuthAlertMu   sync.Mutex
+	pushAuthAlertLast time.Time
+)
+
+func pushAuthAlertAllowed(now time.Time) bool {
+	pushAuthAlertMu.Lock()
+	defer pushAuthAlertMu.Unlock()
+	if !pushAuthAlertLast.IsZero() && now.Sub(pushAuthAlertLast) < pushAuthAlertInterval {
+		return false
+	}
+	pushAuthAlertLast = now
+	return true
 }
 
 func markPushLogFailed(ctx context.Context, logID uint64, reason string) {

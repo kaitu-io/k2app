@@ -59,6 +59,12 @@ export function buildCapacitorPush(os: string): IPushBridge | undefined {
 
     async register() {
       const handles: PluginListenerHandle[] = [];
+      // 超时可能先于 addListener 的 Promise 返回：之后才到的监听句柄当场移除，不泄漏。
+      let settled = false;
+      const keep = (h: PluginListenerHandle) => {
+        if (settled) void h.remove();
+        else handles.push(h);
+      };
       try {
         return await new Promise<string | null>((resolve) => {
           const timer = setTimeout(() => {
@@ -70,8 +76,8 @@ export function buildCapacitorPush(os: string): IPushBridge | undefined {
             resolve(v);
           };
           void (async () => {
-            handles.push(await PushNotifications.addListener('registration', (t) => done(t.value || null)));
-            handles.push(
+            keep(await PushNotifications.addListener('registration', (t) => done(t.value || null)));
+            keep(
               await PushNotifications.addListener('registrationError', (e) => {
                 console.warn('[push] APNs registration failed:', e.error);
                 done(null);
@@ -84,6 +90,7 @@ export function buildCapacitorPush(os: string): IPushBridge | undefined {
           });
         });
       } finally {
+        settled = true;
         for (const h of handles) void h.remove();
       }
     },

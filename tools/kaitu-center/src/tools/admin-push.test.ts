@@ -46,7 +46,7 @@ describe('push tools', () => {
 
   it('get_push_batch_stats encodes the batch id in the path', async () => {
     const { handlers, calls } = capture()
-    await handlers.get('get_push_batch_stats')!({ batch_id: 'push:2026-11-05/x' })
-    expect(calls[0].path).toBe('/app/push/batches/push%3A2026-11-05%2Fx')
+    await handlers.get('get_push_batch_stats')!({ batch_id: 'push:2026-11-05.x' })
+    expect(calls[0].path).toBe('/app/push/batches/push%3A2026-11-05.x')
   })
 })

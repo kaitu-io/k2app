@@ -11,6 +11,7 @@ const native = vi.hoisted(() => {
     getInfo: vi.fn(),
     openUrl: vi.fn(),
     remove: vi.fn(),
+    addListenerDelayMs: 0,
   };
 });
 
@@ -24,6 +25,7 @@ vi.mock('@capacitor/core', () => ({
           requestPermissions: native.requestPermissions,
           register: native.register,
           addListener: async (event: string, cb: (arg: any) => void) => {
+            if (native.addListenerDelayMs) await new Promise((r) => setTimeout(r, native.addListenerDelayMs));
             native.listeners.set(event, cb);
             return { remove: native.remove };
           },
@@ -38,6 +40,7 @@ describe('buildCapacitorPush', () => {
     native.listeners.clear();
     native.isPluginAvailable.mockReturnValue(true);
     native.register.mockResolvedValue(undefined);
+    native.addListenerDelayMs = 0;
   });
   afterEach(() => {
     vi.clearAllMocks();
@@ -84,6 +87,17 @@ describe('buildCapacitorPush', () => {
     const p = buildCapacitorPush('ios')!.register();
     await vi.advanceTimersByTimeAsync(REGISTER_TIMEOUT_MS);
     expect(await p).toBeNull();
+  });
+
+  it('listeners that attach after the timeout are removed, not leaked', async () => {
+    vi.useFakeTimers();
+    native.addListenerDelayMs = REGISTER_TIMEOUT_MS + 1000;
+    const p = buildCapacitorPush('ios')!.register();
+    await vi.advanceTimersByTimeAsync(REGISTER_TIMEOUT_MS);
+    expect(await p).toBeNull();
+    expect(native.remove).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2 * (REGISTER_TIMEOUT_MS + 1000));
+    expect(native.remove).toHaveBeenCalledTimes(2);
   });
 
   it('tap passes the notification data through', () => {

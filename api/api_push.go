@@ -155,6 +155,11 @@ func api_register_push_token(c *gin.Context) {
 	}
 	if req.Sandbox != nil {
 		updates["sandbox"] = *req.Sandbox
+	} else if req.Token != existingToken.Token {
+		// sandbox 标记是投递时自动识别出来的、跟着 token 走。换了 token（同一台设备
+		// 从 dev 构建换装到 TestFlight / App Store，UDID 在钥匙串里不变）就清掉，
+		// 否则生产 token 会一直被发到 sandbox → BadDeviceToken → 停用，循环往复。
+		updates["sandbox"] = false
 	}
 	if req.AppBundle != "" {
 		updates["app_bundle"] = req.AppBundle
@@ -236,7 +241,6 @@ func api_unregister_push_token(c *gin.Context) {
 		TokenID:     token.ID,
 	})
 }
-
 
 // ========================= 辅助函数 =========================
 

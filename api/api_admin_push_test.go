@@ -26,7 +26,9 @@ func adminPushRouter(t *testing.T) *gin.Engine {
 	r.POST("/app/push/send", api_admin_push_send)
 	r.GET("/app/push/batches/:batchId", api_admin_push_batch_stats)
 	RegisterApprovalCallback("push_send", executeApprovalPushSend)
-	t.Cleanup(func() { db.Get().Where("action = ?", "push_send").Where("requestor_id = ?", admin.ID).Delete(&AdminApproval{}) })
+	t.Cleanup(func() {
+		db.Get().Where("action = ?", "push_send").Where("requestor_id = ?", admin.ID).Delete(&AdminApproval{})
+	})
 	return r
 }
 
@@ -35,7 +37,7 @@ func withInlinePushBatch(t *testing.T) {
 	t.Helper()
 	prev := enqueuePushBatch
 	enqueuePushBatch = func(ctx context.Context, req AdminPushSendRequest) error {
-		runAdminPushBatch(ctx, req)
+		_ = runAdminPushBatch(ctx, req)
 		return nil
 	}
 	t.Cleanup(func() { enqueuePushBatch = prev })
@@ -152,11 +154,106 @@ func TestAdminPushSend(t *testing.T) {
 			"empty body":      func(m map[string]any) { m["copy"] = map[string]any{"en-US": map[string]string{"title": "t"}} },
 			"route not white": func(m map[string]any) { m["route"] = "/evil" },
 			"long batch id":   func(m map[string]any) { m["batchId"] = strings.Repeat("a", 101) },
+			"batch id chars":  func(m map[string]any) { m["batchId"] = "promo/11" },
+			"too many users": func(m map[string]any) {
+				ids := make([]uint64, adminPushMaxUsers+1)
+				for i := range ids {
+					ids[i] = uint64(i + 1)
+				}
+				m["userIds"] = ids
+			},
+			"params overflow approval column": func(m map[string]any) {
+				ids := make([]uint64, adminPushMaxUsers)
+				for i := range ids {
+					ids[i] = uint64(1_000_000 + i)
+				}
+				m["userIds"] = ids
+				long := map[string]any{}
+				for _, lang := range []string{"zh-CN", "zh-TW", "en-US", "ja", "ko", "de", "fr", "es", "ru", "vi",
+					"ar", "fa", "id", "it", "km", "ms", "my", "pt-BR", "th", "tr"} {
+					long[lang] = map[string]string{"title": strings.Repeat("标", 100), "body": strings.Repeat("题", 500)}
+				}
+				m["copy"] = long
+			},
 		}
 		for name, mutate := range cases {
 			m := base()
 			mutate(m)
-			assert.Equal(t, int(ErrorInvalidArgument), doJSON(t, r, "POST", "/app/push/send", m).Code, name)
+			resp := doJSON(t, r, "POST", "/app/push/send", m)
+			assert.Equal(t, int(ErrorInvalidArgument), resp.Code, "%s: %s", name, resp.Message)
 		}
 	})
+}
+
+// 接近字节上限的请求必须真的能写进 admin_approvals（真实 INSERT + 审批执行），不只是算出来放得下。
+func TestAdminPushSend_NearLimitRequestIsStored(t *testing.T) {
+	skipIfNoConfig(t)
+	withPushHarness(t)
+	withInlinePushBatch(t)
+	r := adminPushRouter(t)
+	ids := make([]uint64, adminPushMaxUsers)
+	for i := range ids {
+		ids[i] = uint64(1_000_000 + i)
+	}
+	cp := map[string]any{}
+	for _, lang := range []string{"zh-CN", "zh-TW", "en-US", "ja", "ko", "de", "fr", "es", "ru", "vi"} {
+		cp[lang] = map[string]string{"title": strings.Repeat("标", 100), "body": strings.Repeat("题", 500)}
+	}
+	body := map[string]any{"batchId": fmt.Sprintf("near-limit-%d", ids[0]), "brand": "kaitu", "userIds": ids, "copy": cp}
+	raw, _ := json.Marshal(body)
+	require.Greater(t, len(raw), 55000, "确实贴近上限")
+	resp := doJSON(t, r, "POST", "/app/push/send", body)
+	require.Equal(t, 0, resp.Code, resp.Message)
+}
+
+// 上限必须真的可达：5000 个 7 位 id + 两种语言满长文案，序列化后仍放得进 admin_approvals.params。
+func TestAdminPushSendRequest_CapIsReachable(t *testing.T) {
+	ids := make([]uint64, adminPushMaxUsers)
+	for i := range ids {
+		ids[i] = uint64(9_000_000 + i)
+	}
+	req := AdminPushSendRequest{
+		BatchID: "promo:2026-11.v1", Brand: "kaitu", UserIDs: ids,
+		Copy: map[string]AdminPushCopy{
+			"zh-CN": {Title: strings.Repeat("标", adminPushMaxTitleLength), Body: strings.Repeat("题", adminPushMaxBodyLength)},
+			"en-US": {Title: strings.Repeat("t", adminPushMaxTitleLength), Body: strings.Repeat("b", adminPushMaxBodyLength)},
+		},
+	}
+	require.NoError(t, req.validate())
+	b, _ := json.Marshal(req)
+	assert.Less(t, len(b), 65535, "TEXT 列上限")
+}
+
+func TestRunAdminPushBatch_InterruptedBatchRetriesAndResumes(t *testing.T) {
+	skipIfNoConfig(t)
+	h := withPushHarness(t)
+	a, _, _ := seedPushUser(t, true, true)
+	b, _, _ := seedPushUser(t, true, true)
+	cleanupPushLogs(t, a.ID)
+	cleanupPushLogs(t, b.ID)
+	req := AdminPushSendRequest{
+		BatchID: fmt.Sprintf("resume-%d", a.ID), Brand: "kaitu", UserIDs: []uint64{a.ID, b.ID},
+		Copy: map[string]AdminPushCopy{"zh-CN": {Title: "t", Body: "b"}},
+	}
+	require.NoError(t, req.validate())
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	assert.Error(t, runAdminPushBatch(cancelled, req), "被中断要返回 error 让 asynq 重试")
+	assert.Empty(t, h.enqueued)
+
+	require.NoError(t, runAdminPushBatch(context.Background(), req))
+	assert.Len(t, h.enqueued, 2)
+	require.NoError(t, runAdminPushBatch(context.Background(), req), "重跑安全")
+	assert.Len(t, h.enqueued, 2, "已入队的人不会重复")
+
+	// 有人入队失败：返回 error 让整批重试，重试只补这一个人
+	c, _, _ := seedPushUser(t, true, true)
+	cleanupPushLogs(t, c.ID)
+	req.UserIDs = append(req.UserIDs, c.ID)
+	enqueuePushTask = func(context.Context, uint64) error { return fmt.Errorf("redis down") }
+	assert.Error(t, runAdminPushBatch(context.Background(), req))
+	enqueuePushTask = func(_ context.Context, id uint64) error { h.enqueued = append(h.enqueued, id); return nil }
+	require.NoError(t, runAdminPushBatch(context.Background(), req))
+	assert.Len(t, h.enqueued, 3)
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -23,12 +24,20 @@ import (
 // 收件人是明确的 userIds 列表（与 EDM 一致，由调用方挑人群）；真正发送走审批流 push_send。
 
 const (
-	TaskTypePushBatch       = "push:batch"
-	adminPushMaxUsers       = 20000
+	TaskTypePushBatch = "push:batch"
+	// adminPushMaxUsers / adminPushMaxParamsBytes：整个请求经 SubmitApproval 存进
+	// admin_approvals.params（MySQL TEXT，65535 字节）。超了严格模式 INSERT 直接报错，
+	// 非严格模式截断后审批执行时反序列化失败——所以在入口按序列化后的字节数拦。
+	// 更大的人群由调用方拆成多个 batchId。
+	adminPushMaxUsers       = 5000
+	adminPushMaxParamsBytes = 60000
 	adminPushMaxBatchIDLen  = 100 // dedup_key = "push_batch:" + batchId + ":" + uid ≤ 191
 	adminPushMaxTitleLength = 100
 	adminPushMaxBodyLength  = 500
 )
+
+// adminPushBatchIDPattern batchId 进 URL 路径（GET /push/batches/:batchId）和 dedup_key，只允许安全字符。
+var adminPushBatchIDPattern = regexp.MustCompile(`^[A-Za-z0-9:_.-]+$`)
 
 // AdminPushCopy 某语言的标题与正文
 type AdminPushCopy struct {
@@ -69,6 +78,9 @@ func (r *AdminPushSendRequest) validate() error {
 	if r.BatchID == "" || len(r.BatchID) > adminPushMaxBatchIDLen {
 		return fmt.Errorf("batchId must be 1..%d chars", adminPushMaxBatchIDLen)
 	}
+	if !adminPushBatchIDPattern.MatchString(r.BatchID) {
+		return errors.New("batchId may only contain letters, digits and : _ . -")
+	}
 	b, err := BrandRequired(r.Brand)
 	if err != nil {
 		return err
@@ -90,6 +102,11 @@ func (r *AdminPushSendRequest) validate() error {
 	}
 	if r.Route != "" && !pushRouteWhitelist[r.Route] {
 		return fmt.Errorf("route %q not allowed", r.Route)
+	}
+	if b, err := json.Marshal(r); err != nil {
+		return fmt.Errorf("encode request: %w", err)
+	} else if len(b) > adminPushMaxParamsBytes {
+		return fmt.Errorf("request too large (%d bytes, max %d): split userIds into several batches or shorten copy", len(b), adminPushMaxParamsBytes)
 	}
 	return nil
 }
@@ -177,12 +194,28 @@ func adminPushDryRun(req *AdminPushSendRequest) (*AdminPushDryRunResult, error) 
 		return nil, err
 	}
 	res := &AdminPushDryRunResult{Requested: len(req.UserIDs), Matched: len(users)}
+	if len(users) == 0 {
+		return res, nil
+	}
+	ids := make([]uint64, len(users))
+	for i, u := range users {
+		ids[i] = u.ID
+	}
+	// 与 activePushTokens 同一个设备归属 JOIN，一次查完整批，避免逐人查询拖垮 HTTP 请求。
+	var withToken []uint64
+	if err := db.Get().Model(&PushToken{}).
+		Joins("JOIN devices ON devices.udid = push_tokens.device_udid AND devices.user_id = push_tokens.user_id").
+		Where("push_tokens.user_id IN ? AND push_tokens.provider = ? AND push_tokens.status = ?",
+			ids, PushProviderAPNs, PushTokenStatusActive).
+		Distinct().Pluck("push_tokens.user_id", &withToken).Error; err != nil {
+		return nil, err
+	}
+	has := make(map[uint64]bool, len(withToken))
+	for _, id := range withToken {
+		has[id] = true
+	}
 	for _, u := range users {
-		tokens, err := activePushTokens(db.Get(), u.ID)
-		if err != nil {
-			return nil, err
-		}
-		if len(tokens) == 0 {
+		if !has[u.ID] {
 			continue
 		}
 		res.WithToken++
@@ -216,20 +249,24 @@ func handlePushBatchTask(ctx context.Context, payload []byte) error {
 	if err := asynq.Unmarshal(payload, &req); err != nil {
 		return fmt.Errorf("push batch: unmarshal: %w", err)
 	}
-	runAdminPushBatch(ctx, req)
-	return nil
+	return runAdminPushBatch(ctx, req)
 }
 
-// runAdminPushBatch 逐人发送。重跑安全：DedupKey = push_batch:<batchId>:<uid>。
-func runAdminPushBatch(ctx context.Context, req AdminPushSendRequest) {
+// runAdminPushBatch 逐人发送。重跑安全：DedupKey = push_batch:<batchId>:<uid>，
+// 已入队的人在重跑时得到 ErrPushDuplicate 被跳过。返回 error 让 asynq 重试整批：
+// 被中断（任务超时 / 进程退出）或有用户撞上非预期错误（入队失败会释放 key）时，重跑只补发漏掉的人。
+func runAdminPushBatch(ctx context.Context, req AdminPushSendRequest) error {
 	users, err := adminPushAudience(&req)
 	if err != nil {
-		log.Errorf(ctx, "[PUSH-BATCH] %s: load audience: %v", req.BatchID, err)
-		return
+		return fmt.Errorf("push batch %s: load audience: %w", req.BatchID, err)
 	}
 	brand := Brand(req.Brand)
 	counts := map[string]int{}
 	for _, u := range users {
+		if err := ctx.Err(); err != nil {
+			log.Warnf(ctx, "[PUSH-BATCH] %s interrupted after %v: %v", req.BatchID, counts, err)
+			return fmt.Errorf("push batch %s interrupted: %w", req.BatchID, err)
+		}
 		c := pickAdminCopy(req.Copy, u.Language, brand)
 		err := PushToUser(ctx, u.ID, PushRequest{
 			Category: PushCategoryMarketing,
@@ -247,13 +284,17 @@ func runAdminPushBatch(ctx context.Context, req AdminPushSendRequest) {
 			counts["duplicate"]++
 		case errors.Is(err, ErrPushChannelUnavailable):
 			log.Errorf(ctx, "[PUSH-BATCH] %s aborted: %v", req.BatchID, err)
-			return
+			return nil
 		default:
 			counts["error"]++
 			log.Warnf(ctx, "[PUSH-BATCH] %s user=%d: %v", req.BatchID, u.ID, err)
 		}
 	}
 	log.Infof(ctx, "[PUSH-BATCH] %s done: requested=%d matched=%d %v", req.BatchID, len(req.UserIDs), len(users), counts)
+	if counts["error"] > 0 {
+		return fmt.Errorf("push batch %s: %d user(s) failed, retrying the rest", req.BatchID, counts["error"])
+	}
+	return nil
 }
 
 // api_admin_push_batch_stats GET /app/push/batches/:batchId

@@ -25,9 +25,13 @@ export const pushTools: ToolRegistration[] = [
     method: 'POST',
     path: '/app/push/send',
     params: {
-      batch_id: z.string().max(100).describe('Unique batch ID, also the idempotency key (e.g. "push:2026-11-05:winback")'),
+      batch_id: z
+        .string()
+        .max(100)
+        .regex(/^[A-Za-z0-9:_.-]+$/)
+        .describe('Unique batch ID, also the idempotency key; letters, digits and : _ . - only (e.g. "push:2026-11-05:winback")'),
       brand: brandRequired,
-      user_ids: z.array(z.number().int().positive()).min(1).max(20000).describe('Recipient user IDs (users of another brand are skipped)'),
+      user_ids: z.array(z.number().int().positive()).min(1).max(5000).describe('Recipient user IDs, at most 5000 per batch — split bigger audiences into several batch_ids (users of another brand are skipped)'),
       copy: z
         .record(z.string(), z.object({ title: z.string().max(100), body: z.string().max(500) }))
         .describe('Copy per language, e.g. {"zh-CN": {...}, "en-US": {...}}. Users get their language, else the normalized one (zh-HK→zh-TW), else the brand default (kaitu zh-CN / overleap en-US), else the first key.'),
