@@ -36,6 +36,7 @@
       "inviteRewardCard": "Laden Sie Freunde ein - wenn ihr erster Kauf ein {{months}}-Monats-Plan oder länger ist, erhalten Sie beide Bonustage",
       "inviteRewardCta": "Einladung",
       "trialBadge": "{{days}} Tage gratis für neue Abonnenten",
+      "trialEnded": "Your {{days}}-day trial has ended. Subscribe to restore service right away.",
       "heroTitle": "Stabile Verbindung, weniger Abbrüche",
       "heroSubtitle": "Stabil zu Stoßzeiten und in Netzen mit hohem Paketverlust.",
       "benefitStable": "Bleibt auch in schwachen, verlustreichen Netzen verbunden – kein ständiges Neuverbinden",

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { trialOfferOf, trialLengthOf } from '../trial-offer';
+import { trialOfferOf, trialLengthOf, trialUsedUp } from '../trial-offer';
 import type { IapProduct } from '../../../types/kaitu-core';
 
 function product(over: Partial<IapProduct> = {}): IapProduct {
@@ -40,6 +40,28 @@ describe('trialOfferOf', () => {
   });
   it('non-positive period -> null', () => {
     expect(trialOfferOf(product({ isEligibleForIntroOffer: true, introOffer: offer('day', 0) }))).toBeNull();
+  });
+});
+
+describe('trialUsedUp', () => {
+  const USED = { isEligibleForIntroOffer: false, introOffer: offer('week', 1) };
+  const user = (over: Record<string, unknown> = {}) => ({ isFirstOrderDone: false, subscriptions: [], ...over }) as any;
+
+  it('true for ineligible + never paid + no active sub', () => {
+    expect(trialUsedUp(product(USED), user())).toBe(true);
+    expect(trialUsedUp(product(USED), user({ isFirstOrderDone: undefined, subscriptions: undefined }))).toBe(true);
+  });
+  it('false when eligible / paid before / has active apple sub / product has no trial / no user', () => {
+    expect(trialUsedUp(product({ ...USED, isEligibleForIntroOffer: true }), user())).toBe(false);
+    expect(trialUsedUp(product({ ...USED, isEligibleForIntroOffer: undefined }), user())).toBe(false);
+    expect(trialUsedUp(product(USED), user({ isFirstOrderDone: true }))).toBe(false);
+    expect(trialUsedUp(product(USED), user({ subscriptions: [{ provider: 'apple' }] }))).toBe(false);
+    expect(trialUsedUp(product({ isEligibleForIntroOffer: false }), user())).toBe(false);
+    expect(trialUsedUp(undefined, user())).toBe(false);
+    expect(trialUsedUp(product(USED), null)).toBe(false);
+  });
+  it('a non-apple sub does not count as active apple sub', () => {
+    expect(trialUsedUp(product(USED), user({ subscriptions: [{ provider: 'stripe' }] }))).toBe(true);
   });
 });
 

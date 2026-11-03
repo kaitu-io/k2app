@@ -36,6 +36,7 @@
       "inviteRewardCard": "دوستان را دعوت کنید — هنگامی‌که اولین خریداری آنها برنامهٌ {{months}}-ماه یا بیشتر است، هر دو از روزهای پاداش سود می‌برند",
       "inviteRewardCta": "دعوت",
       "trialBadge": "{{days}} روز رایگان برای مشترکان جدید",
+      "trialEnded": "Your {{days}}-day trial has ended. Subscribe to restore service right away.",
       "heroTitle": "اتصال پایدار، قطعی کمتر",
       "heroSubtitle": "در ساعات شلوغ و شبکه‌های با افت بستهٔ بالا هم پایدار است.",
       "benefitStable": "در شبکه‌های ضعیف و ناپایدار متصل می‌ماند، بدون اتصال دوبارهٔ مکرر",

@@ -36,6 +36,7 @@
       "inviteRewardCard": "ชวนเพื่อน เมื่อเพื่อนซื้อครั้งแรกเป็นแพ็กเกจ {{months}} เดือนขึ้นไป ทั้งคู่ได้วันเพิ่มพิเศษ",
       "inviteRewardCta": "ชวนเพื่อน",
       "trialBadge": "สมาชิกใหม่ใช้ฟรี {{days}} วัน",
+      "trialEnded": "Your {{days}}-day trial has ended. Subscribe to restore service right away.",
       "heroTitle": "เชื่อมต่อเสถียร หลุดน้อยลง",
       "heroSubtitle": "ยังคงเสถียรในช่วงเวลาเร่งด่วนและบนเครือข่ายที่สูญเสียแพ็กเก็ตสูง",
       "benefitStable": "คงการเชื่อมต่อได้บนเครือข่ายที่อ่อนและไม่เสถียร ไม่ต้องเชื่อมต่อใหม่ซ้ำ ๆ",

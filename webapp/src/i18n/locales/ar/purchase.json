@@ -36,6 +36,7 @@
       "inviteRewardCard": "ادعُ الأصدقاء — عندما يكون شراؤهم الأول خطة {{months}} شهر أو أكثر، تكسب كلاكما أياماً مكافأة",
       "inviteRewardCta": "دعوة",
       "trialBadge": "مجانًا لمدة {{days}} أيام للمشتركين الجدد",
+      "trialEnded": "Your {{days}}-day trial has ended. Subscribe to restore service right away.",
       "heroTitle": "اتصال مستقر وانقطاعات أقل",
       "heroSubtitle": "مستقر في أوقات الذروة وعلى الشبكات ذات فقدان الحزم المرتفع.",
       "benefitStable": "يبقى متصلًا على الشبكات الضعيفة وغير المستقرة دون إعادة اتصال متكررة",
