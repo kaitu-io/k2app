@@ -615,7 +615,11 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 Log.d(TAG, "Network available: $network")
-                if (replayFilter.shouldSkip(network, SystemClock.elapsedRealtime())) {
+                // Never skip while a memory-pressure pause is pending: before this filter,
+                // the replay was what woke an engine paused during start(); skipping it
+                // would leave the tunnel down (UI "connected") until the 60s safety net.
+                if (!enginePaused.get() &&
+                    replayFilter.shouldSkip(network, SystemClock.elapsedRealtime())) {
                     NativeLogger.log("DEBUG", "onAvailable: registration replay for engine's start network — skipped")
                     return
                 }
