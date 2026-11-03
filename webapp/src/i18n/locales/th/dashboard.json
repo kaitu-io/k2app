@@ -159,8 +159,8 @@
       "message": "เข้าสู่ระบบเพื่อปลดล็อกโหนดคลาวด์เพิ่มเติม",
       "viewPlans": "ดูแพ็กเกจ"
     },
-    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
-    "trialContinue": "Keep using"
+    "trialRenewOff": "วันทดลองใช้ที่เหลือ: {{days}} วัน หลัง {{date}} บริการจะหยุดทำงาน เปิดการต่ออายุอัตโนมัติเพื่อใช้งานต่อ",
+    "trialContinue": "ใช้งานต่อ"
   },
   "appBypass": {
     "v2": {

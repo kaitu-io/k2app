@@ -16,7 +16,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Box, Stack, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import type { DataSubscription } from '../../services/api-types';
 import { useIapPurchase, IAP_PRODUCT_IDS } from '../../hooks/useIapPurchase';
 import { useStripeCheckout } from '../../hooks/useStripeCheckout';
@@ -25,6 +25,7 @@ import { useAppConfig } from '../../hooks/useAppConfig';
 import { getCurrentAppConfig } from '../../config/apps';
 import { useAlert } from '../../stores/alert.store';
 import { statsService } from '../../services/stats';
+import { PAYWALL_SOURCES } from '../../services/funnel-events';
 import MembershipBenefits from '../MembershipBenefits';
 import RenewalStatusCard from './RenewalStatusCard';
 import TrialStatusCard from './TrialStatusCard';
@@ -44,6 +45,7 @@ const APPLE_SUBS_URL = 'itms-apps://apps.apple.com/account/subscriptions';
 export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPanelProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, fetchUser } = useUser();
   const { appConfig } = useAppConfig();
   const { products, loadProducts, restore, restoring, purchaseError, lastGrantedUser } = useIapPurchase();
@@ -90,7 +92,10 @@ export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPan
   // 开了 apple_iap + stripe_checkout，同一个 iOS 会员中心可能对应任一 provider——
   // stripe_portal 必须走 Billing Portal，不能塌缩成 App Store 订阅页。
   const openManage = () => {
-    void statsService.trackFunnel('manage_click');
+    // 入口来源（如首页试用卡 trial_card）随 router state 传入；白名单外 = 不带 source。
+    const from = (location.state as { from?: string } | null)?.from;
+    const source = (PAYWALL_SOURCES as readonly string[]).includes(from ?? '') ? from : undefined;
+    void statsService.trackFunnel('manage_click', source ? { source } : undefined);
     const manage = activeSub?.manage;
     if (manage?.kind === 'stripe_portal') {
       void openPortal();

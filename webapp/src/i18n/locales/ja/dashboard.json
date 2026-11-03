@@ -159,7 +159,7 @@
       "message": "ログインしてクラウドノードを解放",
       "viewPlans": "プランを見る"
     },
-    "trialRenewOff": "無料体験は残り{{days}}日です。{{date}}に終了するとサービスが停止します",
+    "trialRenewOff": "体験期間は残り{{days}}日です。{{date}}に終了するとサービスが停止します。自動更新をオンにすると引き続きご利用いただけます。",
     "trialContinue": "引き続き利用する"
   },
   "appBypass": {

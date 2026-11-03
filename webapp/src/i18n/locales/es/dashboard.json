@@ -159,8 +159,8 @@
       "message": "Inicia sesión para desbloquear más nodos en la nube",
       "viewPlans": "Ver Planes"
     },
-    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
-    "trialContinue": "Keep using"
+    "trialRenewOff": "Días de prueba restantes: {{days}}. Tras el {{date}} el servicio se detendrá. Activa la renovación automática para seguir usándolo.",
+    "trialContinue": "Seguir usando"
   },
   "appBypass": {
     "v2": {

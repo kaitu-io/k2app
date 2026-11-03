@@ -159,8 +159,8 @@
       "message": "Conectar para desbloquear mais nós de nuvem",
       "viewPlans": "Ver Planos"
     },
-    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
-    "trialContinue": "Keep using"
+    "trialRenewOff": "Dias de teste restantes: {{days}}. Após {{date}} o serviço será interrompido. Ative a renovação automática para continuar usando.",
+    "trialContinue": "Continuar usando"
   },
   "appBypass": {
     "v2": {

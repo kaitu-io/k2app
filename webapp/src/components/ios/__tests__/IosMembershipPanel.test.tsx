@@ -50,6 +50,7 @@ vi.mock('../../../stores/alert.store', () => ({
 }));
 vi.mock('react-router-dom', () => ({
   useNavigate: () => navigate,
+  useLocation: () => ({ state: null }),
 }));
 
 const sub = (over: Partial<DataSubscription> = {}): DataSubscription => ({

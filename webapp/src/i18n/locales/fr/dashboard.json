@@ -159,8 +159,8 @@
       "message": "Se connecter pour déverrouiller plus de nœuds cloud",
       "viewPlans": "Voir les forfaits"
     },
-    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
-    "trialContinue": "Keep using"
+    "trialRenewOff": "Jours d'essai restants : {{days}}. Après le {{date}}, le service sera interrompu. Activez le renouvellement automatique pour continuer à l'utiliser.",
+    "trialContinue": "Continuer à utiliser"
   },
   "appBypass": {
     "v2": {

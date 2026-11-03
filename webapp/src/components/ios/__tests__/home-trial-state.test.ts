@@ -34,6 +34,14 @@ describe('homeTrialState', () => {
     expect(s).toMatchObject({ kind: 'renewOff', daysLeft: 2, urgent: true });
   });
 
+  it('order-independent: renew-off trial found even when a renewing trial sub comes first', () => {
+    const off = sub({ trialEndsAt: NOW + 2.5 * DAY });
+    const on = sub({ autoRenew: true, trialEndsAt: NOW + 5 * DAY });
+    const expected = { kind: 'renewOff', daysLeft: 3, endsAtSec: NOW + 2.5 * DAY, urgent: false };
+    expect(homeTrialState(userWith(on, off), NOW)).toEqual(expected);
+    expect(homeTrialState(userWith(off, on), NOW)).toEqual(expected);
+  });
+
   it('none when autoRenew is true', () => {
     expect(homeTrialState(userWith(sub({ autoRenew: true })), NOW)).toEqual({ kind: 'none' });
   });

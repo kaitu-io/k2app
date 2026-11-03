@@ -62,7 +62,7 @@
       "trialTotal": "共 {{days}} 天",
       "trialRenewNote": "{{date}} 起按 {{price}}/年 自动续订。不想继续，在到期前至少 24 小时取消即可。",
       "trialRenewNoteNoPrice": "{{date}} 起自动续订。不想继续，在到期前至少 24 小时取消即可。",
-      "trialEndsNoCharge": "试用将于 {{date}} 结束，不会扣费。",
+      "trialEndsNoCharge": "试用将于 {{date}} 结束，不会扣费。结束后将停止服务，开启自动续订即可继续使用。",
       "consentTitle": "退款时，是否允许提供使用情况？",
       "consentBody": "如果你以后向 Apple 申请退款，Apple 可能会向我们询问这笔订阅的情况。允许后，我们只会告诉 Apple：",
       "consentPoint1": "服务已正常提供",

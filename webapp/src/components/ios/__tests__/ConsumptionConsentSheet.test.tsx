@@ -28,7 +28,7 @@ vi.mock('../../../hooks/useUser', () => ({
 }));
 vi.mock('../../../hooks/useStripeCheckout', () => ({ useStripeCheckout: () => ({ openPortal: vi.fn() }) }));
 vi.mock('../../../hooks/useAppConfig', () => ({ useAppConfig: () => ({ appConfig: null, loading: false, error: null }) }));
-vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
+vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn(), useLocation: () => ({ state: null }) }));
 let hookState: any;
 vi.mock('../../../hooks/useIapPurchase', () => ({
   IAP_PRODUCT_IDS: ['io.kaitu.sub.basic.1y'],

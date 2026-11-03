@@ -46,3 +46,22 @@ describe('trial card copy', () => {
     });
   }
 });
+
+describe('renew-off trial copy (membership panel)', () => {
+  const base = join(__dirname, '../../../i18n/locales');
+  const forbidden = /官网|官方网站|折|%|\$|kaitu|开途|開途|overleap|discount|website|official/i;
+  for (const loc of readdirSync(base).filter((d) => !d.includes('.'))) {
+    it(`${loc} trialEndsNoCharge carries {{date}} and no website/discount/price/brand`, () => {
+      const p = JSON.parse(readFileSync(join(base, loc, 'purchase.json'), 'utf8')).purchase.iap;
+      expect(p.trialEndsNoCharge).toContain('{{date}}');
+      expect(p.trialEndsNoCharge).not.toMatch(forbidden);
+      expect(p.trialEnded).toContain('{{days}}');
+      expect(p.trialEnded).not.toMatch(forbidden);
+    });
+  }
+  it('zh-CN states the consequence and the action', () => {
+    const p = JSON.parse(readFileSync(join(base, 'zh-CN', 'purchase.json'), 'utf8')).purchase.iap;
+    expect(p.trialEndsNoCharge).toContain('结束后将停止服务');
+    expect(p.trialEndsNoCharge).toContain('开启自动续订');
+  });
+});

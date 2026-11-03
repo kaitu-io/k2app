@@ -159,8 +159,8 @@
       "message": "로그인하여 더 많은 클라우드 노드 잠금 해제",
       "viewPlans": "플랜 보기"
     },
-    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
-    "trialContinue": "Keep using"
+    "trialRenewOff": "체험 남은 일수: {{days}}일. {{date}} 이후 서비스가 중지됩니다. 계속 이용하려면 자동 갱신을 켜세요.",
+    "trialContinue": "계속 이용하기"
   },
   "appBypass": {
     "v2": {

@@ -13,8 +13,8 @@ export type HomeTrialState =
 
 export function homeTrialState(user: DataUser | null, nowSec: number): HomeTrialState {
   if (!purchaseSurfaceAvailable()) return { kind: 'none' };
-  const sub = user?.subscriptions?.find((s) => s.provider === 'apple' && s.trialEndsAt > nowSec);
-  if (!sub || sub.autoRenew !== false) return { kind: 'none' };
+  const sub = user?.subscriptions?.find((s) => s.provider === 'apple' && s.trialEndsAt > nowSec && s.autoRenew === false);
+  if (!sub) return { kind: 'none' };
   const daysLeft = daysRemaining(sub.trialEndsAt, nowSec);
   return { kind: 'renewOff', daysLeft, endsAtSec: sub.trialEndsAt, urgent: daysLeft <= 2 };
 }

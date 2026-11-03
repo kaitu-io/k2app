@@ -159,8 +159,8 @@
       "message": "ចូលគណនីដើម្បីដោះសោណូតពពកបន្ថែម",
       "viewPlans": "មើលគម្រោង"
     },
-    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
-    "trialContinue": "Keep using"
+    "trialRenewOff": "ថ្ងៃសាកល្បងនៅសល់៖ {{days}}។ បន្ទាប់ពី {{date}} សេវាកម្មនឹងឈប់ដំណើរការ។ បើកការបន្តស្វ័យប្រវត្តិ ដើម្បីបន្តប្រើប្រាស់។",
+    "trialContinue": "បន្តប្រើប្រាស់"
   },
   "appBypass": {
     "v2": {

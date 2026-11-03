@@ -159,8 +159,8 @@
       "message": "Accedi per sbloccare più nodi cloud",
       "viewPlans": "Visualizza Piani"
     },
-    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
-    "trialContinue": "Keep using"
+    "trialRenewOff": "Giorni di prova rimanenti: {{days}}. Dopo il {{date}} il servizio verrà interrotto. Attiva il rinnovo automatico per continuare a usarlo.",
+    "trialContinue": "Continua a usare"
   },
   "appBypass": {
     "v2": {

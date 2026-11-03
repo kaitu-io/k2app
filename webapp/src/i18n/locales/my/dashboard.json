@@ -159,8 +159,8 @@
       "message": "ကလောက်နိုဒ်များ ပိုမိုရရန် လော့ဂ်အင်ဝင်ပါ",
       "viewPlans": "ပလန်များ ကြည့်မည်"
     },
-    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
-    "trialContinue": "Keep using"
+    "trialRenewOff": "အစမ်းသုံးရက် ကျန်ရှိမှု - {{days}}။ {{date}} နောက်ပိုင်း ဝန်ဆောင်မှု ရပ်တန့်မည်။ ဆက်လက်အသုံးပြုရန် အလိုအလျောက်သက်တမ်းတိုးခြင်းကို ဖွင့်ပါ။",
+    "trialContinue": "ဆက်လက်အသုံးပြုရန်"
   },
   "appBypass": {
     "v2": {

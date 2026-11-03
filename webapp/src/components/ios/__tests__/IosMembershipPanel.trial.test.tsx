@@ -24,7 +24,7 @@ vi.mock('../../../hooks/useAppConfig', () => ({
 }));
 vi.mock('../../../stores/alert.store', () => ({ useAlert: () => ({ showAlert: vi.fn() }) }));
 vi.mock('../../../services/stats', () => ({ statsService: { trackFunnel: vi.fn() } }));
-vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
+vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn(), useLocation: () => ({ state: null }) }));
 
 import IosMembershipPanel from '../IosMembershipPanel';
 
@@ -99,7 +99,8 @@ describe('IosMembershipPanel trial card', () => {
     renderPanel(sub({ isTrial: true, trialEndsAt: ends, autoRenew: false }));
     const card = screen.getByTestId('trial-status-card');
     expect(card.textContent).toContain(`试用将于 ${formatExpiryDate(ends)} 结束，不会扣费。`);
-    expect(card.textContent).not.toContain('自动续订');
+    expect(card.textContent).toContain('开启自动续订即可继续使用');
+    expect(card.textContent).not.toContain('起按');
   });
 
   it('auto-renew on: keeps the renew note', () => {

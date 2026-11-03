@@ -159,8 +159,8 @@
       "message": "قم بتسجيل الدخول لفتح مزيد من عقد السحابة",
       "viewPlans": "عرض الخطط"
     },
-    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
-    "trialContinue": "Keep using"
+    "trialRenewOff": "أيام التجربة المتبقية: {{days}}. بعد {{date}} ستتوقف الخدمة. فعّل التجديد التلقائي لمتابعة الاستخدام.",
+    "trialContinue": "متابعة الاستخدام"
   },
   "appBypass": {
     "v2": {
