@@ -227,6 +227,12 @@ export default function IosSubscribePanel({
               {t('purchase:purchase.iap.trialEnded', { days: row.endedDays })}
             </Typography>
           )}
+          {row.endedDays !== null && (
+            // 试用用户多半开通即关续订（怕被扣费）：订阅前就告诉他们扣费后也能随时关。
+            <Typography data-testid="iap-cancel-anytime" variant="body2" color="text.secondary" sx={{ fontSize: 13, lineHeight: 1.5 }}>
+              {t('purchase:purchase.iap.cancelAnytime')}
+            </Typography>
+          )}
           <Typography component="h1" sx={{ m: 0, fontSize: 28, lineHeight: 1.25, fontWeight: 700 }}>
             {t('purchase:purchase.iap.heroTitle')}
           </Typography>

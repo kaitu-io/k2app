@@ -159,7 +159,7 @@
       "message": "Daha fazla bulut düğümü açmak için giriş yapın",
       "viewPlans": "Planları Görüntüle"
     },
-    "trialRenewOff": "Kalan deneme günü: {{days}}. {{date}} tarihinden sonra hizmet duracak. Kullanmaya devam etmek için otomatik yenilemeyi açın.",
+    "trialRenewOff": "Kalan deneme günü: {{days}}. {{date}} tarihinden sonra hizmet duracak. Kullanmaya devam etmek için otomatik yenilemeyi açın. Ücret alındıktan sonra da App Store'da otomatik yenilemeyi istediğiniz zaman kapatabilir, ödediğiniz süre boyunca kullanmaya devam edebilirsiniz.",
     "trialContinue": "Kullanmaya devam et"
   },
   "appBypass": {

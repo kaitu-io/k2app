@@ -160,38 +160,38 @@ func matchCampaign(ctx context.Context, campaign *Campaign, user *User, order *O
 	return matcher(ctx, user, order)
 }
 
-// applyCampaign 应用活动到订单
-func applyCampaign(ctx context.Context, campaign *Campaign, order *Order) (uint64, error) {
-	log.Debugf(ctx, "applying campaign %s to order %s", campaign.Code, order.UUID)
-
-	var newAmount uint64
-	var err error
-
+// campaignPrice 活动作用在原价上的到手价（纯计算，不碰数据库）；ok=false 表示活动配置无效、按原价。
+// 下单（applyCampaign）与召回邮件里的标价（recallOfferPrice）共用这一处，保证邮件写的就是下单时的价。
+func campaignPrice(campaign *Campaign, originAmount uint64) (uint64, bool) {
 	switch campaign.Type {
 	case CampaignTypeDiscount:
 		// 折扣类型，Value 表示百分比（如 80 表示 8 折）
 		if campaign.Value == 0 || campaign.Value > 100 {
-			log.Warnf(ctx, "invalid discount value %d for campaign %s", campaign.Value, campaign.Code)
-			return order.OriginAmount, nil
+			return originAmount, false
 		}
-		newAmount = order.OriginAmount * campaign.Value / 100
-		log.Infof(ctx, "applied discount campaign %s, original amount: %d, new amount: %d", campaign.Code, order.OriginAmount, newAmount)
-
+		return originAmount * campaign.Value / 100, true
 	case CampaignTypeCoupon:
-		// 优惠券类型，Value 表示优惠金额（美分）
-		if campaign.Value >= order.OriginAmount {
-			log.Infof(ctx, "coupon value %d is greater than or equal to origin amount %d for campaign %s, price becomes 0", campaign.Value, order.OriginAmount, campaign.Code)
-			newAmount = 0 // 优惠金额大于等于原价时，价格为0
-		} else {
-			newAmount = order.OriginAmount - campaign.Value
-			log.Infof(ctx, "applied coupon campaign %s, original amount: %d, new amount: %d", campaign.Code, order.OriginAmount, newAmount)
+		// 优惠券类型，Value 表示优惠金额（美分）；优惠金额大于等于原价时，价格为 0
+		if campaign.Value >= originAmount {
+			return 0, true
 		}
+		return originAmount - campaign.Value, true
+	}
+	return originAmount, false
+}
 
-	default:
-		log.Warnf(ctx, "unknown campaign type %s for campaign %s", campaign.Type, campaign.Code)
+// applyCampaign 应用活动到订单（会累加活动使用次数——只在真实下单时调用）
+func applyCampaign(ctx context.Context, campaign *Campaign, order *Order) (uint64, error) {
+	log.Debugf(ctx, "applying campaign %s to order %s", campaign.Code, order.UUID)
+
+	newAmount, ok := campaignPrice(campaign, order.OriginAmount)
+	if !ok {
+		log.Warnf(ctx, "invalid campaign %s (type %s, value %d), keep origin amount", campaign.Code, campaign.Type, campaign.Value)
 		return order.OriginAmount, nil
 	}
+	log.Infof(ctx, "applied %s campaign %s, original amount: %d, new amount: %d", campaign.Type, campaign.Code, order.OriginAmount, newAmount)
 
+	var err error
 	// 增加活动使用次数
 	if err = incrementCampaignUsage(ctx, campaign.Code); err != nil {
 		log.Warnf(ctx, "failed to increment campaign usage, but continue with order processing: %v", err)

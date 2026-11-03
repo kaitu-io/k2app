@@ -263,6 +263,8 @@ Campaign `matcherType` gates who may redeem a code (`logic_campaign.go getCampai
 
 `first_order` and `vip` are exact mirrors and must never collapse into the same meaning — `logic_campaign_matcher_test.go` pins both. **History (do not repeat):** `first_order` once meant "已付费" while every author read it as "new customer" — all 5 `first_order` campaigns (FIRST_ORDER_20, READY4U, STAYFREE, SMOOTHDAY, KEEPGOING) silently rejected 100% of recipients with `ErrorInvalidCampaignCode` (fixed 2026-06-06). Keep new matcher names describing the **audience**, and mirror the admin UI label in `web/.../manager/campaigns/page.tsx`.
 
+**召回邮件优惠（abandoned / winback / trial-recall）只有两个码，不随阶段加深**：新客 `NEW10`、老客 `BACK10`（`logic_recall_offer.go`）；邮件标价调纯函数 `campaignPrice`，**绝不调 `applyCampaign`**（它累加使用次数）。10% 对照组记为 `email_send_logs` skipped + `error_msg=holdout`，`GET /app/recall-stats` 据此算增量——新召回链路要沿用 `recallMailer`，否则没有对照组。Spec `docs/superpowers/specs/2026-11-03-recall-offer-flatten-design.md`。
+
 **`LicenseKeyBatch` is a different thing — don't fold it into campaigns**: 授权码批次自带渠道标签 (`sourceTag`)、兑换条件 (`recipientMatcher`)、过期时间，统计兑换率与兑换→付费转化；创建走审批。
 
 ## Tunnel Scoring

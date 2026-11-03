@@ -159,7 +159,7 @@
       "message": "Conectar para desbloquear mais nós de nuvem",
       "viewPlans": "Ver Planos"
     },
-    "trialRenewOff": "Dias de teste restantes: {{days}}. Após {{date}} o serviço será interrompido. Ative a renovação automática para continuar usando.",
+    "trialRenewOff": "Dias de teste restantes: {{days}}. Após {{date}} o serviço será interrompido. Ative a renovação automática para continuar usando. Depois da cobrança, você pode desativar a renovação automática na App Store quando quiser e continuar usando o período pago.",
     "trialContinue": "Continuar usando"
   },
   "appBypass": {

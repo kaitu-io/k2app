@@ -124,4 +124,20 @@ export const campaignTools: ToolRegistration[] = [
     },
     path: (p) => `/app/campaigns/code/${p.code}/orders`,
   }),
+
+  defineApiTool({
+    name: 'recall_stats',
+    description:
+      'Recall email effectiveness: for the abandoned-order, winback (expired) and trial-recall flows, ' +
+      'compare the treated group (got the email) with the 10% holdout (did not) — users, paid within the window ' +
+      '(any channel, non-refunded), conversion rate, revenue, code usage and discount given, per flow and per stage. ' +
+      'liftPoints = treated rate − holdout rate in percentage points; null when there is no holdout yet. ' +
+      'Users whose window has not finished are reported as pending, not counted.',
+    group: 'campaigns',
+    params: {
+      days: z.number().int().min(1).max(60).optional().describe('Conversion window in days after the first recall/holdout record (default 14)'),
+      since: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Only records on/after this Beijing date YYYY-MM-DD (default 90 days ago)'),
+    },
+    path: '/app/recall-stats',
+  }),
 ]

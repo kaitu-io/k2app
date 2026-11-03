@@ -182,57 +182,48 @@ func TestTiersBrandScoped(t *testing.T) {
 	assert.Contains(t, body, "t-tier-o")
 }
 
-// 真 MySQL：winback 价格区间按品牌隔离（Important fix：getPlanPriceRange 曾查全部 active plan）
-func TestWinbackPlanPriceRangeBrandScoped(t *testing.T) {
+// 真 MySQL：召回邮件推荐的年付套餐按品牌隔离（旧 getPlanPriceRange 曾查全部 active plan）。
+func TestRecallOfferPlanBrandScoped(t *testing.T) {
 	skipIfNoConfig(t)
 	require.NoError(t, Migrate())
 
-	// 极端价格保证断言不受 dev DB 存量数据影响：
-	// kaitu 侧造一个全库最低价 1，overleap 侧造一个全库最高价 999999999。
-	pK := Plan{PID: "t-wb-k", Label: "k", Price: 1, Month: 1, Product: ProductApp, Brand: string(BrandKaitu), IsActive: BoolPtr(true)}
-	pO := Plan{PID: "t-wb-o", Label: "o", Price: 999999999, Month: 1, Product: ProductApp, Brand: string(BrandOverleap), IsActive: BoolPtr(true)}
-	require.NoError(t, db.Get().Create(&pK).Error)
+	pO := Plan{PID: "t-wb-o", Label: "o", Price: 999999999, Month: 12, Product: ProductApp, Brand: string(BrandOverleap), IsActive: BoolPtr(true)}
 	require.NoError(t, db.Get().Create(&pO).Error)
-	t.Cleanup(func() {
-		db.Get().Unscoped().Where("pid IN ?", []string{"t-wb-k", "t-wb-o"}).Delete(&Plan{})
-	})
+	t.Cleanup(func() { db.Get().Unscoped().Where("pid = ?", "t-wb-o").Delete(&Plan{}) })
 
-	kMin, kMax, ok := getPlanPriceRange(t.Context(), BrandKaitu)
-	require.True(t, ok)
-	assert.Equal(t, uint64(1), kMin, "kaitu range should include the kaitu test plan")
-	assert.NotEqual(t, uint64(999999999), kMax, "kaitu range must not include overleap plan price")
-
-	oMin, oMax, ok := getPlanPriceRange(t.Context(), BrandOverleap)
-	require.True(t, ok)
-	assert.Equal(t, uint64(999999999), oMax, "overleap range should include the overleap test plan")
-	assert.NotEqual(t, uint64(1), oMin, "overleap range must not include kaitu plan price")
+	if k := recallOfferPlan(t.Context(), BrandKaitu); k != nil {
+		assert.Equal(t, string(BrandKaitu), k.Brand, "kaitu 召回不得推荐 overleap 套餐")
+	}
+	o := recallOfferPlan(t.Context(), BrandOverleap)
+	require.NotNil(t, o)
+	assert.Equal(t, string(BrandOverleap), o.Brand)
 }
 
-// 真 MySQL：winback/abandoned 活动码变量按收件品牌计算。
-// overleap-only 活动码：overleap 用户拿到完整 vars（价格区间来自 overleap plans），
-// kaitu 用户拿到空 vars（活动在 kaitu 品牌下不存在）——绝不跨品牌泄漏。
-func TestCampaignVarsForBrandScoped(t *testing.T) {
+// 真 MySQL：winback/abandoned 召回优惠按收件品牌计算。
+// overleap-only 活动码：overleap 用户拿到完整变量（价格来自 overleap 套餐），
+// kaitu 用户拿不到（活动在 kaitu 品牌下不存在）——绝不跨品牌泄漏。
+func TestRecallOfferBrandScoped(t *testing.T) {
 	skipIfNoConfig(t)
 	require.NoError(t, Migrate())
 
 	now := time.Now().Unix()
-	campO := Campaign{Code: "TBRANDWB", Name: "o-wb", Type: CampaignTypeDiscount, Value: 90,
+	campO := Campaign{Code: "TBRANDWB", Name: "o-wb", Type: CampaignTypeCoupon, Value: 100,
 		StartAt: now - 3600, EndAt: now + 3600, MatcherType: "all",
 		Brand: string(BrandOverleap), IsActive: BoolPtr(true)}
 	require.NoError(t, db.Get().Create(&campO).Error)
-	pO := Plan{PID: "t-wbv-o", Label: "o", Price: 1000, Month: 1, Product: ProductApp, Brand: string(BrandOverleap), IsActive: BoolPtr(true)}
+	pO := Plan{PID: "t-wbv-o", Label: "o", Price: 1000, Month: 12, Product: ProductApp, Brand: string(BrandOverleap), IsActive: BoolPtr(true)}
 	require.NoError(t, db.Get().Create(&pO).Error)
 	t.Cleanup(func() {
 		db.Get().Unscoped().Where("code = ?", "TBRANDWB").Delete(&Campaign{})
 		db.Get().Unscoped().Where("pid = ?", "t-wbv-o").Delete(&Plan{})
 	})
 
-	oVars := campaignVarsForBrand(t.Context(), "TBRANDWB", 90, "14 天内有效", BrandOverleap)
-	assert.Equal(t, "TBRANDWB", oVars["CampaignCode"], "overleap recipient should get the overleap campaign code")
-	assert.NotEmpty(t, oVars["SavingsText"])
+	oOffer := loadRecallOffer(t.Context(), "TBRANDWB", BrandOverleap)
+	require.NotNil(t, oOffer, "overleap recipient should get the overleap campaign")
+	assert.Equal(t, "TBRANDWB", oOffer.Vars["CampaignCode"])
+	assert.NotEmpty(t, oOffer.Vars["OfferText"])
 
-	kVars := campaignVarsForBrand(t.Context(), "TBRANDWB", 90, "14 天内有效", BrandKaitu)
-	assert.Empty(t, kVars, "kaitu recipient must not receive an overleap-only campaign")
+	assert.Nil(t, loadRecallOffer(t.Context(), "TBRANDWB", BrandKaitu), "kaitu recipient must not receive an overleap-only campaign")
 }
 
 // BrandForCreate：空→kaitu；合法值（大小写不敏感）→对应品牌；非法值→error。

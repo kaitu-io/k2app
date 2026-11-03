@@ -6,37 +6,21 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestAbandonedTriggerDelays_Config(t *testing.T) {
 	assert.Equal(t, []int{1}, abandonedHourlyDelays)
-	assert.Equal(t, []int{1, 3, 7, 14, 30}, abandonedDailyDelays)
+	assert.Equal(t, []int{1, 3, 7}, abandonedDailyDelays, "14 / 30 天加码邮件已停发")
 }
 
-func TestAbandonedCampaigns_Config(t *testing.T) {
-	_, ok := abandonedCampaigns[1]
-	assert.False(t, ok, "1-day abandoned should have no campaign")
-
-	c3, ok := abandonedCampaigns[3]
-	require.True(t, ok, "3-day abandoned campaign must exist")
-	assert.Equal(t, "READY4U", c3.code)
-	assert.Equal(t, 95, c3.discountPct)
-
-	c7, ok := abandonedCampaigns[7]
-	require.True(t, ok, "7-day abandoned campaign must exist")
-	assert.Equal(t, "STAYFREE", c7.code)
-	assert.Equal(t, 90, c7.discountPct)
-
-	c14, ok := abandonedCampaigns[14]
-	require.True(t, ok, "14-day abandoned campaign must exist")
-	assert.Equal(t, "SMOOTHDAY", c14.code)
-	assert.Equal(t, 90, c14.discountPct)
-
-	c30, ok := abandonedCampaigns[30]
-	require.True(t, ok, "30-day abandoned campaign must exist")
-	assert.Equal(t, "KEEPGOING", c30.code)
-	assert.Equal(t, 85, c30.discountPct)
+// 未付款召回不逐步加深：带优惠的阶段只有 3 天、7 天，且用同一个新客码。
+func TestAbandonedOfferStages_NoEscalation(t *testing.T) {
+	assert.Equal(t, map[int]bool{3: true, 7: true}, abandonedOfferStages)
+	for _, d := range abandonedDailyDelays {
+		if d < 3 {
+			assert.False(t, abandonedOfferStages[d], "%d 天只提醒、不带折扣", d)
+		}
+	}
 }
 
 func TestAbandonedBatchIDFormat(t *testing.T) {
@@ -71,28 +55,4 @@ func TestAbandonedDailyWindow(t *testing.T) {
 	assert.Equal(t, time.Date(2026, 4, 5, 0, 0, 0, 0, time.UTC), targetDate)
 	assert.Equal(t, time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC), targetDateEnd)
 	assert.Equal(t, 24*time.Hour, targetDateEnd.Sub(targetDate))
-}
-
-func TestAbandonedSavingsCalculation(t *testing.T) {
-	tests := []struct {
-		name        string
-		minPrice    uint64
-		maxPrice    uint64
-		discountPct int
-		expectMin   string
-		expectMax   string
-	}{
-		{"READY4U_95pct", 3900, 14900, 95, "$1.95", "$7.45"},
-		{"STAYFREE_90pct", 3900, 14900, 90, "$3.9", "$14.9"},
-		{"KEEPGOING_85pct", 3900, 14900, 85, "$5.85", "$22.35"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			minSave := tt.minPrice * uint64(100-tt.discountPct) / 100
-			maxSave := tt.maxPrice * uint64(100-tt.discountPct) / 100
-			assert.Equal(t, tt.expectMin, formatCents(minSave))
-			assert.Equal(t, tt.expectMax, formatCents(maxSave))
-		})
-	}
 }
