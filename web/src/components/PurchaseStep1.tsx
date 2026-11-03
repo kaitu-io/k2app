@@ -22,6 +22,8 @@ function getCookie(name: string): string | null {
 }
 
 export interface PurchaseStep1Props {
+  /** Prefills the login email (signed-out only), e.g. from a recall link. */
+  initialEmail?: string;
   onLoginSuccess?: () => void;
   onCodeSent?: () => void;
 }
@@ -35,6 +37,7 @@ export interface PurchaseStep1Props {
  * and the entire card is hidden.
  */
 export default function PurchaseStep1({
+  initialEmail,
   onLoginSuccess,
   onCodeSent
 }: PurchaseStep1Props = {}) {
@@ -89,7 +92,7 @@ export default function PurchaseStep1({
             </div>
           </div>
         )}
-        <EmailLogin onLoginSuccess={onLoginSuccess} onCodeSent={onCodeSent} mode="bind" />
+        <EmailLogin initialEmail={initialEmail} onLoginSuccess={onLoginSuccess} onCodeSent={onCodeSent} mode="bind" />
       </CardContent>
     </Card>
   );

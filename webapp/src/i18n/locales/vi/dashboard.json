@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "Đăng nhập để mở khóa thêm nút đám mây",
       "viewPlans": "Xem gói"
-    }
+    },
+    "trialRenewOff": "Số ngày dùng thử còn lại: {{days}}. Sau {{date}} dịch vụ sẽ dừng. Bật tự động gia hạn để tiếp tục sử dụng.",
+    "trialContinue": "Tiếp tục sử dụng"
   },
   "appBypass": {
     "v2": {

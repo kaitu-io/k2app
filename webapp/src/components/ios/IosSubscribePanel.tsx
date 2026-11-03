@@ -45,7 +45,7 @@ import { useAlert } from '../../stores/alert.store';
 import { useLoginDialogStore } from '../../stores/login-dialog.store';
 import { statsService } from '../../services/stats';
 import EmailLoginForm from '../EmailLoginForm';
-import { trialOfferOf } from './trial-offer';
+import { trialOfferOf, trialLengthOf, trialUsedUp } from './trial-offer';
 
 interface IosSubscribePanelProps {
   /** 是否已登录（决定先登录还是可直接订阅）。 */
@@ -116,8 +116,9 @@ export default function IosSubscribePanel({
       // 披露 / 时间线改用不带价格的文案，商品行不显示价格。
       displayPrice: meta?.displayPrice || '',
       trial: trialOfferOf(meta),
+      endedDays: trialUsedUp(meta, user) ? (trialLengthOf(meta)?.days ?? null) : null,
     };
-  }, [products, t]);
+  }, [products, t, user]);
 
   const trial = row.trial;
   const price = row.displayPrice;
@@ -217,6 +218,14 @@ export default function IosSubscribePanel({
             >
               {t('purchase:purchase.iap.trialBadge', { days: trial.days })}
             </Box>
+          )}
+          {row.endedDays !== null && (
+            <Typography
+              data-testid="iap-trial-ended"
+              sx={{ fontSize: 15, fontWeight: 600, color: 'primary.main' }}
+            >
+              {t('purchase:purchase.iap.trialEnded', { days: row.endedDays })}
+            </Typography>
           )}
           <Typography component="h1" sx={{ m: 0, fontSize: 28, lineHeight: 1.25, fontWeight: 700 }}>
             {t('purchase:purchase.iap.heroTitle')}

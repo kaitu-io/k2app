@@ -37,6 +37,7 @@ func InitWorker() {
 	asynq.Handle(TaskTypePushBatch, handlePushBatchTask)
 	asynq.Handle(TaskTypeTemplatedEmailSend, handleTemplatedEmailTask)
 	asynq.Handle(TaskTypeRenewalReminder, handleRenewalReminderTask)
+	asynq.Handle(TaskTypeTrialRecall, handleTrialRecallTask)
 	asynq.Handle(TaskTypeAbandonedOrderHourly, handleAbandonedOrderHourlyTask)
 	asynq.Handle(TaskTypeAbandonedOrderDaily, handleAbandonedOrderDailyTask)
 	asynq.Handle(TaskTypeRetailerFollowup, handleRetailerFollowupTask)
@@ -55,6 +56,9 @@ func InitWorker() {
 	// Cron 格式: 分 时 日 月 周
 	// Unique(25h) 防止多实例重复入队同一任务
 	asynq.Cron("30 2 * * *", TaskTypeRenewalReminder, nil, hibikenAsynq.Unique(25*time.Hour))
+
+	// 试用未转化召回：每天 12:00 UTC（北京 20:00）
+	asynq.Cron("0 12 * * *", TaskTypeTrialRecall, nil, hibikenAsynq.Unique(25*time.Hour))
 
 	// 注册未支付订单召回 Cron 任务
 	// 每小时运行：1h 即时提醒

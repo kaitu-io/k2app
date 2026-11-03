@@ -31,7 +31,11 @@ vi.mock('../../../hooks/useAppConfig', () => ({
   useAppConfig: () => ({ appConfig: { inviteReward: { purchaseRewardDays: 7 } }, loading: false, error: null }),
 }));
 vi.mock('../../../stores/alert.store', () => ({ useAlert: () => ({ showAlert: vi.fn() }) }));
-vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
+let mockLocationState: unknown = null;
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => vi.fn(),
+  useLocation: () => ({ state: mockLocationState }),
+}));
 
 const sub: DataSubscription = {
   provider: 'apple', tier: 'basic', currentPeriodEnd: 1_900_000_000, autoRenew: true,
@@ -42,6 +46,7 @@ describe('IosMembershipPanel funnel events', () => {
   let original: unknown;
   beforeEach(() => {
     vi.clearAllMocks();
+    mockLocationState = null;
     original = (window as { _platform?: unknown })._platform;
     (window as { _platform?: unknown })._platform = { openExternal: vi.fn() };
   });
@@ -52,6 +57,20 @@ describe('IosMembershipPanel funnel events', () => {
     expect(statsService.trackFunnel).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('ios-membership-manage-btn'));
     expect(statsService.trackFunnel).toHaveBeenCalledTimes(1);
-    expect(statsService.trackFunnel).toHaveBeenCalledWith('manage_click');
+    expect(statsService.trackFunnel).toHaveBeenCalledWith('manage_click', undefined);
+  });
+
+  it('arriving from the home trial card tags manage_click with source=trial_card', () => {
+    mockLocationState = { from: 'trial_card' };
+    render(<IosMembershipPanel mode="manage" activeSub={sub} />);
+    fireEvent.click(screen.getByTestId('ios-membership-manage-btn'));
+    expect(statsService.trackFunnel).toHaveBeenCalledWith('manage_click', { source: 'trial_card' });
+  });
+
+  it('an unknown from value is dropped (no source)', () => {
+    mockLocationState = { from: 'bogus' };
+    render(<IosMembershipPanel mode="manage" activeSub={sub} />);
+    fireEvent.click(screen.getByTestId('ios-membership-manage-btn'));
+    expect(statsService.trackFunnel).toHaveBeenCalledWith('manage_click', undefined);
   });
 });

@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "Melden Sie sich an, um mehr Cloud-Knoten freizuschalten",
       "viewPlans": "Pläne anzeigen"
-    }
+    },
+    "trialRenewOff": "Verbleibende Testtage: {{days}}. Nach dem {{date}} wird der Dienst eingestellt. Aktiviere die automatische Verlängerung, um ihn weiter zu nutzen.",
+    "trialContinue": "Weiter nutzen"
   },
   "appBypass": {
     "v2": {

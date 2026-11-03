@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "Log masuk untuk buka kunci lebih banyak nod awan",
       "viewPlans": "Lihat Pelan"
-    }
+    },
+    "trialRenewOff": "Baki hari percubaan: {{days}}. Selepas {{date}} perkhidmatan akan dihentikan. Hidupkan pembaharuan automatik untuk terus menggunakannya.",
+    "trialContinue": "Teruskan"
   },
   "appBypass": {
     "v2": {

@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "Login to unlock more cloud nodes",
       "viewPlans": "View Plans"
-    }
+    },
+    "trialRenewOff": "Trial days left: {{days}}. Service will stop after {{date}}. Turn on auto-renew to keep using it.",
+    "trialContinue": "Keep using"
   },
   "appBypass": {
     "v2": {

@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "Daha fazla bulut düğümü açmak için giriş yapın",
       "viewPlans": "Planları Görüntüle"
-    }
+    },
+    "trialRenewOff": "Kalan deneme günü: {{days}}. {{date}} tarihinden sonra hizmet duracak. Kullanmaya devam etmek için otomatik yenilemeyi açın.",
+    "trialContinue": "Kullanmaya devam et"
   },
   "appBypass": {
     "v2": {

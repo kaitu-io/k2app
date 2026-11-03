@@ -38,6 +38,8 @@ import { useSelfHostedStore } from '../stores/self-hosted.store';
 import { useRouterStore, isRouterTakeover } from '../stores/router.store';
 import { useExclusionGuard, RouterExclusionDialog } from '../components/RouterExclusionDialog';
 import { RouterTakeoverBanner } from '../components/RouterTakeoverBanner';
+import HomeTrialCard from '../components/ios/HomeTrialCard';
+import { homeTrialState } from '../components/ios/home-trial-state';
 import { getCurrentAppConfig } from '../config/apps';
 import { CollapsibleConnectionSection } from '../components/CollapsibleConnectionSection';
 import RoutingModeSelector, { useRoutingSummary } from '../components/RoutingModeSelector';
@@ -79,6 +81,7 @@ export default function Dashboard() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const openLoginDialog = useLoginDialogStore((s) => s.open);
   const { user } = useUser();
+  const trialState = homeTrialState(user ?? null, Math.floor(Date.now() / 1000));
 
   // VPN state machine
   const {
@@ -453,6 +456,17 @@ export default function Dashboard() {
 
       {/* 路由器接管横幅:本机未连接但流量已被 k2r 网关保护——消除「未保护」误读 */}
       <RouterTakeoverBanner />
+
+      {/* iOS 试用中且已关自动续订：到期前提醒，入口走内购页 */}
+      {trialState.kind === 'renewOff' && (
+        <Box sx={{ px: 2, pt: 1 }}>
+          <HomeTrialCard
+            daysLeft={trialState.daysLeft}
+            endsAtSec={trialState.endsAtSec}
+            urgent={trialState.urgent}
+          />
+        </Box>
+      )}
 
       {/* SECTION 1: Connection Control */}
       <CollapsibleConnectionSection
