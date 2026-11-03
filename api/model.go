@@ -90,6 +90,11 @@ type User struct {
 	BetaOptedIn *bool `gorm:"default:false"`            // 是否订阅 beta 更新通知
 	BetaOptedAt int64 `gorm:"not null;default:0;index"` // 订阅时间戳（关闭时保留历史）
 
+	// 营销推送同意（App Store 审核规则 4.5.4：营销推送须用户在 App 内明确同意，且可随时关闭）。
+	// 与系统通知权限无关；交易类推送（扣款失败、到期提醒）不看此字段。spec 2026-11-03-ios-push-design §6.3
+	PushMarketingOptIn   bool  `gorm:"column:push_marketing_opt_in;not null;default:false"`
+	PushMarketingOptInAt int64 `gorm:"column:push_marketing_opt_in_at;not null;default:0"` // 最近一次表态时刻（unix 秒）
+
 	// Apple 退款 Consumption 应答的用户同意（spec 2026-10-08 §5）。nil = 没问过；false = 拒绝 / 已撤回。
 	// 只有 true 才在 CONSUMPTION_REQUEST 时把消费信息发给 Apple（logic_apple_consumption.go）。
 	AppleConsumptionConsent   *bool `gorm:"column:apple_consumption_consent"`

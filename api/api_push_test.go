@@ -245,7 +245,7 @@ func TestPushToken_HelperMethods(t *testing.T) {
 	})
 
 	t.Run("GetMetadata returns empty map for empty metadata", func(t *testing.T) {
-		token := PushToken{Metadata: ""}
+		token := PushToken{}
 		meta, err := token.GetMetadata()
 		assert.NoError(t, err)
 		assert.Empty(t, meta)
@@ -548,41 +548,6 @@ func TestCrossPlatformPushScenarios(t *testing.T) {
 // =====================================================================
 // Push Notification Payload Tests
 // =====================================================================
-
-func TestPushNotificationPayload(t *testing.T) {
-	t.Run("Create notification with all fields", func(t *testing.T) {
-		badge := 5
-		notification := PushNotification{
-			Title:    "Subscription Expiring",
-			Body:     "Your subscription expires in 3 days",
-			Sound:    "default",
-			Badge:    &badge,
-			ImageURL: "https://example.com/image.png",
-			Data: map[string]interface{}{
-				"action":    "open_subscription",
-				"user_id":   123,
-				"deep_link": "kaitu://subscription",
-			},
-		}
-
-		assert.Equal(t, "Subscription Expiring", notification.Title)
-		assert.Equal(t, "Your subscription expires in 3 days", notification.Body)
-		assert.Equal(t, 5, *notification.Badge)
-		assert.Equal(t, "open_subscription", notification.Data["action"])
-	})
-
-	t.Run("Create minimal notification", func(t *testing.T) {
-		notification := PushNotification{
-			Title: "New Message",
-			Body:  "You have a new message",
-		}
-
-		assert.Equal(t, "New Message", notification.Title)
-		assert.Nil(t, notification.Badge)
-		assert.Empty(t, notification.Sound)
-		assert.Nil(t, notification.Data)
-	})
-}
 
 // =====================================================================
 // Token Lifecycle Tests

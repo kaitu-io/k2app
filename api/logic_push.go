@@ -2,119 +2,325 @@ package center
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
+	hibikenAsynq "github.com/hibiken/asynq"
+	"github.com/wordgate/qtoolkit/asynq"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
+	"github.com/wordgate/qtoolkit/slack"
+	"gorm.io/gorm"
 )
 
 // =====================================================================
-// 推送服务 - 以用户为最小粒度
+// 推送服务 —— 以用户为最小粒度（spec 2026-11-03-ios-push-design §6）
 // =====================================================================
 //
-// 设计原则：推送的目的是到达用户，而不是记录日志
-// - PushToUser: 向用户的所有活跃设备发送推送
-// - 使用 asynq 异步队列确保推送可靠到达
-// - 不记录推送日志到数据库，仅保留运行时日志
+// 两段式：
+//   1. PushToUser 同步做资格判断（通道 / 路由 / 营销同意 / 有效 token / 去重），
+//      通过则写一条 push_send_logs（queued）并入队；不通过返回明确的哨兵错误。
+//   2. asynq 任务 handlePushTask → deliverPush 逐个 token 投递 APNs，回写日志与 token 状态。
 //
-// =====================================================================
+// 返回 nil 只代表「已入队且当时至少有 1 个有效 token」，不代表已送达：异步阶段
+// token 全部失效时调用方同步拿不到，只能查 push_send_logs。调用方需要回退（比如改发
+// 邮件）只能基于同步返回的哨兵错误。
+//
+// 目前只有 APNs 通道；FCM / JPush 的 token 不参与发送。
 
-// PushNotification 推送通知内容
-type PushNotification struct {
-	Title    string                 `json:"title"`              // 推送标题
-	Body     string                 `json:"body"`               // 推送正文
-	Data     map[string]interface{} `json:"data,omitempty"`     // 自定义数据
-	Sound    string                 `json:"sound,omitempty"`    // 提示音，默认 "default"
-	Badge    *int                   `json:"badge,omitempty"`    // 角标数字（iOS）
-	ImageURL string                 `json:"imageUrl,omitempty"` // 图片 URL（富媒体推送）
+// PushCategory 推送分类。营销类要求用户在 App 内明确同意（App Store 审核规则 4.5.4）。
+type PushCategory string
+
+const (
+	PushCategoryTransactional PushCategory = "transactional" // 账户提醒：扣款失败、到期等
+	PushCategoryMarketing     PushCategory = "marketing"     // 召回、优惠、活动
+)
+
+// PushRequest 一条发给某个用户的推送。Title / Body 由调用方按用户语言本地化好；
+// 文案不得含金额、邮箱、订单号等敏感信息，也不写品牌名（iOS 自己显示 App 名）。
+type PushRequest struct {
+	Category PushCategory
+	DedupKey string // 必填：同一个 key 只发一次（varchar 191）
+	Title    string
+	Body     string
+	Route    string // 可选：点击后跳转的 webapp 路由，必须在 pushRouteWhitelist 内
+	BatchID  string // 可选：后台群发批次
 }
 
-// PushToUser 向用户的所有活跃设备发送推送
-// 这是推送的主入口，以用户为最小粒度
-func PushToUser(ctx context.Context, userID uint64, notification PushNotification) error {
-	// 查找用户的所有活跃推送令牌
-	var tokens []PushToken
-	if err := db.Get().Where("user_id = ? AND status = ?", userID, PushTokenStatusActive).Find(&tokens).Error; err != nil {
-		log.Errorf(ctx, "[PUSH] Failed to query push tokens for user %d: %v", userID, err)
-		return fmt.Errorf("failed to query push tokens: %w", err)
-	}
+var (
+	ErrPushChannelUnavailable = errors.New("push: APNs channel not configured")
+	ErrPushNoActiveToken      = errors.New("push: user has no active push token")
+	ErrPushNotConsented       = errors.New("push: user has not opted in to marketing push")
+	ErrPushDuplicate          = errors.New("push: duplicate dedup key")
+	ErrPushInvalidRoute       = errors.New("push: route not in whitelist")
+	ErrPushInvalidRequest     = errors.New("push: invalid request")
+)
 
-	if len(tokens) == 0 {
-		log.Infof(ctx, "[PUSH] No active push tokens for user %d, skipping", userID)
-		return nil
-	}
-
-	// 入队推送任务
-	taskID, err := EnqueuePushTask(ctx, userID, notification)
-	if err != nil {
-		log.Errorf(ctx, "[PUSH] Failed to enqueue push task for user %d: %v", userID, err)
-		return fmt.Errorf("failed to enqueue push task: %w", err)
-	}
-
-	log.Infof(ctx, "[PUSH] Push task enqueued for user %d, taskId=%s, devices=%d", userID, taskID, len(tokens))
-	return nil
+// pushRouteWhitelist 推送可以携带的跳转路由；webapp 端有同一份白名单
+// （webapp/src/services/push-service.ts PUSH_ROUTE_WHITELIST），两边都只认表内路由。
+var pushRouteWhitelist = map[string]bool{
+	"/purchase":      true,
+	"/account":       true,
+	"/pro-histories": true,
 }
 
-// PushToUsers 批量向多个用户发送推送
-// 每个用户会创建一个独立的推送任务
-func PushToUsers(ctx context.Context, userIDs []uint64, notification PushNotification) error {
-	if len(userIDs) == 0 {
-		return nil
+// 以下三个出口是包级变量，测试替换（绝不打真 Apple / 真队列 / 真 Slack）。
+var (
+	// apnsClient 为 nil = 未配置 APNs（initAPNs 已打 Error），PushToUser 一律返回 ErrPushChannelUnavailable。
+	apnsClient apnsSender
+
+	enqueuePushTask = func(ctx context.Context, logID uint64) error {
+		_, err := asynq.EnqueueContext(ctx, TaskTypePushSend, pushTaskPayload{LogID: logID})
+		return err
 	}
 
-	var enqueueCount int
-	for _, userID := range userIDs {
-		if err := PushToUser(ctx, userID, notification); err != nil {
-			log.Warnf(ctx, "[PUSH] Failed to enqueue push for user %d: %v", userID, err)
-			continue
+	pushAlert = func(msg string) {
+		if err := slack.Send("alert", msg); err != nil {
+			log.Errorf(context.Background(), "[PUSH] slack alert failed: %v", err)
 		}
-		enqueueCount++
 	}
+)
 
-	log.Infof(ctx, "[PUSH] Batch push enqueued: total=%d, enqueued=%d", len(userIDs), enqueueCount)
+// pushTaskPayload asynq 载荷：只带日志 ID，内容从日志读。
+type pushTaskPayload struct {
+	LogID uint64 `json:"logId"`
+}
+
+func validatePushRequest(req PushRequest) error {
+	if req.Category != PushCategoryTransactional && req.Category != PushCategoryMarketing {
+		return fmt.Errorf("%w: unknown category %q", ErrPushInvalidRequest, req.Category)
+	}
+	if req.DedupKey == "" || len(req.DedupKey) > 191 {
+		return fmt.Errorf("%w: dedup key must be 1..191 chars", ErrPushInvalidRequest)
+	}
+	if strings.TrimSpace(req.Title) == "" || strings.TrimSpace(req.Body) == "" {
+		return fmt.Errorf("%w: title and body are required", ErrPushInvalidRequest)
+	}
+	if req.Route != "" && !pushRouteWhitelist[req.Route] {
+		return fmt.Errorf("%w: %q", ErrPushInvalidRoute, req.Route)
+	}
 	return nil
 }
 
-// sendPushToToken 发送推送到单个令牌（内部函数）
-// 这是实际调用推送提供商 SDK 的地方
-func sendPushToToken(ctx context.Context, token *PushToken, notification *PushNotification) error {
-	switch token.Provider {
-	case PushProviderAPNs:
-		return sendAPNsPush(ctx, token, notification)
-	case PushProviderFCM:
-		return sendFCMPush(ctx, token, notification)
-	case PushProviderJPush:
-		return sendJPushPush(ctx, token, notification)
+// activePushTokens 返回用户当前能用的 APNs token。
+// 设备归属 join：token 的设备必须仍属于该用户。设备被踢 / 删除 / 换绑别的账号后，
+// 旧账号的推送自动不再到这台手机，不需要在每个删设备的地方停用 token。
+func activePushTokens(tx *gorm.DB, userID uint64) ([]PushToken, error) {
+	var tokens []PushToken
+	err := tx.Model(&PushToken{}).
+		Joins("JOIN devices ON devices.udid = push_tokens.device_udid AND devices.user_id = push_tokens.user_id").
+		Where("push_tokens.user_id = ? AND push_tokens.provider = ? AND push_tokens.status = ?",
+			userID, PushProviderAPNs, PushTokenStatusActive).
+		Find(&tokens).Error
+	return tokens, err
+}
+
+// PushToUser 向一个用户的所有有效设备发推送。见文件头注释的返回语义。
+func PushToUser(ctx context.Context, userID uint64, req PushRequest) error {
+	if err := validatePushRequest(req); err != nil {
+		return err
+	}
+	if apnsClient == nil {
+		return ErrPushChannelUnavailable
+	}
+
+	if req.Category == PushCategoryMarketing {
+		var u User
+		if err := db.Get().Select("id", "push_marketing_opt_in").First(&u, userID).Error; err != nil {
+			return fmt.Errorf("push: load user %d: %w", userID, err)
+		}
+		if !u.PushMarketingOptIn {
+			return ErrPushNotConsented
+		}
+	}
+
+	tokens, err := activePushTokens(db.Get(), userID)
+	if err != nil {
+		return fmt.Errorf("push: query tokens of user %d: %w", userID, err)
+	}
+	if len(tokens) == 0 {
+		return ErrPushNoActiveToken
+	}
+
+	entry := PushSendLog{
+		DedupKey: req.DedupKey, BatchID: req.BatchID, UserID: userID,
+		Category: string(req.Category), Route: req.Route, Title: req.Title, Body: req.Body,
+		Status: PushSendStatusQueued,
+	}
+	if err := db.Get().Create(&entry).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) || isDuplicateKeyErr(err) {
+			return ErrPushDuplicate
+		}
+		return fmt.Errorf("push: create send log: %w", err)
+	}
+
+	if err := enqueuePushTask(ctx, entry.ID); err != nil {
+		markPushLogFailed(ctx, entry.ID, "enqueue: "+err.Error())
+		return fmt.Errorf("push: enqueue: %w", err)
+	}
+	log.Infof(ctx, "[PUSH] queued log=%d user=%d category=%s key=%s devices=%d",
+		entry.ID, userID, req.Category, req.DedupKey, len(tokens))
+	return nil
+}
+
+// PushToUsers 批量推送，每个用户独立判断。DedupKey 按 req.DedupKey + ":" + userID 派生。
+func PushToUsers(ctx context.Context, userIDs []uint64, req PushRequest) map[uint64]error {
+	results := make(map[uint64]error, len(userIDs))
+	base := req.DedupKey
+	for _, uid := range userIDs {
+		r := req
+		r.DedupKey = fmt.Sprintf("%s:%d", base, uid)
+		results[uid] = PushToUser(ctx, uid, r)
+	}
+	return results
+}
+
+// handlePushTask asynq 入口。deliverPush 返回错误 = 需要重试；最后一次重试仍失败则把日志标为 failed，
+// 不让它永远停在 queued。
+func handlePushTask(ctx context.Context, payload []byte) error {
+	var p pushTaskPayload
+	if err := asynq.Unmarshal(payload, &p); err != nil {
+		return fmt.Errorf("push: unmarshal payload: %w", err)
+	}
+	err := deliverPush(ctx, p.LogID)
+	if err != nil {
+		retried, _ := hibikenAsynq.GetRetryCount(ctx)
+		maxRetry, _ := hibikenAsynq.GetMaxRetry(ctx)
+		if retried >= maxRetry {
+			markPushLogFailed(ctx, p.LogID, "retries exhausted: "+err.Error())
+		}
+	}
+	return err
+}
+
+// tokenOutcome 单个 token 的投递结论
+type tokenOutcome int
+
+const (
+	outcomeSent      tokenOutcome = iota
+	outcomeDead                   // token 失效，已停用，不重试
+	outcomeAuth                   // 凭据 / 配置错误，已告警，不重试
+	outcomeRetryable              // 5xx / 429 / 网络错误
+)
+
+// deliverPush 投递一条日志。返回 error 表示应当重试。
+// 至少一台设备成功就不重试，避免已收到的设备被重复打扰。
+func deliverPush(ctx context.Context, logID uint64) error {
+	var entry PushSendLog
+	if err := db.Get().First(&entry, logID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warnf(ctx, "[PUSH] log %d not found, dropping task", logID)
+			return nil
+		}
+		return fmt.Errorf("push: load log %d: %w", logID, err)
+	}
+	if entry.Status != PushSendStatusQueued {
+		log.Infof(ctx, "[PUSH] log %d already %s, skip", logID, entry.Status)
+		return nil
+	}
+	if apnsClient == nil {
+		markPushLogFailed(ctx, logID, ErrPushChannelUnavailable.Error())
+		return nil
+	}
+
+	tokens, err := activePushTokens(db.Get(), entry.UserID)
+	if err != nil {
+		return fmt.Errorf("push: query tokens: %w", err)
+	}
+	if len(tokens) == 0 {
+		updatePushLog(ctx, logID, map[string]any{"status": PushSendStatusNoToken})
+		return nil
+	}
+
+	var sent, failed, retryable int
+	var lastErr string
+	for i := range tokens {
+		outcome, detail := deliverToToken(ctx, &tokens[i], &entry)
+		switch outcome {
+		case outcomeSent:
+			sent++
+		case outcomeRetryable:
+			retryable++
+			failed++
+			lastErr = detail
+		default:
+			failed++
+			lastErr = detail
+		}
+	}
+
+	if sent == 0 && retryable > 0 {
+		updatePushLog(ctx, logID, map[string]any{"last_error": truncate(lastErr, 512)})
+		return fmt.Errorf("push: log %d: %d device(s) retryable: %s", logID, retryable, lastErr)
+	}
+
+	status := PushSendStatusSent
+	if sent == 0 {
+		status = PushSendStatusFailed
+	}
+	updatePushLog(ctx, logID, map[string]any{
+		"status": status, "sent_count": sent, "fail_count": failed, "last_error": truncate(lastErr, 512),
+	})
+	log.Infof(ctx, "[PUSH] log=%d user=%d status=%s sent=%d failed=%d", logID, entry.UserID, status, sent, failed)
+	return nil
+}
+
+// deliverToToken 投递到一个 token。生产环境返回 BadDeviceToken 时再试一次 sandbox：
+// dev 构建拿到的是 sandbox token，客户端无法可靠判断自己的 APNs 环境，由服务端自动识别并记住。
+func deliverToToken(ctx context.Context, tok *PushToken, entry *PushSendLog) (tokenOutcome, string) {
+	sandbox := tok.Sandbox != nil && *tok.Sandbox
+	n := apnsNotification{
+		Token: tok.Token, Topic: tok.Topic, Sandbox: sandbox,
+		Title: entry.Title, Body: entry.Body, Route: entry.Route, PushID: entry.ID,
+	}
+	res := apnsClient.Send(ctx, n)
+
+	if !sandbox && res.isBadDeviceToken() {
+		n.Sandbox = true
+		if alt := apnsClient.Send(ctx, n); alt.ok() {
+			if err := db.Get().Model(&PushToken{}).Where("id = ?", tok.ID).Update("sandbox", true).Error; err != nil {
+				log.Warnf(ctx, "[PUSH] token %d: flip to sandbox failed: %v", tok.ID, err)
+			}
+			log.Infof(ctx, "[PUSH] token %d is a sandbox token, remembered", tok.ID)
+			return outcomeSent, ""
+		}
+	}
+
+	switch {
+	case res.ok():
+		return outcomeSent, ""
+	case res.isDeadToken():
+		if err := db.Get().Model(&PushToken{}).Where("id = ?", tok.ID).Update("status", PushTokenStatusInactive).Error; err != nil {
+			log.Warnf(ctx, "[PUSH] token %d: deactivate failed: %v", tok.ID, err)
+		}
+		log.Infof(ctx, "[PUSH] token %d deactivated: %s", tok.ID, res.describe())
+		return outcomeDead, res.describe()
+	case res.isAuthError():
+		msg := fmt.Sprintf("[PUSH-APNS-AUTH] APNs 拒绝了服务端凭据（%s），推送全部发不出去。检查 config.yml apns.team_id / key_id / p8，以及 App ID 是否开启了 Push Notifications。topic=%s",
+			res.describe(), tok.Topic)
+		log.Errorf(ctx, "%s", msg)
+		pushAlert(msg)
+		return outcomeAuth, res.describe()
 	default:
-		return fmt.Errorf("unsupported push provider: %s", token.Provider)
+		log.Warnf(ctx, "[PUSH] token %d retryable: %s", tok.ID, res.describe())
+		return outcomeRetryable, res.describe()
 	}
 }
 
-// sendAPNsPush 发送 APNs 推送
-// TODO: 实现 APNs 推送
-func sendAPNsPush(ctx context.Context, token *PushToken, notification *PushNotification) error {
-	log.Infof(ctx, "[PUSH:APNs] Sending to device=%s, title=%s", token.DeviceUDID, notification.Title)
-	// TODO: 集成 APNs SDK
-	// 使用 token.Token 作为设备令牌
-	// 使用 token.Topic 作为 APNs topic (Bundle ID)
-	// 使用 token.Sandbox 判断是否为沙盒环境
-	return nil
+func markPushLogFailed(ctx context.Context, logID uint64, reason string) {
+	updatePushLog(ctx, logID, map[string]any{"status": PushSendStatusFailed, "last_error": truncate(reason, 512)})
 }
 
-// sendFCMPush 发送 FCM 推送
-// TODO: 实现 FCM 推送
-func sendFCMPush(ctx context.Context, token *PushToken, notification *PushNotification) error {
-	log.Infof(ctx, "[PUSH:FCM] Sending to device=%s, title=%s", token.DeviceUDID, notification.Title)
-	// TODO: 集成 FCM SDK
-	// 使用 token.Token 作为 FCM 注册令牌
-	return nil
+func updatePushLog(ctx context.Context, logID uint64, updates map[string]any) {
+	if err := db.Get().Model(&PushSendLog{}).Where("id = ?", logID).Updates(updates).Error; err != nil {
+		log.Errorf(ctx, "[PUSH] update log %d failed: %v", logID, err)
+	}
 }
 
-// sendJPushPush 发送极光推送
-// TODO: 实现极光推送
-func sendJPushPush(ctx context.Context, token *PushToken, notification *PushNotification) error {
-	log.Infof(ctx, "[PUSH:JPush] Sending to device=%s, title=%s", token.DeviceUDID, notification.Title)
-	// TODO: 集成极光推送 SDK
-	// 使用 token.Token 作为极光推送注册 ID
-	return nil
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
 }

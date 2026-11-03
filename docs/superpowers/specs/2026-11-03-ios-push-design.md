@@ -77,7 +77,9 @@
 ### 6.1 发送通道（`api/logic_push.go`）
 - 用 token-based 方式（.p8）实现 `sendAPNsPush`，推荐用 `github.com/sideshow/apns2`。按 token 的 `Sandbox` 字段选 development 还是 production 环境。
 - 配置写在 `center/config.yml` 新增的 `apns:` 段：`team_id`、`key_id`、`p8` 文件路径或内容。**配置缺失时**：启动时打 Error 日志，每次调用返回 `ErrPushChannelUnavailable`。**不能**返回 nil。
-- **校验 topic**：token 的 `Topic` 必须属于该用户品牌的 bundle id（品牌到 bundle id 的映射放在 `api/brand.go` 一类的品牌数据里）。校验不通过的 token 在注册时就拒绝。
+- **校验 topic**：服务端以用户品牌的 `Brand.Config().Social.AppleBundleID` 作为 topic 写入 token。客户端上报的 topic 不为空且与之不符时，直接拒绝注册（400）。
+- **自动识别 sandbox 还是 production（实现时的决定）**：先按 production 发送；如果 APNs 返回 `BadDeviceToken`，再用 sandbox 发一次。sandbox 成功就把 token 的 `sandbox` 改为 true，失败才把 token 标为 inactive。这样 webapp 不需要判断自己是不是 dev 构建（各种签名方式下根本判断不准）。
+- **按设备归属过滤（实现时的决定）**：发送时只选 `push_tokens.user_id = devices.user_id AND push_tokens.device_udid = devices.udid` 的 token。设备被踢出、被删除，或已换绑到别的账号后，自动不再收到原账号的推送，不需要在每个删设备的地方单独去停用 token。登出时还会显式停用（设备账号登出时保留了设备行，靠上面的过滤挡不住）。
 - **处理 APNs 响应**：`410 Unregistered`、`400 BadDeviceToken`、`DeviceTokenNotForTopic` 这几种，把 token 标记为 `inactive`，不重试。5xx 和超时交给 asynq 重试。`403` 这类证书或 key 错误要**打 Error 并走现有的静默失败告警**（参考 Apple webhook 加固时的告警做法）。
 - 消息体：`alert.title` / `alert.body`、`sound=default`；`data.route` 和 `data.push_id` 放在自定义字段里。
 
@@ -122,8 +124,9 @@ func PushToUser(ctx context.Context, userID uint64, req PushRequest) error
 - 文案：按品牌和 `users.language` 写在 Go 代码的模板表里，覆盖 zh-CN / zh-TW / en-US / ja，缺语言时按品牌的默认语言兜底。不带金额、邮箱、订单号。
 
 ### 6.5 后台手动群发（营销类）
-- `POST /app/admin/push/send`：参数为 `UserFilter`（直接复用 EDM 那套，见 `api/type.go:834`）、`brand`、按语言给出的 `{title, body}`、`route`、`batch_id`（用来做幂等）、`dry_run`。**接口没有 `category` 参数，固定按 marketing 发（我的判断）。** 这样管理员没法把营销内容伪装成交易类，绕过用户的营销同意。交易类推送只能由代码里的触发点发出。
+- `POST /app/admin/push/send`：参数为显式的 `userIds` 列表（**更正**：`api/type.go` 里的 `UserFilter` 是没有任何调用方的死类型，EDM 实际做法是调用方给出明确的收件人列表，这里照搬 EDM），外加 `brand`、按语言给出的 `{title, body}`、`route`、`batch_id`（用来做幂等）、`dry_run`。**接口没有 `category` 参数，固定按 marketing 发（我的判断）。** 这样管理员没法把营销内容伪装成交易类，绕过用户的营销同意。交易类推送只能由代码里的触发点发出。
   - `dry_run=true` 时返回：命中多少用户、其中有有效 token 的多少、其中已同意营销的多少。真正发送时逐个调用 `PushToUser`，按结果汇总。
+- 真正发送要走现有的审批流 `SubmitApproval(c, "push_send", ...)`，和 EDM 的 `edm_send` 一样：超管直接执行，其他角色进审批。`dry_run` 不需要审批。`userIds` 里每个用户都必须属于 `brand`，不属于的计入 skipped。
 - `GET /app/admin/push/batches/:batch_id`：返回 `push_send_logs` 的汇总。
 - kaitu-center MCP 新增工具 `send_push`（先 dry run，确认后再真正发送）和 `get_push_batch_stats`，写法参考现有的 EDM 工具。
 

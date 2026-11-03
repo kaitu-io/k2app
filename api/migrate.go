@@ -151,6 +151,7 @@ func Migrate() error {
 		&EmailSendLog{},
 		// 推送通知系统
 		&PushToken{},
+		&PushSendLog{},
 		// ECH 密钥管理
 		&ECHKey{},
 		// 分销商沟通记录
