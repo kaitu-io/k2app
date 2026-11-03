@@ -6,6 +6,7 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import PurchaseClient from '../PurchaseClient';
+import { ApiError, ErrorCode } from '@/lib/api';
 
 const mockGetUserProfile = vi.fn();
 const mockGetPlans = vi.fn();
@@ -49,8 +50,11 @@ vi.mock('@/components/PurchaseStep2', () => ({
   default: ({ selectedPlan }: { selectedPlan: string }) => <div data-testid="selected-plan">{selectedPlan}</div>,
 }));
 vi.mock('@/components/PurchaseStep3', () => ({
-  default: ({ showCampaign, campaignCode }: { showCampaign: boolean; campaignCode: string }) => (
-    <input data-testid="campaign" data-shown={String(showCampaign)} value={campaignCode} readOnly />
+  default: ({ showCampaign, campaignCode, campaignError }: { showCampaign: boolean; campaignCode: string; campaignError?: string }) => (
+    <>
+      <input data-testid="campaign" data-shown={String(showCampaign)} value={campaignCode} readOnly />
+      <div data-testid="campaign-error">{campaignError}</div>
+    </>
   ),
 }));
 vi.mock('@/lib/pay-link', () => ({ payLink: () => '/pay', openPayLink: vi.fn() }));
@@ -112,5 +116,16 @@ describe('PurchaseClient URL prefill', () => {
     fireEvent.click(screen.getByTestId('login'));
     expect((screen.getByTestId('campaign') as HTMLInputElement).value).toBe('TRIAL80');
     expect(screen.getByTestId('selected-plan').textContent).toBe('p12');
+  });
+
+  it('shows the invalid-campaign message for a prefilled bad code', async () => {
+    mockQuery = 'campaign=BADCODE';
+    mockCreateOrder.mockRejectedValue(new ApiError(ErrorCode.InvalidCampaignCode, 'invalid'));
+    render(<PurchaseClient />);
+    await waitFor(() =>
+      expect(screen.getByTestId('campaign-error').textContent).toBe('purchase.purchase.invalidCampaignCode'),
+    );
+    expect(mockCreateOrder.mock.calls[0][0]).toMatchObject({ preview: true, campaignCode: 'BADCODE' });
+    expect((screen.getByTestId('campaign') as HTMLInputElement).value).toBe('BADCODE');
   });
 });
