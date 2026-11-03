@@ -2,6 +2,8 @@
  * 试用结束用户的订阅面板文案：用真实 i18n（zh-CN）断言。
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { render, screen } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import i18n, { i18nPromise, changeLanguage } from '../../../i18n/i18n';
@@ -74,6 +76,18 @@ describe('IosSubscribePanel trial ended', () => {
     expect(screen.getByTestId('iap-trial-ended').textContent).toBe('你的 7 天试用已结束，订阅后立即恢复使用');
     expect(container.textContent).not.toContain('免费');
     expect(screen.getByTestId('iap-subscribe-btn').textContent).toBe('立即订阅');
+  });
+
+  it('locale copy: zh-TW/zh-HK are Traditional (differ from zh-CN), ja has no free-trial wording', () => {
+    // 非当前语言不一定已加载，直接读 locale 文件。
+    const copy = (lng: string) =>
+      (JSON.parse(readFileSync(resolve(__dirname, `../../../i18n/locales/${lng}/purchase.json`), 'utf8')) as any)
+        .purchase.iap.trialEnded as string;
+    for (const lng of ['zh-TW', 'zh-HK']) {
+      expect(copy(lng)).toContain('試用已結束');
+      expect(copy(lng)).not.toBe(copy('zh-CN'));
+    }
+    expect(copy('ja')).not.toContain('無料');
   });
 
   it('hidden when eligible', () => {

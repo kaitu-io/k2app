@@ -31,7 +31,8 @@ export function trialOfferOf(p?: IapProduct): { days: number } | null {
 /**
  * 试用已用完且未转化：商品配了免费试用、当前 Apple ID 已无资格（用过），
  * 账号从未付过费，且没有活跃 Apple 订阅。
- * `user.subscriptions` 由服务端只返回活跃（未过期）订阅，故存在 apple 条目即「活跃」。
+ * `user.subscriptions` 由服务端只返回仍有效的订阅（active，含 grace / billing_retry 宽限期；
+ * 见 api isSubscriptionLive），故存在 apple 条目即「活跃」。
  * 未登录（user 为空）→ false。
  */
 export function trialUsedUp(p: IapProduct | undefined, user: DataUser | null): boolean {
