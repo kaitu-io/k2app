@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"net/url"
@@ -137,6 +138,66 @@ var trialRecallCampaignCode = "TRIAL80"
 
 type trialRecallResult struct {
 	Candidates, Holdout, AlreadySent, NoEmail, Sent, Skipped, Failed int
+	// PushQueued 已入队的推送数；PushErrors 按原因计数（no_token / not_consented / duplicate /
+	// channel_unavailable / invalid_route / invalid_request / other）。duplicate 表示此前已入队，不算失败。
+	PushQueued int
+	PushErrors map[string]int
+}
+
+// 推送与告警出口，包级 var 仅为测试可替换。
+var (
+	trialRecallPushToUser = PushToUser
+	trialRecallAlert      = func(msg string) { _ = slack.Send("alert", msg) }
+)
+
+// trialRecallPush 给一个候选发推送，返回 false = 通道不可用（本阶段不必再试）。
+// 推送与邮件相互独立：不看邮箱、不看邮件是否已发；幂等靠 DedupKey。
+// S1 是账户到期提醒（transactional），对照组也发；S2 是召回（marketing），对照组不发。
+func trialRecallPush(ctx context.Context, stage trialRecallStage, c trialRecallCandidate, res *trialRecallResult) bool {
+	category := PushCategoryTransactional
+	if stage == trialRecallS2 {
+		if inTrialRecallHoldout(c.User.ID) {
+			return true
+		}
+		category = PushCategoryMarketing
+	}
+	title, body := trialRecallPushCopy(stage, c.User.Language, time.Unix(c.TrialEndsAt, 0))
+	err := trialRecallPushToUser(ctx, c.User.ID, PushRequest{
+		Category: category,
+		DedupKey: trialRecallDedupKey(stage, c.User.ID),
+		Title:    title,
+		Body:     body,
+		Route:    "/purchase",
+	})
+	reason := ""
+	switch {
+	case err == nil:
+		res.PushQueued++
+		return true
+	case errors.Is(err, ErrPushNoActiveToken):
+		reason = "no_token"
+	case errors.Is(err, ErrPushNotConsented):
+		reason = "not_consented"
+	case errors.Is(err, ErrPushDuplicate):
+		reason = "duplicate"
+	case errors.Is(err, ErrPushChannelUnavailable):
+		reason = "channel_unavailable"
+		log.Warnf(ctx, "[TRIAL-RECALL] stage=%s push channel unavailable (APNs not configured), skipping pushes", stage)
+	case errors.Is(err, ErrPushInvalidRoute):
+		reason = "invalid_route"
+		log.Errorf(ctx, "[TRIAL-RECALL] push user=%d: %v", c.User.ID, err)
+	case errors.Is(err, ErrPushInvalidRequest):
+		reason = "invalid_request"
+		log.Errorf(ctx, "[TRIAL-RECALL] push user=%d: %v", c.User.ID, err)
+	default:
+		reason = "other"
+		log.Errorf(ctx, "[TRIAL-RECALL] push user=%d failed: %v", c.User.ID, err)
+	}
+	if res.PushErrors == nil {
+		res.PushErrors = map[string]int{}
+	}
+	res.PushErrors[reason]++
+	return reason != "channel_unavailable"
 }
 
 // handleTrialRecallTask 每日任务：S1 与 S2 各跑一遍。
@@ -276,11 +337,7 @@ func trialRecallEmailVars(ctx context.Context, stage trialRecallStage, c trialRe
 			trialRecallCampaignCode, planPID, stage),
 	}
 	if stage == trialRecallS1 {
-		loc, err := time.LoadLocation("Asia/Shanghai")
-		if err != nil {
-			loc = time.FixedZone("CST", 8*3600)
-		}
-		vars["TrialEndDate"] = time.Unix(c.TrialEndsAt, 0).In(loc).Format("2006-01-02")
+		vars["TrialEndDate"] = trialRecallDateString(c.TrialEndsAt)
 	}
 	return vars, true
 }
@@ -289,27 +346,32 @@ func trialRecallEmailVars(ctx context.Context, stage trialRecallStage, c trialRe
 func processTrialRecall(ctx context.Context, stage trialRecallStage, now time.Time) trialRecallResult {
 	var res trialRecallResult
 	defer func() {
-		log.Infof(ctx, "[TRIAL-RECALL] stage=%s candidates=%d holdout=%d already_sent=%d no_email=%d sent=%d skipped=%d failed=%d",
-			stage, res.Candidates, res.Holdout, res.AlreadySent, res.NoEmail, res.Sent, res.Skipped, res.Failed)
+		log.Infof(ctx, "[TRIAL-RECALL] stage=%s candidates=%d holdout=%d already_sent=%d no_email=%d sent=%d skipped=%d failed=%d push_queued=%d push_errors=%v",
+			stage, res.Candidates, res.Holdout, res.AlreadySent, res.NoEmail, res.Sent, res.Skipped, res.Failed, res.PushQueued, res.PushErrors)
 		if res.Failed > 0 {
-			slack.Send("alert", fmt.Sprintf("[TRIAL-RECALL] 阶段 %s 有 %d 封发送失败（sent=%d），请查 email_send_logs 与模板变量。",
-				stage, res.Failed, res.Sent))
+			trialRecallAlert(fmt.Sprintf("[TRIAL-RECALL] 阶段 %s 有 %d 封发送失败（sent=%d，push_queued=%d），请查 email_send_logs 与模板变量。",
+				stage, res.Failed, res.Sent, res.PushQueued))
+		}
+		if n := res.PushErrors["other"]; n > 0 {
+			trialRecallAlert(fmt.Sprintf("[TRIAL-RECALL] 阶段 %s 有 %d 条推送入队失败（push_queued=%d，errors=%v），请查 app.log。",
+				stage, n, res.PushQueued, res.PushErrors))
 		}
 	}()
 
+	// 邮件前置条件不满足时只跳过邮件（告警），推送不依赖它们，候选照常加载。
+	// 活动码 / 套餐不可用：整个阶段不发邮件，名额不消耗（没有日志行，下次仍是候选）。
 	slug := trialRecallSlugs[stage]
+	emailReady := true
 	if !templateSlugExists(slug) {
-		msg := fmt.Sprintf("[TRIAL-RECALL] 模板 slug=%q 不存在，跳过阶段 %s。请在管理后台创建该模板。", slug, stage)
+		msg := fmt.Sprintf("[TRIAL-RECALL] 模板 slug=%q 不存在，跳过阶段 %s 的邮件。请在管理后台创建该模板。", slug, stage)
 		log.Errorf(ctx, "%s", msg)
-		slack.Send("alert", msg)
-		return res
-	}
-	// 活动码 / 套餐不可用：整个阶段不发，名额不消耗（没有日志行，下次仍是候选）。
-	if _, ok := trialRecallEmailVars(ctx, stage, trialRecallCandidate{}, ""); !ok {
-		msg := fmt.Sprintf("[TRIAL-RECALL] 活动码 %q 不可用或无在售 App 套餐，跳过阶段 %s。", trialRecallCampaignCode, stage)
+		trialRecallAlert(msg)
+		emailReady = false
+	} else if _, ok := trialRecallEmailVars(ctx, stage, trialRecallCandidate{}, ""); !ok {
+		msg := fmt.Sprintf("[TRIAL-RECALL] 活动码 %q 不可用或无在售 App 套餐，跳过阶段 %s 的邮件。", trialRecallCampaignCode, stage)
 		log.Errorf(ctx, "%s", msg)
-		slack.Send("alert", msg)
-		return res
+		trialRecallAlert(msg)
+		emailReady = false
 	}
 
 	cands, err := trialRecallCandidates(ctx, stage, now)
@@ -320,6 +382,22 @@ func processTrialRecall(ctx context.Context, stage trialRecallStage, now time.Ti
 	}
 	res.Candidates = len(cands)
 	if len(cands) == 0 {
+		return res
+	}
+
+	// 推送先于邮件：邮件段的任何提前返回都不应让推送丢失。
+	pushing := true
+	for _, c := range cands {
+		if pushing {
+			pushing = trialRecallPush(ctx, stage, c, &res)
+		}
+	}
+	if !emailReady {
+		for _, c := range cands {
+			if inTrialRecallHoldout(c.User.ID) {
+				res.Holdout++
+			}
+		}
 		return res
 	}
 

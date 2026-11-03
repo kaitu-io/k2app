@@ -475,7 +475,7 @@ func TestProcessTrialRecall_MissingTemplateSendsNothing(t *testing.T) {
 	u, _ := seedTrialRecallRecipient(t, false, now.Add(40*time.Hour).Unix())
 
 	r := processTrialRecall(context.Background(), trialRecallS1, now)
-	assert.Equal(t, trialRecallResult{}, r)
+	assert.Equal(t, 0, r.Sent, "%+v", r)
 	assert.Empty(t, trialRecallLogs(t, u.ID))
 }
 
