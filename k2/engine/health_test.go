@@ -1654,14 +1654,20 @@ func TestHeartbeat_CCWindowDiffAndSenderEpoch(t *testing.T) {
 	}
 }
 
-// TestEchoStep_NotProbedLeavesTrustAndStrikes: a probe with no live
-// connection (wire.ErrEchoNoConnection) measured nothing. It must neither
-// grow trust nor — the field harm — zero a strike streak in progress, and it
-// must not be classified unsupported.
-func TestEchoStep_NotProbedLeavesTrustAndStrikes(t *testing.T) {
+// TestEchoStep_NotProbedMatchesUnsupportedArithmetic: a probe with no live
+// connection (wire.ErrEchoNoConnection) must be classified echoNotProbed (not
+// unsupported — that produced the false DIAG), while its trust/strike
+// arithmetic stays identical to the shipped unsupported branch so the probe
+// cadence and re-race timing do not change.
+func TestEchoStep_NotProbedMatchesUnsupportedArithmetic(t *testing.T) {
 	err := fmt.Errorf("%w: no cached connection", wire.ErrEchoNoConnection)
 	res := echoStep(2, 2, err)
-	if res.NewTrust != 2 || res.NewStrikes != 2 || res.ShouldRerace || res.Classify != echoNotProbed {
-		t.Fatalf("not-probed must leave trust=2 strikes=2 untouched, got %+v", res)
+	ref := echoStep(2, 2, errors.New("echo: read response: EOF")) // shipped unsupported path
+	if ref.Classify != echoUnsupported {
+		t.Fatalf("reference error must classify unsupported, got %+v", ref)
+	}
+	if res.Classify != echoNotProbed || res.ShouldRerace ||
+		res.NewTrust != ref.NewTrust || res.NewStrikes != ref.NewStrikes {
+		t.Fatalf("not-probed must match unsupported arithmetic %+v, got %+v", ref, res)
 	}
 }
