@@ -46,3 +46,18 @@ describe('subscriptionAffordance (renewWindowDays = 30, 方案 B)', () => {
     expect(r.mode).toBe('status');
   });
 });
+
+describe('shipped RENEW_WINDOW_DAYS covers reminder landings', () => {
+  // renewal_3d 推送发送时最多剩约 4 天；7 天提醒邮件剩 7–8 天里的前 7 天。
+  it.each([1, 3, 4, 7])('non-sub member with %i days left → subscribe (has a CTA)', async (d) => {
+    const { RENEW_WINDOW_DAYS } = await import('../../hooks/useSubscriptionAffordance');
+    const r = subscriptionAffordance({ expiredAt: NOW + d * DAY, subscriptions: [], nowSec: NOW, renewWindowDays: RENEW_WINDOW_DAYS });
+    expect(r.mode).toBe('subscribe');
+  });
+
+  it('non-sub member with 60 days left → status (no double-pay)', async () => {
+    const { RENEW_WINDOW_DAYS } = await import('../../hooks/useSubscriptionAffordance');
+    const r = subscriptionAffordance({ expiredAt: NOW + 60 * DAY, subscriptions: [], nowSec: NOW, renewWindowDays: RENEW_WINDOW_DAYS });
+    expect(r.mode).toBe('status');
+  });
+});
