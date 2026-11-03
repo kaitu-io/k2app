@@ -10,6 +10,29 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// waitHomeRegistered blocks until the server-side Home handler has registered
+// udid with the router. The client's WS Dial returns as soon as the server
+// writes the 101 response, but handleWSHome only calls router.SetHome after
+// that, on its own goroutine — an Away dialed in that gap gets {"type":"error"}
+// ("home not connected") and Home never sees session-start. Under CPU
+// contention on k2ci the gap was hit regularly.
+func waitHomeRegistered(t *testing.T, h *Handler, udid string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		h.router.mu.Lock()
+		ok := h.router.homeWS[udid] != nil
+		h.router.mu.Unlock()
+		if ok {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("home %q never registered with the router", udid)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // claimAndRegister is a test helper that claims a UDID and registers it.
 // Returns the registration token.
 func claimAndRegister(t *testing.T, h *Handler, udid string) string {
@@ -77,6 +100,7 @@ func TestSession_HomeAwayExchange(t *testing.T) {
 	// 1. Home connects via WS.
 	homeWS := dialWS(t, srv.URL, "udid="+udid+"&token="+token+"&role=home")
 	defer homeWS.Close()
+	waitHomeRegistered(t, h, udid)
 
 	// 2. Away connects via WS — triggers session creation.
 	awayWS := dialWS(t, srv.URL, "udid="+udid+"&role=away")
@@ -150,6 +174,7 @@ func TestSession_AwayDisconnectNotifiesHome(t *testing.T) {
 
 	homeWS := dialWS(t, srv.URL, "udid="+udid+"&token="+token+"&role=home")
 	defer homeWS.Close()
+	waitHomeRegistered(t, h, udid)
 
 	awayWS := dialWS(t, srv.URL, "udid="+udid+"&role=away")
 
