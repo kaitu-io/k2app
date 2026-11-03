@@ -36,7 +36,7 @@ type trialRecallCandidate struct {
 // S1 不能用 "expired_at > now" 判断：Apple 试用分支会把 user.expired_at 推到试用结束时刻，
 // 所以用 expired_at <= trial_ends_at + 1 天 表示"没有别的付费权益盖过试用"。
 // S2 不要求 is_trial：试用结束后该标记可能已被清掉；也不看 subscription.status（可能滞留 active），
-// 只排除 billing_retry（扣款重试中，仍有机会自愈）。
+// 排除 billing_retry / grace（Apple 仍在尝试扣款，有机会自愈）。
 func trialRecallCandidates(ctx context.Context, stage trialRecallStage, now time.Time) ([]trialRecallCandidate, error) {
 	q := db.Get().WithContext(ctx).Model(&Subscription{}).
 		Joins("JOIN users ON users.id = subscriptions.user_id").
@@ -55,7 +55,7 @@ func trialRecallCandidates(ctx context.Context, stage trialRecallStage, now time
 		q = q.Where("subscriptions.trial_ends_at >= ? AND subscriptions.trial_ends_at < ?",
 			now.Add(-10*24*time.Hour).Unix(), now.Add(-24*time.Hour).Unix()).
 			Where("users.expired_at <= ?", now.Unix()).
-			Where("subscriptions.status <> ?", "billing_retry")
+			Where("subscriptions.status NOT IN ?", []string{"billing_retry", "grace"})
 	default:
 		return nil, fmt.Errorf("unknown trial recall stage %q", stage)
 	}
@@ -168,6 +168,36 @@ func trialRecallAlreadySent(stage trialRecallStage, userIDs []uint64) (map[uint6
 	return out, nil
 }
 
+// trialRecallRecorded 返回该阶段已有任意状态日志行的用户（sent / failed / skipped 都算），
+// 仅用于决定是否补写 holdout / no_email 的 skipped 记录，绝不参与"是否已发"的判断。
+func trialRecallRecorded(stage trialRecallStage, userIDs []uint64) (map[uint64]bool, error) {
+	out := map[uint64]bool{}
+	if len(userIDs) == 0 {
+		return out, nil
+	}
+	var ids []uint64
+	err := db.Get().Model(&EmailSendLog{}).
+		Where("batch_id LIKE ? AND user_id IN ?", fmt.Sprintf("trial-recall:%s:%%", stage), userIDs).
+		Distinct().Pluck("user_id", &ids).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out, nil
+}
+
+// trialRecallTemplateID 该阶段模板的 ID（供 skipped 记录关联）；查不到返回 0。
+func trialRecallTemplateID(slug string) uint64 {
+	var tpl EmailMarketingTemplate
+	if err := db.Get().Where("slug = ? AND brand = ? AND is_active = ? AND origin_id IS NULL", slug, string(BrandKaitu), true).
+		Order("id ASC").First(&tpl).Error; err != nil {
+		return 0
+	}
+	return tpl.ID
+}
+
 // trialRecallLocale 开途官网只有 zh-CN / zh-TW / zh-HK；其余语言一律 zh-CN。
 func trialRecallLocale(lang string) string {
 	if lang == "zh-TW" || lang == "zh-HK" {
@@ -202,6 +232,22 @@ func trialRecallAppPlans(ctx context.Context) ([]Plan, error) {
 	return plans, err
 }
 
+// trialRecallSavingsText 由在售 App 套餐价格区间算出立减文案；plans 不能为空。
+func trialRecallSavingsText(plans []Plan) string {
+	minPrice, maxPrice := plans[0].Price, plans[0].Price
+	for _, p := range plans {
+		if p.Price < minPrice {
+			minPrice = p.Price
+		}
+		if p.Price > maxPrice {
+			maxPrice = p.Price
+		}
+	}
+	minSave := minPrice * uint64(100-trialRecallDiscountPct) / 100
+	maxSave := maxPrice * uint64(100-trialRecallDiscountPct) / 100
+	return fmt.Sprintf("立减 %s 起，最高立减 %s", formatCents(minSave), formatCents(maxSave))
+}
+
 // trialRecallEmailVars 计算邮件变量；false = 活动码不可用或没有在售 App 套餐，此时不应发信。
 func trialRecallEmailVars(ctx context.Context, stage trialRecallStage, c trialRecallCandidate, email string) (map[string]string, bool) {
 	if getCampaignByCode(ctx, trialRecallCampaignCode, BrandKaitu) == nil {
@@ -215,25 +261,17 @@ func trialRecallEmailVars(ctx context.Context, stage trialRecallStage, c trialRe
 	if len(plans) == 0 {
 		return nil, false
 	}
-	minPrice, maxPrice := plans[0].Price, plans[0].Price
 	planPID := ""
 	for _, p := range plans {
-		if p.Price < minPrice {
-			minPrice = p.Price
-		}
-		if p.Price > maxPrice {
-			maxPrice = p.Price
-		}
-		if planPID == "" && p.Month == 12 {
+		if p.Month == 12 {
 			planPID = p.PID
+			break
 		}
 	}
-	minSave := minPrice * uint64(100-trialRecallDiscountPct) / 100
-	maxSave := maxPrice * uint64(100-trialRecallDiscountPct) / 100
 	vars := map[string]string{
 		"CampaignCode": trialRecallCampaignCode,
 		"ValidDays":    trialRecallValidDays,
-		"SavingsText":  fmt.Sprintf("立减 %s 起，最高立减 %s", formatCents(minSave), formatCents(maxSave)),
+		"SavingsText":  trialRecallSavingsText(plans),
 		"PurchaseURL": trialRecallPurchaseURLLocale(trialRecallLocale(c.User.Language), email,
 			trialRecallCampaignCode, planPID, stage),
 	}
@@ -253,6 +291,10 @@ func processTrialRecall(ctx context.Context, stage trialRecallStage, now time.Ti
 	defer func() {
 		log.Infof(ctx, "[TRIAL-RECALL] stage=%s candidates=%d holdout=%d already_sent=%d no_email=%d sent=%d skipped=%d failed=%d",
 			stage, res.Candidates, res.Holdout, res.AlreadySent, res.NoEmail, res.Sent, res.Skipped, res.Failed)
+		if res.Failed > 0 {
+			slack.Send("alert", fmt.Sprintf("[TRIAL-RECALL] 阶段 %s 有 %d 封发送失败（sent=%d），请查 email_send_logs 与模板变量。",
+				stage, res.Failed, res.Sent))
+		}
 	}()
 
 	slug := trialRecallSlugs[stage]
@@ -292,19 +334,38 @@ func processTrialRecall(ctx context.Context, stage trialRecallStage, now time.Ti
 		return res
 	}
 
+	// 对照组 / 无邮箱的候选不发信，但首次见到时落一条 skipped 记录，事后才能算召回组 vs 对照组转化。
+	recorded, err := trialRecallRecorded(stage, ids)
+	if err != nil {
+		log.Errorf(ctx, "[TRIAL-RECALL] query recorded logs failed: %v", err)
+		res.Failed++
+		return res
+	}
+	batchID := fmt.Sprintf("trial-recall:%s:%s", stage, now.UTC().Format("2006-01-02"))
+	templateID := trialRecallTemplateID(slug)
+	record := func(c trialRecallCandidate, email, reason string) {
+		if recorded[c.User.ID] {
+			return
+		}
+		recorded[c.User.ID] = true
+		createEmailSendLog(ctx, batchID, templateID, c.User.ID, email, "", EmailSendLogStatusSkipped, reason)
+	}
+
 	items := make([]SendEmailItem, 0, len(cands))
 	for _, c := range cands {
+		email := getUserEmailFromIdentifies(&c.User)
 		switch {
 		case inTrialRecallHoldout(c.User.ID):
 			res.Holdout++
+			record(c, email, "holdout")
 			continue
 		case sentSet[c.User.ID]:
 			res.AlreadySent++
 			continue
 		}
-		email := getUserEmailFromIdentifies(&c.User)
 		if email == "" {
 			res.NoEmail++
+			record(c, "", "no_email")
 			continue
 		}
 		vars, ok := trialRecallEmailVars(ctx, stage, c, email)
@@ -319,7 +380,7 @@ func processTrialRecall(ctx context.Context, stage trialRecallStage, now time.Ti
 	}
 
 	result, err := SendTemplatedEmails(ctx, &SendEmailsRequest{
-		BatchID: fmt.Sprintf("trial-recall:%s:%s", stage, now.UTC().Format("2006-01-02")),
+		BatchID: batchID,
 		Brand:   string(BrandKaitu),
 		Items:   items,
 	})

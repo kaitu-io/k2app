@@ -119,6 +119,16 @@ func TestTrialRecallCandidates_S2_SkipsBillingRetry(t *testing.T) {
 	assert.NotContains(t, trialRecallIDs(t, trialRecallS2, now), u.ID)
 }
 
+func TestTrialRecallCandidates_S2_SkipsGrace(t *testing.T) {
+	skipIfNoConfig(t)
+	now := time.Now()
+	te := now.Add(-3 * 24 * time.Hour).Unix()
+	s := trialRecallDefaults()
+	s.expiredAt, s.status = te, "grace"
+	u, _ := seedTrialRecallUser(t, s, te)
+	assert.NotContains(t, trialRecallIDs(t, trialRecallS2, now), u.ID, "Apple 仍在扣款宽限期内")
+}
+
 func TestTrialRecallCandidates_S2_SkipsActiveMembership(t *testing.T) {
 	skipIfNoConfig(t)
 	now := time.Now()
@@ -307,6 +317,34 @@ func seedTrialRecallRecipient(t *testing.T, wantHoldout bool, trialEnd int64) (U
 	return User{}, ""
 }
 
+// seedTrialRecallNoEmail 建一个没有邮箱的 S1 候选用户（holdout 桶由 wantHoldout 决定）。
+func seedTrialRecallNoEmail(t *testing.T, wantHoldout bool, trialEnd int64) User {
+	t.Helper()
+	for i := 0; i < 400; i++ {
+		trialRecallSeq++
+		uniq := fmt.Sprintf("%d-%d", time.Now().UnixNano(), trialRecallSeq)
+		u := User{UUID: "usr-trn-" + uniq, ExpiredAt: trialEnd, IsFirstOrderDone: BoolPtr(false), Brand: "kaitu", Language: "zh-CN"}
+		require.NoError(t, db.Get().Create(&u).Error)
+		if inTrialRecallHoldout(u.ID) != wantHoldout {
+			db.Get().Unscoped().Delete(&u)
+			continue
+		}
+		t.Cleanup(func() {
+			db.Get().Unscoped().Where("user_id = ?", u.ID).Delete(&EmailSendLog{})
+			db.Get().Unscoped().Where("user_id = ?", u.ID).Delete(&LoginIdentify{})
+			db.Get().Unscoped().Delete(&u)
+		})
+		sub := Subscription{UserID: u.ID, Provider: SubscriptionProviderApple,
+			ProviderSubscriptionID: "TRN-" + uniq, ProductID: "io.kaitu.sub.basic.1y",
+			Environment: "Production", Status: "active", IsTrial: true, TrialEndsAt: trialEnd}
+		require.NoError(t, db.Get().Create(&sub).Error)
+		t.Cleanup(func() { db.Get().Unscoped().Delete(&sub) })
+		return u
+	}
+	t.Fatal("could not seed a user with the wanted holdout bucket")
+	return User{}
+}
+
 func trialRecallLogs(t *testing.T, userID uint64) []EmailSendLog {
 	t.Helper()
 	var logs []EmailSendLog
@@ -359,7 +397,60 @@ func TestProcessTrialRecall_HoldoutNotEmailed(t *testing.T) {
 	r := processTrialRecall(context.Background(), trialRecallS1, now)
 	assert.Equal(t, 1, r.Holdout, "%+v", r)
 	assert.Equal(t, 0, r.Sent, "%+v", r)
-	assert.Empty(t, trialRecallLogs(t, u.ID))
+
+	// 首次见到即落一条 skipped / holdout 记录；隔天再跑不会堆积。
+	logs := trialRecallLogs(t, u.ID)
+	require.Len(t, logs, 1)
+	assert.Equal(t, EmailSendLogStatusSkipped, logs[0].Status)
+	require.NotNil(t, logs[0].ErrorMsg)
+	assert.Equal(t, "holdout", *logs[0].ErrorMsg)
+	assert.Equal(t, "trial-recall:s1:2090-01-01", logs[0].BatchID)
+	assert.NotZero(t, logs[0].TemplateID)
+
+	processTrialRecall(context.Background(), trialRecallS1, now.Add(24*time.Hour))
+	assert.Len(t, trialRecallLogs(t, u.ID), 1, "第二天不重复写")
+
+	// skipped 记录绝不算已发。
+	got, err := trialRecallAlreadySent(trialRecallS1, []uint64{u.ID})
+	require.NoError(t, err)
+	assert.False(t, got[u.ID])
+}
+
+func TestProcessTrialRecall_NoEmailRecordedOnce(t *testing.T) {
+	setupTrialRecallEnv(t, true)
+	now := trialRecallFarNow
+	u := seedTrialRecallNoEmail(t, false, now.Add(40*time.Hour).Unix())
+
+	r := processTrialRecall(context.Background(), trialRecallS1, now)
+	assert.Equal(t, 1, r.NoEmail, "%+v", r)
+	logs := trialRecallLogs(t, u.ID)
+	require.Len(t, logs, 1)
+	assert.Equal(t, EmailSendLogStatusSkipped, logs[0].Status)
+	require.NotNil(t, logs[0].ErrorMsg)
+	assert.Equal(t, "no_email", *logs[0].ErrorMsg)
+	assert.Equal(t, "", logs[0].Email)
+
+	processTrialRecall(context.Background(), trialRecallS1, now.Add(24*time.Hour))
+	assert.Len(t, trialRecallLogs(t, u.ID), 1, "第二天不重复写")
+}
+
+func TestProcessTrialRecall_NoEmailThenBoundEmailIsSent(t *testing.T) {
+	setupTrialRecallEnv(t, true)
+	now := trialRecallFarNow
+	u := seedTrialRecallNoEmail(t, false, now.Add(40*time.Hour).Unix())
+
+	r := processTrialRecall(context.Background(), trialRecallS1, now)
+	assert.Equal(t, 1, r.NoEmail, "%+v", r)
+
+	email := fmt.Sprintf("trn-%d@example.com", time.Now().UnixNano())
+	require.NoError(t, db.Get().Create(&LoginIdentify{UserID: u.ID, Type: "email", IndexID: email + "-idx", EncryptedValue: email}).Error)
+
+	r = processTrialRecall(context.Background(), trialRecallS1, now.Add(24*time.Hour))
+	assert.Equal(t, 1, r.Sent, "%+v", r)
+	assert.Equal(t, 0, r.AlreadySent)
+	var n int64
+	require.NoError(t, db.Get().Model(&EmailSendLog{}).Where("user_id = ? AND status = ?", u.ID, "sent").Count(&n).Error)
+	assert.Equal(t, int64(1), n)
 }
 
 func TestProcessTrialRecall_MissingCampaignSendsNothing(t *testing.T) {
@@ -388,6 +479,13 @@ func TestProcessTrialRecall_MissingTemplateSendsNothing(t *testing.T) {
 	assert.Empty(t, trialRecallLogs(t, u.ID))
 }
 
+func TestTrialRecallSavingsText_Exact(t *testing.T) {
+	plans := []Plan{{Price: 3900}, {Price: 9900}, {Price: 1900}}
+	// 20% 立减：最低 1900 -> 380，最高 9900 -> 1980。
+	assert.Equal(t, "立减 $3.8 起，最高立减 $19.8", trialRecallSavingsText(plans))
+	assert.Equal(t, "立减 $7.8 起，最高立减 $7.8", trialRecallSavingsText([]Plan{{Price: 3900}}))
+}
+
 func TestTrialRecallEmailVars_SavingsIgnoresRouterPlans(t *testing.T) {
 	code := setupTrialRecallEnv(t, true)
 	active := true
@@ -399,7 +497,23 @@ func TestTrialRecallEmailVars_SavingsIgnoresRouterPlans(t *testing.T) {
 	c := trialRecallCandidate{User: User{Language: "zh-CN"}, TrialEndsAt: trialRecallFarNow.Add(40 * time.Hour).Unix()}
 	vars, ok := trialRecallEmailVars(context.Background(), trialRecallS1, c, "a@example.com")
 	require.True(t, ok)
-	assert.NotContains(t, vars["SavingsText"], "$71.8", "router 套餐不进区间")
+
+	// 共享开发库里可能还有别的在售 App 套餐，所以不断言字面金额：
+	// 断言文案恰好等于「当前在售 App 套餐」算出的值，且 router 套餐与本测试的 App 套餐的归属正确。
+	plans, err := trialRecallAppPlans(context.Background())
+	require.NoError(t, err)
+	var sawFixture bool
+	for _, p := range plans {
+		assert.NotEqual(t, router.PID, p.PID, "router 套餐不进区间")
+		assert.Equal(t, ProductApp, p.Product)
+		if p.Label == "trt-plan" {
+			sawFixture = true
+		}
+	}
+	assert.True(t, sawFixture, "本测试的 App 套餐应在区间内")
+	assert.Equal(t, trialRecallSavingsText(plans), vars["SavingsText"])
+	// 若 router 价格被误纳入，最高立减会 >= $71.8。
+	assert.NotContains(t, vars["SavingsText"], "$71.8")
 	assert.Equal(t, code, vars["CampaignCode"])
 	assert.Equal(t, "本周内有效", vars["ValidDays"])
 	assert.Equal(t, "2090-01-03", vars["TrialEndDate"], "Asia/Shanghai 日期")
