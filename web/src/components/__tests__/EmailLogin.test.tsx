@@ -132,3 +132,20 @@ describe('EmailLogin password tab', () => {
     await waitFor(() => expect(onLoginSuccess).toHaveBeenCalledTimes(1));
   });
 });
+
+describe('EmailLogin initialEmail', () => {
+  it('adopts an initialEmail that arrives after mount, without clobbering typed input', () => {
+    const { rerender } = render(<EmailLogin />);
+    const input = () => screen.getAllByPlaceholderText('auth.login.emailPlaceholder')[0] as HTMLInputElement;
+    expect(input().value).toBe('');
+    rerender(<EmailLogin initialEmail="a+b@example.com" />);
+    expect(input().value).toBe('a+b@example.com');
+
+    const { rerender: rerender2 } = render(<EmailLogin />);
+    const inputs = () => screen.getAllByPlaceholderText('auth.login.emailPlaceholder') as HTMLInputElement[];
+    const typed = inputs()[inputs().length - 1];
+    fireEvent.change(typed, { target: { value: 'typed@example.com' } });
+    rerender2(<EmailLogin initialEmail="late@example.com" />);
+    expect(inputs()[inputs().length - 1].value).toBe('typed@example.com');
+  });
+});
