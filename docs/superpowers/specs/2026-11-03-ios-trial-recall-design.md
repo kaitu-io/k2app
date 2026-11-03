@@ -44,7 +44,7 @@ iOS 的限制：iOS 用户在 App 内只能走 Apple 内购（一个年付订阅
 
 - 试用状态在 `subscriptions`：`provider='apple'`、`environment='Production'`、`is_trial`、`trial_ends_at`、`auto_renew`、`status`（active|grace|billing_retry|expired|revoked）。试用不建订单、不算首单（`users.is_first_order_done` 保持 false）。
 - 邮箱只在 `login_identifies`（`type='email'`），取法 `getUserEmailFromIdentifies`。**试用只认设备、不要求邮箱**（10-20 决策），所以相当一部分试用用户是零身份设备账号，邮件够不着——**邮件覆盖率未测**（§8 第一项）。
-- 现有生命周期邮件 worker（`worker_renewal_reminder.go`，cron `30 2 * * *` UTC）刻意排除从没付过费的人（`lifecycleEmailCandidates` 要求 `is_first_order_done`，`TestRenewalReminder_ExcludesNeverPaid` 守着）。试用召回是**另一类人**，不能改那个查询，要新开一条。
+- 现有生命周期邮件 worker（`worker_renewal_reminder.go`，cron `30 2 * * *`，按服务器本地时区即北京 02:30）刻意排除从没付过费的人（`lifecycleEmailCandidates` 要求 `is_first_order_done`，`TestRenewalReminder_ExcludesNeverPaid` 守着）。试用召回是**另一类人**，不能改那个查询，要新开一条。
 - 邮件发送用 `SendTemplatedEmails`（模板 slug、按收件人品牌与语言渲染、`email_send_logs` 记日志）；模板缺失时现有做法是 Slack 告警 + 跳过（照抄）。系统内**没有退订机制**（见 §10）。
 - 活动码只作用于官网 WordGate/NextPay 下单（`api_order.go`）；`first_order` matcher = 从没付过费的新客，试用用户正好符合。现有 winback 用 `campaignVarsForBrand` 生成 `CampaignCode` / `SavingsText` / `ValidDays` 模板变量——复用。
 - 官网购买页 `web/src/app/[locale]/purchase/PurchaseClient.tsx` 的活动码**只能手输**，URL 不能预填。
@@ -70,17 +70,17 @@ David 选 **A**（2026-11-03）。上线前到期的人用 §5.4 的首跑补发
 
 | 阶段 | 时间窗（按 `trial_ends_at`） | 额外条件 | 意图 |
 |---|---|---|---|
-| **S1 到期前** | 落在「运行时刻 + 0 ～ +48 小时」 | `is_trial` 且 `auto_renew = false`；`users.expired_at ≤ trial_ends_at + 1 天` | 「试用在 X 日结束」 |
-| **S2 到期后** | 落在「运行时刻 −10 天 ～ −1 天」 | `users.expired_at ≤ now`；订阅 `status ≠ billing_retry` | 「试用已结束，限时优惠回来」 |
+| **S1 到期前** | 试用尚未结束，且已到发送时刻（结束前 24 小时，见 §5.4） | `is_trial` 且 `auto_renew = false`；`users.expired_at ≤ trial_ends_at + 1 天` | 「试用在 X 日结束」 |
+| **S2 到期后** | 已到发送时刻（结束后 24 小时，见 §5.4），且结束不超过 10 天 | `users.expired_at ≤ now`；订阅 `status ∉ {billing_retry, grace}` | 「试用已结束，限时优惠回来」 |
 
 说明：
 - **试用期间 `users.expired_at` 就等于试用结束时刻**（试用交易会把会员时长加到试用结束，`logic_apple_iap.go` 试用分支），所以 S1 不能用「`expired_at > now` 就排除」——那会排除所有人。S1 只排除会员时长**超出试用结束 1 天以上**的人（已经在官网买了、或拿了邀请奖励）。
 - **S2 以 `users.expired_at ≤ now` 为准**，不看订阅 `status` 是否已从 active 改成 expired：关了续费的试用到期后，Apple 不会扣费，但 `status` 可能要等 webhook / 对账才更新，用它判定会漏人。唯一看 `status` 的地方是排除 billing_retry（推送 spec 负责「更新付款方式」）。
 - 两个阶段都排除已付过费（`is_first_order_done`）。S1 排除续费开着的人（会被自动扣费；Apple 自己会发续费通知）。
 
-**每人每阶段终身只发一次**（不是每天一次，也不是每条订阅链一次）：幂等键 = `trial-recall:<stage>:<user_id>`。同一用户有多条试用链（换 Apple ID）时只发一次。邮件侧只有 `sent` 状态算「已发过」，`failed` 的下一次运行会重试；推送用同一个字符串当 `DedupKey`。窗口刻意比一天宽（S1 48 小时、S2 8 天），这样 cron 漏跑一天、或者 Apple 状态晚一天同步都不会漏人；重复由幂等键挡住。S1 窗口宽到 48 小时，所以文案用具体日期（`TrialEndDate`），不写「明天」。
+**每人每阶段终身只发一次**（不是每天一次，也不是每条订阅链一次）：幂等键 = `trial-recall:<stage>:<user_id>`。同一用户有多条试用链（换 Apple ID）时只发一次。邮件侧只有 `sent` 状态算「已发过」，`failed` 的下一次运行会重试；推送用同一个字符串当 `DedupKey`。判定是「到点且没发过」而不是「落在本次运行的时间片里」，所以漏跑的整点由下一次补上、Apple 状态晚同步也不漏人；重复由幂等键挡住。S1 的提前量会因静默时段在 24～34 小时之间变化，所以文案用具体日期（`TrialEndDate`），不写「明天」。
 
-S2 从结束后第 1 天开始：VPN 用户断线后很快会去找替代品，第 1 天是损失感最强的时候。窗口下界放到 −10 天，真正的去重靠幂等键，窗口宽一点等于自带补发。
+S2 从结束后约 1 天开始：VPN 用户断线后很快会去找替代品，第 1 天是损失感最强的时候。上限 10 天，窗口宽一点等于自带补发。
 
 ### 5.2 发什么
 
@@ -112,7 +112,16 @@ S2 从结束后第 1 天开始：VPN 用户断线后很快会去找替代品，�
 
 ### 5.4 运行方式
 
-- 新 Asynq cron 任务（例如 `TaskTypeTrialRecall`，独立文件 `worker_trial_recall.go`），每天跑一次，**`0 12 * * *` UTC = 北京时间 20:00**（晚间是 VPN 使用高峰，到期用户此时正想连），在 `worker_integration.go` 里接线。
+- Asynq cron 任务 `TaskTypeTrialRecall`（`worker_trial_recall.go`），**每小时整点跑一次**（`0 * * * *`，`Unique(55m)`），在 `worker_integration.go` 里接线。注意 qtoolkit 的调度器按服务器本地时区（`time.Local`，center 为 +08）解释 cron 表达式，不是 UTC。
+- **发送时刻按人定**（David 2026-11-03 批准，替代原「统一北京 20:00」）：S1 = 试用结束前 24 小时，S2 = 结束后 24 小时。Apple 试用 7 天后在开始的同一钟点结束，所以这就是此人开始试用的钟点。依据（2026-11-03，411 个开途 iOS 试用、203 人 484 天次的每日首次连接）：
+  - 按个人开始试用的钟点，落在其后续每日首次连接 ±2 小时内的比例为 34%；
+  - 把钟点随机打乱后只有 19%；
+  - 任一统一时刻都不超过 26%（统一 21:00 仅 10%）。
+
+  该数据的局限：每天只记首连，晚间使用看不见；只有约 7 天数据。
+- **静默时段**：北京时间 22:00～08:00 不发。发送时刻落在里面的提前到它之前最近的 22:00（凌晨结束的人在前一晚 22:00 收到），北京 23:00～07:59 的整点运行直接空转。
+- 邮件批次 `trial-recall:<stage>:<北京时间 YYYY-MM-DDTHH>`：`SendTemplatedEmails` 的幂等键 (batch, template, user) 不看状态，按天分批会让上一小时的 failed / no_email 行挡住当天后续重试。
+- 前置条件缺失与失败类 Slack 告警，每个北京日、每阶段、每类只发一次（进程内去重，两台 center 最多各一次）。
 - **首跑补发**：S2 的 −10 天下界让上线当天自动覆盖 10-27 以来已经到期的人；S1 漏掉的人（上线前已到期）只收 S2。对照组同样适用于补发对象。
 - 每次运行打一行汇总日志：各阶段候选数、排除原因计数、邮件 sent/skipped/failed、推送各错误计数。
 
@@ -180,7 +189,7 @@ S2 从结束后第 1 天开始：VPN 用户断线后很快会去找替代品，�
 - 邮件主打「一次性付款、不自动续费」，折扣居次（§5.2）。
 - S1 推送按交易类发（待推送会话认可，§5.2）；S1 交易类推送不进对照组（§5.6）。
 - 对照组 10%（§5.6）。
-- 定时任务北京时间 20:00 跑；S2 从结束后第 1 天开始（§5.1、§5.4）。
+- 定时任务每小时跑，每人在自己试用结束钟点的前 / 后 24 小时收到，夜间提前到 22:00；S2 从结束后约 1 天开始（§5.1、§5.4）。
 - 官网落地预填邮箱，不做免登录链接（§5.3）。
 - S1/S2 两个时间点、S2 宽窗口 + 按用户幂等去重（§5.1）。
 - S2 以会员是否已过期为准，不依赖订阅 status 是否及时更新（§5.1）。

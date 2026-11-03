@@ -41,6 +41,7 @@ func countTrialRecallAlerts(t *testing.T) *int {
 	prev := trialRecallAlert
 	trialRecallAlert = func(string) { n++ }
 	t.Cleanup(func() { trialRecallAlert = prev })
+	resetTrialRecallAlertDedupe(t)
 	return &n
 }
 
@@ -48,7 +49,7 @@ func TestTrialRecallPush_S1TransactionalEvenForHoldout(t *testing.T) {
 	setupTrialRecallEnv(t, true)
 	got := stubTrialRecallPush(t, nil)
 	now := trialRecallFarNow
-	u, _ := seedTrialRecallRecipient(t, true, now.Add(40*time.Hour).Unix())
+	u, _ := seedTrialRecallRecipient(t, true, now.Add(20*time.Hour).Unix())
 
 	r := processTrialRecall(context.Background(), trialRecallS1, now)
 	require.Len(t, *got, 1, "%+v", r)
@@ -57,7 +58,7 @@ func TestTrialRecallPush_S1TransactionalEvenForHoldout(t *testing.T) {
 	assert.Equal(t, PushCategoryTransactional, p.req.Category)
 	assert.Equal(t, trialRecallDedupKey(trialRecallS1, u.ID), p.req.DedupKey)
 	assert.Equal(t, "/purchase", p.req.Route)
-	assert.Contains(t, p.req.Body, trialRecallDateString(now.Add(40*time.Hour).Unix()))
+	assert.Contains(t, p.req.Body, trialRecallDateString(now.Add(20*time.Hour).Unix()))
 	assert.Equal(t, 1, r.PushQueued)
 	assert.Equal(t, 1, r.Holdout)
 	assert.Equal(t, 0, r.Sent, "对照组仍不发邮件")
@@ -88,7 +89,7 @@ func TestTrialRecallPush_NoEmailStillPushed_EmptyLanguageIsChinese(t *testing.T)
 	setupTrialRecallEnv(t, true)
 	got := stubTrialRecallPush(t, nil)
 	now := trialRecallFarNow
-	u := seedTrialRecallNoEmail(t, false, now.Add(40*time.Hour).Unix())
+	u := seedTrialRecallNoEmail(t, false, now.Add(20*time.Hour).Unix())
 	require.NoError(t, db.Get().Model(&User{}).Where("id = ?", u.ID).Update("language", "").Error)
 
 	r := processTrialRecall(context.Background(), trialRecallS1, now)
@@ -105,7 +106,7 @@ func TestTrialRecallPush_ErrorsCounted(t *testing.T) {
 		ErrPushInvalidRequest, fmt.Errorf("redis down")}
 	byUser := map[uint64]error{}
 	for _, e := range errs {
-		u := seedTrialRecallNoEmail(t, false, now.Add(40*time.Hour).Unix())
+		u := seedTrialRecallNoEmail(t, false, now.Add(20*time.Hour).Unix())
 		byUser[u.ID] = e
 	}
 	stubTrialRecallPush(t, func(id uint64) error { return byUser[id] })
@@ -123,7 +124,7 @@ func TestTrialRecallPush_ChannelUnavailableStopsStageNoAlert(t *testing.T) {
 	setupTrialRecallEnv(t, true)
 	now := trialRecallFarNow
 	for i := 0; i < 3; i++ {
-		seedTrialRecallNoEmail(t, false, now.Add(40*time.Hour).Unix())
+		seedTrialRecallNoEmail(t, false, now.Add(20*time.Hour).Unix())
 	}
 	got := stubTrialRecallPush(t, func(uint64) error { return ErrPushChannelUnavailable })
 	alerts := countTrialRecallAlerts(t)
@@ -139,7 +140,7 @@ func TestTrialRecallPush_StillSentWhenCampaignMissing(t *testing.T) {
 	got := stubTrialRecallPush(t, nil)
 	countTrialRecallAlerts(t)
 	now := trialRecallFarNow
-	u, _ := seedTrialRecallRecipient(t, false, now.Add(40*time.Hour).Unix())
+	u, _ := seedTrialRecallRecipient(t, false, now.Add(20*time.Hour).Unix())
 
 	r := processTrialRecall(context.Background(), trialRecallS1, now)
 	assert.Len(t, *got, 1, "%+v", r)
@@ -153,7 +154,7 @@ func TestTrialRecallPush_StillSentWhenTemplateMissing(t *testing.T) {
 	got := stubTrialRecallPush(t, nil)
 	countTrialRecallAlerts(t)
 	now := trialRecallFarNow
-	seedTrialRecallRecipient(t, false, now.Add(40*time.Hour).Unix())
+	seedTrialRecallRecipient(t, false, now.Add(20*time.Hour).Unix())
 
 	r := processTrialRecall(context.Background(), trialRecallS1, now)
 	assert.Len(t, *got, 1, "%+v", r)

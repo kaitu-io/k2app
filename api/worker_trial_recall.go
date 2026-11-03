@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/wordgate/qtoolkit/db"
@@ -20,11 +21,59 @@ import (
 type trialRecallStage string
 
 const (
-	// trialRecallS1 试用结束前 48h 内、已关自动续订的用户。
+	// trialRecallS1 仍在试用期、已关自动续订的用户；在试用结束前 24h 发（见 trialRecallSendAt）。
 	trialRecallS1 trialRecallStage = "s1"
-	// trialRecallS2 试用结束后 1~10 天、会员已过期的用户。
+	// trialRecallS2 试用结束后、会员已过期的用户；在试用结束后 24h 发，结束 10 天后不再发。
 	trialRecallS2 trialRecallStage = "s2"
 )
+
+// 发送时刻按人定（spec §5.4）：Apple 试用 7 天后在开始的同一钟点结束，开始试用的钟点又是这个人
+// 需要这个工具的习惯时段（2026-11-03 数据：落在其后续每日首连 ±2h 的比例 34%，随机打乱 19%，
+// 任一统一时刻 ≤26%）。所以 S1 = 结束前 24h、S2 = 结束后 24h，天然落在每个人自己的习惯钟点。
+// 北京时间 [22:00, 08:00) 不打扰：落在里面的发送时刻提前到它之前最近的 22:00。
+// 任务每小时跑一次，到点（sendAt <= now）且未发过的才发；漏跑的小时由下一次补上。
+const (
+	trialRecallLead        = 24 * time.Hour
+	trialRecallQuietFrom   = 22 // 北京时间，含
+	trialRecallQuietUntil  = 8  // 北京时间，不含
+	trialRecallS2MaxAfter  = 10 * 24 * time.Hour
+	trialRecallS2MinAfter  = trialRecallLead - (24-trialRecallQuietFrom+trialRecallQuietUntil)*time.Hour // 静默提前后的最早时刻：结束后 14h
+	trialRecallS1MaxBefore = trialRecallLead + (24-trialRecallQuietFrom+trialRecallQuietUntil)*time.Hour // 静默提前后的最早时刻：结束前 34h
+)
+
+func trialRecallLocation() *time.Location {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return time.FixedZone("CST", 8*3600)
+	}
+	return loc
+}
+
+// trialRecallSendAt 该阶段对一条试用（结束时刻 endsAt，unix 秒）的计划发送时刻。
+func trialRecallSendAt(stage trialRecallStage, endsAt int64) time.Time {
+	loc := trialRecallLocation()
+	t := time.Unix(endsAt, 0).In(loc)
+	if stage == trialRecallS1 {
+		t = t.Add(-trialRecallLead)
+	} else {
+		t = t.Add(trialRecallLead)
+	}
+	y, m, d := t.Date()
+	switch h := t.Hour(); {
+	case h >= trialRecallQuietFrom:
+		t = time.Date(y, m, d, trialRecallQuietFrom, 0, 0, 0, loc)
+	case h < trialRecallQuietUntil:
+		t = time.Date(y, m, d-1, trialRecallQuietFrom, 0, 0, 0, loc)
+	}
+	return t
+}
+
+// trialRecallQuietRun 北京时间 23:00~07:59 的整点运行什么都不做；22 点那次是当晚最后一次，
+// 发送时刻被提前到 22:00 的人由它发出。
+func trialRecallQuietRun(now time.Time) bool {
+	h := now.In(trialRecallLocation()).Hour()
+	return h > trialRecallQuietFrom || h < trialRecallQuietUntil
+}
 
 type trialRecallCandidate struct {
 	User           User // 预加载 LoginIdentifies
@@ -32,7 +81,9 @@ type trialRecallCandidate struct {
 	TrialEndsAt    int64
 }
 
-// trialRecallCandidates 返回指定阶段的候选；同一用户多条订阅链只保留 trial_ends_at 最新的一条。
+// trialRecallCandidates 返回指定阶段此刻已到发送时刻的候选；同一用户多条订阅链只保留 trial_ends_at 最新的一条。
+// SQL 圈出静默提前后可能到点的最宽范围，再在 Go 里按 trialRecallSendAt <= now 精确过滤。
+// S1 只选仍在试用期（is_trial）且已关自动续订的人——开着续订的试用到期会自动扣款，不需要召回。
 //
 // S1 不能用 "expired_at > now" 判断：Apple 试用分支会把 user.expired_at 推到试用结束时刻，
 // 所以用 expired_at <= trial_ends_at + 1 天 表示"没有别的付费权益盖过试用"。
@@ -49,12 +100,12 @@ func trialRecallCandidates(ctx context.Context, stage trialRecallStage, now time
 	switch stage {
 	case trialRecallS1:
 		q = q.Where("subscriptions.is_trial = ? AND subscriptions.auto_renew = ?", true, false).
-			Where("subscriptions.trial_ends_at >= ? AND subscriptions.trial_ends_at < ?",
-				now.Unix(), now.Add(48*time.Hour).Unix()).
+			Where("subscriptions.trial_ends_at > ? AND subscriptions.trial_ends_at <= ?",
+				now.Unix(), now.Add(trialRecallS1MaxBefore).Unix()).
 			Where("users.expired_at <= subscriptions.trial_ends_at + ?", 86400)
 	case trialRecallS2:
-		q = q.Where("subscriptions.trial_ends_at >= ? AND subscriptions.trial_ends_at < ?",
-			now.Add(-10*24*time.Hour).Unix(), now.Add(-24*time.Hour).Unix()).
+		q = q.Where("subscriptions.trial_ends_at >= ? AND subscriptions.trial_ends_at <= ?",
+			now.Add(-trialRecallS2MaxAfter).Unix(), now.Add(-trialRecallS2MinAfter).Unix()).
 			Where("users.expired_at <= ?", now.Unix()).
 			Where("subscriptions.status NOT IN ?", []string{"billing_retry", "grace"})
 	default:
@@ -66,7 +117,7 @@ func trialRecallCandidates(ctx context.Context, stage trialRecallStage, now time
 		return nil, err
 	}
 
-	// 按 trial_ends_at 倒序，首次出现即该用户最新的一条链。
+	// 按 trial_ends_at 倒序，首次出现即该用户最新的一条链；最新链还没到点就整个跳过（不退回旧链）。
 	seen := map[uint64]bool{}
 	var picked []Subscription
 	var userIDs []uint64
@@ -75,6 +126,9 @@ func trialRecallCandidates(ctx context.Context, stage trialRecallStage, now time
 			continue
 		}
 		seen[s.UserID] = true
+		if trialRecallSendAt(stage, s.TrialEndsAt).After(now) {
+			continue
+		}
 		picked = append(picked, s)
 		userIDs = append(userIDs, s.UserID)
 	}
@@ -149,7 +203,23 @@ type trialRecallResult struct {
 var (
 	trialRecallPushToUser = PushToUser
 	trialRecallAlert      = func(msg string) { _ = slack.Send("alert", msg) }
+
+	// 任务每小时跑：同一阶段同一类告警每个北京日只发一次，否则一个没建的模板一天响 15 次。
+	// 进程内去重，两台 center 最多各一次。
+	trialRecallAlertedMu sync.Mutex
+	trialRecallAlerted   = map[string]bool{}
 )
+
+func trialRecallAlertDaily(now time.Time, stage trialRecallStage, kind, msg string) {
+	key := fmt.Sprintf("%s:%s:%s", now.In(trialRecallLocation()).Format("2006-01-02"), stage, kind)
+	trialRecallAlertedMu.Lock()
+	dup := trialRecallAlerted[key]
+	trialRecallAlerted[key] = true
+	trialRecallAlertedMu.Unlock()
+	if !dup {
+		trialRecallAlert(msg)
+	}
+}
 
 // trialRecallPush 给一个候选发推送，返回 false = 通道不可用（本阶段不必再试）。
 // 推送与邮件相互独立：不看邮箱、不看邮件是否已发；幂等靠 DedupKey。
@@ -202,9 +272,15 @@ func trialRecallPush(ctx context.Context, stage trialRecallStage, c trialRecallC
 	return reason != "channel_unavailable"
 }
 
-// handleTrialRecallTask 每日任务：S1 与 S2 各跑一遍。
+// trialRecallNow 包级 var 仅为测试可替换。
+var trialRecallNow = time.Now
+
+// handleTrialRecallTask 每小时任务：S1 与 S2 各跑一遍；静默时段直接返回。
 func handleTrialRecallTask(ctx context.Context, _ []byte) error {
-	now := time.Now()
+	now := trialRecallNow()
+	if trialRecallQuietRun(now) {
+		return nil
+	}
 	for _, stage := range []trialRecallStage{trialRecallS1, trialRecallS2} {
 		processTrialRecall(ctx, stage, now)
 	}
@@ -351,11 +427,11 @@ func processTrialRecall(ctx context.Context, stage trialRecallStage, now time.Ti
 		log.Infof(ctx, "[TRIAL-RECALL] stage=%s candidates=%d holdout=%d already_sent=%d no_email=%d sent=%d skipped=%d failed=%d push_queued=%d push_already_queued=%d push_errors=%v",
 			stage, res.Candidates, res.Holdout, res.AlreadySent, res.NoEmail, res.Sent, res.Skipped, res.Failed, res.PushQueued, res.PushAlreadyQueued, res.PushErrors)
 		if res.Failed > 0 {
-			trialRecallAlert(fmt.Sprintf("[TRIAL-RECALL] 阶段 %s 有 %d 封发送失败（sent=%d，push_queued=%d），请查 email_send_logs 与模板变量。",
+			trialRecallAlertDaily(now, stage, "email_failed", fmt.Sprintf("[TRIAL-RECALL] 阶段 %s 有 %d 封发送失败（sent=%d，push_queued=%d），请查 email_send_logs 与模板变量。",
 				stage, res.Failed, res.Sent, res.PushQueued))
 		}
 		if n := res.PushErrors["other"]; n > 0 {
-			trialRecallAlert(fmt.Sprintf("[TRIAL-RECALL] 阶段 %s 有 %d 条推送入队失败（push_queued=%d，errors=%v），请查 app.log。",
+			trialRecallAlertDaily(now, stage, "push_other", fmt.Sprintf("[TRIAL-RECALL] 阶段 %s 有 %d 条推送入队失败（push_queued=%d，errors=%v），请查 app.log。",
 				stage, n, res.PushQueued, res.PushErrors))
 		}
 	}()
@@ -367,12 +443,12 @@ func processTrialRecall(ctx context.Context, stage trialRecallStage, now time.Ti
 	if !templateSlugExists(slug) {
 		msg := fmt.Sprintf("[TRIAL-RECALL] 模板 slug=%q 不存在，跳过阶段 %s 的邮件。请在管理后台创建该模板。", slug, stage)
 		log.Errorf(ctx, "%s", msg)
-		trialRecallAlert(msg)
+		trialRecallAlertDaily(now, stage, "template_missing", msg)
 		emailReady = false
 	} else if _, ok := trialRecallEmailVars(ctx, stage, trialRecallCandidate{}, ""); !ok {
 		msg := fmt.Sprintf("[TRIAL-RECALL] 活动码 %q 不可用或无在售 App 套餐，跳过阶段 %s 的邮件。", trialRecallCampaignCode, stage)
 		log.Errorf(ctx, "%s", msg)
-		trialRecallAlert(msg)
+		trialRecallAlertDaily(now, stage, "campaign_unavailable", msg)
 		emailReady = false
 	}
 
@@ -421,7 +497,10 @@ func processTrialRecall(ctx context.Context, stage trialRecallStage, now time.Ti
 		res.Failed++
 		return res
 	}
-	batchID := fmt.Sprintf("trial-recall:%s:%s", stage, now.UTC().Format("2006-01-02"))
+	// 批次按北京时间的小时分：SendTemplatedEmails 的幂等键 (batch, template, user) 不看状态，
+	// 按天分批时，上一小时的 failed / no_email 行会挡住当天后续每次运行的重试，S1 可能拖到试用结束。
+	// 是否已发看 trialRecallAlreadySent（跨批次、只认 sent），与批次粒度无关。
+	batchID := fmt.Sprintf("trial-recall:%s:%s", stage, now.In(trialRecallLocation()).Format("2006-01-02T15"))
 	templateID := trialRecallTemplateID(slug)
 	record := func(c trialRecallCandidate, email, reason string) {
 		if recorded[c.User.ID] {

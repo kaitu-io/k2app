@@ -188,26 +188,137 @@ func TestTrialRecallCandidates_TwoChainsOneUser(t *testing.T) {
 	assert.Equal(t, 1, n)
 }
 
-func TestTrialRecallCandidates_WindowEdges(t *testing.T) {
+// 北京时间锚点：trialRecallFarNow = 2090-01-01 20:00 CST。
+func trialRecallCST(day, hour, min int) time.Time {
+	return time.Date(2090, 1, day, hour, min, 0, 0, trialRecallLocation())
+}
+
+func TestTrialRecallSendAt_PerUserClockWithQuietHours(t *testing.T) {
+	cases := []struct {
+		name  string
+		stage trialRecallStage
+		ends  time.Time
+		want  time.Time
+	}{
+		{"S1 白天结束：前一天同一钟点", trialRecallS1, trialRecallCST(3, 14, 37), trialRecallCST(2, 14, 37)},
+		{"S1 08:00 正好不静默", trialRecallS1, trialRecallCST(3, 8, 0), trialRecallCST(2, 8, 0)},
+		{"S1 21:59 不静默", trialRecallS1, trialRecallCST(3, 21, 59), trialRecallCST(2, 21, 59)},
+		{"S1 22:00 起静默：当晚 22:00", trialRecallS1, trialRecallCST(3, 23, 30), trialRecallCST(2, 22, 0)},
+		{"S1 凌晨结束：提前到再前一晚 22:00", trialRecallS1, trialRecallCST(3, 1, 0), trialRecallCST(1, 22, 0)},
+		{"S1 07:59 也算凌晨", trialRecallS1, trialRecallCST(3, 7, 59), trialRecallCST(1, 22, 0)},
+		{"S2 白天结束：后一天同一钟点", trialRecallS2, trialRecallCST(3, 14, 37), trialRecallCST(4, 14, 37)},
+		{"S2 凌晨结束：结束当晚 22:00", trialRecallS2, trialRecallCST(3, 1, 0), trialRecallCST(3, 22, 0)},
+		{"S2 深夜结束：次日 22:00", trialRecallS2, trialRecallCST(3, 23, 30), trialRecallCST(4, 22, 0)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := trialRecallSendAt(c.stage, c.ends.Unix())
+			assert.True(t, got.Equal(c.want), "got %s want %s", got, c.want)
+			h := got.In(trialRecallLocation()).Hour()
+			assert.True(t, h >= trialRecallQuietUntil && h <= trialRecallQuietFrom, "发送时刻必须在 08:00~22:00，got %s", got)
+		})
+	}
+	// SQL 预筛的宽度必须盖住静默提前后的极端值（凌晨 07:59 结束 / 结束后最早）。
+	assert.Equal(t, 34*time.Hour, trialRecallS1MaxBefore)
+	assert.Equal(t, 14*time.Hour, trialRecallS2MinAfter)
+	assert.Equal(t, trialRecallCST(3, 7, 59).Sub(trialRecallSendAt(trialRecallS1, trialRecallCST(3, 7, 59).Unix())),
+		trialRecallS1MaxBefore-time.Minute)
+}
+
+func TestTrialRecallQuietRun(t *testing.T) {
+	for h, want := range map[int]bool{7: true, 8: false, 12: false, 21: false, 22: false, 23: true, 0: true, 3: true} {
+		assert.Equal(t, want, trialRecallQuietRun(trialRecallCST(2, h, 0)), "hour %d", h)
+	}
+	assert.Equal(t, trialRecallFarNow, trialRecallCST(1, 20, 0).UTC(), "测试锚点是北京 20:00，非静默")
+}
+
+func TestHandleTrialRecallTask_QuietHourDoesNothing(t *testing.T) {
+	setupTrialRecallEnv(t, true)
+	pushed := map[uint64]bool{}
+	trialRecallPushToUser = func(_ context.Context, uid uint64, _ PushRequest) error { pushed[uid] = true; return nil }
+	prevNow := trialRecallNow
+	t.Cleanup(func() { trialRecallNow = prevNow })
+
+	// 结束于 03 日 01:00 → 发送时刻提前到 01 日 22:00；23:00 那次运行静默，不发。
+	u, _ := seedTrialRecallRecipient(t, false, trialRecallCST(3, 1, 0).Unix())
+	trialRecallNow = func() time.Time { return trialRecallCST(1, 23, 0) }
+	require.NoError(t, handleTrialRecallTask(context.Background(), nil))
+	assert.False(t, pushed[u.ID], "静默时段空转")
+	assert.Empty(t, trialRecallLogs(t, u.ID))
+
+	// 22:00 那次（当晚最后一次非静默运行）照常发。
+	trialRecallNow = func() time.Time { return trialRecallCST(1, 22, 0) }
+	require.NoError(t, handleTrialRecallTask(context.Background(), nil))
+	assert.True(t, pushed[u.ID])
+}
+
+func TestTrialRecallCandidates_DueWindows(t *testing.T) {
 	skipIfNoConfig(t)
-	now := time.Now()
+	now := trialRecallFarNow // 北京 2090-01-01 20:00
 	s := trialRecallDefaults()
-	mk := func(te int64) User {
-		s.expiredAt = te
-		u, _ := seedTrialRecallUser(t, s, te)
+	mk := func(isTrial bool, te time.Time) User {
+		s.expiredAt, s.isTrial = te.Unix(), isTrial
+		u, _ := seedTrialRecallUser(t, s, te.Unix())
 		return u
 	}
-	in47 := mk(now.Add(47 * time.Hour).Unix())
-	out49 := mk(now.Add(49 * time.Hour).Unix())
+	// S1
+	due := mk(true, trialRecallCST(2, 20, 0))       // 发送时刻 = 01 20:00
+	notYet := mk(true, trialRecallCST(2, 21, 0))    // 01 21:00 才到点
+	nightShift := mk(true, trialRecallCST(3, 3, 0)) // 02 03:00 静默 → 01 22:00
+	ended := mk(true, trialRecallCST(1, 19, 59))    // 已结束，不再是 S1
+	beyond := mk(true, now.Add(trialRecallS1MaxBefore+time.Hour))
 	s1 := trialRecallIDs(t, trialRecallS1, now)
-	assert.Contains(t, s1, in47.ID)
-	assert.NotContains(t, s1, out49.ID)
+	assert.Contains(t, s1, due.ID)
+	assert.NotContains(t, s1, notYet.ID)
+	assert.NotContains(t, s1, nightShift.ID)
+	assert.NotContains(t, s1, ended.ID)
+	assert.NotContains(t, s1, beyond.ID)
+	at21 := trialRecallIDs(t, trialRecallS1, trialRecallCST(1, 21, 0))
+	assert.Contains(t, at21, notYet.ID, "下一个整点到点")
+	assert.NotContains(t, at21, nightShift.ID)
+	assert.Contains(t, trialRecallIDs(t, trialRecallS1, trialRecallCST(1, 22, 0)), nightShift.ID, "凌晨结束的人在前一晚 22:00 收到")
 
-	in := mk(now.Add(-24*time.Hour - time.Second).Unix())
-	out := mk(now.Add(-10*24*time.Hour - time.Second).Unix())
+	// S2
+	s2due := mk(false, trialRecallCST(0, 20, 0)) // 结束后 24h = 01 20:00
+	s2notYet := mk(false, trialRecallCST(0, 21, 0))
+	s2early := mk(false, trialRecallCST(1, 3, 0)) // 02 03:00 静默 → 01 22:00
+	s2old := mk(false, now.Add(-trialRecallS2MaxAfter-time.Second))
 	s2 := trialRecallIDs(t, trialRecallS2, now)
-	assert.Contains(t, s2, in.ID)
-	assert.NotContains(t, s2, out.ID)
+	assert.Contains(t, s2, s2due.ID)
+	assert.NotContains(t, s2, s2notYet.ID)
+	assert.NotContains(t, s2, s2early.ID)
+	assert.NotContains(t, s2, s2old.ID)
+	assert.Contains(t, trialRecallIDs(t, trialRecallS2, trialRecallCST(1, 22, 0)), s2early.ID, "结束后 19h 的 22:00 也要能圈到")
+}
+
+func TestTrialRecallAlertDaily_OncePerStageKindAndDay(t *testing.T) {
+	resetTrialRecallAlertDedupe(t)
+	n := 0
+	prev := trialRecallAlert
+	trialRecallAlert = func(string) { n++ }
+	t.Cleanup(func() { trialRecallAlert = prev })
+
+	trialRecallAlertDaily(trialRecallCST(1, 9, 0), trialRecallS1, "template_missing", "m")
+	trialRecallAlertDaily(trialRecallCST(1, 10, 0), trialRecallS1, "template_missing", "m")
+	assert.Equal(t, 1, n, "同一天同一类只报一次")
+	trialRecallAlertDaily(trialRecallCST(1, 10, 0), trialRecallS2, "template_missing", "m")
+	trialRecallAlertDaily(trialRecallCST(1, 10, 0), trialRecallS1, "email_failed", "m")
+	assert.Equal(t, 3, n, "不同阶段 / 不同类各自报")
+	trialRecallAlertDaily(trialRecallCST(2, 9, 0), trialRecallS1, "template_missing", "m")
+	assert.Equal(t, 4, n, "第二天再报")
+}
+
+func TestProcessTrialRecall_NotDueIsUntouched(t *testing.T) {
+	setupTrialRecallEnv(t, true)
+	now := trialRecallFarNow
+	pushed := false
+	trialRecallPushToUser = func(context.Context, uint64, PushRequest) error { pushed = true; return nil }
+	u, _ := seedTrialRecallRecipient(t, false, now.Add(30*time.Hour).Unix()) // 发送时刻在 6 小时后
+
+	r := processTrialRecall(context.Background(), trialRecallS1, now)
+	assert.Equal(t, 0, r.Candidates, "%+v", r)
+	assert.False(t, pushed)
+	assert.Empty(t, trialRecallLogs(t, u.ID))
 }
 
 func TestInTrialRecallHoldout_StableAndAboutTenPercent(t *testing.T) {
@@ -234,6 +345,20 @@ func TestTrialRecallDedupKey(t *testing.T) {
 // 这样共享 dev 库里的真实数据不会混进断言；活动码有效期仍按真实时钟，所以活动码按真实时间建。
 var trialRecallFarNow = time.Date(2090, 1, 1, 12, 0, 0, 0, time.UTC)
 
+// resetTrialRecallAlertDedupe 清空按天告警去重：测试共用固定日期，不清会互相吞告警。
+func resetTrialRecallAlertDedupe(t *testing.T) {
+	t.Helper()
+	trialRecallAlertedMu.Lock()
+	prev := trialRecallAlerted
+	trialRecallAlerted = map[string]bool{}
+	trialRecallAlertedMu.Unlock()
+	t.Cleanup(func() {
+		trialRecallAlertedMu.Lock()
+		trialRecallAlerted = prev
+		trialRecallAlertedMu.Unlock()
+	})
+}
+
 // setupTrialRecallEnv 配好 dev_mode、测试专用 slug / 活动码 / 套餐 / 模板，返回活动码。
 func setupTrialRecallEnv(t *testing.T, withCampaign bool) string {
 	t.Helper()
@@ -245,6 +370,7 @@ func setupTrialRecallEnv(t *testing.T, withCampaign bool) string {
 	trialRecallPushToUser = func(context.Context, uint64, PushRequest) error { return nil }
 	trialRecallAlert = func(string) {}
 	t.Cleanup(func() { trialRecallPushToUser, trialRecallAlert = prevPush, prevAlert })
+	resetTrialRecallAlertDedupe(t)
 
 	prevDev := viper.Get("mail.dev_mode")
 	viper.Set("mail.dev_mode", true) // 绝不真发信
@@ -361,13 +487,13 @@ func trialRecallLogs(t *testing.T, userID uint64) []EmailSendLog {
 func TestProcessTrialRecall_SendsOncePerUserAcrossDays(t *testing.T) {
 	setupTrialRecallEnv(t, true)
 	now := trialRecallFarNow
-	u, _ := seedTrialRecallRecipient(t, false, now.Add(40*time.Hour).Unix())
+	u, _ := seedTrialRecallRecipient(t, false, now.Add(20*time.Hour).Unix())
 
 	r1 := processTrialRecall(context.Background(), trialRecallS1, now)
 	assert.Equal(t, 1, r1.Candidates, "%+v", r1)
 	assert.Equal(t, 1, r1.Sent, "%+v", r1)
 
-	r2 := processTrialRecall(context.Background(), trialRecallS1, now.Add(24*time.Hour))
+	r2 := processTrialRecall(context.Background(), trialRecallS1, now.Add(time.Hour))
 	assert.Equal(t, 1, r2.Candidates, "%+v", r2)
 	assert.Equal(t, 1, r2.AlreadySent, "%+v", r2)
 	assert.Equal(t, 0, r2.Sent, "%+v", r2)
@@ -380,7 +506,7 @@ func TestProcessTrialRecall_SendsOncePerUserAcrossDays(t *testing.T) {
 func TestProcessTrialRecall_FailedIsRetried(t *testing.T) {
 	setupTrialRecallEnv(t, true)
 	now := trialRecallFarNow
-	u, email := seedTrialRecallRecipient(t, false, now.Add(40*time.Hour).Unix())
+	u, email := seedTrialRecallRecipient(t, false, now.Add(20*time.Hour).Unix())
 
 	prev := &EmailSendLog{BatchID: "trial-recall:s1:2089-12-31", TemplateID: 0, UserID: u.ID, Email: email,
 		Language: "zh-CN", Status: EmailSendLogStatusFailed}
@@ -398,23 +524,23 @@ func TestProcessTrialRecall_FailedIsRetried(t *testing.T) {
 func TestProcessTrialRecall_HoldoutNotEmailed(t *testing.T) {
 	setupTrialRecallEnv(t, true)
 	now := trialRecallFarNow
-	u, _ := seedTrialRecallRecipient(t, true, now.Add(40*time.Hour).Unix())
+	u, _ := seedTrialRecallRecipient(t, true, now.Add(20*time.Hour).Unix())
 
 	r := processTrialRecall(context.Background(), trialRecallS1, now)
 	assert.Equal(t, 1, r.Holdout, "%+v", r)
 	assert.Equal(t, 0, r.Sent, "%+v", r)
 
-	// 首次见到即落一条 skipped / holdout 记录；隔天再跑不会堆积。
+	// 首次见到即落一条 skipped / holdout 记录；下一小时再跑不会堆积。
 	logs := trialRecallLogs(t, u.ID)
 	require.Len(t, logs, 1)
 	assert.Equal(t, EmailSendLogStatusSkipped, logs[0].Status)
 	require.NotNil(t, logs[0].ErrorMsg)
 	assert.Equal(t, "holdout", *logs[0].ErrorMsg)
-	assert.Equal(t, "trial-recall:s1:2090-01-01", logs[0].BatchID)
+	assert.Equal(t, "trial-recall:s1:2090-01-01T20", logs[0].BatchID)
 	assert.NotZero(t, logs[0].TemplateID)
 
-	processTrialRecall(context.Background(), trialRecallS1, now.Add(24*time.Hour))
-	assert.Len(t, trialRecallLogs(t, u.ID), 1, "第二天不重复写")
+	processTrialRecall(context.Background(), trialRecallS1, now.Add(time.Hour))
+	assert.Len(t, trialRecallLogs(t, u.ID), 1, "下一小时不重复写")
 
 	// skipped 记录绝不算已发。
 	got, err := trialRecallAlreadySent(trialRecallS1, []uint64{u.ID})
@@ -425,7 +551,7 @@ func TestProcessTrialRecall_HoldoutNotEmailed(t *testing.T) {
 func TestProcessTrialRecall_NoEmailRecordedOnce(t *testing.T) {
 	setupTrialRecallEnv(t, true)
 	now := trialRecallFarNow
-	u := seedTrialRecallNoEmail(t, false, now.Add(40*time.Hour).Unix())
+	u := seedTrialRecallNoEmail(t, false, now.Add(20*time.Hour).Unix())
 
 	r := processTrialRecall(context.Background(), trialRecallS1, now)
 	assert.Equal(t, 1, r.NoEmail, "%+v", r)
@@ -436,14 +562,14 @@ func TestProcessTrialRecall_NoEmailRecordedOnce(t *testing.T) {
 	assert.Equal(t, "no_email", *logs[0].ErrorMsg)
 	assert.Equal(t, "", logs[0].Email)
 
-	processTrialRecall(context.Background(), trialRecallS1, now.Add(24*time.Hour))
-	assert.Len(t, trialRecallLogs(t, u.ID), 1, "第二天不重复写")
+	processTrialRecall(context.Background(), trialRecallS1, now.Add(time.Hour))
+	assert.Len(t, trialRecallLogs(t, u.ID), 1, "下一小时不重复写")
 }
 
 func TestProcessTrialRecall_NoEmailThenBoundEmailIsSent(t *testing.T) {
 	setupTrialRecallEnv(t, true)
 	now := trialRecallFarNow
-	u := seedTrialRecallNoEmail(t, false, now.Add(40*time.Hour).Unix())
+	u := seedTrialRecallNoEmail(t, false, now.Add(20*time.Hour).Unix())
 
 	r := processTrialRecall(context.Background(), trialRecallS1, now)
 	assert.Equal(t, 1, r.NoEmail, "%+v", r)
@@ -451,7 +577,7 @@ func TestProcessTrialRecall_NoEmailThenBoundEmailIsSent(t *testing.T) {
 	email := fmt.Sprintf("trn-%d@example.com", time.Now().UnixNano())
 	require.NoError(t, db.Get().Create(&LoginIdentify{UserID: u.ID, Type: "email", IndexID: email + "-idx", EncryptedValue: email}).Error)
 
-	r = processTrialRecall(context.Background(), trialRecallS1, now.Add(24*time.Hour))
+	r = processTrialRecall(context.Background(), trialRecallS1, now.Add(time.Hour))
 	assert.Equal(t, 1, r.Sent, "%+v", r)
 	assert.Equal(t, 0, r.AlreadySent)
 	var n int64
@@ -462,7 +588,7 @@ func TestProcessTrialRecall_NoEmailThenBoundEmailIsSent(t *testing.T) {
 func TestProcessTrialRecall_MissingCampaignSendsNothing(t *testing.T) {
 	setupTrialRecallEnv(t, false)
 	now := trialRecallFarNow
-	u, _ := seedTrialRecallRecipient(t, false, now.Add(40*time.Hour).Unix())
+	u, _ := seedTrialRecallRecipient(t, false, now.Add(20*time.Hour).Unix())
 
 	r := processTrialRecall(context.Background(), trialRecallS1, now)
 	assert.Equal(t, 0, r.Sent, "%+v", r)
@@ -478,7 +604,7 @@ func TestProcessTrialRecall_MissingTemplateSendsNothing(t *testing.T) {
 	setupTrialRecallEnv(t, true)
 	trialRecallSlugs = map[trialRecallStage]string{trialRecallS1: fmt.Sprintf("trt-no-such-template-%d", time.Now().UnixNano())}
 	now := trialRecallFarNow
-	u, _ := seedTrialRecallRecipient(t, false, now.Add(40*time.Hour).Unix())
+	u, _ := seedTrialRecallRecipient(t, false, now.Add(20*time.Hour).Unix())
 
 	r := processTrialRecall(context.Background(), trialRecallS1, now)
 	assert.Equal(t, 1, r.Candidates, "%+v", r)
@@ -554,6 +680,6 @@ func TestTrialRecallTask_Wired(t *testing.T) {
 	require.NoError(t, err)
 	s := string(src)
 	assert.Contains(t, s, "asynq.Handle(TaskTypeTrialRecall, handleTrialRecallTask)")
-	assert.Regexp(t, `asynq\.Cron\("0 12 \* \* \*", TaskTypeTrialRecall,`, s)
+	assert.Regexp(t, `asynq\.Cron\("0 \* \* \* \*", TaskTypeTrialRecall,`, s)
 	assert.Equal(t, "trial:recall", TaskTypeTrialRecall)
 }

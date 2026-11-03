@@ -57,8 +57,9 @@ func InitWorker() {
 	// Unique(25h) 防止多实例重复入队同一任务
 	asynq.Cron("30 2 * * *", TaskTypeRenewalReminder, nil, hibikenAsynq.Unique(25*time.Hour))
 
-	// 试用未转化召回：每天 12:00 UTC（北京 20:00）
-	asynq.Cron("0 12 * * *", TaskTypeTrialRecall, nil, hibikenAsynq.Unique(25*time.Hour))
+	// 试用未转化召回：每小时整点；每人按自己的试用结束钟点到点发送，北京 23:00~07:59 的运行空转（worker_trial_recall.go）。
+	// 注意 cron 按服务器本地时区解释（qtoolkit 用 time.Local，center 为 +08），整点任务不受影响。
+	asynq.Cron("0 * * * *", TaskTypeTrialRecall, nil, hibikenAsynq.Unique(55*time.Minute))
 
 	// 注册未支付订单召回 Cron 任务
 	// 每小时运行：1h 即时提醒
@@ -191,4 +192,3 @@ func handleTemplatedEmailTask(ctx context.Context, payload []byte) error {
 // =====================================================================
 // 推送任务
 // =====================================================================
-

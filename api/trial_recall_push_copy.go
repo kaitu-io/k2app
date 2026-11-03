@@ -25,11 +25,7 @@ func trialRecallPushLang(language string) string {
 
 // trialRecallDateString 试用结束日 YYYY-MM-DD（Asia/Shanghai），邮件与推送共用。
 func trialRecallDateString(ts int64) string {
-	loc, err := time.LoadLocation("Asia/Shanghai")
-	if err != nil {
-		loc = time.FixedZone("CST", 8*3600)
-	}
-	return time.Unix(ts, 0).In(loc).Format("2006-01-02")
+	return time.Unix(ts, 0).In(trialRecallLocation()).Format("2006-01-02")
 }
 
 type trialRecallPushText struct{ title, body string } // S1 的 body 里 %s 为日期
