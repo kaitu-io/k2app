@@ -18,6 +18,8 @@ PODS:
   - CapacitorClipboard (8.0.1):
     - Capacitor
   - CapacitorCordova (8.5.3)
+  - CapacitorPushNotifications (8.1.3):
+    - Capacitor
   - CapacitorShare (8.0.3):
     - Capacitor
   - CapacitorStatusBar (8.0.4):
@@ -59,6 +61,7 @@ DEPENDENCIES:
   - "CapacitorApp (from `../../../node_modules/@capacitor/app`)"
   - "CapacitorClipboard (from `../../../node_modules/@capacitor/clipboard`)"
   - "CapacitorCordova (from `../../../node_modules/@capacitor/ios`)"
+  - "CapacitorPushNotifications (from `../../../node_modules/@capacitor/push-notifications`)"
   - "CapacitorShare (from `../../../node_modules/@capacitor/share`)"
   - "CapacitorStatusBar (from `../../../node_modules/@capacitor/status-bar`)"
   - "CapgoCapacitorSocialLogin (from `../../../node_modules/@capgo/capacitor-social-login`)"
@@ -87,6 +90,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/@capacitor/clipboard"
   CapacitorCordova:
     :path: "../../../node_modules/@capacitor/ios"
+  CapacitorPushNotifications:
+    :path: "../../../node_modules/@capacitor/push-notifications"
   CapacitorShare:
     :path: "../../../node_modules/@capacitor/share"
   CapacitorStatusBar:
@@ -103,6 +108,7 @@ SPEC CHECKSUMS:
   CapacitorApp: 542f92c179e3e08ed5d787846bcfa1b377e9745e
   CapacitorClipboard: 1ba60616f1b2d3df52417000217ec810216bbbaf
   CapacitorCordova: 0b7326439c7a09fc5d20eced5e0dab986327a493
+  CapacitorPushNotifications: c988f0ebfd23a09e6369a44b74088ae1a2aff8b4
   CapacitorShare: c19ef886b846555a4eca4f085d4414b6cac91d4b
   CapacitorStatusBar: 9b98299f3d119657ea338c047e0b876714c213ad
   CapgoCapacitorSocialLogin: b74430e2200f9d1fbe2fd46862135f0b87e6ee9a
@@ -117,6 +123,6 @@ SPEC CHECKSUMS:
   RecaptchaInterop: 11e0b637842dfb48308d242afc3f448062325aba
   SSZipArchive: 8a6ee5677c8e304bebc109e39cf0da91ccef22ea
 
-PODFILE CHECKSUM: 2f2d1076cf3324c1a02458c898dd8ea84b9d361a
+PODFILE CHECKSUM: b5f6a1655ccb04e11bd93ef8962a2a5c4b3af715
 
 COCOAPODS: 1.16.2

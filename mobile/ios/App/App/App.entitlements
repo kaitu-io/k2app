@@ -2,6 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- APNs. "development" here; App Store export (ExportOptions method
+	     app-store-connect) re-signs it as "production". The server picks
+	     the endpoint per token (api/logic_push_apns.go sandbox fallback). -->
+	<key>aps-environment</key>
+	<string>development</string>
 	<key>com.apple.developer.applesignin</key>
 	<array>
 		<string>Default</string>

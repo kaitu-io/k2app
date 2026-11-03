@@ -1,9 +1,22 @@
 import type { CapacitorConfig } from '@capacitor/cli';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 // Brand at build time — same K2_BRAND contract as webapp/desktop.
 // appId must match the Android flavor applicationId / iOS bundle id actually
 // being built; Makefile exports K2_BRAND before every cap sync.
 const BRAND = process.env.K2_BRAND === 'overleap' ? 'overleap' : 'kaitu';
+
+// Plugins that must never reach the Android build. @capacitor/push-notifications
+// is iOS-only here (APNs); on Android it drags in Firebase Messaging and a
+// google-services.json requirement. The list below is exactly Capacitor's own
+// default (every dependency) minus these, so new plugins keep syncing to
+// Android without anyone remembering to add them.
+const IOS_ONLY_PLUGINS = ['@capacitor/push-notifications'];
+const pkg = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8')) as {
+  dependencies: Record<string, string>;
+};
+const androidPlugins = Object.keys(pkg.dependencies).filter((d) => !IOS_ONLY_PLUGINS.includes(d));
 
 const config: CapacitorConfig = {
   // appId/appName are consumed only by `cap init` / `cap add` when generating
@@ -25,6 +38,7 @@ const config: CapacitorConfig = {
     scrollEnabled: false,
   },
   android: {
+    includePlugins: androidPlugins,
     allowMixedContent: true,
     backgroundColor: '#0F0F13',
   },
@@ -50,6 +64,11 @@ const config: CapacitorConfig = {
         facebook: false,
         twitter: false,
       },
+    },
+    // Foreground pushes still show as a banner (billing failure while the app
+    // is open is exactly when the user can act on it).
+    PushNotifications: {
+      presentationOptions: ['alert', 'sound'],
     },
     EdgeToEdge: {
       backgroundColor: '#0F0F13',
