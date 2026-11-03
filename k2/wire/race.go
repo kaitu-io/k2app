@@ -247,7 +247,7 @@ func buildAndProbeQUIC(ctx context.Context, cfg Config, dialAddr string, dd Dire
 	rtt, err := EchoProbe(echoCtx, conn)
 	if err != nil {
 		if IsEchoUnsupported(err) {
-			slog.Warn("DIAG: echo-probe-unsupported", "transport", name)
+			slog.Warn("DIAG: echo-probe-unsupported", "transport", name, "err", err.Error())
 			return raceCandidate{dialer: qc, transportType: name}
 		}
 		slog.Warn("DIAG: echo-probe-fail", "transport", name, "err", err)

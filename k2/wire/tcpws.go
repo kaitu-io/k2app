@@ -588,7 +588,9 @@ func (c *TCPWSClient) DialTCP(ctx context.Context, addr string, earlyData []byte
 func (c *TCPWSClient) RunEchoProbe(ctx context.Context) error {
 	sess, err := c.connect(ctx)
 	if err != nil {
-		return fmt.Errorf("echo: connect: %w", err)
+		// No session, so no echo stream was ever opened: a non-timeout connect
+		// error (refused, unreachable, rejected) is not "server has no echo".
+		return echoNotProbed(fmt.Errorf("echo: connect: %w", err))
 	}
 
 	stream, err := sess.OpenStream()
