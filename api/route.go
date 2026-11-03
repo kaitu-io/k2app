@@ -254,6 +254,8 @@ func SetupRouter() *gin.Engine {
 			push.POST("/token", api_register_push_token)
 			// 解绑推送令牌
 			push.DELETE("/token", api_unregister_push_token)
+			push.GET("/preferences", api_get_push_preferences)
+			push.PUT("/preferences", api_update_push_preferences)
 		}
 
 		// Strategy system routes (requires device auth)
@@ -564,6 +566,10 @@ func SetupRouter() *gin.Engine {
 		opsAdmin.DELETE("/announcements/:id", RoleRequired(RoleMarketing), api_admin_delete_announcement)
 		opsAdmin.POST("/announcements/:id/activate", RoleRequired(RoleMarketing), api_admin_activate_announcement)
 		opsAdmin.POST("/announcements/:id/deactivate", RoleRequired(RoleMarketing), api_admin_deactivate_announcement)
+
+		// iOS 推送群发（营销类，Marketing 角色；真正发送走审批 push_send）
+		opsAdmin.POST("/push/send", RoleRequired(RoleMarketing), api_admin_push_send)
+		opsAdmin.GET("/push/batches/:batchId", RoleRequired(RoleMarketing), api_admin_push_batch_stats)
 
 		edmOps := opsAdmin.Group("/edm")
 		{

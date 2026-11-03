@@ -31,7 +31,7 @@ skills/kaitu-content, skills/kaitu-marketing   # SKILL.md files shipped with the
 vitest.config.ts                               # aliases ./x.js → ./x.ts for tests
 ```
 
-114 tools when every group is granted: 109 factory (admin) + 5 standalone (2026-10-08: +3 Stripe withdrawal tools in admin-orders.ts; recounted 2026-10-01 from the built admin-* tool arrays). (The 21 `cms` tools were removed 2026-09 with Payload CMS — content is now Velite markdown in `web/content/`.) Registration is gated per tool by the groups returned from `GET /app/my-permissions` (`index.ts createServer`); there is no local role table.
+116 tools when every group is granted: 111 factory (admin) + 5 standalone (2026-11-03: +2 push tools in admin-push.ts; 2026-10-08: +3 Stripe withdrawal tools in admin-orders.ts; recounted 2026-10-01 from the built admin-* tool arrays). (The 21 `cms` tools were removed 2026-09 with Payload CMS — content is now Velite markdown in `web/content/`.) Registration is gated per tool by the groups returned from `GET /app/my-permissions` (`index.ts createServer`); there is no local role table.
 
 ## Conventions
 

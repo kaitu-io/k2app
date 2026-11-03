@@ -173,5 +173,18 @@
     "bindFailed": "Bağlanamadı, lütfen daha sonra tekrar deneyin",
     "emailConflict": "Bu e-postanın zaten bir hesabı var. Lütfen başka bir e-posta bağlayın; hesapları birleştirmek için destekle iletişime geçin.",
     "socialConflict": "Bu Apple Kimliği / Google hesabı zaten başka bir hesaba bağlı. Lütfen başka birini bağlayın; hesapları birleştirmek için destekle iletişime geçin."
+  },
+  "push": {
+    "settingTitle": "Bildirimler",
+    "statusOn": "Açık",
+    "statusOff": "Kapalı. Ayarlar’dan açabilirsiniz",
+    "enable": "Aç",
+    "openSettings": "Ayarlar’ı aç",
+    "marketingTitle": "Kampanyalar ve haberler",
+    "marketingDesc": "Süre bitimi ve ödeme hatırlatmalarını almaya devam edersiniz",
+    "promptTitle": "Bildirimleri aç",
+    "promptBody": "Üyeliğinizin süresi dolmak üzereyken veya bir ödeme başarısız olduğunda sizi hemen bilgilendiririz; bağlantınız kesilmez.",
+    "promptMarketing": "Kampanya ve haberleri de gönder",
+    "later": "Şimdi değil"
   }
 }

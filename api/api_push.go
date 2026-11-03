@@ -17,12 +17,12 @@ type RegisterPushTokenRequest struct {
 	Platform    string `json:"platform" binding:"required,oneof=ios android"`
 	Provider    string `json:"provider" binding:"required,oneof=apns jpush fcm"`
 	Token       string `json:"token" binding:"required"`
-	AppFlavor   string `json:"app_flavor" binding:"required,oneof=china google_play"`
+	AppFlavor   string `json:"app_flavor" binding:"required,oneof=china google_play app_store"`
 	AppVersion  string `json:"app_version"`
 	AppBundle   string `json:"app_bundle"`
 	OSVersion   string `json:"os_version"`
 	DeviceModel string `json:"device_model"`
-	Topic       string `json:"topic"`   // APNs topic (Bundle ID)
+	Topic       string `json:"topic"`   // APNs topic (Bundle ID)；可空，服务端按用户品牌填，不符则拒绝
 	Sandbox     *bool  `json:"sandbox"` // APNs sandbox mode
 }
 
@@ -47,6 +47,33 @@ func api_register_push_token(c *gin.Context) {
 		log.Warnf(ctx, "Invalid push token registration request: %v", err)
 		Error(c, ErrorInvalidArgument, "Invalid request body: "+err.Error())
 		return
+	}
+
+	if deviceUDID == "" {
+		Error(c, ErrorInvalidArgument, "push token requires a device session")
+		return
+	}
+
+	// APNs topic = 用户品牌 App 的 bundle id（spec 2026-11-03-ios-push-design §6.1）。
+	// 由服务端决定，客户端上报的只用来核对：错品牌的 token 发出去必然 DeviceTokenNotForTopic，
+	// 更糟的是可能把一个品牌的推送打到另一个品牌的 App 上。
+	if req.Provider == string(PushProviderAPNs) {
+		u := ReqUser(c)
+		if u == nil {
+			Error(c, ErrorNotLogin, "not logged in")
+			return
+		}
+		want := Brand(u.Brand).Config().Social.AppleBundleID
+		if want == "" {
+			Error(c, ErrorNotSupported, "brand has no iOS app")
+			return
+		}
+		if req.Topic != "" && req.Topic != want {
+			log.Warnf(ctx, "push token topic mismatch: user=%d brand=%s topic=%s want=%s", userID, u.Brand, req.Topic, want)
+			Error(c, ErrorInvalidArgument, "topic does not match brand")
+			return
+		}
+		req.Topic = want
 	}
 
 	// 验证 platform/provider 组合
@@ -120,6 +147,7 @@ func api_register_push_token(c *gin.Context) {
 		"app_version":  req.AppVersion,
 		"os_version":   req.OSVersion,
 		"device_model": req.DeviceModel,
+		"app_flavor":   appFlavor,
 	}
 
 	if req.Topic != "" {
@@ -127,6 +155,11 @@ func api_register_push_token(c *gin.Context) {
 	}
 	if req.Sandbox != nil {
 		updates["sandbox"] = *req.Sandbox
+	} else if req.Token != existingToken.Token {
+		// sandbox 标记是投递时自动识别出来的、跟着 token 走。换了 token（同一台设备
+		// 从 dev 构建换装到 TestFlight / App Store，UDID 在钥匙串里不变）就清掉，
+		// 否则生产 token 会一直被发到 sandbox → BadDeviceToken → 停用，循环往复。
+		updates["sandbox"] = false
 	}
 	if req.AppBundle != "" {
 		updates["app_bundle"] = req.AppBundle
@@ -209,7 +242,6 @@ func api_unregister_push_token(c *gin.Context) {
 	})
 }
 
-
 // ========================= 辅助函数 =========================
 
 // isValidPlatformProviderCombination 验证 platform/provider/flavor 组合是否有效
@@ -229,4 +261,58 @@ func isValidPlatformProviderCombination(platform, provider, flavor string) bool 
 		}
 	}
 	return false
+}
+
+// ========================= 营销推送同意 =========================
+
+// PushPreferences 推送偏好（按用户，不按设备）
+type PushPreferences struct {
+	MarketingOptIn bool `json:"marketingOptIn"`
+}
+
+// UpdatePushPreferencesRequest 用指针区分「没传」和「传了 false」：缺字段不能被当成撤回同意。
+type UpdatePushPreferencesRequest struct {
+	MarketingOptIn *bool `json:"marketingOptIn"`
+}
+
+// api_get_push_preferences GET /api/push/preferences
+func api_get_push_preferences(c *gin.Context) {
+	var u User
+	if err := db.Get().Select("id", "push_marketing_opt_in").First(&u, ReqUserID(c)).Error; err != nil {
+		log.Errorf(c, "load push preferences of user %d: %v", ReqUserID(c), err)
+		Error(c, ErrorSystemError, "failed to load push preferences")
+		return
+	}
+	Success(c, &PushPreferences{MarketingOptIn: u.PushMarketingOptIn})
+}
+
+// api_update_push_preferences PUT /api/push/preferences
+// 营销推送同意（App Store 审核规则 4.5.4）。记录表态时刻，便于事后举证。
+func api_update_push_preferences(c *gin.Context) {
+	var req UpdatePushPreferencesRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.MarketingOptIn == nil {
+		Error(c, ErrorInvalidArgument, "marketingOptIn is required")
+		return
+	}
+	userID := ReqUserID(c)
+	if err := db.Get().Model(&User{}).Where("id = ?", userID).Updates(map[string]any{
+		"push_marketing_opt_in":    *req.MarketingOptIn,
+		"push_marketing_opt_in_at": time.Now().Unix(),
+	}).Error; err != nil {
+		log.Errorf(c, "update push preferences of user %d: %v", userID, err)
+		Error(c, ErrorSystemError, "failed to update push preferences")
+		return
+	}
+	log.Infof(c, "user %d set marketing push opt-in=%v", userID, *req.MarketingOptIn)
+	Success(c, &PushPreferences{MarketingOptIn: *req.MarketingOptIn})
+}
+
+// deactivateDevicePushTokens 登出时停用该设备上该用户的推送 token。
+// 失败只记日志：登出本身不能因为推送表出问题而失败；设备归属 join 是第二道防线。
+func deactivateDevicePushTokens(c *gin.Context, udid string, userID uint64) {
+	if err := db.Get().Model(&PushToken{}).
+		Where("device_udid = ? AND user_id = ?", udid, userID).
+		Update("status", PushTokenStatusInactive).Error; err != nil {
+		log.Errorf(c, "deactivate push tokens of device %s user %d on logout: %v", udid, userID, err)
+	}
 }

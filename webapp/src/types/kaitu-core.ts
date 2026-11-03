@@ -315,6 +315,30 @@ export interface IPlatform {
   /** 拿 Google / Apple idToken 的原生能力（spec 2026-10-20 §6.2）。
    *  undefined = 老版本 App / 不支持的平台 → 不显示按钮，不报错。 */
   socialSignIn?: ISocialSignIn;
+
+  // ====== 推送通知（可选）======
+
+  /** iOS APNs 推送（spec 2026-11-03-ios-push-design §5）。undefined = 非 iOS / 老版本 App
+   *  没有原生插件 → 整个推送功能不渲染、不报错。业务代码经 services/push-service 使用，不直接探测。 */
+  push?: IPushBridge;
+}
+
+// ==================== Push ====================
+
+export type PushPermission = 'granted' | 'denied' | 'prompt';
+
+export interface IPushBridge {
+  checkPermission(): Promise<PushPermission>;
+  /** 弹系统权限框（一生只弹一次；已决定过则直接返回现状） */
+  requestPermission(): Promise<PushPermission>;
+  /** 向 APNs 注册，返回设备 token；失败 / 超时返回 null */
+  register(): Promise<string | null>;
+  /** 正在运行的 App 的 bundle id（= APNs topic） */
+  appId(): Promise<string>;
+  /** 用户点开推送；data 是推送的自定义字段（route 等） */
+  onTap(cb: (data: Record<string, unknown>) => void): void;
+  /** 打开本 App 的系统设置页（用户拒绝过权限后只能去那里打开） */
+  openSettings(): Promise<void>;
 }
 
 // ==================== Social Sign-In ====================

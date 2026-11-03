@@ -173,5 +173,18 @@
     "bindFailed": "Collegamento non riuscito, riprova più tardi",
     "emailConflict": "Questa email ha già un account. Collega un'altra email; per unire gli account contatta l'assistenza.",
     "socialConflict": "Questo ID Apple / account Google è già collegato a un altro account. Collegane un altro; per unire gli account contatta l'assistenza."
+  },
+  "push": {
+    "settingTitle": "Notifiche",
+    "statusOn": "Attive",
+    "statusOff": "Disattivate. Attivale in Impostazioni",
+    "enable": "Attiva",
+    "openSettings": "Apri Impostazioni",
+    "marketingTitle": "Offerte e novità",
+    "marketingDesc": "Continuerai a ricevere i promemoria di scadenza e pagamento",
+    "promptTitle": "Attiva le notifiche",
+    "promptBody": "Ti avvisiamo subito quando l’abbonamento sta per scadere o un pagamento non va a buon fine, così la connessione non si interrompe.",
+    "promptMarketing": "Ricevi anche offerte e novità",
+    "later": "Non ora"
   }
 }

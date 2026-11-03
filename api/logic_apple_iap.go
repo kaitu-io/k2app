@@ -784,6 +784,7 @@ func applyRenewalInfo(ctx context.Context, sub *Subscription, ri *appstore.Renew
 	}
 	log.Infof(ctx, "[applyRenewalInfo] sub %s autoRenew=%v status=%v (subtype=%s)",
 		sub.ProviderSubscriptionID, updates["auto_renew"], updates["status"], subtype)
+	notifyBillingRetryIfEntered(ctx, sub, sub.Status, status) // 推送失败只记日志，不影响落地
 
 	// Grace cover-through(spec 2026-08-22, fix round 1):进入宽限期时把权益覆盖到宽限期末——
 	// Apple 官方语义是宽限期内继续提供服务、扣费成功后无缝续期。只延长不缩短;同步把

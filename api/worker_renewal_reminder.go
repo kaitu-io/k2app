@@ -49,6 +49,9 @@ func handleRenewalReminderTask(ctx context.Context, _ []byte) error {
 		totalSent += sent
 		totalSkipped += skipped
 		totalFailed += failed
+
+		// iOS 推送与邮件并列，不受邮件模板缺失影响（spec 2026-11-03-ios-push-design §6.4）。
+		processLifecyclePushes(ctx, days)
 	}
 
 	log.Infof(ctx, "[EMAIL-LIFECYCLE] Daily task completed: sent=%d, skipped=%d, failed=%d",

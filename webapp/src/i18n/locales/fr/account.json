@@ -173,5 +173,18 @@
     "bindFailed": "Échec de l'association, réessayez plus tard",
     "emailConflict": "Cet e-mail a déjà un compte. Associez un autre e-mail ; pour fusionner des comptes, contactez le support.",
     "socialConflict": "Cet identifiant Apple / compte Google est déjà associé à un autre compte. Associez-en un autre ; pour fusionner des comptes, contactez le support."
+  },
+  "push": {
+    "settingTitle": "Notifications",
+    "statusOn": "Activées",
+    "statusOff": "Désactivées. Activez-les dans Réglages",
+    "enable": "Activer",
+    "openSettings": "Ouvrir Réglages",
+    "marketingTitle": "Offres et actualités",
+    "marketingDesc": "Vous recevrez toujours les rappels d’expiration et de paiement",
+    "promptTitle": "Activer les notifications",
+    "promptBody": "Soyez prévenu tout de suite quand votre abonnement arrive à échéance ou qu’un paiement échoue, pour ne jamais perdre la connexion.",
+    "promptMarketing": "Recevoir aussi les offres et actualités",
+    "later": "Plus tard"
   }
 }

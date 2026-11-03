@@ -7,7 +7,6 @@ import (
 
 	hibikenAsynq "github.com/hibiken/asynq"
 	"github.com/wordgate/qtoolkit/asynq"
-	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 )
 
@@ -27,19 +26,15 @@ type TemplatedEmailTaskPayload struct {
 	Request SendEmailsRequest `json:"request"`
 }
 
-// PushTaskPayload 推送任务载荷
-type PushTaskPayload struct {
-	UserID       uint64           `json:"userId"`       // 目标用户 ID
-	Notification PushNotification `json:"notification"` // 推送通知内容
-}
-
 // InitWorker 初始化 Worker
 // 注册任务处理函数
 func InitWorker() {
+	initAPNs()
 	// GeoIP: qtoolkit/geoip is lazy-initialized on first Country() call.
 	// No explicit init needed.
 
 	asynq.Handle(TaskTypePushSend, handlePushTask)
+	asynq.Handle(TaskTypePushBatch, handlePushBatchTask)
 	asynq.Handle(TaskTypeTemplatedEmailSend, handleTemplatedEmailTask)
 	asynq.Handle(TaskTypeRenewalReminder, handleRenewalReminderTask)
 	asynq.Handle(TaskTypeAbandonedOrderHourly, handleAbandonedOrderHourlyTask)
@@ -130,6 +125,7 @@ func InitWorker() {
 // SubmitApproval 对未注册的 action 直接报错，漏注册 = 该后台操作整个不可用。
 func registerApprovalCallbacks() {
 	RegisterApprovalCallback("edm_send", executeApprovalEDMSend)
+	RegisterApprovalCallback("push_send", executeApprovalPushSend)
 	RegisterApprovalCallback("campaign_create", executeApprovalCampaignCreate)
 	RegisterApprovalCallback("campaign_update", executeApprovalCampaignUpdate)
 	RegisterApprovalCallback("campaign_delete", executeApprovalCampaignDelete)
@@ -192,56 +188,3 @@ func handleTemplatedEmailTask(ctx context.Context, payload []byte) error {
 // 推送任务
 // =====================================================================
 
-// handlePushTask 处理推送任务
-func handlePushTask(ctx context.Context, payload []byte) error {
-	var p PushTaskPayload
-	if err := asynq.Unmarshal(payload, &p); err != nil {
-		return fmt.Errorf("unmarshal payload failed: %w", err)
-	}
-
-	taskID, _ := hibikenAsynq.GetTaskID(ctx)
-	log.Infof(ctx, "[PUSH] Processing task=%s, userId=%d", taskID, p.UserID)
-
-	// 查找用户的所有活跃推送令牌
-	var tokens []PushToken
-	if err := db.Get().Where("user_id = ? AND status = ?", p.UserID, PushTokenStatusActive).Find(&tokens).Error; err != nil {
-		log.Errorf(ctx, "[PUSH] Failed to query push tokens: %v", err)
-		return fmt.Errorf("failed to query push tokens: %w", err)
-	}
-
-	if len(tokens) == 0 {
-		log.Infof(ctx, "[PUSH] No active push tokens for user %d", p.UserID)
-		return nil
-	}
-
-	// 向每个设备发送推送
-	var successCount, failCount int
-	for _, token := range tokens {
-		if err := sendPushToToken(ctx, &token, &p.Notification); err != nil {
-			log.Warnf(ctx, "[PUSH] Failed to send to device=%s: %v", token.DeviceUDID, err)
-			failCount++
-			continue
-		}
-		successCount++
-	}
-
-	log.Infof(ctx, "[PUSH] Task=%s completed: userId=%d, success=%d, failed=%d",
-		taskID, p.UserID, successCount, failCount)
-	return nil
-}
-
-// EnqueuePushTask 入队推送任务
-func EnqueuePushTask(ctx context.Context, userID uint64, notification PushNotification) (string, error) {
-	payload := PushTaskPayload{
-		UserID:       userID,
-		Notification: notification,
-	}
-
-	info, err := asynq.Enqueue(TaskTypePushSend, payload)
-	if err != nil {
-		return "", fmt.Errorf("enqueue push task failed: %w", err)
-	}
-
-	log.Infof(ctx, "[PUSH] Task enqueued: taskId=%s, userId=%d", info.ID, userID)
-	return info.ID, nil
-}

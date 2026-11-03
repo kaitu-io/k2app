@@ -63,4 +63,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         }
         return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
     }
+
+    // APNs registration result → @capacitor/push-notifications (its
+    // `registration` / `registrationError` events). Without these forwards
+    // PushNotifications.register() never resolves a token.
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
+    }
 }

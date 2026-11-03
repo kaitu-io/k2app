@@ -173,5 +173,18 @@
     "bindFailed": "Liên kết không thành công, vui lòng thử lại sau",
     "emailConflict": "Email này đã có tài khoản. Hãy liên kết email khác; nếu cần gộp tài khoản, vui lòng liên hệ hỗ trợ.",
     "socialConflict": "Apple ID / tài khoản Google này đã liên kết với tài khoản khác. Hãy liên kết cái khác; nếu cần gộp tài khoản, vui lòng liên hệ hỗ trợ."
+  },
+  "push": {
+    "settingTitle": "Thông báo",
+    "statusOn": "Đang bật",
+    "statusOff": "Đang tắt. Bật trong Cài đặt",
+    "enable": "Bật",
+    "openSettings": "Mở Cài đặt",
+    "marketingTitle": "Ưu đãi và tin tức",
+    "marketingDesc": "Bạn vẫn nhận được nhắc nhở hết hạn và thanh toán",
+    "promptTitle": "Bật thông báo",
+    "promptBody": "Chúng tôi sẽ báo ngay khi gói thành viên sắp hết hạn hoặc thanh toán thất bại, để kết nối không bị gián đoạn.",
+    "promptMarketing": "Nhận cả ưu đãi và tin tức",
+    "later": "Để sau"
   }
 }

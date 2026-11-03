@@ -19,6 +19,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hibiken/asynq v0.25.1
 	github.com/rs/xid v1.6.0
+	github.com/sideshow/apns2 v0.25.0
 	github.com/spf13/viper v1.21.0
 	github.com/strahe/bwh v0.1.4
 	github.com/stretchr/testify v1.12.1
@@ -53,6 +54,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.8 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.7 // indirect
 	github.com/bytedance/gopkg v0.1.4 // indirect
+	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.9.2 // indirect
 )
 

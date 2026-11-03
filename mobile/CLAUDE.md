@@ -111,6 +111,13 @@ App process (`K2Plugin.swift`, `NETunnelProviderManager.startVPNTunnel(options:)
 - iOS: `com.apple.developer.applesignin` in `App.entitlements`; Google needs the reversed iOS client ID as a URL scheme (`K2_GOOGLE_REVERSED_CLIENT_ID` in the brand xcconfig → `Info.plist` `CFBundleURLTypes`, locked to the brand registry by `webapp/src/brands/__tests__/ios-google-url-scheme.test.ts`); `AppDelegate` forwards `open url` to `GIDSignIn` before Capacitor.
 - Android: Google only (Credential Manager, brand **Web** client as server client ID); hidden without Play services (`K2Plugin.hasGooglePlayServices`, package-visibility `<queries>` entry in the app manifest). Apple on Android waits for the website callback relay (§6.3). Never pass custom Google scopes — on Android that needs MainActivity changes.
 
+## Push Notifications (iOS only, APNs)
+
+`@capacitor/push-notifications` (native name `PushNotifications`), wrapped by `webapp/src/services/capacitor-push.ts` → `_platform.push` (old shells lack the plugin → no push UI). Server side: `api/logic_push*.go`. Spec: `docs/superpowers/specs/2026-11-03-ios-push-design.md`.
+- **Android never gets it**: `capacitor.config.ts` `android.includePlugins` = every dependency minus `IOS_ONLY_PLUGINS` (on Android the plugin pulls Firebase + `google-services.json`). After `cap sync`, `android/capacitor.settings.gradle` must not mention `push-notifications`. A new plugin syncs to Android automatically — only add to `IOS_ONLY_PLUGINS` to exclude.
+- `App.entitlements` `aps-environment` is `development`; App Store export re-signs it `production`. The App ID (both brands) must have the Push Notifications capability, or signing fails.
+- `AppDelegate` forwards `didRegisterForRemoteNotificationsWithDeviceToken` / `didFailToRegister…` to Capacitor's NotificationCenter names — without them `register()` never resolves (webapp times out after 15 s → null token).
+
 ## Server Selection — Manual only on mobile
 
 Mobile has **no smart-mode / k2subs resolution**: users pick a tunnel on Dashboard and the webapp passes that single `k2v5://` URL as `_k2.run('up', {routes:[{via:'k2v5://...'}]})` — the NE's 50 MB jetsam limit rules out an in-extension resolver, and a webapp-side one would fetch `/api/subs` through the tunnel it is trying to establish. Failure mode: any raw `k2subs://` leaked to appext is dropped by `engine.buildOutboundMap` as a reserved scheme → code 570 "no k2v5 outbound configured" — always a webapp bug; the only legitimate `via` on mobile is `k2v5://` or `direct`. Mobile has no probe capability: webapp `runProbe()` has no production caller and `ProbeChip` has no importer, so nothing shows RTT/loss here; the daemon-side background probe loop is desktop-only.

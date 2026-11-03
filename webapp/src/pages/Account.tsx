@@ -61,6 +61,7 @@ import { setAppleConsumptionConsent } from '../components/ios/consumption-consen
 import VersionItem from "../components/VersionItem";
 import DeleteAccountDialog from "../components/DeleteAccountDialog";
 import BetaChannelToggle from "../components/BetaChannelToggle";
+import NotificationSettings from "../components/NotificationSettings";
 import PasswordDialog from "../components/PasswordDialog";
 import { useSubscriptionAffordance } from '../hooks/useSubscriptionAffordance';
 import { usePrivateNodes } from '../hooks/usePrivateNodes';
@@ -923,6 +924,8 @@ export default function Account() {
             </ListItem>
 
             <Divider />
+
+            <NotificationSettings />
 
             <BetaChannelToggle />
 

@@ -22,6 +22,8 @@ import { createKeychainBackedStorage } from './keychain-storage';
 import { mapInstalledApp, type AndroidInstalledApp } from './capacitor-app-map';
 import { withAppAttribution } from '../utils/site-link';
 import { buildCapacitorSocialSignIn } from './capacitor-social-signin';
+import { buildCapacitorPush } from './capacitor-push';
+import { wirePushTaps } from './push-service';
 
 /**
  * Check if running inside a Capacitor native environment.
@@ -509,11 +511,15 @@ export async function injectCapacitorGlobals(): Promise<void> {
     iap: platform === 'ios' ? buildIapBridge() : undefined,
 
     socialSignIn: buildCapacitorSocialSignIn(platform),
+
+    push: buildCapacitorPush(platform),
   };
 
   // Inject globals
   (window as any)._k2 = capacitorK2;
   (window as any)._platform = capacitorPlatform;
+  // Capture a cold-start push tap before React mounts (route held until the router subscribes).
+  wirePushTaps();
 
   // Native event listeners (vpnStateChange, vpnError) are now registered
   // via onStatusChange() above, wired through VPN machine's event-driven mode.

@@ -173,5 +173,18 @@
     "bindFailed": "Couldn't link, please try again later",
     "emailConflict": "This email already has an account. Please link a different email; to merge accounts, contact support.",
     "socialConflict": "This Apple ID / Google account is already linked to another account. Please link a different one; to merge accounts, contact support."
+  },
+  "push": {
+    "settingTitle": "Notifications",
+    "statusOn": "On",
+    "statusOff": "Off. Turn on in Settings",
+    "enable": "Turn on",
+    "openSettings": "Open Settings",
+    "marketingTitle": "Offers and news",
+    "marketingDesc": "You will still get expiry and payment reminders",
+    "promptTitle": "Turn on notifications",
+    "promptBody": "Get notified straight away when your membership is about to expire or a payment fails, so your connection is never interrupted.",
+    "promptMarketing": "Also send me offers and news",
+    "later": "Not now"
   }
 }

@@ -345,6 +345,7 @@ func api_logout(c *gin.Context) {
 	// 如果是设备认证，删除设备记录。零身份（设备账号）保留设备行、只作废 token（spec §4.4）：
 	// 账号要回来只能走 Apple 恢复（/device-account/restore）。
 	if udid != "" {
+		deactivateDevicePushTokens(c, udid, userID)
 		has, err := userHasIdentity(db.Get(), userID)
 		if err != nil {
 			log.Errorf(c, "failed to check login identity for user %d on logout: %v", userID, err)

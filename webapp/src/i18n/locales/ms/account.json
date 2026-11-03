@@ -173,5 +173,18 @@
     "bindFailed": "Gagal memautkan, sila cuba lagi kemudian",
     "emailConflict": "E-mel ini sudah mempunyai akaun. Sila pautkan e-mel lain; untuk menggabungkan akaun, hubungi sokongan.",
     "socialConflict": "Apple ID / akaun Google ini sudah dipautkan ke akaun lain. Sila pautkan yang lain; untuk menggabungkan akaun, hubungi sokongan."
+  },
+  "push": {
+    "settingTitle": "Pemberitahuan",
+    "statusOn": "Hidup",
+    "statusOff": "Mati. Hidupkan dalam Tetapan",
+    "enable": "Hidupkan",
+    "openSettings": "Buka Tetapan",
+    "marketingTitle": "Tawaran dan berita",
+    "marketingDesc": "Anda masih akan menerima peringatan tamat tempoh dan pembayaran",
+    "promptTitle": "Hidupkan pemberitahuan",
+    "promptBody": "Kami akan maklumkan segera apabila keahlian hampir tamat atau pembayaran gagal, supaya sambungan anda tidak terputus.",
+    "promptMarketing": "Hantar juga tawaran dan berita",
+    "later": "Bukan sekarang"
   }
 }

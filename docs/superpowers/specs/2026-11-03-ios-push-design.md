@@ -77,8 +77,10 @@
 ### 6.1 发送通道（`api/logic_push.go`）
 - 用 token-based 方式（.p8）实现 `sendAPNsPush`，推荐用 `github.com/sideshow/apns2`。按 token 的 `Sandbox` 字段选 development 还是 production 环境。
 - 配置写在 `center/config.yml` 新增的 `apns:` 段：`team_id`、`key_id`、`p8` 文件路径或内容。**配置缺失时**：启动时打 Error 日志，每次调用返回 `ErrPushChannelUnavailable`。**不能**返回 nil。
-- **校验 topic**：token 的 `Topic` 必须属于该用户品牌的 bundle id（品牌到 bundle id 的映射放在 `api/brand.go` 一类的品牌数据里）。校验不通过的 token 在注册时就拒绝。
-- **处理 APNs 响应**：`410 Unregistered`、`400 BadDeviceToken`、`DeviceTokenNotForTopic` 这几种，把 token 标记为 `inactive`，不重试。5xx 和超时交给 asynq 重试。`403` 这类证书或 key 错误要**打 Error 并走现有的静默失败告警**（参考 Apple webhook 加固时的告警做法）。
+- **校验 topic**：服务端以用户品牌的 `Brand.Config().Social.AppleBundleID` 作为 topic 写入 token。客户端上报的 topic 不为空且与之不符时，直接拒绝注册（400）。
+- **自动识别 sandbox 还是 production（实现时的决定）**：先按 production 发送；如果 APNs 返回 `BadDeviceToken`，再用 sandbox 发一次。sandbox 成功就把 token 的 `sandbox` 改为 true，sandbox 也明确拒绝才把 token 标为 inactive（sandbox 那边 5xx / 网络错误时按可重试处理，不停用）。同一台设备上报了**新的** token 时清掉 `sandbox` 标记——dev 构建换装 TestFlight / App Store 后 UDID 不变、token 换成生产 token，不清掉就会一直被发去 sandbox。这样 webapp 不需要判断自己是不是 dev 构建（各种签名方式下根本判断不准）。
+- **按设备归属过滤（实现时的决定）**：发送时只选 `push_tokens.user_id = devices.user_id AND push_tokens.device_udid = devices.udid` 的 token。设备被踢出、被删除，或已换绑到别的账号后，自动不再收到原账号的推送，不需要在每个删设备的地方单独去停用 token。登出时还会显式停用（设备账号登出时保留了设备行，靠上面的过滤挡不住）。
+- **处理 APNs 响应**：`410 Unregistered`、`400 BadDeviceToken`、`DeviceTokenNotForTopic` 这几种，把 token 标记为 `inactive`，不重试。5xx 和超时交给 asynq 重试。`403` 这类证书或 key 错误要**打 Error 并走现有的静默失败告警**（参考 Apple webhook 加固时的告警做法）。实现：告警每台 center 每 10 分钟最多一条（一次群发会对每个 token 各撞一次）；token 不停用，按**可重试**处理；投递任务重试 8 次（asynq 默认退避，累计约 2.5 小时），这个窗口内修好配置能补发，重试用尽才标 failed——超窗的群发要换 `batch_id` 重发。投递前对营销类再查一次营销同意（入队到投递之间用户可能撤回）。
 - 消息体：`alert.title` / `alert.body`、`sound=default`；`data.route` 和 `data.push_id` 放在自定义字段里。
 
 ### 6.2 对外接口：`PushToUser` / `PushToUsers`
@@ -100,8 +102,9 @@ type PushRequest struct {
 func PushToUser(ctx context.Context, userID uint64, req PushRequest) error
 ```
 
+- **入队失败**（Redis 故障等）返回非哨兵错误，并**删掉**刚写的发送记录、释放 DedupKey：调用方之后用同一个 key 重试不会被 `ErrPushDuplicate` 挡掉。所以 `ErrPushDuplicate` 可以放心理解为「这个 key 已经入过队」。
 - **必须如实说明**：nil 只保证「资格判断通过、已入队」，不保证送达。异步阶段 token 全部失效时，调用方同步拿不到这个结果，只能从发送记录里查。调用方需要的「回退到邮件」只能基于这几种同步错误来做。这一点要写进函数注释。
-- **跟并行会话的分工（工程层面的约定，2026-11-03）：** 本设计负责改 `PushToUser` 的签名、错误类型和路由白名单，并且先合并。召回会话只调用 `PushToUser`，固定传 `category=marketing`，`route` 用 `/purchase`；遇到同步返回的错误就改发邮件。召回的判定逻辑、文案和合并都由对方负责。对方的 spec 还没写，接口以本节为准。
+- **跟并行会话的分工（工程层面的约定，2026-11-03）：** 本设计负责改 `PushToUser` 的签名、错误类型和路由白名单，并且先合并。召回会话只调用 `PushToUser`，`route` 用 `/purchase`。分类：到期前的 S1 只陈述账户状态（不带优惠、价格，不催购买），按 `transactional` 发，**而且只发给已经关闭自动续费的试用用户**；到期后的 S2 按 `marketing` 发（2026-11-03 与召回会话商定，David 认可增长评审的方向）；遇到同步返回的错误就改发邮件。召回的判定逻辑、文案和合并都由对方负责。对方的 spec 还没写，接口以本节为准。
 - `PushToUsers` 返回每个用户的结果（例如 `map[userID]error` 或结果切片）。
 - 营销类：用户的 `push_marketing_opt_in` 必须为 true，否则返回 `ErrPushNotConsented`。
 
@@ -122,8 +125,11 @@ func PushToUser(ctx context.Context, userID uint64, req PushRequest) error
 - 文案：按品牌和 `users.language` 写在 Go 代码的模板表里，覆盖 zh-CN / zh-TW / en-US / ja，缺语言时按品牌的默认语言兜底。不带金额、邮箱、订单号。
 
 ### 6.5 后台手动群发（营销类）
-- `POST /app/admin/push/send`：参数为 `UserFilter`（直接复用 EDM 那套，见 `api/type.go:834`）、`brand`、按语言给出的 `{title, body}`、`route`、`batch_id`（用来做幂等）、`dry_run`。**接口没有 `category` 参数，固定按 marketing 发（我的判断）。** 这样管理员没法把营销内容伪装成交易类，绕过用户的营销同意。交易类推送只能由代码里的触发点发出。
+- `POST /app/admin/push/send`：参数为显式的 `userIds` 列表（**更正**：`api/type.go` 里的 `UserFilter` 是没有任何调用方的死类型，EDM 实际做法是调用方给出明确的收件人列表，这里照搬 EDM），外加 `brand`、按语言给出的 `{title, body}`、`route`、`batch_id`（用来做幂等）、`dry_run`。**接口没有 `category` 参数，固定按 marketing 发（我的判断）。** 这样管理员没法把营销内容伪装成交易类，绕过用户的营销同意。交易类推送只能由代码里的触发点发出。
   - `dry_run=true` 时返回：命中多少用户、其中有有效 token 的多少、其中已同意营销的多少。真正发送时逐个调用 `PushToUser`，按结果汇总。
+- 真正发送要走现有的审批流 `SubmitApproval(c, "push_send", ...)`，和 EDM 的 `edm_send` 一样：超管直接执行，其他角色进审批。`dry_run` 不需要审批。`userIds` 里每个用户都必须属于 `brand`，不属于的计入 skipped。
+- **一批最多 5000 人，序列化后的请求不超过 60000 字节**（整个请求存进 `admin_approvals.params`，MySQL TEXT 上限 65535 字节）；更大的人群拆成多个 `batch_id`。`batch_id` 只允许 `[A-Za-z0-9:_.-]`（它会进 URL 路径和 dedup_key）。
+- 批次任务被中断（任务超时 / 进程退出），或者有用户撞上非预期错误时，任务返回错误让 asynq 重试整批；靠 dedup，重跑只补发漏掉的人。
 - `GET /app/admin/push/batches/:batch_id`：返回 `push_send_logs` 的汇总。
 - kaitu-center MCP 新增工具 `send_push`（先 dry run，确认后再真正发送）和 `get_push_batch_stats`，写法参考现有的 EDM 工具。
 

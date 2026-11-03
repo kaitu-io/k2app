@@ -173,5 +173,18 @@
     "bindFailed": "綁定失敗，請稍後再試",
     "emailConflict": "該信箱已有帳號，請換一個信箱綁定；如需合併請聯絡客服",
     "socialConflict": "該 Apple ID / Google 帳號已綁定其他帳號，請換一個綁定；如需合併請聯絡客服"
+  },
+  "push": {
+    "settingTitle": "通知",
+    "statusOn": "已開啟",
+    "statusOff": "已關閉，可在系統設定中開啟",
+    "enable": "開啟",
+    "openSettings": "前往設定",
+    "marketingTitle": "優惠與活動通知",
+    "marketingDesc": "關閉後仍會收到到期與付款提醒",
+    "promptTitle": "開啟通知",
+    "promptBody": "會員到期、付款失敗時第一時間提醒你，避免連線中斷。",
+    "promptMarketing": "同時接收優惠與活動通知",
+    "later": "稍後再說"
   }
 }
