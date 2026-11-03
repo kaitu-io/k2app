@@ -254,6 +254,8 @@ func SetupRouter() *gin.Engine {
 			push.POST("/token", api_register_push_token)
 			// 解绑推送令牌
 			push.DELETE("/token", api_unregister_push_token)
+			push.GET("/preferences", api_get_push_preferences)
+			push.PUT("/preferences", api_update_push_preferences)
 		}
 
 		// Strategy system routes (requires device auth)

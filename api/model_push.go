@@ -32,6 +32,7 @@ type AppFlavor string
 const (
 	AppFlavorChina      AppFlavor = "china"       // 中国版（使用 JPush）
 	AppFlavorGooglePlay AppFlavor = "google_play" // Google Play 版（使用 FCM）
+	AppFlavorAppStore   AppFlavor = "app_store"   // iOS App Store / TestFlight（使用 APNs）
 )
 
 // PushTokenStatus 推送令牌状态
