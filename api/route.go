@@ -567,6 +567,10 @@ func SetupRouter() *gin.Engine {
 		opsAdmin.POST("/announcements/:id/activate", RoleRequired(RoleMarketing), api_admin_activate_announcement)
 		opsAdmin.POST("/announcements/:id/deactivate", RoleRequired(RoleMarketing), api_admin_deactivate_announcement)
 
+		// iOS 推送群发（营销类，Marketing 角色；真正发送走审批 push_send）
+		opsAdmin.POST("/push/send", RoleRequired(RoleMarketing), api_admin_push_send)
+		opsAdmin.GET("/push/batches/:batchId", RoleRequired(RoleMarketing), api_admin_push_batch_stats)
+
 		edmOps := opsAdmin.Group("/edm")
 		{
 			edmOps.GET("/templates", RoleRequired(RoleMarketing), api_admin_list_email_templates)

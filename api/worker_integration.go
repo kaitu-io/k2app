@@ -34,6 +34,7 @@ func InitWorker() {
 	// No explicit init needed.
 
 	asynq.Handle(TaskTypePushSend, handlePushTask)
+	asynq.Handle(TaskTypePushBatch, handlePushBatchTask)
 	asynq.Handle(TaskTypeTemplatedEmailSend, handleTemplatedEmailTask)
 	asynq.Handle(TaskTypeRenewalReminder, handleRenewalReminderTask)
 	asynq.Handle(TaskTypeAbandonedOrderHourly, handleAbandonedOrderHourlyTask)
@@ -124,6 +125,7 @@ func InitWorker() {
 // SubmitApproval 对未注册的 action 直接报错，漏注册 = 该后台操作整个不可用。
 func registerApprovalCallbacks() {
 	RegisterApprovalCallback("edm_send", executeApprovalEDMSend)
+	RegisterApprovalCallback("push_send", executeApprovalPushSend)
 	RegisterApprovalCallback("campaign_create", executeApprovalCampaignCreate)
 	RegisterApprovalCallback("campaign_update", executeApprovalCampaignUpdate)
 	RegisterApprovalCallback("campaign_delete", executeApprovalCampaignDelete)

@@ -25,6 +25,7 @@ import { feedbackTicketTools } from './tools/admin-feedback-tickets.js'
 import { userTools } from './tools/admin-users.js'
 import { retailerTools } from './tools/admin-retailers.js'
 import { edmTools } from './tools/admin-edm.js'
+import { pushTools } from './tools/admin-push.js'
 import { orderTools } from './tools/admin-orders.js'
 import { campaignTools } from './tools/admin-campaigns.js'
 import { licenseKeyTools } from './tools/admin-license-keys.js'
@@ -47,6 +48,7 @@ const allFactoryTools: ToolRegistration[] = [
   ...userTools,
   ...retailerTools,
   ...edmTools,
+  ...pushTools,
   ...orderTools,
   ...campaignTools,
   ...licenseKeyTools,
