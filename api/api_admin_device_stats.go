@@ -142,22 +142,31 @@ func collectPlatformCounts(s *statsAccumulator, isRouter bool, out *[]PlatformCo
 		Group("COALESCE(NULLIF(app_platform, ''), 'unknown')").
 		Order("count DESC"), &rows)
 
-	desktopPlatforms := map[string]bool{"darwin": true, "windows": true, "linux": true}
-	mobilePlatforms := map[string]bool{"ios": true, "android": true}
-
 	for _, r := range rows {
 		*out = append(*out, PlatformCount{Platform: r.Platform, Count: r.Count})
-		switch {
-		case r.Platform == "unknown":
-			*unknown += r.Count
-		case desktopPlatforms[r.Platform]:
+		switch platformSummaryBucket(r.Platform) {
+		case "desktop":
 			*desktop += r.Count
-		case mobilePlatforms[r.Platform]:
+		case "mobile":
 			*mobile += r.Count
 		default:
-			// Treat any unrecognised non-empty platform as unknown for summary tally
 			*unknown += r.Count
 		}
+	}
+}
+
+// platformSummaryBucket maps an app_platform value to the summary bucket.
+// Values are the X-K2-Client os token the clients actually send (macos, not
+// darwin — see tauri-k2.ts and model.go Device.AppPlatform). Anything else
+// (empty → "unknown", "web", unrecognised) counts as unknown.
+func platformSummaryBucket(platform string) string {
+	switch platform {
+	case "macos", "windows", "linux":
+		return "desktop"
+	case "ios", "android":
+		return "mobile"
+	default:
+		return "unknown"
 	}
 }
 

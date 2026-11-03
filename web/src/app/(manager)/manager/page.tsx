@@ -24,11 +24,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Platform display names and icons
 const platformInfo: Record<string, { name: string; icon: string; color: string }> = {
-  darwin: { name: "macOS", icon: "", color: "bg-gray-500" },
+  macos: { name: "macOS", icon: "", color: "bg-gray-500" },
   windows: { name: "Windows", icon: "", color: "bg-blue-500" },
   linux: { name: "Linux", icon: "", color: "bg-orange-500" },
   ios: { name: "iOS", icon: "", color: "bg-purple-500" },
   android: { name: "Android", icon: "", color: "bg-green-500" },
+  web: { name: "Web", icon: "", color: "bg-cyan-500" },
   unknown: { name: "未知", icon: "?", color: "bg-red-500" },
 };
 
