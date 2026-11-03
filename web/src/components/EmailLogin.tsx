@@ -32,13 +32,15 @@ export interface EmailLoginProps {
   /** Fired after a verification code was sent (funnel instrumentation; only the purchase page passes it). */
   onCodeSent?: () => void;
   mode?: 'login' | 'bind';
+  /** Initial value of the email field. */
+  initialEmail?: string;
 }
 
-export default function EmailLogin({ onLoginSuccess, onCodeSent, mode = 'login' }: EmailLoginProps) {
+export default function EmailLogin({ onLoginSuccess, onCodeSent, mode = 'login', initialEmail = '' }: EmailLoginProps) {
   const { login } = useAuth();
   const { appConfig } = useAppConfig();
   const t = useTranslations();
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail);
   const [code, setCode] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [step, setStep] = useState(1); // 1:邮箱 2:验证码（未激活时同时显示邀请码）

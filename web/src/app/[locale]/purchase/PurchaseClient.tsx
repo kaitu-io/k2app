@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { useRouter, Link } from "@/i18n/routing";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/contexts/AuthContext";
@@ -118,6 +119,12 @@ export default function PurchaseClient() {
   const t = useTranslations();
   const { isAuthenticated, isAuthLoading } = useAuth();
 
+  // Prefill from the link (trial-recall email): ?campaign= &plan= &email=
+  const searchParams = useSearchParams();
+  const campaignParam = searchParams?.get("campaign") ?? "";
+  const planParam = searchParams?.get("plan") ?? "";
+  const emailParam = searchParams?.get("email") ?? "";
+
   // Initialize embed mode to handle auth_token URL parameter
   const { showNavigation, showFooter } = useEmbedMode();
 
@@ -127,8 +134,8 @@ export default function PurchaseClient() {
   const [plansLoading, setPlansLoading] = useState(false);
 
   // Payment and campaign state
-  const [showCampaign, setShowCampaign] = useState(false);
-  const [campaignCode, setCampaignCode] = useState("");
+  const [showCampaign, setShowCampaign] = useState(!!campaignParam);
+  const [campaignCode, setCampaignCode] = useState(campaignParam);
   const [campaignError, setCampaignError] = useState<string>("");
   const [orderData, setOrderData] = useState<Order | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -215,8 +222,9 @@ export default function PurchaseClient() {
             }
             // Initial pick is best-effort against the full list; once filteredPlans
             // resolves below it may be re-snapped to a tier-valid choice.
+            const requested = planParam && planItems.find((p: Plan) => p.pid === planParam);
             const highlightPlan = planItems.find((p: Plan) => p.highlight);
-            setSelectedPlan(highlightPlan ? highlightPlan.pid : planItems[0]?.pid || "");
+            setSelectedPlan(requested ? requested.pid : highlightPlan ? highlightPlan.pid : planItems[0]?.pid || "");
           }
         } else {
           console.warn('[Purchase] Plan data format unexpected:', data);
@@ -234,7 +242,7 @@ export default function PurchaseClient() {
     };
 
     fetchPlans();
-  }, [t]);
+  }, [t, planParam]);
 
   /**
    * Tier-based plan filter (Plan A):
@@ -681,6 +689,7 @@ export default function PurchaseClient() {
           <div className="xl:col-span-7 2xl:col-span-8 space-y-6 sm:space-y-8">
             {/* Step 1: Email Binding (login form for unauthenticated users) */}
             <PurchaseStep1
+              initialEmail={emailParam || undefined}
               onLoginSuccess={handleLoginSuccess}
               onCodeSent={handleCodeSent}
             />
