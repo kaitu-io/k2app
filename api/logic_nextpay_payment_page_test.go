@@ -34,6 +34,7 @@ type fakeNextpay struct {
 	srv          *httptest.Server
 	confirmCalls atomic.Int32
 	paymentURL   string
+	lastMetadata atomic.Value // string：最近一次建单请求的 metadata 原文
 }
 
 func newFakeNextpay(t *testing.T, paymentURL string) *fakeNextpay {
@@ -43,6 +44,11 @@ func newFakeNextpay(t *testing.T, paymentURL string) *fakeNextpay {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/checkout/order":
+			var body struct {
+				Metadata string `json:"metadata"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			f.lastMetadata.Store(body.Metadata)
 			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{
 				"orderId": "np-ord-x", "paymentUrl": f.paymentURL, "amount": 4990, "currency": "usd"}})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/confirm"):
@@ -236,4 +242,68 @@ func TestWithPaySource(t *testing.T) {
 	stripe := "https://checkout.stripe.com/c/pay/cs_1#fidkdWxOYHwnPyd1blpxYHZxWjA0"
 	assert.Equal(t, stripe, withPaySource(stripe, checkoutModeStripeCheckout, "app", "windows", "0.4.14"))
 	assert.Equal(t, stripe, withPaySource(stripe, "", "app", "windows", "0.4.14"), "老订单无 mode 按 Stripe Checkout 处理")
+}
+
+// seedPaidOrder 落一张已付订单（paid_at 指定），用于 firstPaidAt 口径测试。
+func seedPaidOrder(t *testing.T, u *User, payAmount uint64, paidAt time.Time, refunded bool) {
+	t.Helper()
+	o := &Order{UUID: generateId("fpa"), Title: "fpa", OriginAmount: payAmount, PayAmount: payAmount,
+		UserID: u.ID, IsPaid: BoolPtr(true), PaidAt: &paidAt, IsRefunded: BoolPtr(refunded), Meta: "{}"}
+	require.NoError(t, db.Get().Create(o).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(o) })
+}
+
+func nextpayMetadataOf(t *testing.T, f *fakeNextpay) map[string]any {
+	t.Helper()
+	raw, _ := f.lastMetadata.Load().(string)
+	require.NotEmpty(t, raw, "建单请求必须带 metadata")
+	var m map[string]any
+	require.NoError(t, json.Unmarshal([]byte(raw), &m))
+	return m
+}
+
+// firstPaidAt 只取真钱首付：0 元单、已退款单都不算；值是 RFC3339 字符串；原有 brand/plan 字段保留。
+func TestCreateNextpayCheckout_MetadataFirstPaidAt_EarliestRealPayment(t *testing.T) {
+	skipIfNoDB(t)
+	require.NoError(t, Migrate())
+	fake := newFakeNextpay(t, "https://pay.arbella.group/pay/np-ord-x")
+	setViperForTest(t, "nextpay.payment_page_percent", 100)
+	u := uatUserWithEmail(t)
+	plan := nextpayTestPlan(t)
+
+	zeroAt := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	refundedAt := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+	realAt := time.Date(2025, 6, 1, 8, 0, 0, 0, time.UTC)
+	laterAt := time.Date(2025, 9, 1, 0, 0, 0, 0, time.UTC)
+	seedPaidOrder(t, u, 0, zeroAt, false)       // 0 元 grant：不算
+	seedPaidOrder(t, u, 2990, refundedAt, true) // 已退款：不算
+	seedPaidOrder(t, u, 4990, laterAt, false)   // 真钱但更晚
+	seedPaidOrder(t, u, 4990, realAt, false)    // 真钱首付
+	o := uatOrder(t, u, plan)
+
+	_, err := createNextpayCheckout(context.Background(), u, o, plan)
+	require.NoError(t, err)
+	m := nextpayMetadataOf(t, fake)
+	assert.Equal(t, "2025-06-01T08:00:00Z", m["firstPaidAt"], "必须是 RFC3339 字符串，不能是数字")
+	assert.Equal(t, string(BrandKaitu), m["brand"], "合并进 metadata，不能覆盖原有字段")
+	assert.Equal(t, plan.PID, m["plan"])
+}
+
+// 没有真钱付款记录时整个键省略（不传 null / 空串）。
+func TestCreateNextpayCheckout_MetadataFirstPaidAt_OmittedWithoutRealPayment(t *testing.T) {
+	skipIfNoDB(t)
+	require.NoError(t, Migrate())
+	fake := newFakeNextpay(t, "https://pay.arbella.group/pay/np-ord-x")
+	setViperForTest(t, "nextpay.payment_page_percent", 100)
+	u := uatUserWithEmail(t)
+	plan := nextpayTestPlan(t)
+	seedPaidOrder(t, u, 0, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), false)
+	o := uatOrder(t, u, plan) // 本单未付，也不能算
+
+	_, err := createNextpayCheckout(context.Background(), u, o, plan)
+	require.NoError(t, err)
+	m := nextpayMetadataOf(t, fake)
+	_, has := m["firstPaidAt"]
+	assert.False(t, has, "无真钱付款记录时必须省略 firstPaidAt 键")
+	assert.Equal(t, string(BrandKaitu), m["brand"])
 }

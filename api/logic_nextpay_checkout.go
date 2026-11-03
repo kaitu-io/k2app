@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"time"
 
+	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/qtoolkit/nextpay"
 	"gorm.io/gorm"
@@ -85,6 +86,35 @@ func payRedirectURL(orderUUID string) string {
 	return fmt.Sprintf("%s/api/orders/%s/pay?src=mail", BrandKaitu.Config().BaseURL, orderUUID)
 }
 
+// nextpayMetaFirstPaidAt 是 NextPay 建单 metadata 里的老用户信号（NextPay 侧
+// logic_personal_pay_trust.go metadataFirstPaidAt 解析）：RFC3339 字符串，早于等于 24h 前即老用户，
+// 本单 Stripe 支付宝失败后放开备用通道。没有真钱付款记录时整个键省略（数字 / null / 空串都会被当成没传）。
+const nextpayMetaFirstPaidAt = "firstPaidAt"
+
+// firstRealPaidAt 返回用户第一笔真钱付款的时间：已付、未退款、实付 > 0 的订单
+// （含 Apple IAP——用户确实付了钱）。手动开通 / 授权码 / 0 元 grant 不产生订单或实付为 0，
+// 钱包只做返现与退款入账、不用于支付订单，所以都不会落进来。
+// 查询失败只记日志、按没有处理：这是锦上添花的信号，不能让建单失败。
+func firstRealPaidAt(ctx context.Context, userID uint64) (time.Time, bool) {
+	var o Order
+	err := db.Get().WithContext(ctx).
+		Where("user_id = ? AND is_paid = ? AND (is_refunded IS NULL OR is_refunded = ?) AND pay_amount > 0 AND paid_at IS NOT NULL",
+			userID, true, false).
+		Order("paid_at ASC").
+		Select("paid_at").
+		Take(&o).Error
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warnf(ctx, "nextpay firstPaidAt lookup failed for user %d: %v", userID, err)
+		}
+		return time.Time{}, false
+	}
+	if o.PaidAt == nil || o.PaidAt.IsZero() {
+		return time.Time{}, false
+	}
+	return *o.PaidAt, true
+}
+
 // createNextpayCheckoutFn 在 NextPay 建一张一次性订单并 confirm，换回 Stripe Checkout URL。
 // var 形态供测试替换（对标 NextPay 自身的 createStripeCheckoutSessionFn seam）。
 var createNextpayCheckoutFn = createNextpayCheckout
@@ -96,7 +126,11 @@ func createNextpayCheckout(ctx context.Context, user *User, order *Order, plan *
 		return nil, fmt.Errorf("user %d has no usable email for nextpay: %w", user.ID, err)
 	}
 	locale := kaituSiteLocale(user.Language)
-	metadata, _ := json.Marshal(map[string]string{"brand": string(BrandKaitu), "plan": plan.PID})
+	meta := map[string]string{"brand": string(BrandKaitu), "plan": plan.PID}
+	if at, ok := firstRealPaidAt(ctx, user.ID); ok {
+		meta[nextpayMetaFirstPaidAt] = at.UTC().Format(time.RFC3339)
+	}
+	metadata, _ := json.Marshal(meta)
 
 	res, err := nextpay.CreateOrder(ctx, &nextpay.OrderRequest{
 		UserID:             user.UUID,
