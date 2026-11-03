@@ -59,12 +59,22 @@ func TestInRecallHoldout_AboutTenPercent(t *testing.T) {
 	assert.InDelta(t, 1000, n, 150)
 }
 
-// 真 MySQL：recallMailer 的对照组记录与优惠缺失处理。
+// 真 MySQL：recallMailer 的对照组记录、优惠缺失与无模板品牌的处理。
 func TestRecallMailer_HoldoutAndOffer(t *testing.T) {
 	skipIfNoConfig(t)
 	require.NoError(t, Migrate())
 	ctx := context.Background()
 	uniq := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	mkTpl := func(slug string) {
+		tpl := &EmailMarketingTemplate{Name: slug, Slug: slug, Language: "zh-CN", Subject: "s", Content: "c",
+			IsActive: BoolPtr(true), Brand: string(BrandKaitu)}
+		require.NoError(t, db.Get().Create(tpl).Error)
+		t.Cleanup(func() { db.Get().Unscoped().Delete(tpl) })
+	}
+	offerSlug, plainSlug := "trm-3d-"+uniq, "trm-1d-"+uniq
+	mkTpl(offerSlug)
+	mkTpl(plainSlug)
 
 	// 找一个对照组 id 和一个召回组 id（不入库：Holdout 只写日志行）。
 	var hold, treat uint64
@@ -78,7 +88,7 @@ func TestRecallMailer_HoldoutAndOffer(t *testing.T) {
 	batch := "abandoned:3d:test-" + uniq
 	t.Cleanup(func() { db.Get().Where("batch_id = ?", batch).Delete(&EmailSendLog{}) })
 
-	m := newRecallMailer(batch, "abandoned-3d", "TRM"+uniq[len(uniq)-12:])
+	m := newRecallMailer(batch, offerSlug, "TRM"+uniq[len(uniq)-12:])
 	holdUser := &User{ID: hold, Brand: "kaitu"}
 	assert.True(t, m.Holdout(ctx, holdUser, "h@example.com"))
 	assert.True(t, m.Holdout(ctx, holdUser, "h@example.com"), "重复运行仍判对照组")
@@ -88,6 +98,7 @@ func TestRecallMailer_HoldoutAndOffer(t *testing.T) {
 	assert.Equal(t, EmailSendLogStatusSkipped, rows[0].Status)
 	require.NotNil(t, rows[0].ErrorMsg)
 	assert.Equal(t, recallHoldoutReason, *rows[0].ErrorMsg)
+	assert.NotZero(t, rows[0].TemplateID)
 	assert.False(t, m.Holdout(ctx, &User{ID: treat, Brand: "kaitu"}, "t@example.com"))
 
 	// 活动码不存在：带优惠的阶段不发（不发一封没有码的「优惠」邮件），并标记 OfferMissing。
@@ -95,11 +106,18 @@ func TestRecallMailer_HoldoutAndOffer(t *testing.T) {
 	assert.False(t, ok)
 	assert.True(t, m.OfferMissing)
 
+	// 该品牌没有这封信（Overleap）：不进对照组、不算优惠缺失、不发。
+	o := newRecallMailer("abandoned:3d:test-o-"+uniq, offerSlug, "TRM"+uniq[len(uniq)-12:])
+	assert.False(t, o.Holdout(ctx, &User{ID: hold, Brand: "overleap"}, "o@example.com"), "收不到信的人不能进对照组")
+	_, ok = o.Vars(ctx, &User{ID: treat, Brand: "overleap"}, "o@example.com")
+	assert.False(t, ok)
+	assert.False(t, o.OfferMissing, "没有模板的品牌不该触发优惠缺失告警")
+
 	// 只提醒的阶段：无码，照常有购买链接。
-	plain := newRecallMailer("abandoned:1d:test-"+uniq, "abandoned-1d", "")
+	plain := newRecallMailer("abandoned:1d:test-"+uniq, plainSlug, "")
 	vars, ok := plain.Vars(ctx, &User{ID: treat, Brand: "kaitu", Language: "zh-CN"}, "t@example.com")
 	require.True(t, ok)
 	assert.Empty(t, vars["CampaignCode"])
-	assert.Contains(t, vars["PurchaseURL"], "utm_campaign=abandoned-1d")
+	assert.Contains(t, vars["PurchaseURL"], "utm_campaign="+plainSlug)
 	assert.False(t, plain.OfferMissing)
 }

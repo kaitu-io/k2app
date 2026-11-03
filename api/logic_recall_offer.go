@@ -133,15 +133,34 @@ type recallMailer struct {
 	slug      string // 也用作 utm_campaign
 	offerCode string // 空 = 本阶段不带优惠（只提醒）
 
-	offers map[Brand]*recallOffer
-	loaded map[Brand]bool
+	offers    map[Brand]*recallOffer
+	loaded    map[Brand]bool
+	templates map[Brand]uint64 // 该品牌此 slug 的源模板 ID，0 = 该品牌没有这封信
 	// OfferMissing 本阶段带优惠、但某品牌的活动码或年付套餐不可用（这些人本次不发）。
 	OfferMissing bool
 }
 
 func newRecallMailer(batchID, slug, offerCode string) *recallMailer {
 	return &recallMailer{batchID: batchID, slug: slug, offerCode: offerCode,
-		offers: map[Brand]*recallOffer{}, loaded: map[Brand]bool{}}
+		offers: map[Brand]*recallOffer{}, loaded: map[Brand]bool{}, templates: map[Brand]uint64{}}
+}
+
+func recallBrand(user *User) Brand {
+	if b := Brand(user.Brand); b.Valid() {
+		return b
+	}
+	return BrandKaitu
+}
+
+// templateFor 该品牌是否有这封信（缓存）。没有模板的品牌（如 Overleap 没有召回邮件）的用户
+// 本来就收不到信：既不进对照组（否则对照组混进"本来也收不到"的人），也不算优惠缺失（否则天天误报）。
+func (m *recallMailer) templateFor(b Brand) uint64 {
+	id, ok := m.templates[b]
+	if !ok {
+		id = recallTemplateID(m.slug, b)
+		m.templates[b] = id
+	}
+	return id
 }
 
 func (m *recallMailer) offerFor(ctx context.Context, b Brand) *recallOffer {
@@ -154,9 +173,9 @@ func (m *recallMailer) offerFor(ctx context.Context, b Brand) *recallOffer {
 
 // Vars 该用户的模板变量；false = 本阶段应带优惠但优惠不可用——宁可不发，也不发一封没有码的「优惠」邮件。
 func (m *recallMailer) Vars(ctx context.Context, user *User, email string) (map[string]string, bool) {
-	b := Brand(user.Brand)
-	if !b.Valid() {
-		b = BrandKaitu
+	b := recallBrand(user)
+	if m.templateFor(b) == 0 {
+		return nil, false
 	}
 	vars := map[string]string{}
 	code, planPID := "", ""
@@ -179,25 +198,25 @@ func (m *recallMailer) Vars(ctx context.Context, user *User, email string) (map[
 // Holdout 对照组用户不发信，但落一条 skipped（error_msg=holdout）记录，recall_stats 用它算对照组转化。
 // 同一批次重复运行不重复落（(batch, template, user) 有唯一索引）。
 func (m *recallMailer) Holdout(ctx context.Context, user *User, email string) bool {
-	if !inRecallHoldout(user.ID) {
+	if !inRecallHoldout(user.ID) || m.templateFor(recallBrand(user)) == 0 {
 		return false
 	}
 	var n int64
 	db.Get().Model(&EmailSendLog{}).Where("batch_id = ? AND user_id = ?", m.batchID, user.ID).Count(&n)
 	if n == 0 {
-		createEmailSendLog(ctx, m.batchID, recallTemplateID(m.slug, Brand(user.Brand)), user.ID, email, "",
+		createEmailSendLog(ctx, m.batchID, m.templateFor(recallBrand(user)), user.ID, email, "",
 			EmailSendLogStatusSkipped, recallHoldoutReason)
 	}
 	return true
 }
 
-// recallTemplateID 某品牌下该 slug 源模板的 ID；查不到返回 0（统计按 batch_id 归类，不依赖它）。
+// recallTemplateID 某品牌下该 slug 的启用源模板 ID；查不到返回 0。
 func recallTemplateID(slug string, b Brand) uint64 {
 	if !b.Valid() {
 		b = BrandKaitu
 	}
 	var tpl EmailMarketingTemplate
-	if err := db.Get().Where("slug = ? AND brand = ? AND origin_id IS NULL", slug, string(b)).
+	if err := db.Get().Where("slug = ? AND brand = ? AND is_active = ? AND origin_id IS NULL", slug, string(b), true).
 		Order("id ASC").First(&tpl).Error; err != nil {
 		return 0
 	}
