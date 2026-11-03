@@ -744,7 +744,8 @@ func (tm *TransportManager) updateTCPWSMinEchoRTT(rtt time.Duration) time.Durati
 // availability (and, for tcpws, quality — tcpws has no CC stats, so echo
 // RTT inflation is its only quality signal). An IsEchoUnsupported error
 // (old server without an echo handler) is benign and recorded as neither
-// success nor failure.
+// success nor failure; so is an IsEchoNotProbed one (no live connection —
+// nothing was measured).
 //
 // A successful tcpws echo with rtt <= 0 completed inside one tick of the
 // caller's clock: on windows/amd64 Go's monotonic clock is
@@ -760,7 +761,7 @@ func (tm *TransportManager) RecordEchoResult(channel string, rtt time.Duration, 
 		return
 	}
 	if err != nil {
-		if IsEchoUnsupported(err) {
+		if IsEchoNotProbed(err) || IsEchoUnsupported(err) {
 			return
 		}
 		sc.RecordAvailability(false, now)

@@ -400,9 +400,16 @@ func (c *QUICClient) RunEchoProbe(ctx context.Context) error {
 	conn := c.conn
 	c.mu.Unlock()
 	if conn == nil {
-		return errors.New("no cached connection")
+		return fmt.Errorf("%w: no cached connection", ErrEchoNoConnection)
 	}
 	_, err := EchoProbe(ctx, conn)
+	if err != nil && conn.Context().Err() != nil {
+		// The connection is gone (closed locally by a Reset racing this probe,
+		// or already dead when we picked it up). A pre-echo server closes the
+		// echo STREAM on a live connection, so this is not that — but a
+		// timeout (idle timeout, read deadline) still counts as a failure.
+		return echoNotProbed(err)
+	}
 	return err
 }
 

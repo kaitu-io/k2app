@@ -25,7 +25,7 @@ Level column = the slog level at the call site(s). "Where" = file(s) relative to
 | `wake` | WARN | engine/health.go | Wall-clock jump > 5s (`wakeDiagThreshold`); ≥30s also triggers `doWakeReconnect`. sleepS, health, transport, uptimeS |
 | `echo-probe-ok` | DEBUG | wire/echo.go, wire/race.go | Echo succeeded. transport, rttMs |
 | `echo-probe-fail` | WARN | engine/health.go, wire/race.go | Echo failed. transport, err |
-| `echo-probe-unsupported` | WARN | engine/health.go, wire/race.go | Server doesn't support echo (old k2v5); rate-limited once per TM. transport |
+| `echo-probe-unsupported` | WARN | engine/health.go, wire/race.go | Server doesn't support echo (old k2v5); rate-limited once per TM. transport, err (the stream error the verdict rests on — EOF/reset from a pre-echo server; added after 0.4.14). A probe that never reached a live connection (`wire.ErrEchoNoConnection`: none cached after a Reset, cached one already closed, tcpws connect refused) is **not** this event — before that marker it was, and fired on nearly every Android connect against echo-capable servers. Clients ≤0.4.14 still log it that way, with no err field |
 | `transport-rerace` | WARN | engine/engine.go | Runtime re-race after 3 consecutive echo fails. reason, previousTransport |
 | `connected` | INFO | engine/engine.go | Engine connected. server, mode, disableSniff, dialMs, dnsTransport |
 | `session-end` | INFO | engine/engine.go | Engine stop (only if a session was up). uptimeS, txMB, rxMB |

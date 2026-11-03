@@ -777,6 +777,9 @@ const (
 	echoOK echoClass = iota
 	echoUnsupported
 	echoFail
+	// echoNotProbed: the probe never reached a live connection (see
+	// wire.ErrEchoNoConnection) — no evidence either way.
+	echoNotProbed
 )
 
 // echoStep is the state-machine transition for one probe outcome.
@@ -786,6 +789,18 @@ func echoStep(trust, strikes int32, err error) echoStepResult {
 	switch {
 	case err == nil:
 		return echoStepResult{NewTrust: min(trust+1, maxTrust), NewStrikes: 0, Classify: echoOK}
+	case wire.IsEchoNotProbed(err):
+		// No live connection to probe (dropped by Reset/ResetConnections and
+		// not yet lazily redialed, or a tcpws connect refused). It used to be
+		// misclassified as unsupported; it is now classified separately (no
+		// false "server lacks echo" DIAG), but the trust/strike arithmetic
+		// deliberately stays IDENTICAL to the unsupported branch: freezing
+		// trust would pin the loop at the 1s cadence while unconnected (mobile
+		// wakeups), and freezing strikes would carry a dead path's strikes
+		// across a network Reset into the new path (premature re-race).
+		// Known pre-existing gap, unchanged here: a dead node with no cached
+		// connection never accumulates strikes via this path.
+		return echoStepResult{NewTrust: min(trust+1, maxTrust), NewStrikes: 0, Classify: echoNotProbed}
 	case wire.IsEchoUnsupported(err):
 		// Pre-echo server: treat as success-equivalent for trust accounting.
 		// Server can't validate but isn't broken; other failure modes (QUIC idle,
@@ -1019,9 +1034,11 @@ func (hm *healthMonitor) probeOnce(ot *outboundTransport, st *echoLoopState, now
 		// no need to duplicate here.
 	case echoUnsupported:
 		if !st.unsupportedLogged {
-			slog.Warn("DIAG: echo-probe-unsupported", "transport", transport)
+			slog.Warn("DIAG: echo-probe-unsupported", "transport", transport, "err", err.Error())
 			st.unsupportedLogged = true
 		}
+	case echoNotProbed:
+		slog.Debug("engine: echo probe skipped, no live connection", "transport", transport, "err", err.Error())
 	case echoFail:
 		st.unsupportedLogged = false
 		slog.Warn("DIAG: echo-probe-fail",
@@ -1272,7 +1289,7 @@ func (hm *healthMonitor) probeBackupOnce(ot *outboundTransport, st *backupLoopSt
 			cancel()
 			probeNow := time.Now()
 
-			if err != nil && !wire.IsEchoUnsupported(err) {
+			if err != nil && !wire.IsEchoNotProbed(err) && !wire.IsEchoUnsupported(err) {
 				slog.Warn("DIAG: echo-probe-fail", "transport", "tcpws-backup", "err", err.Error())
 			}
 

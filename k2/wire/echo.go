@@ -128,6 +128,10 @@ func HandleEchoStream(stream *quic.Stream, br *bufio.Reader) {
 // over-matching timeouts here. See TestIsEchoUnsupported_RealStreamDeadlineIsNotUnsupported,
 // which drives a real quic-go connection rather than a synthetic error value.
 func IsEchoUnsupported(err error) bool {
+	// Never reached a live connection: no verdict about the server at all.
+	if errors.Is(err, ErrEchoNoConnection) {
+		return false
+	}
 	// Blocked path, not an old server — the wire is genuinely dead.
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
 		return false
@@ -140,4 +144,38 @@ func IsEchoUnsupported(err error) bool {
 	}
 	// Stream reset or unexpected EOF from server = likely old server.
 	return true
+}
+
+// ErrEchoNoConnection marks an echo probe that never ran on a live
+// connection: the client had no cached connection (Reset / ResetConnections
+// drop it and the next dial rebuilds it lazily), the cached one was already
+// closed, or a tcpws connect failed with a non-timeout error. Such a probe
+// says nothing about the server's echo support or about the data path, so it
+// is neither "unsupported" nor a failure — engine's echoStep leaves trust and
+// strikes untouched and RecordEchoResult records nothing.
+//
+// Before this marker every such error fell through IsEchoUnsupported's
+// fail-open default: on Android the connectivity change raised right after
+// the VPN comes up resets the transport, the 1s probe found no connection,
+// and `DIAG: echo-probe-unsupported` fired on almost every connect against
+// servers that do implement echo — growing trust and zeroing the strike
+// counter each time.
+var ErrEchoNoConnection = errors.New("echo: no live connection")
+
+// IsEchoNotProbed reports whether err is an ErrEchoNoConnection — the probe
+// never reached a live connection. Callers check it before IsEchoUnsupported.
+func IsEchoNotProbed(err error) bool {
+	return errors.Is(err, ErrEchoNoConnection)
+}
+
+// echoNotProbed relabels err as ErrEchoNoConnection — but only an error that
+// IsEchoUnsupported would otherwise have read as "pre-echo server". Timeouts
+// pass through untouched: they stay failures that strike toward a re-race
+// (ticket #3463). So relabelling can only turn "unsupported" into "not
+// probed", never hide a failure.
+func echoNotProbed(err error) error {
+	if err == nil || !IsEchoUnsupported(err) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", ErrEchoNoConnection, err)
 }
