@@ -28,6 +28,9 @@ const AUTO_DOWNLOAD_SECONDS = 5;
 interface InstallClientProps {
   betaVersion: string | null;
   stableVersion: string | null;
+  /** Windows 可落后于桌面版本（过 SmartScreen 前停在上一版）；缺省 = 同 betaVersion / stableVersion。 */
+  betaWindowsVersion?: string | null;
+  stableWindowsVersion?: string | null;
   mobileLinks?: MobileLinks | null;
 }
 
@@ -142,7 +145,13 @@ function FaqJsonLd({ t }: { t: (key: string) => string }) {
 // Main Component
 // ---------------------------------------------------------------------------
 
-export default function InstallClient({ betaVersion, stableVersion: serverStable, mobileLinks }: InstallClientProps) {
+export default function InstallClient({
+  betaVersion,
+  stableVersion: serverStable,
+  betaWindowsVersion,
+  stableWindowsVersion,
+  mobileLinks,
+}: InstallClientProps) {
   const t = useTranslations();
   const router = useRouter();
   const [selectedPlatform, setSelectedPlatform] = useState<PlatformId>('windows');
@@ -155,8 +164,14 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
 
   const displayVersion = betaVersion || serverStable!;
   const isBeta = !!(betaVersion && betaVersion !== serverStable);
-  const downloadLinks = getDownloadLinks(displayVersion);
-  const stableDownloadLinks = isBeta && serverStable ? getDownloadLinks(serverStable) : null;
+  const displayWindowsVersion = (betaVersion ? betaWindowsVersion : stableWindowsVersion) || displayVersion;
+  const stableWindowsLinks = getDownloadLinks(stableWindowsVersion || serverStable || displayVersion).windows;
+  const downloadLinks = {
+    ...getDownloadLinks(displayVersion),
+    windows: getDownloadLinks(displayWindowsVersion).windows,
+  };
+  const stableDownloadLinks =
+    isBeta && serverStable ? { ...getDownloadLinks(serverStable), windows: stableWindowsLinks } : null;
 
   const cancelAutoDownload = useCallback(() => {
     if (countdownRef.current) {
@@ -288,7 +303,7 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
         <TabsContent value="windows">
           <WindowsPanel
             t={t}
-            version={displayVersion}
+            version={displayWindowsVersion}
             isBeta={isBeta}
             primaryLink={downloadLinks.windows.primary}
             backupLink={downloadLinks.windows.backup}
