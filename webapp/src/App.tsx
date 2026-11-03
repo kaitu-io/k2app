@@ -20,6 +20,7 @@ import AuthGate from "./components/AuthGate";
 import AlertContainer from "./components/AlertContainer";
 import MembershipGuard from "./components/MembershipGuard";
 import ForceUpgradeDialog from "./components/ForceUpgradeDialog";
+import PushCoordinator from "./components/PushCoordinator";
 import LoginDialog from "./components/LoginDialog";
 import LoginRequiredGuard from "./components/LoginRequiredGuard";
 import { UpdateNotification } from "./components/UpdateNotification";
@@ -153,6 +154,9 @@ function AppRoutes() {
 
       {/* Global login dialog */}
       <LoginDialog />
+
+      {/* iOS push: tap routing, token sync, permission explainer (renders nothing elsewhere) */}
+      <PushCoordinator />
 
       {/* Force upgrade dialog (from app config minClientVersion) */}
       <ForceUpgradeDialog />

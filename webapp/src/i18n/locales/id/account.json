@@ -173,5 +173,18 @@
     "bindFailed": "Gagal menautkan, coba lagi nanti",
     "emailConflict": "Email ini sudah punya akun. Tautkan email lain; untuk menggabungkan akun, hubungi dukungan.",
     "socialConflict": "Apple ID / akun Google ini sudah ditautkan ke akun lain. Tautkan yang lain; untuk menggabungkan akun, hubungi dukungan."
+  },
+  "push": {
+    "settingTitle": "Notifikasi",
+    "statusOn": "Aktif",
+    "statusOff": "Nonaktif. Aktifkan di Pengaturan",
+    "enable": "Aktifkan",
+    "openSettings": "Buka Pengaturan",
+    "marketingTitle": "Promo dan berita",
+    "marketingDesc": "Pengingat masa berlaku dan pembayaran tetap dikirim",
+    "promptTitle": "Aktifkan notifikasi",
+    "promptBody": "Kami langsung memberi tahu saat keanggotaan hampir berakhir atau pembayaran gagal, agar koneksi tidak terputus.",
+    "promptMarketing": "Kirim juga promo dan berita",
+    "later": "Nanti saja"
   }
 }

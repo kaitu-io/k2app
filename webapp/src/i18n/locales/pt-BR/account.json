@@ -173,5 +173,18 @@
     "bindFailed": "Não foi possível vincular, tente novamente mais tarde",
     "emailConflict": "Este e-mail já tem uma conta. Vincule outro e-mail; para unir contas, fale com o suporte.",
     "socialConflict": "Este ID Apple / conta Google já está vinculado a outra conta. Vincule outro; para unir contas, fale com o suporte."
+  },
+  "push": {
+    "settingTitle": "Notificações",
+    "statusOn": "Ativadas",
+    "statusOff": "Desativadas. Ative em Ajustes",
+    "enable": "Ativar",
+    "openSettings": "Abrir Ajustes",
+    "marketingTitle": "Ofertas e novidades",
+    "marketingDesc": "Você continuará recebendo lembretes de vencimento e pagamento",
+    "promptTitle": "Ativar notificações",
+    "promptBody": "Avisamos na hora quando sua assinatura estiver perto de vencer ou um pagamento falhar, para sua conexão não ser interrompida.",
+    "promptMarketing": "Receber também ofertas e novidades",
+    "later": "Agora não"
   }
 }

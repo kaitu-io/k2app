@@ -173,5 +173,18 @@
     "bindFailed": "绑定失败，请稍后重试",
     "emailConflict": "该邮箱已有账号，请换一个邮箱绑定；如需合并请联系客服",
     "socialConflict": "该 Apple ID / Google 账号已绑定其他账号，请换一个绑定；如需合并请联系客服"
+  },
+  "push": {
+    "settingTitle": "通知",
+    "statusOn": "已开启",
+    "statusOff": "已关闭，可在系统设置中开启",
+    "enable": "开启",
+    "openSettings": "去设置",
+    "marketingTitle": "优惠和活动通知",
+    "marketingDesc": "关闭后仍会收到到期和付款提醒",
+    "promptTitle": "开启通知",
+    "promptBody": "会员到期、付款失败时第一时间提醒你，避免连接中断。",
+    "promptMarketing": "同时接收优惠和活动通知",
+    "later": "以后再说"
   }
 }
