@@ -186,4 +186,23 @@ describe('InstallClient funnel install_view', () => {
   it('does not fire install_view for a visit redirected to /routers', () => {
     expect(viewsFor('?platform=router')).toBe(0);
   });
+
+  it('Windows panel uses the Windows version when it lags the desktop version', async () => {
+    window.history.pushState({}, '', '/?platform=windows&nodownload');
+    const { container, findByText } = render(
+      createElement(InstallClient, {
+        betaVersion: null,
+        stableVersion: '0.4.15',
+        stableWindowsVersion: '0.4.13',
+        mobileLinks: null,
+      })
+    );
+    await findByText(/0\.4\.13/);
+    const html = container.innerHTML;
+    window.history.pushState({}, '', '/');
+    // 主按钮走 onClick；可见的是按钮版本号与安装指引里的文件名
+    expect(html).toContain('_0.4.13_x64.exe');
+    expect(html).not.toContain('_0.4.15_x64.exe');
+    expect(html).toContain('v0.4.13');
+  });
 });

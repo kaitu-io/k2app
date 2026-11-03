@@ -107,7 +107,7 @@ Velite compiles `content/{locale}/**/*.md` at build time (`velite.config.ts`: `o
 
 **Release notes / Changelog:**
 - **Single source of truth**: `web/releases/v{VERSION}.md`
-- **Frontmatter**: `version` + `date` (required), plus optional `noDownloads: true` for releases that don't ship app binaries (e.g. router-only or hot-fix bumps that share the previous version's downloads). When set, the `/releases` page hides macOS / Windows / Linux / Android / iOS download buttons for that row.
+- **Frontmatter**: `version` + `date` (required), plus optional `noDownloads: true` for releases that don't ship app binaries (e.g. router-only or hot-fix bumps that share the previous version's downloads). When set, the `/releases` page hides macOS / Windows / Linux / Android / iOS download buttons for that row. `windowsPending: true` hides only that row's Windows button — set it while the new exe hasn't cleared SmartScreen (`scripts/CLAUDE.md` 「Windows 上线门」), delete it once it has. The `/install` page needs no flag: `lib/downloads.ts` takes the Windows version from the manifest's `platforms.windows-x86_64.url`, so it follows the updater pointer by itself.
 - **Sections**: `## New Features`, `## Bug Fixes`, `## Improvements`, `## Breaking Changes` (see `web/releases/README.md` for user-focused writing guidelines — user-visible items only, no internal refactors / pure deps bumps / dev-only changes)
 - **Generate**: `cd web && node scripts/generate-changelog.js` → produces `public/releases.json`, `public/changelog.json`, `public/changelog.md` — **all three are gitignored** (`web/.gitignore`)
 - **Display**: `/releases` page fetches `/releases.json` at runtime

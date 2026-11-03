@@ -38,6 +38,8 @@ export default async function InstallPage({
   const all = await fetchAllDownloadLinks();
   const betaVersion = all.desktop.beta?.version ?? null;
   const stableVersion = all.desktop.stable?.version ?? null;
+  const betaWindowsVersion = all.desktop.beta?.windowsVersion ?? null;
+  const stableWindowsVersion = all.desktop.stable?.windowsVersion ?? null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -45,7 +47,13 @@ export default async function InstallPage({
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* Client island: device detection, download countdown, download state cards */}
-        <InstallClient betaVersion={betaVersion} stableVersion={stableVersion} mobileLinks={all.mobile} />
+        <InstallClient
+          betaVersion={betaVersion}
+          stableVersion={stableVersion}
+          betaWindowsVersion={betaWindowsVersion}
+          stableWindowsVersion={stableWindowsVersion}
+          mobileLinks={all.mobile}
+        />
       </div>
 
       <Footer />

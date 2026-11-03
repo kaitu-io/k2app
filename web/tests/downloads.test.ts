@@ -32,6 +32,44 @@ describe('fetchAllDownloadLinks', () => {
     mockFetch.mockReset();
   });
 
+  it('Windows follows platforms.windows-x86_64 when it lags the manifest version (SmartScreen gate)', async () => {
+    const manifest = {
+      version: '0.4.15',
+      platforms: {
+        'windows-x86_64': { url: 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/0.4.13/Kaitu_0.4.13_x64.exe' },
+        'darwin-universal': { url: 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/0.4.15/Kaitu_0.4.15_universal.app.tar.gz' },
+      },
+    };
+    mockFetch.mockImplementation((url: string) =>
+      url.includes('cloudfront.latest.json')
+        ? Promise.resolve({ ok: true, json: () => Promise.resolve(manifest) })
+        : Promise.resolve({ ok: false }),
+    );
+
+    const { fetchAllDownloadLinks } = await import('../src/lib/downloads');
+    const { stable, beta } = (await fetchAllDownloadLinks()).desktop;
+
+    for (const ch of [stable!, beta!]) {
+      expect(ch.version).toBe('0.4.15');
+      expect(ch.windowsVersion).toBe('0.4.13');
+      expect(ch.links.windows.primary).toContain('/0.4.13/Kaitu_0.4.13_x64.exe');
+      expect(ch.links.windows.primary).not.toContain('0.4.15');
+      expect(ch.links.macos.primary).toContain('/0.4.15/Kaitu_0.4.15_universal.pkg');
+    }
+  });
+
+  it('manifest without a Windows entry falls back to the top-level version', async () => {
+    mockFetch.mockImplementation((url: string) =>
+      url.includes('cloudfront.latest.json')
+        ? Promise.resolve({ ok: true, json: () => Promise.resolve({ version: '0.3.22' }) })
+        : Promise.resolve({ ok: false }),
+    );
+    const { fetchAllDownloadLinks } = await import('../src/lib/downloads');
+    const { stable } = (await fetchAllDownloadLinks()).desktop;
+    expect(stable!.windowsVersion).toBe('0.3.22');
+    expect(stable!.links.windows.primary).toContain('/0.3.22/Kaitu_0.3.22_x64.exe');
+  });
+
   it('fetches desktop beta + stable versions and mobile links', async () => {
     mockFetch.mockImplementation((url: string) => {
       if (url.includes('/beta/cloudfront.latest.json')) {
@@ -115,6 +153,7 @@ describe('flattenToRecord', () => {
       desktop: {
         beta: {
           version: '0.4.0-beta.1',
+          windowsVersion: '0.4.0-beta.1',
           links: {
             windows: { primary: 'https://cdn/win.exe', backup: 'https://backup/win.exe' },
             macos: { primary: 'https://cdn/mac.pkg', backup: 'https://backup/mac.pkg' },
@@ -146,5 +185,17 @@ describe('flattenToRecord', () => {
     });
 
     expect(result).toEqual({ windows: '', macos: '', ios: '', android: '' });
+  });
+});
+
+describe('windowsVersionFromUrl', () => {
+  it.each([
+    ['https://d0.all7.cc/kaitu/desktop/0.4.13/Kaitu_0.4.13_x64.exe', '0.4.13'],
+    ['https://d0.all7.cc/kaitu/desktop/0.5.0-beta.2/Kaitu_0.5.0-beta.2_x64.exe', '0.5.0-beta.2'],
+    ['https://d0.all7.cc/kaitu/desktop/0.4.13/Kaitu_0.4.13_universal.pkg', null],
+    [undefined, null],
+  ])('%s → %s', async (url, want) => {
+    const { windowsVersionFromUrl } = await import('../src/lib/downloads');
+    expect(windowsVersionFromUrl(url)).toBe(want);
   });
 });

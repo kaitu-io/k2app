@@ -166,6 +166,9 @@ function generateChangelog() {
     // Optional `noDownloads: true` flag for releases that don't ship app binaries
     // (e.g. router-only releases where the install one-liner is in the body).
     const noDownloads = /noDownloads:\s*true/i.test(content);
+    // `windowsPending: true` — Windows 安装包还没过 SmartScreen（scripts/CLAUDE.md
+    // 「Windows 上线门」）：这一行不给 Windows 下载，其余平台照常。过审后删掉该行再部署。
+    const windowsPending = /windowsPending:\s*true/i.test(content);
 
     // Strip YAML frontmatter
     let withoutFrontmatter = content;
@@ -191,8 +194,10 @@ function generateChangelog() {
 
     const downloads = {};
     if (hasDesktop) {
-      downloads.windows = `${CDN_PRIMARY}/${version.string}/Kaitu_${version.string}_x64.exe`;
-      downloads.windowsBackup = `${CDN_BACKUP}/${version.string}/Kaitu_${version.string}_x64.exe`;
+      if (!windowsPending) {
+        downloads.windows = `${CDN_PRIMARY}/${version.string}/Kaitu_${version.string}_x64.exe`;
+        downloads.windowsBackup = `${CDN_BACKUP}/${version.string}/Kaitu_${version.string}_x64.exe`;
+      }
       downloads.macos = `${CDN_PRIMARY}/${version.string}/Kaitu_${version.string}_universal.pkg`;
       downloads.macosBackup = `${CDN_BACKUP}/${version.string}/Kaitu_${version.string}_universal.pkg`;
     }
