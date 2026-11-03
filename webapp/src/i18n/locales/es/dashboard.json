@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "Inicia sesión para desbloquear más nodos en la nube",
       "viewPlans": "Ver Planes"
-    }
+    },
+    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
+    "trialContinue": "Keep using"
   },
   "appBypass": {
     "v2": {

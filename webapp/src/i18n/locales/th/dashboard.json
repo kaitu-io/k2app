@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "เข้าสู่ระบบเพื่อปลดล็อกโหนดคลาวด์เพิ่มเติม",
       "viewPlans": "ดูแพ็กเกจ"
-    }
+    },
+    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
+    "trialContinue": "Keep using"
   },
   "appBypass": {
     "v2": {

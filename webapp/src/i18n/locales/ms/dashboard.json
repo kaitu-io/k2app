@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "Log masuk untuk buka kunci lebih banyak nod awan",
       "viewPlans": "Lihat Pelan"
-    }
+    },
+    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
+    "trialContinue": "Keep using"
   },
   "appBypass": {
     "v2": {

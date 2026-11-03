@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "ကလောက်နိုဒ်များ ပိုမိုရရန် လော့ဂ်အင်ဝင်ပါ",
       "viewPlans": "ပလန်များ ကြည့်မည်"
-    }
+    },
+    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
+    "trialContinue": "Keep using"
   },
   "appBypass": {
     "v2": {

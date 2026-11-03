@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "Se connecter pour déverrouiller plus de nœuds cloud",
       "viewPlans": "Voir les forfaits"
-    }
+    },
+    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
+    "trialContinue": "Keep using"
   },
   "appBypass": {
     "v2": {

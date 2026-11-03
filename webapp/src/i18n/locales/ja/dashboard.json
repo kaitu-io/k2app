@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "ログインしてクラウドノードを解放",
       "viewPlans": "プランを見る"
-    }
+    },
+    "trialRenewOff": "無料体験は残り{{days}}日です。{{date}}に終了するとサービスが停止します",
+    "trialContinue": "引き続き利用する"
   },
   "appBypass": {
     "v2": {

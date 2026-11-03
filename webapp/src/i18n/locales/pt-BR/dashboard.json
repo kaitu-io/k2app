@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "Conectar para desbloquear mais nós de nuvem",
       "viewPlans": "Ver Planos"
-    }
+    },
+    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
+    "trialContinue": "Keep using"
   },
   "appBypass": {
     "v2": {

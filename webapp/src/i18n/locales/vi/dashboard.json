@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "Đăng nhập để mở khóa thêm nút đám mây",
       "viewPlans": "Xem gói"
-    }
+    },
+    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
+    "trialContinue": "Keep using"
   },
   "appBypass": {
     "v2": {

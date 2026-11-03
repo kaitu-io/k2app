@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "ចូលគណនីដើម្បីដោះសោណូតពពកបន្ថែម",
       "viewPlans": "មើលគម្រោង"
-    }
+    },
+    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
+    "trialContinue": "Keep using"
   },
   "appBypass": {
     "v2": {

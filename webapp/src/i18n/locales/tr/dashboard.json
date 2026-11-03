@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "Daha fazla bulut düğümü açmak için giriş yapın",
       "viewPlans": "Planları Görüntüle"
-    }
+    },
+    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
+    "trialContinue": "Keep using"
   },
   "appBypass": {
     "v2": {

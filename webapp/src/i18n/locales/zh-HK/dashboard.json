@@ -158,7 +158,9 @@
       "geoip": "地理位置數據庫",
       "rules": "代理規則",
       "antiblock": "連接配置"
-    }
+    },
+    "trialRenewOff": "試用剩 {{days}} 天，{{date}} 結束後將停止服務",
+    "trialContinue": "繼續使用"
   },
   "appBypass": {
     "v2": {

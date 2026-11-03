@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "로그인하여 더 많은 클라우드 노드 잠금 해제",
       "viewPlans": "플랜 보기"
-    }
+    },
+    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
+    "trialContinue": "Keep using"
   },
   "appBypass": {
     "v2": {

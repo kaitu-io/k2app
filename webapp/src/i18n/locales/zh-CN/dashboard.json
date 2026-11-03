@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "登录解锁更多云端节点",
       "viewPlans": "了解会员"
-    }
+    },
+    "trialRenewOff": "试用剩 {{days}} 天，{{date}} 结束后将停止服务",
+    "trialContinue": "继续使用"
   },
   "appBypass": {
     "v2": {

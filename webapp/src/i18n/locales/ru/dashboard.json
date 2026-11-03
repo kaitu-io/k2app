@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "Войдите для разблокировки большего количества облачных узлов",
       "viewPlans": "Просмотреть планы"
-    }
+    },
+    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
+    "trialContinue": "Keep using"
   },
   "appBypass": {
     "v2": {

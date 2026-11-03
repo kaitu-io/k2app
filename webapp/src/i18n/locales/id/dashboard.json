@@ -158,7 +158,9 @@
     "loginBanner": {
       "message": "Masuk untuk buka kunci node cloud lebih banyak",
       "viewPlans": "Lihat Paket"
-    }
+    },
+    "trialRenewOff": "Trial ends in {{days}} days. Service will stop after {{date}}.",
+    "trialContinue": "Keep using"
   },
   "appBypass": {
     "v2": {
