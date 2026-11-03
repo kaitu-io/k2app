@@ -16,6 +16,7 @@ import android.os.Looper
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import android.util.Log
 import io.kaitu.k2plugin.K2Plugin
 import io.kaitu.k2plugin.NativeLogger
@@ -485,6 +486,11 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
         val logsDir = java.io.File(filesDir, "logs").also { it.mkdirs() }
         val logsDirPath = logsDir.absolutePath
         NativeLogger.setup(logsDir)
+        // The physical default network the engine is about to dial over (our own
+        // package is disallowed from the TUN, so activeNetwork is not the VPN).
+        // registerNetworkCallback compares it with the default at registration to
+        // recognise Android's registration-time onAvailable replay.
+        val networkAtStart = getSystemService(ConnectivityManager::class.java)?.activeNetwork
         engineExecutor.execute {
             try {
                 Log.d(TAG, "Starting engine with fd=$rawFd (background thread)")
@@ -501,7 +507,7 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
                 engine?.start(configJSON, rawFd.toLong(), engineCfg)
                 Log.d(TAG, "Engine started successfully")
                 NativeLogger.log("INFO", "startVpn: engine started successfully")
-                mainHandler.post { registerNetworkCallback() }
+                mainHandler.post { registerNetworkCallback(networkAtStart) }
             } catch (e: Exception) {
                 Log.e(TAG, "Engine start failed: ${e.message}", e)
                 NativeLogger.log("ERROR", "startVpn: engine start failed: ${e.message}")
@@ -594,14 +600,29 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
         }
     }
 
-    private fun registerNetworkCallback() {
+    private fun registerNetworkCallback(networkAtStart: Network?) {
         val cm = getSystemService(ConnectivityManager::class.java) ?: return
         val request = NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .build()
+        // registerNetworkCallback immediately replays onAvailable for every network
+        // that already satisfies the request. For the network the engine just
+        // connected over that is not a change — forwarding it ran a full,
+        // scoreboard-wiping engine reconnect ~0.5s after every connect.
+        val replayFilter = RegistrationReplayFilter.create(
+            networkAtStart, cm.activeNetwork, SystemClock.elapsedRealtime()
+        )
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 Log.d(TAG, "Network available: $network")
+                // Never skip while a memory-pressure pause is pending: before this filter,
+                // the replay was what woke an engine paused during start(); skipping it
+                // would leave the tunnel down (UI "connected") until the 60s safety net.
+                if (!enginePaused.get() &&
+                    replayFilter.shouldSkip(network, SystemClock.elapsedRealtime())) {
+                    NativeLogger.log("DEBUG", "onAvailable: registration replay for engine's start network — skipped")
+                    return
+                }
                 NativeLogger.log("DEBUG", "onAvailable: network change")
                 pendingNetworkChange?.let { mainHandler.removeCallbacks(it) }
                 // A real network callback beat the safety-net timer — cancel it so it
@@ -644,6 +665,7 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
 
             override fun onLost(network: Network) {
                 Log.d(TAG, "Network lost: $network — clearing dead connections immediately")
+                replayFilter.onLost(network)
                 NativeLogger.log("DEBUG", "onLost: network lost")
                 pendingNetworkChange?.let { mainHandler.removeCallbacks(it) }
                 pendingNetworkChange = null
