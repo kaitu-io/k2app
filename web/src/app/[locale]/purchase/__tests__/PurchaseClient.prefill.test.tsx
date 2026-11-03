@@ -1,5 +1,5 @@
 /**
- * Trial-recall links land here as ?campaign=&plan=&email=. The page must honor them:
+ * Trial-recall links land here as ?campaign=&plan=#email= (email only in the fragment). The page must honor them:
  * campaign code prefilled + expanded (preview priced with it), plan pre-selected when it
  * exists, login email prefilled — and none of it lost by the inline login.
  */
@@ -41,7 +41,7 @@ vi.mock('@/components/MembershipBenefits', () => ({ default: () => null }));
 vi.mock('@/components/PurchaseStep1', () => ({
   default: ({ initialEmail, onLoginSuccess }: { initialEmail?: string; onLoginSuccess: () => void }) => (
     <>
-      <input data-testid="email" defaultValue={initialEmail ?? ''} />
+      <input data-testid="email" value={initialEmail ?? ''} readOnly />
       <button data-testid="login" onClick={onLoginSuccess} />
     </>
   ),
@@ -75,6 +75,7 @@ describe('PurchaseClient URL prefill', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockQuery = '';
+    window.history.replaceState(null, '', '/zh-CN/purchase');
     mockGetPlans.mockResolvedValue({ items: [{ pid: 'p1', highlight: true }, { pid: 'p12' }] });
     mockGetDelegate.mockResolvedValue(null);
     mockGetUserProfile.mockResolvedValue({ expiredAt: 0, isFirstOrderDone: false });
@@ -103,10 +104,21 @@ describe('PurchaseClient URL prefill', () => {
     await waitFor(() => expect(screen.getByTestId('selected-plan').textContent).toBe('p1'));
   });
 
-  it('prefills login email from ?email= when signed out', async () => {
-    mockQuery = 'email=a%2Bb%40example.com';
+  it('prefills login email from #email= and strips it from the URL', async () => {
+    mockQuery = 'campaign=TRIAL80';
+    window.history.replaceState(null, '', '/zh-CN/purchase?campaign=TRIAL80#email=a%2Bb%40example.com');
     render(<PurchaseClient />);
-    expect(((await screen.findByTestId('email')) as HTMLInputElement).value).toBe('a+b@example.com');
+    await waitFor(() =>
+      expect((screen.getByTestId('email') as HTMLInputElement).value).toBe('a+b@example.com'),
+    );
+    expect(window.location.hash).toBe('');
+    expect(window.location.search).toBe('?campaign=TRIAL80');
+  });
+
+  it('ignores ?email= in the query (never read PII from the query)', async () => {
+    mockQuery = 'email=a%40example.com';
+    render(<PurchaseClient />);
+    expect(((await screen.findByTestId('email')) as HTMLInputElement).value).toBe('');
   });
 
   it('keeps campaign code after inline login success', async () => {

@@ -355,11 +355,15 @@ func trialRecallPurchaseURLLocale(locale, email, code, planPID string, stage tri
 	if planPID != "" {
 		q.Set("plan", planPID)
 	}
-	q.Set("email", email)
 	q.Set("utm_source", "email")
 	q.Set("utm_medium", "lifecycle")
 	q.Set("utm_campaign", "trial-recall-"+string(stage))
-	return BrandKaitu.Config().BaseURL + "/" + locale + "/purchase?" + q.Encode()
+	// 邮箱放 fragment 而不是 query：fragment 不发服务器、不进 CDN/Amplify 访问日志，
+	// GA4 的 page_location 也不含它（query 会被原样采集 → 邮箱进 Google Analytics）。
+	// 官网 PurchaseClient 读完即用 history.replaceState 抹掉。
+	frag := url.Values{}
+	frag.Set("email", email)
+	return BrandKaitu.Config().BaseURL + "/" + locale + "/purchase?" + q.Encode() + "#" + frag.Encode()
 }
 
 // trialRecallAppPlans 开途在售的 App 套餐（排除 router / private_node）。

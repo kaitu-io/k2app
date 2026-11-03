@@ -41,6 +41,10 @@ export default function EmailLogin({ onLoginSuccess, onCodeSent, mode = 'login',
   const { appConfig } = useAppConfig();
   const t = useTranslations();
   const [email, setEmail] = useState(initialEmail);
+  // initialEmail can arrive after mount (purchase page reads it from the URL fragment in an effect).
+  useEffect(() => {
+    if (initialEmail) setEmail((cur) => cur || initialEmail);
+  }, [initialEmail]);
   const [code, setCode] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [step, setStep] = useState(1); // 1:邮箱 2:验证码（未激活时同时显示邀请码）

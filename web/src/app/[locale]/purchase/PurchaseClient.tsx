@@ -119,11 +119,25 @@ export default function PurchaseClient() {
   const t = useTranslations();
   const { isAuthenticated, isAuthLoading } = useAuth();
 
-  // Prefill from the link (trial-recall email): ?campaign= &plan= &email=
+  // Prefill from the link (trial-recall email): ?campaign= &plan= #email=
+  // The email rides in the fragment, never the query: the query is collected verbatim by
+  // GA4 page_location and access logs. Read it once after mount, then strip it from the URL.
   const searchParams = useSearchParams();
   const campaignParam = searchParams?.get("campaign") ?? "";
   const planParam = searchParams?.get("plan") ?? "";
-  const emailParam = searchParams?.get("email") ?? "";
+  const [emailParam, setEmailParam] = useState("");
+  useEffect(() => {
+    const hash = window.location.hash.replace(/^#/, "");
+    if (!hash) return;
+    const frag = new URLSearchParams(hash);
+    const email = frag.get("email");
+    if (!email) return;
+    setEmailParam(email);
+    frag.delete("email");
+    const rest = frag.toString();
+    const { pathname, search } = window.location;
+    window.history.replaceState(window.history.state, "", pathname + search + (rest ? `#${rest}` : ""));
+  }, []);
 
   // Initialize embed mode to handle auth_token URL parameter
   const { showNavigation, showFooter } = useEmbedMode();
