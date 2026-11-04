@@ -116,6 +116,9 @@ func SetupRouter() *gin.Engine {
 		api.GET("/relays", AuthRequired(), EnforceDeviceClass(), ProRequired(), DeviceAuthRequired(), api_k2_relays)
 		// 代付邮件耐久支付链接：302 到可用的 Stripe Checkout（无认证，uuid 即凭证）
 		api.GET("/orders/:uuid/pay", api_order_pay_redirect)
+		// EDM 一键退订（无认证，签名令牌即凭证；返回 HTML）：GET 确认页、POST 退订（含 RFC 8058 One-Click）
+		api.GET("/edm/unsubscribe", api_edm_unsubscribe_page)
+		api.POST("/edm/unsubscribe", api_edm_unsubscribe)
 		// Get plans (legacy, frozen — app-only)
 		api.GET("/plans", api_get_plans)
 		// Get plans by product line (new, product-aware)

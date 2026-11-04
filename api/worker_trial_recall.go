@@ -411,7 +411,7 @@ func processTrialRecall(ctx context.Context, stage trialRecallStage, now time.Ti
 	}
 	if !emailReady {
 		for _, c := range cands {
-			if inTrialRecallHoldout(c.User.ID) {
+			if inRecallHoldoutForEmail(&c.User) {
 				res.Holdout++
 			}
 		}
@@ -453,7 +453,7 @@ func processTrialRecall(ctx context.Context, stage trialRecallStage, now time.Ti
 	for _, c := range cands {
 		email := getUserEmailFromIdentifies(&c.User)
 		switch {
-		case inTrialRecallHoldout(c.User.ID):
+		case inRecallHoldoutForEmail(&c.User):
 			res.Holdout++
 			record(c, email, recallHoldoutReason)
 			continue

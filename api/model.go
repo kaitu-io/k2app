@@ -95,6 +95,12 @@ type User struct {
 	PushMarketingOptIn   bool  `gorm:"column:push_marketing_opt_in;not null;default:false"`
 	PushMarketingOptInAt int64 `gorm:"column:push_marketing_opt_in_at;not null;default:0"` // 最近一次表态时刻（unix 秒）
 
+	// EDM（营销邮件）退订：收件人点邮件里的签名链接退订（无需登录，见 logic_edm_unsubscribe.go）。
+	// 为 true 时所有 EDM 发送（SendTemplatedEmails 唯一出口）记 skipped；事务邮件（mail 通道：验证码等）不看此字段。
+	// spec 2026-11-04-email-winback-campaign-design §4.2
+	EdmOptOut   bool  `gorm:"column:edm_opt_out;not null;default:false" json:"-"`
+	EdmOptOutAt int64 `gorm:"column:edm_opt_out_at;not null;default:0" json:"-"` // 首次退订时刻（unix 秒）
+
 	// Apple 退款 Consumption 应答的用户同意（spec 2026-10-08 §5）。nil = 没问过；false = 拒绝 / 已撤回。
 	// 只有 true 才在 CONSUMPTION_REQUEST 时把消费信息发给 Apple（logic_apple_consumption.go）。
 	AppleConsumptionConsent   *bool `gorm:"column:apple_consumption_consent"`

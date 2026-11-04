@@ -86,6 +86,9 @@ func sendEmail(ctx context.Context, to, subject, body string, brand Brand) error
 		Body:    body,
 		// 模板普遍写着「直接回复这封邮件」，回复必须落到客服信箱。
 		ReplyTo: configSupportEmail(brand),
+		// TODO(edm-unsubscribe): qtoolkit/mail.Message 加 Headers 后在这里带上
+		// List-Unsubscribe: <退订 URL> 与 List-Unsubscribe-Post: List-Unsubscribe=One-Click（RFC 8058）。
+		// 需要把 edmUnsubscribeURL(user) 传进 sendEmail。qtoolkit 由其负责会话改，spec 2026-11-04 §4.2。
 	}
 	if err := sendWithTimeout(func() error { return edmChannelSend(sender, msg) }); err != nil {
 		log.Errorf(ctx, "failed to send EDM email to %s (brand=%s): %v", to, brand, err)
