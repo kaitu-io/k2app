@@ -17,6 +17,14 @@ func executeApprovalEDMSend(ctx context.Context, params json.RawMessage) error {
 	if err := json.Unmarshal(params, &req); err != nil {
 		return fmt.Errorf("unmarshal params: %w", err)
 	}
+	if req.Pacing != nil {
+		// 节奏发送：拆成每封一个排期任务。参数按执行时刻重新校验；startAt 已过去（审批拖延）则从现在起算。
+		sched, err := EnqueuePacedTemplatedEmailTasks(ctx, edmSendRequestFromHTTP(&req), req.Pacing, time.Now())
+		if sink := edmScheduleSinkFrom(ctx); sink != nil && sched != nil {
+			*sink = *sched
+		}
+		return err
+	}
 	_, err := EnqueueTemplatedEmailTask(ctx, edmSendRequestFromHTTP(&req))
 	return err
 }

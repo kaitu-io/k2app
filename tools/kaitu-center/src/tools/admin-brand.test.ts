@@ -84,6 +84,34 @@ describe('send_templated_email', () => {
     await run()
     expect(JSON.parse(request.mock.calls[0][1].body).brand).toBe('overleap')
   })
+  it('omits pacing when not given (unchanged body)', async () => {
+    const { request, run } = invoke('send_templated_email', {
+      batch_id: 'b', brand: 'kaitu', items: [{ email: 'a@x', slug: 's' }],
+    })
+    await run()
+    expect(JSON.parse(request.mock.calls[0][1].body)).not.toHaveProperty('pacing')
+  })
+  it('maps pacing to the camelCase API shape', async () => {
+    const { request, run } = invoke('send_templated_email', {
+      batch_id: 'b', brand: 'kaitu', items: [{ email: 'a@x', slug: 's' }],
+      pacing: {
+        min_interval_sec: 20, max_interval_sec: 60, start_at: '2026-11-06T20:00:00+08:00',
+        window_start_hour: 20, window_end_hour: 22, window_tz: 'Asia/Shanghai',
+      },
+    })
+    await run()
+    expect(JSON.parse(request.mock.calls[0][1].body).pacing).toEqual({
+      minIntervalSec: 20, maxIntervalSec: 60, startAt: '2026-11-06T20:00:00+08:00',
+      windowStartHour: 20, windowEndHour: 22, windowTZ: 'Asia/Shanghai',
+    })
+  })
+  it('pacing schema rejects out-of-range values', () => {
+    const { tool } = invoke('send_templated_email', {})
+    expect(tool.schema.pacing.safeParse({ min_interval_sec: 0, max_interval_sec: 10 }).success).toBe(false)
+    expect(tool.schema.pacing.safeParse({ min_interval_sec: 1, max_interval_sec: 3601 }).success).toBe(false)
+    expect(tool.schema.pacing.safeParse({ min_interval_sec: 1, max_interval_sec: 2, window_start_hour: 24 }).success).toBe(false)
+    expect(tool.schema.pacing.safeParse({ min_interval_sec: 1, max_interval_sec: 2 }).success).toBe(true)
+  })
 })
 
 describe('list_orders email filter', () => {
