@@ -198,7 +198,7 @@ func (m *recallMailer) Vars(ctx context.Context, user *User, email string) (map[
 // Holdout 对照组用户不发信，但落一条 skipped（error_msg=holdout）记录，recall_stats 用它算对照组转化。
 // 同一批次重复运行不重复落（(batch, template, user) 有唯一索引）。
 func (m *recallMailer) Holdout(ctx context.Context, user *User, email string) bool {
-	if !inRecallHoldout(user.ID) || m.templateFor(recallBrand(user)) == 0 {
+	if !inRecallHoldoutForEmail(user) || m.templateFor(recallBrand(user)) == 0 {
 		return false
 	}
 	var n int64

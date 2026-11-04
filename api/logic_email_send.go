@@ -247,9 +247,10 @@ func sendSingleTemplatedEmail(
 		return resultItem
 	}
 
-	// 4b. EDM 退订：已退订用户一律跳过（这里是所有 EDM 的唯一出口；事务邮件走 mail 通道，不经过这里）。
+	// 4b. EDM 退订：已退订用户跳过（这里是所有 EDM 的唯一出口；事务邮件走 mail 通道，不经过这里），
+	// 服务通知豁免名单（edmOptOutExemptSlugs）除外。
 	// 放在幂等检查之后：这条 skipped 记录本身就是幂等键，同批次重跑不重复落库。
-	if resolvedUser.EdmOptOut {
+	if resolvedUser.EdmOptOut && !edmOptOutExemptSlugs[item.Slug] {
 		resultItem.Status = "skipped"
 		resultItem.Error = edmOptOutSkipReason
 		createEmailSendLog(ctx, batchID, tmpl.ID, userID, item.Email, "", EmailSendLogStatusSkipped, edmOptOutSkipReason)

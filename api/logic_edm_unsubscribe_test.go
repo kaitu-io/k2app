@@ -347,3 +347,118 @@ func TestEDMOptOut_TransactionalMailUnaffected(t *testing.T) {
 		VerificationCodeMeta{UserEmail: email, Code: "123456", ExpireMinutes: 5}))
 	assert.Equal(t, []string{email, email}, to, "opted-out user must still receive transactional mail")
 }
+
+// 豁免名单恰好是增长负责人定下的三封服务通知——多一个少一个都要有人显式改这里。
+func TestEDMOptOutExemptSlugs_ExactList(t *testing.T) {
+	assert.Equal(t, map[string]bool{
+		privateNodeWelcomeSlug:  true,
+		routerWelcomeSlug:       true,
+		trafficAbuseWarningSlug: true,
+	}, edmOptOutExemptSlugs)
+	for _, s := range []string{"renewal-3d", "private-node-renewal-7d", "winback-7d", "abandoned-1h", "abandoned-3d",
+		trialRecallSlugs[trialRecallS1], trialRecallSlugs[trialRecallS2]} {
+		assert.False(t, edmOptOutExemptSlugs[s], "%s is not a service notice and must not be exempt", s)
+	}
+}
+
+// 已退订用户：服务通知（豁免 slug）照发，其余 EDM（续费提醒 / 召回 …）照旧 skipped。
+func TestEDMSend_OptedOutExemptServiceNoticesStillSent(t *testing.T) {
+	skipIfNoConfig(t)
+	prevDev := viper.Get("mail.dev_mode")
+	viper.Set("mail.dev_mode", false) // 走到 edmChannelSend 接缝；接缝已替换，不会真发
+	t.Cleanup(func() { viper.Set("mail.dev_mode", prevDev) })
+	prevFrom := viper.Get("edm_overleap.send_from")
+	if viper.GetString("edm_overleap.send_from") == "" {
+		viper.Set("edm_overleap.send_from", "test@overleap.invalid") // edmSenderForBrand 才会给出 sender
+	}
+	t.Cleanup(func() { viper.Set("edm_overleap.send_from", prevFrom) })
+	var sent []*mail.Message
+	prevSend := edmChannelSend
+	edmChannelSend = func(_ *mail.Sender, msg *mail.Message) error { sent = append(sent, msg); return nil }
+	t.Cleanup(func() { edmChannelSend = prevSend })
+
+	// 用 overleap 品牌建模板：真实 slug 在 (slug, brand) 上唯一，避免与 kaitu 侧其它测试的同名模板撞车。
+	exempt := []string{privateNodeWelcomeSlug, routerWelcomeSlug, trafficAbuseWarningSlug}
+	notExempt := []string{"renewal-3d", "private-node-renewal-7d", "winback-7d"}
+	all := append(append([]string{}, exempt...), notExempt...)
+	for _, s := range all {
+		tp := &EmailMarketingTemplate{Name: "edm-exempt-test", Slug: s, Language: "en-US", Subject: "notice",
+			Content: "body {{.UnsubscribeURL}}", IsActive: BoolPtr(true), Brand: string(BrandOverleap)}
+		require.NoError(t, db.Get().Create(tp).Error)
+		t.Cleanup(func() {
+			db.Get().Where("template_id = ?", tp.ID).Delete(&EmailSendLog{})
+			db.Get().Unscoped().Delete(tp)
+		})
+	}
+
+	u := createBrandUserWithEmail(t, BrandOverleap, "")
+	require.NoError(t, db.Get().Model(u).Update("language", "en-US").Error)
+	require.NoError(t, optOutEDM(context.Background(), u.ID, time.Now()))
+
+	items := make([]SendEmailItem, 0, len(all))
+	for _, s := range all {
+		items = append(items, SendEmailItem{Email: "edm-exempt@test.local", UserID: u.ID, Slug: s})
+	}
+	res, err := SendTemplatedEmails(context.Background(), &SendEmailsRequest{BatchID: newEDMTestBatch(t), Items: items})
+	require.NoError(t, err)
+	require.Len(t, res.Items, len(items))
+
+	got := map[string]string{}
+	for i, it := range res.Items {
+		got[items[i].Slug] = it.Status + ":" + it.Error
+	}
+	for _, s := range exempt {
+		assert.Equal(t, "sent:", got[s], "service notice %s must reach an opted-out user", s)
+	}
+	for _, s := range notExempt {
+		assert.Equal(t, "skipped:"+edmOptOutSkipReason, got[s], "%s must stay suppressed for an opted-out user", s)
+	}
+	assert.Len(t, sent, len(exempt))
+}
+
+// 对照组：已退订用户两组都不进（否则只有对照组有这批人，recall_stats 基线被拉偏）。
+func TestRecallHoldout_ExcludesOptedOut(t *testing.T) {
+	var holdoutID uint64
+	for id := uint64(1); id < 1000 && holdoutID == 0; id++ {
+		if inRecallHoldout(id) {
+			holdoutID = id
+		}
+	}
+	require.NotZero(t, holdoutID)
+	assert.True(t, inRecallHoldoutForEmail(&User{ID: holdoutID}))
+	assert.False(t, inRecallHoldoutForEmail(&User{ID: holdoutID, EdmOptOut: true}))
+}
+
+func TestRecallMailerHoldout_OptedOutNotInControl(t *testing.T) {
+	skipIfNoConfig(t)
+	slug := "edm-holdout-test-" + generateId("s")
+	tp := &EmailMarketingTemplate{Name: "edm-holdout-test", Slug: slug, Language: "en-US", Subject: "s",
+		Content: "c", IsActive: BoolPtr(true), Brand: string(BrandKaitu)}
+	require.NoError(t, db.Get().Create(tp).Error)
+	t.Cleanup(func() {
+		db.Get().Where("template_id = ?", tp.ID).Delete(&EmailSendLog{})
+		db.Get().Unscoped().Delete(tp)
+	})
+
+	// 找一个落在对照组里的用户（10% 分组，按 ID 确定）
+	var u *User
+	for i := 0; i < 200 && u == nil; i++ {
+		if c := createBrandUserWithEmail(t, BrandKaitu, ""); inRecallHoldout(c.ID) {
+			u = c
+		}
+	}
+	require.NotNil(t, u, "no holdout user in 200 tries")
+	batch := newEDMTestBatch(t)
+	m := newRecallMailer(batch, slug, "")
+
+	u.EdmOptOut = true
+	assert.False(t, m.Holdout(context.Background(), u, "x@test.local"), "opted-out user must not enter the control group")
+	var n int64
+	db.Get().Model(&EmailSendLog{}).Where("batch_id = ? AND user_id = ?", batch, u.ID).Count(&n)
+	assert.Zero(t, n, "no holdout row for an opted-out user")
+
+	u.EdmOptOut = false
+	assert.True(t, m.Holdout(context.Background(), u, "x@test.local"))
+	db.Get().Model(&EmailSendLog{}).Where("batch_id = ? AND user_id = ? AND error_msg = ?", batch, u.ID, recallHoldoutReason).Count(&n)
+	assert.Equal(t, int64(1), n)
+}

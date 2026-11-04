@@ -33,6 +33,24 @@ const (
 
 var errEDMUnsubscribeToken = errors.New("invalid edm unsubscribe token")
 
+// edmOptOutExemptSlugs 走 EDM 通道、但属于服务通知（不是营销）的模板：已退订用户照发。
+// 按模板 slug 而非请求参数做键：slug 是这些发送点在代码里的常量（下面直接引用常量，改名编译期跟着走），
+// 已入队的 Asynq 任务也天然生效；请求级开关则任何调用方都能给任意批次打开，名单就失去意义。
+// 决策（增长负责人）：只豁免专属线路/路由器欢迎装机信与流量滥用警告；续费提醒、试用召回 S1、
+// 所有 winback / abandoned / recall 都不豁免。新增条目前先确认它确实不是营销。
+var edmOptOutExemptSlugs = map[string]bool{
+	privateNodeWelcomeSlug:  true, // 定制线路欢迎 / 装机引导
+	routerWelcomeSlug:       true, // 路由器版欢迎 / 装机引导
+	trafficAbuseWarningSlug: true, // 流量滥用警告
+}
+
+// inRecallHoldoutForEmail 召回邮件对照组判定：已退订 EDM 的用户两组都不进——他们在召回组会被
+// skipped(edm_opt_out)，若留在对照组就只剩对照组有这批人，recall_stats 的对照组基线被拉偏。
+// 只用于邮件；推送的对照组仍用 inRecallHoldout（退订邮件不影响推送）。
+func inRecallHoldoutForEmail(user *User) bool {
+	return !user.EdmOptOut && inRecallHoldout(user.ID)
+}
+
 func edmUnsubscribeMAC(key []byte, uid string) []byte {
 	m := hmac.New(sha256.New, key)
 	m.Write([]byte("edm-unsub|" + uid))
