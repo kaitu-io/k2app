@@ -3,6 +3,7 @@ package center
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
@@ -328,6 +329,19 @@ func api_admin_send_templated_emails(c *gin.Context) {
 
 	summary := fmt.Sprintf("发送模板邮件：%d 封，模板：%v，批次：%s，品牌：%s", len(req.Items), slugs, req.BatchID, req.Brand)
 
+	// 节奏发送：校验参数；超管直通时回调经 context 槽位把实际排期写回，作为响应 data。
+	var sched *EDMPacedSchedule
+	if req.Pacing != nil {
+		now := time.Now()
+		if err := validateEDMPacing(req.Pacing, now); err != nil {
+			Error(c, ErrorInvalidArgument, err.Error())
+			return
+		}
+		summary += describeEDMPacing(req.Pacing, len(req.Items), now)
+		sched = &EDMPacedSchedule{}
+		c.Request = c.Request.WithContext(withEDMScheduleSink(c.Request.Context(), sched))
+	}
+
 	approvalID, executed, err := SubmitApproval(c, "edm_send", &req, summary)
 	if err != nil {
 		log.Errorf(c, "failed to submit approval: %v", err)
@@ -337,6 +351,10 @@ func api_admin_send_templated_emails(c *gin.Context) {
 
 	if !executed {
 		PendingApproval(c, approvalID)
+		return
+	}
+	if sched != nil {
+		Success(c, sched)
 		return
 	}
 	SuccessEmpty(c)

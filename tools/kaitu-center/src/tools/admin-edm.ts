@@ -88,17 +88,41 @@ export const edmTools: ToolRegistration[] = [
         slug: z.string().describe('Template slug (e.g. "renewal-30d")'),
         vars: z.record(z.string(), z.string()).optional().describe('Template variables as key-value pairs'),
       })).describe('Array of email send items'),
+      pacing: z.object({
+        min_interval_sec: z.number().int().min(1).describe('Minimum seconds between two consecutive emails (>= 1)'),
+        max_interval_sec: z.number().int().max(3600).describe('Maximum seconds between two consecutive emails (>= min, <= 3600); each gap is uniform random in [min, max]'),
+        start_at: z.string().optional().describe('RFC3339 start time, e.g. "2026-11-06T20:00:00+08:00" (<= 14 days ahead). Omitted or already past (e.g. late approval) = start now'),
+        window_start_hour: z.number().int().min(0).max(23).optional().describe('Daily send window start hour (0-23). Window fields go together'),
+        window_end_hour: z.number().int().min(0).max(23).optional().describe('Daily send window end hour, exclusive (0-23, > start)'),
+        window_tz: z.string().optional().describe('IANA time zone of the window, e.g. "Asia/Shanghai"'),
+      }).optional().describe('Optional rate-spread sending. When set, each email becomes its own scheduled task (asynq ID "edm:<batchId>:<n>", cancellable in /app/asynqmon); sends outside the daily window roll to the next window start. Superadmin response reports scheduled count + firstAt/lastAt. Omit for the normal immediate batch.'),
     },
-    mapBody: (p) => ({
-      batchId: p.batch_id,
-      brand: p.brand,
-      items: (p.items as Array<{ email: string; user_id?: number; slug: string; vars?: Record<string, string> }>).map((item) => ({
-        email: item.email,
-        userId: item.user_id,
-        slug: item.slug,
-        vars: item.vars,
-      })),
-    }),
+    mapBody: (p) => {
+      const pacing = p.pacing as undefined | {
+        min_interval_sec: number; max_interval_sec: number; start_at?: string
+        window_start_hour?: number; window_end_hour?: number; window_tz?: string
+      }
+      return {
+        batchId: p.batch_id,
+        brand: p.brand,
+        items: (p.items as Array<{ email: string; user_id?: number; slug: string; vars?: Record<string, string> }>).map((item) => ({
+          email: item.email,
+          userId: item.user_id,
+          slug: item.slug,
+          vars: item.vars,
+        })),
+        ...(pacing && {
+          pacing: {
+            minIntervalSec: pacing.min_interval_sec,
+            maxIntervalSec: pacing.max_interval_sec,
+            startAt: pacing.start_at,
+            windowStartHour: pacing.window_start_hour,
+            windowEndHour: pacing.window_end_hour,
+            windowTZ: pacing.window_tz,
+          },
+        }),
+      }
+    },
   }),
 
   defineApiTool({

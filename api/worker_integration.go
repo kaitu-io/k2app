@@ -156,11 +156,15 @@ func RunWorker() error {
 // 任务入队 API
 // =====================================================================
 
+// edmTaskEnqueue EDM 发送任务的入队接缝（整批任务与节奏发送的单封任务共用）；测试替换它，
+// 免得写进 config.yml 的 asynq.redis_addr（真实 dev Redis）。
+var edmTaskEnqueue = asynq.Enqueue
+
 // EnqueueTemplatedEmailTask 入队通用邮件发送任务
 func EnqueueTemplatedEmailTask(ctx context.Context, req *SendEmailsRequest) (string, error) {
 	payload := TemplatedEmailTaskPayload{Request: *req}
 
-	info, err := asynq.Enqueue(TaskTypeTemplatedEmailSend, payload)
+	info, err := edmTaskEnqueue(TaskTypeTemplatedEmailSend, payload)
 	if err != nil {
 		return "", fmt.Errorf("enqueue task failed: %w", err)
 	}

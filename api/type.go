@@ -780,6 +780,8 @@ type SendTemplatedEmailsHTTPRequest struct {
 		Slug   string            `json:"slug" binding:"required"`
 		Vars   map[string]string `json:"vars"`
 	} `json:"items" binding:"required,min=1"`
+	// Pacing 可选：给了就按节奏拆成每封一个排期任务（logic_email_pacing.go）；不给则整批一个任务，行为不变。
+	Pacing *EDMPacing `json:"pacing,omitempty"`
 }
 
 // =================== Campaign 相关类型定义 ===================
