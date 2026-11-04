@@ -218,8 +218,16 @@ func sendSingleTemplatedEmail(
 		varsCache[cacheKey] = extractTemplateVars(t.Subject, t.Content)
 	}
 
-	// 3. Validate variables
-	if err := validateTemplateVars(varsCache[cacheKey], item.Vars); err != nil {
+	// 3. Validate variables. 系统变量（UnsubscribeURL）在这里统一注入：所有 EDM 都走这一个渲染点，
+	// 调用方构造变量时不必、也不该自己拼退订链接。
+	vars, ok := edmTemplateVars(resolvedUser, item.Vars)
+	if !ok {
+		resultItem.Status = "failed"
+		resultItem.Error = "unsubscribe link unavailable (jwt.secret not configured)"
+		createEmailSendLog(ctx, batchID, tmpl.ID, userID, item.Email, "", EmailSendLogStatusFailed, resultItem.Error)
+		return resultItem
+	}
+	if err := validateTemplateVars(varsCache[cacheKey], vars); err != nil {
 		resultItem.Status = "failed"
 		resultItem.Error = err.Error()
 		createEmailSendLog(ctx, batchID, tmpl.ID, userID, item.Email, "", EmailSendLogStatusFailed, resultItem.Error)
@@ -239,6 +247,15 @@ func sendSingleTemplatedEmail(
 		return resultItem
 	}
 
+	// 4b. EDM 退订：已退订用户一律跳过（这里是所有 EDM 的唯一出口；事务邮件走 mail 通道，不经过这里）。
+	// 放在幂等检查之后：这条 skipped 记录本身就是幂等键，同批次重跑不重复落库。
+	if resolvedUser.EdmOptOut {
+		resultItem.Status = "skipped"
+		resultItem.Error = edmOptOutSkipReason
+		createEmailSendLog(ctx, batchID, tmpl.ID, userID, item.Email, "", EmailSendLogStatusSkipped, edmOptOutSkipReason)
+		return resultItem
+	}
+
 	// 5. Language handling: find translated template if needed
 	emailTemplate := tmpl
 	userLang := "zh-CN"
@@ -255,7 +272,7 @@ func sendSingleTemplatedEmail(
 	}
 
 	// 6. Render subject and content
-	subject, err := renderTemplateString("subject", emailTemplate.Subject, item.Vars)
+	subject, err := renderTemplateString("subject", emailTemplate.Subject, vars)
 	if err != nil {
 		resultItem.Status = "failed"
 		resultItem.Error = fmt.Sprintf("render subject failed: %v", err)
@@ -263,7 +280,7 @@ func sendSingleTemplatedEmail(
 		return resultItem
 	}
 
-	content, err := renderTemplateString("content", emailTemplate.Content, item.Vars)
+	content, err := renderTemplateString("content", emailTemplate.Content, vars)
 	if err != nil {
 		resultItem.Status = "failed"
 		resultItem.Error = fmt.Sprintf("render content failed: %v", err)
