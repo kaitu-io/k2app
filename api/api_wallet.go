@@ -452,6 +452,8 @@ func api_create_withdraw_request(c *gin.Context) {
 		}
 
 		if err := tx.Create(&withdraw).Error; err != nil {
+			// 底层 DB 错误只进日志，不回给用户
+			log.Errorf(c, "insert withdraw failed: %v", err)
 			return fmt.Errorf("创建提现申请失败")
 		}
 

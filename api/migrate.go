@@ -6,6 +6,7 @@ import (
 	db "github.com/wordgate/qtoolkit/db"
 
 	"github.com/wordgate/qtoolkit/log"
+	"gorm.io/gorm"
 )
 
 // Migrate 执行数据库迁移
@@ -107,6 +108,17 @@ func Migrate() error {
 		log.Infof(ctx, "dropped legacy email_marketing_templates slug unique index for (slug, brand) re-key")
 	}
 
+	// withdraws 遗留列清理（one-time, idempotent）：wallet_address / network 是早于本仓库的加密货币提现
+	// 旧 schema，NOT NULL 且无默认值；Withdraw 模型早已改用 account_id / currency 快照，不再写这两列。
+	// AutoMigrate 不删列 → 生产 STRICT_TRANS_TABLES 下每次 INSERT 都报 "Field 'wallet_address'
+	// doesn't have a default value"，提现申请 100% 失败（2026-11-04 用户 6573 报障，withdraws 表 0 行）。
+	// 守卫 = 列存在；删后永久 no-op，新库从不出现这两列。
+	if database := db.Get(); database != nil {
+		if err := dropLegacyWithdrawColumns(ctx, database); err != nil {
+			return err
+		}
+	}
+
 	err := db.Get().AutoMigrate(
 		&Plan{},
 		&User{},
@@ -202,5 +214,24 @@ func Migrate() error {
 	}
 
 	log.Infof(ctx, "database migration completed successfully")
+	return nil
+}
+
+// dropLegacyWithdrawColumns 删除 withdraws 表里不在 Withdraw 模型中的遗留 NOT NULL 列（见 Migrate 注释）。
+func dropLegacyWithdrawColumns(ctx context.Context, database *gorm.DB) error {
+	mig := database.Migrator()
+	if !mig.HasTable(&Withdraw{}) {
+		return nil
+	}
+	for _, col := range []string{"wallet_address", "network"} {
+		if !mig.HasColumn(&Withdraw{}, col) {
+			continue
+		}
+		if err := mig.DropColumn(&Withdraw{}, col); err != nil {
+			log.Errorf(ctx, "failed to drop legacy withdraws.%s: %v", col, err)
+			return err
+		}
+		log.Infof(ctx, "dropped legacy withdraws.%s column", col)
+	}
 	return nil
 }
