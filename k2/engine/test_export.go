@@ -152,3 +152,17 @@ func ReRaceFailStreak(e *Engine, target *OutboundTransportShape) int {
 	defer e.mu.Unlock()
 	return target.reRaceFailStreak
 }
+
+// SetHoldForTest sets (or clears, with nil) the engine's hold reason via
+// setHoldLocked and pushes the resulting status, the way the replace loop
+// will. For tests only.
+func (e *Engine) SetHoldForTest(ee *EngineError) {
+	e.mu.Lock()
+	e.setHoldLocked(ee)
+	status := e.buildStatusLocked()
+	handler := e.handler
+	e.mu.Unlock()
+	if handler != nil {
+		handler.OnStatus(status)
+	}
+}

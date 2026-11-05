@@ -49,6 +49,12 @@ type Engine struct {
 	lastError   *EngineError
 	handler     EventHandler
 
+	// holdErr is set while the engine holds a connected session waiting for
+	// the user's network (netcheck verdict iface-down / no-internet /
+	// captive). Non-nil makes buildStatusLocked report reconnecting + this
+	// reason. Guarded by e.mu; cleared in Stop and fail.
+	holdErr *EngineError
+
 	cancel         context.CancelFunc
 	tunnel         *core.ClientTunnel
 	prov           provider.Provider
@@ -63,6 +69,10 @@ type Engine struct {
 	outboundTMs  []*outboundTransport // all wire TMs, for health/reconnect
 	primaryTM    *outboundTransport   // first k2v5 route's TM (DNS transport)
 	directDialer wire.DirectDialer
+	// directTrack wraps cfg.DirectDialer for the core direct outbound only;
+	// its LastOK is passive "direct traffic still works" evidence for the
+	// netcheck verdict. Written once per Start (under e.mu at commit).
+	directTrack  *trackingDialer
 	reRaceChan   chan *outboundTransport
 	reRaceCancel context.CancelFunc
 
@@ -353,7 +363,10 @@ func (e *Engine) Start(cfg Config) error {
 	// Each unique k2v5:// URL gets its own TransportManager via setupOutboundTransport.
 	// Multiple URLs race in parallel (errgroup). buildOutboundMap already deduplicates.
 	outbounds := make([]core.Outbound, 2+len(outboundMap))
-	outbounds[outboundDirect] = core.NewDirectOutbound(cfg.DirectDialer)
+	// Only the core direct exit is tracked — see trackingDialer for why wire
+	// dials and DNS direct keep the raw cfg.DirectDialer.
+	directTrack := newTrackingDialer(cfg.DirectDialer)
+	outbounds[outboundDirect] = core.NewDirectOutbound(directTrack)
 	outbounds[outboundReject] = nil
 
 	// Collect unique k2v5 URLs in config route order (deterministic).
@@ -563,6 +576,7 @@ func (e *Engine) Start(cfg Config) error {
 
 	// Store directDialer for re-race (avoids re-parsing URL).
 	e.directDialer = cfg.DirectDialer
+	e.directTrack = directTrack
 
 	// Snapshot Config fields that outboundReplaceLoop needs long after Start
 	// returns. WireMode is immutable after Start; OutboundProvider is
@@ -660,11 +674,18 @@ func (e *Engine) reconnect(preserveScoreboard bool) bool {
 	outboundTMs := e.outboundTMs
 	pdns := e.proxyDNS
 	dh := e.dnsH
+	// Transient reconnecting push. While holding, buildStatusLocked already
+	// reports reconnecting with the hold reason — keep it rather than
+	// flashing a reason-less reconnecting.
+	rs := Status{State: StateReconnecting}
+	if e.holdErr != nil {
+		rs = e.buildStatusLocked()
+	}
 	e.mu.Unlock()
 
 	// Notify handler of transient reconnecting state (for UI feedback).
 	if handler != nil {
-		handler.OnStatus(Status{State: StateReconnecting})
+		handler.OnStatus(rs)
 	}
 
 	// Reset order matters (shared transports — see comment in Start):
@@ -1005,6 +1026,7 @@ func (e *Engine) Stop() error {
 	e.connectedAt = time.Time{}
 	e.paused = false
 	e.lastError = nil // unconditional clear on stop
+	e.holdErr = nil
 	e.setStateLocked(StateDisconnected)
 	stopHandler := e.handler
 	stopStatus := e.buildStatusLocked()
@@ -1082,16 +1104,33 @@ func (e *Engine) GetStatus() Status {
 // (native getStatusJSON, webapp initial fetch, 15s safety-net poll) must see
 // "paused" here too, otherwise the one-shot OnStatus(StatePaused) push gets
 // immediately overwritten by the next poll reporting "connected".
+//
+// holdErr overrides connected (not paused): while the engine waits for the
+// user's network it reports reconnecting + the netcheck reason. Every status
+// push and query must come through here so the hold cannot be bypassed.
 func (e *Engine) buildStatusLocked() Status {
 	state := e.state
 	if e.paused {
 		state = StatePaused
+	}
+	if e.holdErr != nil && state == StateConnected {
+		return Status{
+			State:       StateReconnecting,
+			Error:       e.holdErr,
+			ConnectedAt: e.connectedAt,
+		}
 	}
 	return Status{
 		State:       state,
 		Error:       e.lastError,
 		ConnectedAt: e.connectedAt,
 	}
+}
+
+// setHoldLocked sets (non-nil) or clears (nil) the hold reason. Field write
+// only — caller holds e.mu and pushes the resulting status outside the lock.
+func (e *Engine) setHoldLocked(ee *EngineError) {
+	e.holdErr = ee
 }
 
 // StatusJSON returns the engine status as a JSON string.
@@ -1202,6 +1241,7 @@ func (e *Engine) fail(err error) error {
 	}
 	outbounds := e.outbounds
 	e.outbounds = nil
+	e.holdErr = nil
 
 	e.setStateLocked(StateDisconnected)
 	handler := e.handler
