@@ -33,8 +33,11 @@ package engine
 // on by default since the fix wave made the replace loop honour Pause),
 // K2_SIM_NOMIN=1 (skip minimization), K2_SIM_MIN_RUNS (minimization budget,
 // default 60 reruns; only the first failing seed is minimized),
-// K2_SIM_NO_ACCEPTALL=1 (no accept-all captive networks), K2_SIM_ALLOW=FA,FB,M3
-// (downgrade the known finding classes in simClasses to a log line).
+// K2_SIM_NO_ACCEPTALL=1 (no accept-all captive networks), K2_SIM_SEED_LIST
+// (comma-separated seeds; what a -race build's chunk children run, see
+// simRaceChunk). Every run except K2_SIM_SEED / K2_SIM_SEED_LIST also
+// replays simPinnedSeeds. Every violation fails the test;
+// simClasses only labels the shapes found during F2 (all fixed in 8a57c0740).
 
 import (
 	"context"
@@ -45,7 +48,9 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"os/exec"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -553,9 +558,62 @@ func (v simViolation) String() string {
 	return fmt.Sprintf("[%s @%s]%s %s", v.inv, fmtDur(v.at), c, v.msg)
 }
 
-// simClasses are the violation shapes found on the base code (see
-// sim-report.md). K2_SIM_ALLOW=FA,FB,M3 downgrades them to a log line; by
-// default every violation fails the test.
+// simRaceChunk: under -race the race runtime keeps ~6 MB per scenario that
+// the Go heap does not see (GC / FreeOSMemory do not return it): 45 seeds
+// in one process peak at ~400 MB, more than the small Docker VM has. A race
+// build therefore runs the seeds in child processes of this many each.
+const simRaceChunk = 12
+
+// simRaceBuild: the test binary was built with -race.
+func simRaceBuild() bool {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return false
+	}
+	for _, st := range bi.Settings {
+		if st.Key == "-race" {
+			return st.Value == "true"
+		}
+	}
+	return false
+}
+
+// simRunChunked re-runs this test binary once per chunk of seeds
+// (K2_SIM_SEED_LIST, K2_SIM_CHILD=1) and fails if any chunk fails.
+func simRunChunked(t *testing.T, seeds []int64) {
+	start := time.Now()
+	for i := 0; i < len(seeds); i += simRaceChunk {
+		chunk := seeds[i:min(i+simRaceChunk, len(seeds))]
+		var ids []string
+		for _, sd := range chunk {
+			ids = append(ids, strconv.FormatInt(sd, 10))
+		}
+		cmd := exec.Command(os.Args[0], "-test.run=^TestSimFailover$", "-test.count=1", "-test.v", "-test.timeout=20m")
+		cmd.Env = append(os.Environ(), "K2_SIM_CHILD=1", "K2_SIM_SEED_LIST="+strings.Join(ids, ","))
+		out, err := cmd.CombinedOutput()
+		var keep []string
+		for _, ln := range strings.Split(string(out), "\n") {
+			if strings.Contains(ln, "sim: ") || strings.Contains(ln, "SIMFAIL") || strings.Contains(ln, "DATA RACE") {
+				keep = append(keep, strings.TrimSpace(ln))
+			}
+		}
+		if err != nil {
+			t.Errorf("seeds %s: %v\n%s", strings.Join(ids, ","), err, out)
+			continue
+		}
+		t.Logf("seeds %s: %s", strings.Join(ids, ","), strings.Join(keep, " | "))
+	}
+	t.Logf("sim (race, %d seeds in chunks of %d): %v", len(seeds), simRaceChunk, time.Since(start).Round(time.Millisecond))
+}
+
+// simPinnedSeeds are replayed by every run (except K2_SIM_SEED) on top of the
+// random ones: each one caught an F2 finding class or a discriminator
+// mutation (sim-report.md "pinned seeds"), so a regression of any of them
+// fails the default run.
+var simPinnedSeeds = []int64{1, 26, 100, 107, 110, 118, 128, 151, 178, 497, 1117, 1511, 2032, 2375, 4966}
+
+// simClasses label the violation shapes found during F2 (sim-report.md), all
+// fixed by 8a57c0740. A label is diagnostic only: every violation fails.
 var simClasses = map[string]string{
 	"M3": "retry/hold tick trusts passive direct evidence: Phase-B rounds burnt while offline, accept-all captive shown as 503 (fix wave item M3)",
 	"FA": "a round mixing code-less answers (Center outage / node-local Center failure) with transport-dead candidates counts toward the 10-min cap",
@@ -2187,23 +2245,32 @@ func TestSimFailover(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
 	pause := os.Getenv("K2_SIM_PAUSE") != "0" // the fix wave honours Pause (final-review-2 I1)
-	allow := map[string]bool{}
-	for _, c := range strings.Split(os.Getenv("K2_SIM_ALLOW"), ",") {
-		if c = strings.TrimSpace(c); c != "" {
-			allow[c] = true
-		}
-	}
-	accepted := map[string]int{}
 	var seeds []int64
 	if one := os.Getenv("K2_SIM_SEED"); one != "" {
 		n, _ := strconv.ParseInt(one, 10, 64)
 		seeds = []int64{n}
+	} else if list := os.Getenv("K2_SIM_SEED_LIST"); list != "" {
+		for _, f := range strings.Split(list, ",") {
+			n, _ := strconv.ParseInt(f, 10, 64)
+			seeds = append(seeds, n)
+		}
 	} else {
 		base := simEnvInt("K2_SIM_SEED_BASE", 1)
 		count := simEnvInt("K2_SIM_SEEDS", simDefaultSeeds)
+		seen := map[int64]bool{}
 		for i := int64(0); i < count; i++ {
 			seeds = append(seeds, base+i)
+			seen[base+i] = true
 		}
+		for _, p := range simPinnedSeeds {
+			if !seen[p] {
+				seeds = append(seeds, p)
+			}
+		}
+	}
+	if simRaceBuild() && os.Getenv("K2_SIM_CHILD") == "" && len(seeds) > simRaceChunk {
+		simRunChunked(t, seeds)
+		return
 	}
 	start := time.Now()
 	var (
@@ -2233,21 +2300,12 @@ func TestSimFailover(t *testing.T) {
 		if r.failCode != 0 {
 			fails[r.failCode]++
 		}
-		var real []simViolation
-		for _, v := range r.violations {
-			if allow[v.class] {
-				accepted[v.class]++
-				continue
-			}
-			real = append(real, v)
-		}
 		for _, v := range r.violations {
 			t.Logf("SIMFAIL seed=%d %s", seed, v)
 		}
-		if len(real) == 0 {
+		if len(r.violations) == 0 {
 			continue
 		}
-		r.violations = real
 		failed++
 		byInv[r.violations[0].inv]++
 		if reported >= 1 {
@@ -2269,8 +2327,8 @@ func TestSimFailover(t *testing.T) {
 		}
 		return lat[int(p*float64(len(lat)-1))]
 	}
-	t.Logf("sim: %d seeds in %v (%.1f seeds/s), %d failing (%v), accepted findings %v; modes %v; steps %d; failovers %d; caps %d; long-pending tick pairs %d; hold recovered wakes taken/dropped %d/%d; session ends by code %v; I2 latency n=%d p50=%v p99=%v max=%v",
-		len(seeds), el.Round(time.Millisecond), float64(len(seeds))/el.Seconds(), failed, byInv, accepted, modes, steps, failovers, caps, lpPairs, holdRec[0], holdRec[1], fails,
+	t.Logf("sim: %d seeds in %v (%.1f seeds/s), %d failing (%v); modes %v; steps %d; failovers %d; caps %d; long-pending tick pairs %d; hold recovered wakes taken/dropped %d/%d; session ends by code %v; I2 latency n=%d p50=%v p99=%v max=%v",
+		len(seeds), el.Round(time.Millisecond), float64(len(seeds))/el.Seconds(), failed, byInv, modes, steps, failovers, caps, lpPairs, holdRec[0], holdRec[1], fails,
 		len(lat), pct(0.5).Round(time.Second), pct(0.99).Round(time.Second), pct(1).Round(time.Second))
 	if os.Getenv("K2_SIM_SEED") != "" {
 		r := simRunScenario(simGen(seeds[0], pause), pause)
