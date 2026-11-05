@@ -428,3 +428,58 @@ func TestContract_ReplaceLoop_CarriesNewJar(t *testing.T) {
 	}
 }
 
+
+// TestOutboundReplaceLoop_ExhaustedFailsWith503 drives the real loop: two
+// failed same-server re-races (unreachable port) escalate to Phase B, the
+// provider is exhausted, and the engine must fail with 503 — not 402, even
+// though the provider error text contains "subscription".
+func TestOutboundReplaceLoop_ExhaustedFailsWith503(t *testing.T) {
+	e := New()
+	target := &outboundTransport{
+		url:     "k2v5://127.0.0.1:1",
+		name:    "k2v5-0",
+		tm:      wire.NewTransportManager(),
+		wireCfg: wire.Config{Host: "127.0.0.1", Port: 1, DialAddr: "127.0.0.1:1"},
+	}
+	provider := &exhaustedSubsProvider{}
+	e.mu.Lock()
+	e.state = StateConnected
+	e.outboundTMs = []*outboundTransport{target}
+	e.outboundProvider = provider
+	e.reRaceChan = make(chan *outboundTransport, 1)
+	e.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.outboundReplaceLoop(ctx)
+
+	deadline := time.After(40 * time.Second)
+	tick := time.NewTicker(50 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("engine did not fail after outbound exhaustion")
+		case <-tick.C:
+		}
+		e.mu.Lock()
+		st, le := e.state, e.lastError
+		e.mu.Unlock()
+		if st == StateDisconnected && le != nil {
+			if le.Code != 503 || le.Category != CategoryServer {
+				t.Fatalf("lastError = %d/%s (%s), want 503/server", le.Code, le.Category, le.Message)
+			}
+			return
+		}
+		select { // feed echo-failure signals; cap-1 channel, drop if full
+		case e.reRaceChan <- target:
+		default:
+		}
+	}
+}
+
+type exhaustedSubsProvider struct{}
+
+func (exhaustedSubsProvider) NextURL(string, error) (string, error) {
+	return "", errors.New("provider: subscription: no matching session for URL")
+}

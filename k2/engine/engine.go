@@ -2121,7 +2121,7 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 			if handler != nil {
 				handler.OnOutboundFatal(outboundName, err)
 			}
-			_ = e.fail(fmt.Errorf("outbound %s exhausted: %w", outboundName, err))
+			_ = e.fail(outboundExhaustedError(outboundName, err))
 			return
 		}
 		// Successful swap — reRaceFailStreak reset inside replaceOutboundServer.

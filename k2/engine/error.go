@@ -221,10 +221,27 @@ func providerStartError(err error) error {
 	return newEngineError(ErrCodeEnvironmentSetupFailed, err.Error())
 }
 
+// outboundExhaustedError classifies "every outbound replacement candidate has
+// been tried and failed" as 503 Server unreachable. It is classified at the
+// producer (outboundReplaceLoop) because the cause text comes from the
+// provider and can contain arbitrary words (e.g. "subscription") that string
+// matching would misread.
+func outboundExhaustedError(outbound string, cause error) *EngineError {
+	msg := "outbound " + outbound + " exhausted"
+	if cause != nil {
+		msg += ": " + cause.Error()
+	}
+	return newEngineError(ErrCodeServerUnreachable, msg)
+}
+
 // classifyByPatterns matches error message text to an error code with category.
 func classifyByPatterns(msg string) *EngineError {
-	// 402: Payment required / subscription expired.
-	if strings.Contains(msg, "payment required") || strings.Contains(msg, "subscription") {
+	// 402: Payment required. Do NOT match the bare word "subscription": the
+	// k2subs provider's own errors ("provider: subscription: no matching
+	// session for URL", "subscription: fetch ...") contain it and are not
+	// payment failures. Real 402s from the server arrive as StreamError{Code:402}
+	// and are classified by code before reaching this function.
+	if strings.Contains(msg, "payment required") {
 		return newEngineError(ErrCodePaymentRequired, msg)
 	}
 
