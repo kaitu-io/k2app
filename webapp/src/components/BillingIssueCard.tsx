@@ -44,9 +44,13 @@ export default function BillingIssueCard({ sub, compact }: BillingIssueCardProps
     action?.();
   };
 
-  const body = sub.isTrial
-    ? t('purchase:purchase.billingIssue.trialBody')
-    : t('purchase:purchase.billingIssue.body');
+  // body / trialBody 文案点名了 Apple，只对 Apple 订阅使用；其他 provider 走中性文案。
+  const body =
+    sub.provider !== 'apple'
+      ? t('purchase:purchase.billingIssue.bodyGeneric')
+      : sub.isTrial
+        ? t('purchase:purchase.billingIssue.trialBody')
+        : t('purchase:purchase.billingIssue.body');
 
   return (
     <Alert

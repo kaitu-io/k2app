@@ -157,6 +157,7 @@
     "billingIssue": {
       "title": "Pembayaran gagal",
       "body": "Apple tidak dapat menagih metode pembayaran Anda. Perbarui metode pembayaran dan keanggotaan akan otomatis dilanjutkan.",
+      "bodyGeneric": "Pembayaran gagal. Perbarui metode pembayaran dan keanggotaan akan otomatis dilanjutkan.",
       "trialBody": "Masa uji coba telah berakhir, tetapi penagihan pertama gagal. Perbarui metode pembayaran untuk mengaktifkan keanggotaan.",
       "update": "Perbarui metode pembayaran",
       "appleElsewhere": "Di iPhone, buka Pengaturan → Akun Apple → Pembayaran & Pengiriman untuk memperbarui metode pembayaran."

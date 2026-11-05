@@ -157,6 +157,7 @@
     "billingIssue": {
       "title": "El pago no se completó",
       "body": "Apple no pudo cobrar tu método de pago. Actualízalo y tu membresía se reanudará automáticamente.",
+      "bodyGeneric": "El pago no se completó. Actualiza tu método de pago y tu membresía se reanudará automáticamente.",
       "trialBody": "La prueba ha terminado, pero el primer cobro no se completó. Actualiza tu método de pago para activar la membresía.",
       "update": "Actualizar método de pago",
       "appleElsewhere": "En tu iPhone, ve a Ajustes → Cuenta de Apple → Pago y envío para actualizar tu método de pago."

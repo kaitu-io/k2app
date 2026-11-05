@@ -66,6 +66,14 @@ describe('BillingIssueCard', () => {
     expect(t2).not.toContain('trialBody');
   });
 
+  it('non-apple provider uses the provider-neutral body (even for trial)', () => {
+    render(<BillingIssueCard sub={sub({ provider: 'stripe', manage: { kind: 'stripe_portal' }, isTrial: true })} />);
+    const t = screen.getByTestId('billing-issue-card').textContent!;
+    expect(t).toContain('purchase:purchase.billingIssue.bodyGeneric');
+    expect(t).not.toMatch(/billingIssue\.body(?!Generic)/);
+    expect(t).not.toContain('trialBody');
+  });
+
   it('compact still renders card and button', () => {
     render(<BillingIssueCard sub={sub()} compact />);
     expect(screen.getByTestId('billing-issue-update')).toBeTruthy();

@@ -157,6 +157,7 @@
     "billingIssue": {
       "title": "Zahlung fehlgeschlagen",
       "body": "Apple konnte die Zahlung nicht abbuchen. Aktualisiere deine Zahlungsmethode, dann wird die Mitgliedschaft automatisch fortgesetzt.",
+      "bodyGeneric": "Die Zahlung ist fehlgeschlagen. Aktualisiere deine Zahlungsmethode, dann wird die Mitgliedschaft automatisch fortgesetzt.",
       "trialBody": "Die Testphase ist beendet, aber die erste Abbuchung ist fehlgeschlagen. Aktualisiere deine Zahlungsmethode, um die Mitgliedschaft zu starten.",
       "update": "Zahlungsmethode aktualisieren",
       "appleElsewhere": "Aktualisiere deine Zahlungsmethode auf dem iPhone unter Einstellungen → Apple-Account → Zahlung & Versand."

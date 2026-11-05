@@ -157,6 +157,7 @@
     "billingIssue": {
       "title": "Pembayaran gagal",
       "body": "Apple tidak dapat mengenakan bayaran pada kaedah pembayaran anda. Kemas kini kaedah pembayaran dan keahlian akan disambung semula secara automatik.",
+      "bodyGeneric": "Pembayaran gagal. Kemas kini kaedah pembayaran dan keahlian akan disambung semula secara automatik.",
       "trialBody": "Percubaan telah tamat, tetapi caj pertama gagal. Kemas kini kaedah pembayaran untuk mengaktifkan keahlian.",
       "update": "Kemas kini kaedah pembayaran",
       "appleElsewhere": "Pada iPhone anda, pergi ke Tetapan → Akaun Apple → Pembayaran & Penghantaran untuk mengemas kini kaedah pembayaran."

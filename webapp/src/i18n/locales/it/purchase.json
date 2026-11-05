@@ -157,6 +157,7 @@
     "billingIssue": {
       "title": "Pagamento non riuscito",
       "body": "Apple non è riuscita ad addebitare il tuo metodo di pagamento. Aggiornalo e l'abbonamento riprenderà automaticamente.",
+      "bodyGeneric": "Il pagamento non è andato a buon fine. Aggiorna il metodo di pagamento e l'abbonamento riprenderà automaticamente.",
       "trialBody": "La prova è terminata, ma il primo addebito non è andato a buon fine. Aggiorna il metodo di pagamento per attivare l'abbonamento.",
       "update": "Aggiorna metodo di pagamento",
       "appleElsewhere": "Sul tuo iPhone, vai in Impostazioni → Account Apple → Pagamento e spedizione per aggiornare il metodo di pagamento."

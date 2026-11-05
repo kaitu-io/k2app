@@ -157,6 +157,7 @@
     "billingIssue": {
       "title": "付款未成功",
       "body": "Apple 没能扣款。更新付款方式后，会员会自动恢复。",
+      "bodyGeneric": "扣款没有成功。更新付款方式后，会员会自动恢复。",
       "trialBody": "试用已结束，但首期扣款没有成功。更新付款方式后即可开通会员。",
       "update": "更新付款方式",
       "appleElsewhere": "请在 iPhone 的 设置 → Apple 账户 → 付款与配送 中更新付款方式。"

@@ -157,6 +157,7 @@
     "billingIssue": {
       "title": "Le paiement a échoué",
       "body": "Apple n'a pas pu prélever votre moyen de paiement. Mettez-le à jour et votre abonnement reprendra automatiquement.",
+      "bodyGeneric": "Le paiement a échoué. Mettez à jour votre moyen de paiement et votre abonnement reprendra automatiquement.",
       "trialBody": "Votre essai est terminé, mais le premier prélèvement a échoué. Mettez à jour votre moyen de paiement pour activer votre abonnement.",
       "update": "Mettre à jour le moyen de paiement",
       "appleElsewhere": "Sur votre iPhone, ouvrez Réglages → Compte Apple → Paiement et livraison pour mettre à jour votre moyen de paiement."
