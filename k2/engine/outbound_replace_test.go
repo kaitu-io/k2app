@@ -428,7 +428,6 @@ func TestContract_ReplaceLoop_CarriesNewJar(t *testing.T) {
 	}
 }
 
-
 // TestOutboundReplaceLoop_ExhaustedFailsWith503 drives the real loop: two
 // failed same-server re-races (unreachable port) escalate to Phase B, the
 // provider is exhausted, and the engine must fail with 503 — not 402, even
