@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -62,15 +63,30 @@ func gatedTCPWSServer(t *testing.T, ln net.Listener, gate time.Time) {
 	t.Cleanup(func() { srv.Close() })
 }
 
-// N-1 (re-review 4): TCP-WS wins and QUIC finishes ~10ms later — the race
-// must keep that QUIC dialer as QUICBackup (installed as primary with
-// tcpws active, "quic-race-lost") and must not close it. With the drain
-// count one short, the drain returned at once and the deferred cleanup
-// closed the QUIC dialer.
+// N-1 (re-review 4): TCP-WS wins while QUIC is still in flight — the race
+// must keep that QUIC dialer as QUICBackup (installed as primary with tcpws
+// active, "quic-race-lost") and must not close it. With the drain count one
+// short, the drain returned at once and the deferred cleanup closed the
+// QUIC dialer. Deterministic (R1 review M-5): QUIC's metadata verdict is
+// held until the collector has picked the tcpws winner (testHookRaceWinner),
+// and the drain grace is widened so its result always lands inside it.
 func TestRaceTransport_TCPWSWinsQUICBackupKept(t *testing.T) {
-	var gate time.Time
+	tcpwsWon := make(chan struct{})
+	var wonOnce sync.Once
+	testHookRaceWinner = func(tt string) {
+		if tt == "tcpws" {
+			wonOnce.Do(func() { close(tcpwsWon) })
+		}
+	}
+	origGrace := drainQUICGrace
+	drainQUICGrace = 5 * time.Second
+	t.Cleanup(func() { testHookRaceWinner = nil; drainQUICGrace = origGrace })
+
 	quicValidator := func(token, udid, mode string) AuthVerdict {
-		time.Sleep(time.Until(gate.Add(10 * time.Millisecond)))
+		select {
+		case <-tcpwsWon: // QUIC answers only after tcpws has won
+		case <-time.After(8 * time.Second):
+		}
 		return AuthVerdict{OK: true, UserID: 7}
 	}
 	var (
@@ -93,8 +109,7 @@ func TestRaceTransport_TCPWSWinsQUICBackupKept(t *testing.T) {
 	defer cleanup()
 	defer tcpLn.Close()
 
-	gate = time.Now().Add(1500 * time.Millisecond) // after the 800ms tcpws stagger
-	gatedTCPWSServer(t, tcpLn, gate)
+	gatedTCPWSServer(t, tcpLn, time.Now()) // tcpws answers at once (after its 800ms stagger)
 
 	cfg := Config{Host: "127.0.0.1", Port: addr.Port, Insecure: true, Fingerprint: "chrome", UDID: "d", Token: "t"}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -105,10 +120,10 @@ func TestRaceTransport_TCPWSWinsQUICBackupKept(t *testing.T) {
 	}
 	defer res.Dialer.Close()
 	if res.TransportType != "tcpws" {
-		t.Skipf("QUIC won (%s): timing precondition not met", res.TransportType)
+		t.Fatalf("QUIC won (%s) although its verdict was held until tcpws won", res.TransportType)
 	}
 	if res.QUICBackup == nil {
-		t.Fatal("QUICBackup = nil: the QUIC candidate that connected ~10ms after tcpws was dropped")
+		t.Fatal("QUICBackup = nil: the QUIC candidate that connected after tcpws won was dropped")
 	}
 	defer res.QUICBackup.Close()
 	time.Sleep(200 * time.Millisecond) // the race's deferred loser cleanup runs async

@@ -155,6 +155,35 @@ func (c *compositeProvider) NextURL(current string, reason error) (string, error
 	return "", ErrNoCandidates
 }
 
+// shellOwns reports whether the shell provider owns url (and the static
+// list does not — NextURL asks static first). Used to mark a target's
+// origin (outboundTransport.fromShell). Takes the shell's locks: never
+// call it under e.mu.
+func (c *compositeProvider) shellOwns(url string) bool {
+	if c.static != nil && c.static.OwnsURL(url) {
+		return false
+	}
+	owner, ok := c.shell.(URLOwner)
+	return ok && owner.OwnsURL(url)
+}
+
+// shellOrigins is Start's outboundTransport.fromShell for each outbound:
+// whether the shell provider handed out its URL.
+func shellOrigins(c *compositeProvider, ots []*outboundTransport) map[*outboundTransport]bool {
+	out := make(map[*outboundTransport]bool, len(ots))
+	for _, ot := range ots {
+		out[ot] = c.shellOwns(ot.url)
+	}
+	return out
+}
+
+// providerShellOwns: shellOwns for any provider that offers it (the
+// compositeProvider, or a test wrapper forwarding to one).
+func providerShellOwns(p OutboundProvider, url string) bool {
+	so, ok := p.(interface{ shellOwns(string) bool })
+	return ok && so.shellOwns(url)
+}
+
 // Reset clears the exclusions of the whole candidate set: the static
 // provider's and, when it can (interface{ Reset() } — subscription.Manager
 // does), the shell provider's. Callers Reset when the exclusions may be

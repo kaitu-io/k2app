@@ -148,6 +148,14 @@ type outboundTransport struct {
 	// for a different server". Reset to 0 on any RaceTransport success
 	// or successful hot-swap. Guarded by e.mu.
 	reRaceFailStreak int
+
+	// fromShell: url was handed out by the shell provider (k2subs
+	// subscription.Manager) — at Start or by a Phase-B swap. Such a target
+	// answered ErrNoCandidates only because a subscription refresh dropped or
+	// re-keyed its URL; that is an exhaustion (capped → OnOutboundFatal →
+	// k2r / desktop rebuild from a fresh subscription), not manual mode (R1
+	// review M-4). Guarded by e.mu.
+	fromShell bool
 }
 
 // reRaceFailThresholdForReplace is the RaceTransport-failure count after
@@ -569,6 +577,11 @@ func (e *Engine) Start(cfg Config) error {
 	netChecker := newNetChecker(client.Netcheck, cfg.DirectDialer,
 		directResolve(dns.NewDirectDNSClient(client.DNS.Direct, netcheckDNSOpts...).Query))
 
+	// The provider is built (and asked which URLs the shell owns) before
+	// e.mu: OwnsURL takes the shell's own locks.
+	composite := newCompositeProvider(newStaticProvider(client.Fallbacks, time.Now), cfg.OutboundProvider)
+	shellURLs := shellOrigins(composite, allOTs)
+
 	// 9. Commit — verify not cancelled before saving resources.
 	e.mu.Lock()
 	if ctx.Err() != nil {
@@ -622,7 +635,10 @@ func (e *Engine) Start(cfg Config) error {
 	// static ClientConfig.Fallbacks first, then the shell provider for URLs
 	// it owns; a URL nobody owns answers ErrNoCandidates (retry in place).
 	e.wireMode = cfg.WireMode
-	e.outboundProvider = newCompositeProvider(newStaticProvider(client.Fallbacks, time.Now), cfg.OutboundProvider)
+	e.outboundProvider = composite
+	for _, ot := range allOTs {
+		ot.fromShell = shellURLs[ot]
+	}
 	e.netcheck = netChecker.run
 	e.netcheckTargets = client.Netcheck
 
@@ -2254,7 +2270,7 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 			// always installs a compositeProvider.
 			continue
 		}
-		res, exhaustErr := e.escalate(ctx, target, raceErr, dd, provider, retries.hold())
+		res, exhaustErr, lastRaceErr := e.escalate(ctx, target, raceErr, dd, provider, retries.hold())
 		switch res {
 		case escExit:
 			return
@@ -2270,7 +2286,8 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 			// (R1): retry on the schedule; only exhaustFailAfter of sustained
 			// online exhaustion fails the engine (retryOnce → failAtExhaustCap).
 			retries.schedule(target, 0)
-			retries.enterExhausted(target, e.targetName(target), exhaustErr)
+			retries.enterExhausted(target, e.targetName(target), exhaustErr,
+				exhaustCounts(netOnline, lastRaceErr, exhaustErr))
 		}
 		// The loop owns the shown hold between events: the retry set's
 		// reason, or none. Also clears a leftover hold after a Phase-B swap.
@@ -2430,39 +2447,40 @@ func (e *Engine) failIfExhaustedByAccount(target *outboundTransport, err error) 
 // whose Phase-A streak reached the threshold. restore is the hold the loop
 // shows outside this call (the no-candidates retry set's, or nil); a network
 // hold puts it back when it ends. On escExhausted the error is the round's
-// exhaustion (an *exhaustedError chain).
-func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceErr error, dd wire.DirectDialer, provider OutboundProvider, restore *EngineError) (escResult, error) {
+// exhaustion (an *exhaustedError chain). The third result is the current
+// node's latest Phase-A error (for exhaustCounts).
+func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceErr error, dd wire.DirectDialer, provider OutboundProvider, restore *EngineError) (escResult, error, error) {
 	// A network event from before this verdict is already reflected in it.
 	e.drainHoldWake()
 	v := e.judgeNet(ctx, "pre-phaseB")
 	for {
 		if ctx.Err() != nil {
-			return escExit, nil
+			return escExit, nil, raceErr
 		}
 		if v.blocksFailover() {
 			switch e.holdUntilOnline(ctx, target, dd, v, restore) {
 			case holdExit:
-				return escExit, nil
+				return escExit, nil, raceErr
 			case holdRecovered:
 				e.dropQueuedSignal(target)
-				return escDone, nil
+				return escDone, nil, raceErr
 			}
 			// Back online: the current node first — it may only have looked
 			// dead because the network was.
 			var quit bool
 			raceErr, quit = e.phaseA(ctx, target, dd, "network-back")
 			if quit {
-				return escExit, nil
+				return escExit, nil, raceErr
 			}
 			if raceErr == nil {
 				e.dropQueuedSignal(target)
-				return escDone, nil
+				return escDone, nil, raceErr
 			}
 			e.mu.Lock()
 			target.reRaceFailStreak++
 			e.mu.Unlock()
 			if e.failIfUserAction(target, raceErr) {
-				return escExit, nil
+				return escExit, nil, raceErr
 			}
 		}
 
@@ -2479,21 +2497,21 @@ func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceEr
 			err = e.replaceOutboundServer(ctx, target, raceErr, dd, provider)
 		}
 		if err == nil {
-			return escDone, nil // reRaceFailStreak reset inside replaceOutboundServer
+			return escDone, nil, raceErr // reRaceFailStreak reset inside replaceOutboundServer
 		}
 		if ctx.Err() != nil {
-			return escExit, nil
+			return escExit, nil, raceErr
 		}
-		if errors.Is(err, ErrNoCandidates) {
+		if e.noCandidates(target, err) {
 			// Manual mode / no fallbacks: nothing to switch to. Never fail —
 			// the loop retries the current node on a schedule (retrySet)
 			// without blocking the other outbounds.
-			return escNoCandidates, nil
+			return escNoCandidates, nil, raceErr
 		}
 
 		v = e.judgeNet(ctx, "pre-exhaust")
 		if ctx.Err() != nil {
-			return escExit, nil
+			return escExit, nil, raceErr
 		}
 		if v.blocksFailover() {
 			// The network died during the failover: the candidates excluded
@@ -2504,9 +2522,9 @@ func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceEr
 			continue
 		}
 		if e.failIfExhaustedByAccount(target, err) {
-			return escExit, nil
+			return escExit, nil, raceErr
 		}
-		return escExhausted, err
+		return escExhausted, err, raceErr
 	}
 }
 
@@ -2553,10 +2571,25 @@ type exhaustedError struct {
 	tried         int
 	userAction    *EngineError
 	allUserAction bool
+	allCodeLess   bool // tried > 0 and every candidate answered code-less (Center down)
 }
 
 func (x *exhaustedError) Error() string { return x.err.Error() }
 func (x *exhaustedError) Unwrap() error { return x.err }
+
+// noCandidates reports a provider answer of "nothing to switch to" that
+// means manual mode / no fallbacks (retry forever, no cap): ErrNoCandidates
+// for a target whose URL did not come from the shell provider. A shell
+// target answered it because a subscription refresh dropped its URL — that
+// is an exhaustion (R1 review M-4).
+func (e *Engine) noCandidates(target *outboundTransport, err error) bool {
+	if !errors.Is(err, ErrNoCandidates) {
+		return false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return !target.fromShell
+}
 
 // triedNone reports a provider exhaustion that set up no candidate at all.
 func triedNone(err error) bool {
@@ -2679,7 +2712,8 @@ func (e *Engine) replaceOutboundServer(
 				err = fmt.Errorf("every candidate rejected without an auth verdict (Center unreachable?): %w", err)
 			}
 			return &exhaustedError{err: err, tried: tried, userAction: userAction,
-				allUserAction: tried > 0 && userActionCount == tried}
+				allUserAction: tried > 0 && userActionCount == tried,
+				allCodeLess:   tried > 0 && allCodeLess}
 		}
 		if newURL == "" {
 			return fmt.Errorf("provider returned empty URL")
@@ -2731,6 +2765,9 @@ func (e *Engine) replaceOutboundServer(
 			return fmt.Errorf("target outbound no longer live")
 		}
 
+		// Asked before e.mu: OwnsURL takes the shell's own locks.
+		fromShell := providerShellOwns(provider, newURL)
+
 		// Atomic swap. SwappableDialer returns the previously-installed
 		// Dialer, which is the old *TransportManager we must Close.
 		oldDialer := target.swappable.Swap(newOT.tm)
@@ -2742,6 +2779,7 @@ func (e *Engine) replaceOutboundServer(
 		target.name = newOT.name
 		target.url = newURL
 		target.jar = newOT.jar
+		target.fromShell = fromShell
 		target.reRaceFailStreak = 0
 		e.mu.Unlock()
 

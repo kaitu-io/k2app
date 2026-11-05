@@ -206,6 +206,9 @@ func (p *countingProvider) Reset() {
 	}
 }
 
+// shellOwns forwards the compositeProvider's origin query (fromShell).
+func (p *countingProvider) shellOwns(u string) bool { return providerShellOwns(p.inner, u) }
+
 func (p *countingProvider) resetCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()

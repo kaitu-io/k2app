@@ -288,9 +288,10 @@ func (r *retrySet) schedule(target *outboundTransport, step int) {
 }
 
 // enterExhausted marks a scheduled target exhausted with err (only lastErr
-// and the shown reason change when it already is): the run and its cap
-// clock start now. Logs DIAG: outbound-exhausted once per run.
-func (r *retrySet) enterExhausted(target *outboundTransport, name string, err error) {
+// and the shown reason change when it already is): the run starts now, and
+// so does its cap clock when counts (see exhaustCounts). Logs DIAG:
+// outbound-exhausted once per run.
+func (r *retrySet) enterExhausted(target *outboundTransport, name string, err error, counts bool) {
 	st := r.pending[target]
 	if st == nil {
 		return
@@ -301,7 +302,10 @@ func (r *retrySet) enterExhausted(target *outboundTransport, name string, err er
 		return
 	}
 	now := r.now()
-	st.exhausted, st.enteredAt, st.since = true, now, now
+	st.exhausted, st.enteredAt, st.since = true, now, time.Time{}
+	if counts {
+		st.since = now
+	}
 	slog.Warn("DIAG: outbound-exhausted",
 		"outbound", name, "tried", exhaustedTried(err), "err", err)
 }
@@ -427,6 +431,7 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 	}
 	phaseB := escHeld // no Phase B ran: nothing new learned about the candidates
 	var exhaustErr error
+	verdict := v // the tick's latest verdict: Phase B's pre-exhaust one when that blocked
 	// Phase B only when the current node itself is dead or refusing. A
 	// code-less reject means the node is alive and Center is not: a
 	// candidate would answer the same, so a tick does Phase A only for the
@@ -443,7 +448,7 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 		if rs, ok := provider.(interface{ Reset() }); ok {
 			rs.Reset()
 		}
-		phaseB, exhaustErr = e.retryPhaseB(ctx, target, raceErr, dd, provider)
+		phaseB, exhaustErr, verdict = e.retryPhaseB(ctx, target, raceErr, dd, provider)
 		switch phaseB {
 		case escExit:
 			return false
@@ -467,13 +472,14 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 	}
 	r.schedule(target, next)
 	st = r.pending[target]
+	counts := exhaustCounts(verdict, raceErr, exhaustErr)
 	switch phaseB {
 	case escExhausted:
-		r.enterExhausted(target, name, exhaustErr)
+		r.enterExhausted(target, name, exhaustErr, counts)
 	case escNoCandidates:
 		st.exhausted, st.since = false, time.Time{} // nothing to switch to: no cap
 	}
-	r.reason = v.holdError()
+	r.reason = verdict.holdError()
 	if r.reason == nil {
 		if st.exhausted {
 			r.reason = exhaustedHoldError(name)
@@ -484,10 +490,7 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 	if !st.exhausted {
 		return true
 	}
-	// The cap clock runs only while the network works and the current node
-	// is not answering (a code-less Phase A = node alive, Center down —
-	// review C1: a Center outage must never disconnect a live session).
-	if v.blocksFailover() || isCodeLessReject(raceErr) {
+	if !counts {
 		st.since = time.Time{}
 		return true
 	}
@@ -495,6 +498,21 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 		st.since = r.now()
 	}
 	return !e.failAtExhaustCap(r, target, name)
+}
+
+// exhaustCounts reports whether a tick (or escalate's exhaustion) counts
+// toward the cap: the network works by the round's LATEST verdict (a
+// pre-exhaust verdict that blocked overrides the tick's first one — R1
+// review I-1), the current node is not answering code-less, and the round's
+// candidates were not all code-less. Code-less = node alive, Center down: a
+// Center outage of any length never disconnects, even with the current node
+// dead (R1 review M-2 ruling). A dead fleet (transport failures) counts.
+func exhaustCounts(verdict netVerdict, raceErr, exhaustErr error) bool {
+	if verdict.blocksFailover() || isCodeLessReject(raceErr) {
+		return false
+	}
+	var x *exhaustedError
+	return !(errors.As(exhaustErr, &x) && x.allCodeLess)
 }
 
 // failAtExhaustCap fails the engine (failExhausted) once target has been
@@ -517,29 +535,33 @@ func (e *Engine) failAtExhaustCap(r *retrySet, target *outboundTransport, name s
 // with the exhaustion error when every candidate failed (or none could be
 // tried) on a working network; escHeld when the network died meanwhile
 // (provider Reset, nothing learned); escExit when ctx ended or an account
-// verdict failed the engine.
-func (e *Engine) retryPhaseB(ctx context.Context, target *outboundTransport, raceErr error, dd wire.DirectDialer, provider OutboundProvider) (escResult, error) {
+// verdict failed the engine. The verdict returned is the pre-exhaust one
+// when it was taken (escHeld / escExhausted), else online: the caller shows
+// and counts by it (R1 review I-1).
+func (e *Engine) retryPhaseB(ctx context.Context, target *outboundTransport, raceErr error, dd wire.DirectDialer, provider OutboundProvider) (escResult, error, netVerdict) {
 	err := e.replaceOutboundServer(ctx, target, raceErr, dd, provider)
 	switch {
 	case err == nil:
-		return escDone, nil
+		return escDone, nil, netOnline
 	case ctx.Err() != nil:
-		return escExit, nil
-	case errors.Is(err, ErrNoCandidates):
-		return escNoCandidates, nil
+		return escExit, nil, netOnline
+	case e.noCandidates(target, err):
+		return escNoCandidates, nil, netOnline
 	}
-	if v := e.judgeNet(ctx, "pre-exhaust"); ctx.Err() != nil {
-		return escExit, nil
-	} else if v.blocksFailover() {
+	v := e.judgeNet(ctx, "pre-exhaust")
+	if ctx.Err() != nil {
+		return escExit, nil, v
+	}
+	if v.blocksFailover() {
 		if rs, ok := provider.(interface{ Reset() }); ok {
 			rs.Reset()
 		}
-		return escHeld, nil
+		return escHeld, nil, v
 	}
 	if e.failIfExhaustedByAccount(target, err) {
-		return escExit, nil
+		return escExit, nil, v
 	}
-	return escExhausted, err
+	return escExhausted, err, v
 }
 
 // drainHoldWake drops a pending holdWake token. A network event that

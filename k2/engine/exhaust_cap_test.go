@@ -8,6 +8,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -443,9 +444,11 @@ func TestExhaust_ManualModeNeverFails(t *testing.T) {
 }
 
 // S15 shape: the current node is dead at transport, the candidates complete
-// their handshake and the metadata verdict times out (Center hanging).
-// Never fails before the cap.
-func TestExhaust_S15MetadataTimeoutNeverFailsBeforeCap(t *testing.T) {
+// their handshake and the metadata verdict times out (Center hanging). R1
+// review M-2 ruling: a round whose candidates are all code-less does not
+// count — a Center outage of any length never disconnects, even with the
+// current node dead. Once Center answers, the next tick fails over.
+func TestExhaust_S15CenterOutageDeadNodeNeverFailsThenFailsOver(t *testing.T) {
 	hs := newFoHarness(t, foOpts{
 		fallbacks: map[string][]string{foURLA: {foURLB, foURLC}},
 		net:       []checkResult{checkMatched},
@@ -456,9 +459,192 @@ func TestExhaust_S15MetadataTimeoutNeverFailsBeforeCap(t *testing.T) {
 	hs.servers.mu.Unlock()
 	hs.escalate()
 	hs.waitStatus("reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
-	failedAt := hs.startTicks().runUntilCapFails(0, 20*time.Minute)
-	if failedAt < exhaustFailAfter {
-		t.Fatalf("failed at %v, before the cap", failedAt)
+	r := hs.startTicks()
+	for r.elapsed() < 30*time.Minute {
+		if at, exited := r.tick(); exited {
+			t.Fatalf("engine failed at %v during a Center outage (current node dead)", at)
+		}
+		hs.assertExhaustedScheduled(fmt.Sprintf("tick at %v", r.elapsed()))
+	}
+	// Center answers again: b admits.
+	hs.servers.mu.Lock()
+	delete(hs.servers.setupErrs, "b.example")
+	hs.servers.mu.Unlock()
+	hs.servers.setAlive("b.example", true)
+	r.fire()
+	eventually(t, "failed over to b", func() bool { return hs.targetURL() == foURLB })
+	hs.waitStatus("connected", func(s Status) bool { return s.State == StateConnected && s.Error == nil })
+	if hs.h.fatalCount() != 0 {
+		t.Fatalf("OnOutboundFatal = %d, want 0", hs.h.fatalCount())
+	}
+}
+
+// Every candidate code-less, the current node dead at transport (the
+// k2subs/static Center-outage shape with a refusal instead of a hang): same
+// ruling, never caps.
+func TestExhaust_AllCandidatesCodeLessDeadNodeNeverCaps(t *testing.T) {
+	hs := newFoHarness(t, foOpts{
+		fallbacks: map[string][]string{foURLA: {foURLB, foURLC}},
+		net:       []checkResult{checkMatched},
+	})
+	hs.servers.mu.Lock()
+	hs.servers.setupErrs["b.example"] = codeLessReject()
+	hs.servers.setupErrs["c.example"] = codeLessReject()
+	hs.servers.mu.Unlock()
+	hs.escalate()
+	hs.waitStatus("reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
+	r := hs.startTicks()
+	for r.elapsed() < 30*time.Minute {
+		if at, exited := r.tick(); exited {
+			t.Fatalf("engine failed at %v: all-code-less rounds must not count", at)
+		}
+	}
+	hs.assertExhaustedScheduled("30 min")
+}
+
+// R1 review I-1: the tick's first verdict is online, then the network dies
+// during its Phase B (pre-exhaust verdict offline) — on the tick that would
+// cross the cap. No fail; the hold shows that verdict's 106; the cap clock
+// is cleared, so the cap restarts from the next online tick.
+func TestExhaust_OfflineMidTickNeverCapsAndClearsClock(t *testing.T) {
+	hs := newFoHarness(t, foOpts{
+		fallbacks: map[string][]string{foURLA: {foURLB, foURLC}},
+		net:       []checkResult{checkMatched},
+	})
+	hs.escalate()
+	hs.waitStatus("reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
+	r := hs.startTicks()
+	for r.peek().at.Sub(r.start) < exhaustFailAfter {
+		if _, exited := r.tick(); exited {
+			t.Fatal("failed before the cap")
+		}
+	}
+	// The cap tick: the network dies while it tries the candidates.
+	hs.servers.mu.Lock()
+	hs.servers.onSetup = func(host string) {
+		if host == "c.example" {
+			hs.net.set(checkNoResponse)
+		}
+	}
+	hs.servers.mu.Unlock()
+	at, exited := r.tick()
+	if exited {
+		t.Fatalf("tick at %v failed the engine although its pre-exhaust verdict was offline", at)
+	}
+	if s, le := hs.engineState(); s != StateConnected || le != nil {
+		t.Fatalf("engine = %s / %v, want connected", s, le)
+	}
+	hs.waitStatus("reconnecting 106 from the mid-tick verdict", isReconnectingCode(ErrCodeNoInternet))
+	if hs.h.fatalCount() != 0 {
+		t.Fatalf("OnOutboundFatal = %d", hs.h.fatalCount())
+	}
+	// Back online: the clock restarts at the next tick, so 10 more minutes.
+	hs.servers.mu.Lock()
+	hs.servers.onSetup = nil
+	hs.servers.mu.Unlock()
+	hs.net.set(checkMatched)
+	restart := r.peek().at.Sub(r.start)
+	failedAt := r.runUntilCapFails(restart, 30*time.Minute)
+	if failedAt-restart != exhaustFailAfter {
+		t.Fatalf("failed %v after the restart tick, want exactly %v: the clock was not cleared", failedAt-restart, exhaustFailAfter)
+	}
+	hs.assertFailed503Once("cap after the mid-tick outage")
+}
+
+// lockedShell is a k2subs-shaped shell provider whose owned URL set a test
+// can change (a subscription refresh dropping a URL).
+type lockedShell struct {
+	mu   sync.Mutex
+	owns map[string]bool
+}
+
+func (s *lockedShell) OwnsURL(u string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.owns[u]
+}
+func (s *lockedShell) NextURL(cur string, _ error) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for u := range s.owns {
+		if u != cur {
+			return u, nil
+		}
+	}
+	return "", errors.New("shell: exhausted")
+}
+func (s *lockedShell) drop(u string) {
+	s.mu.Lock()
+	delete(s.owns, u)
+	s.mu.Unlock()
+}
+
+func (hs *foHarness) fromShell() bool {
+	hs.e.mu.Lock()
+	defer hs.e.mu.Unlock()
+	return hs.target.fromShell
+}
+
+// R1 review M-4: a target whose URL the shell handed out, after a
+// subscription refresh dropped that URL, answers ErrNoCandidates. That is an
+// exhaustion — capped, then OnOutboundFatal (k2r / desktop rebuild from a
+// fresh subscription) — not manual mode. A static-only target with the same
+// answer keeps retrying forever (TestExhaust_ManualModeNeverFails).
+func TestExhaust_ShellDroppedURLIsCapped(t *testing.T) {
+	diag := recordDiag(t)
+	shell := &lockedShell{owns: map[string]bool{foURLA: true}}
+	hs := newFoHarness(t, foOpts{shell: shell, net: []checkResult{checkMatched}})
+	hs.e.mu.Lock()
+	hs.target.fromShell = true // as Start marks it (shellOrigins)
+	hs.e.mu.Unlock()
+	shell.drop(foURLA) // refresh: the tunnel's URL is gone
+	hs.escalate()
+	hs.waitStatus("reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
+	if ex := diag.find("DIAG: outbound-exhausted", ""); len(ex) != 1 || fmt.Sprint(ex[0].attrs["tried"]) != "0" {
+		t.Fatalf("DIAG: outbound-exhausted = %+v, want one with tried 0", ex)
+	}
+	hs.startTicks().runUntilCapFails(0, 20*time.Minute)
+	hs.assertFailed503Once("cap for a dropped shell URL")
+}
+
+// The origin follows the swap: a shell-handed URL marks the target
+// fromShell, a static fallback clears it.
+func TestFromShellFollowsSwap(t *testing.T) {
+	shell := &lockedShell{owns: map[string]bool{foURLA: true, foURLB: true}}
+	hs := newFoHarness(t, foOpts{shell: shell, net: []checkResult{checkMatched}})
+	hs.servers.setAlive("b.example", true)
+	hs.escalate()
+	eventually(t, "failed over to b (shell)", func() bool { return hs.targetURL() == foURLB })
+	if !hs.fromShell() {
+		t.Fatal("fromShell = false after a swap to a shell URL")
+	}
+
+	hs2 := newFoHarness(t, foOpts{
+		fallbacks: map[string][]string{foURLA: {foURLB}},
+		shell:     &lockedShell{owns: map[string]bool{foURLC: true}},
+		net:       []checkResult{checkMatched},
+	})
+	hs2.e.mu.Lock()
+	hs2.target.fromShell = true
+	hs2.e.mu.Unlock()
+	hs2.servers.setAlive("b.example", true)
+	hs2.escalate()
+	eventually(t, "failed over to b (static)", func() bool { return hs2.targetURL() == foURLB })
+	if hs2.fromShell() {
+		t.Fatal("fromShell = true after a swap to a static fallback")
+	}
+}
+
+func TestShellOrigins(t *testing.T) {
+	shell := &lockedShell{owns: map[string]bool{foURLB: true, foURLC: true}}
+	c := newCompositeProvider(newStaticProvider(map[string][]string{foURLA: {foURLC}}, time.Now), shell)
+	a, b, cc := &outboundTransport{url: foURLA}, &outboundTransport{url: foURLB}, &outboundTransport{url: foURLC}
+	got := shellOrigins(c, []*outboundTransport{a, b, cc})
+	if got[a] || !got[b] || got[cc] {
+		t.Fatalf("shellOrigins = a:%v b:%v c:%v, want false/true/false (static wins for c)", got[a], got[b], got[cc])
+	}
+	if shellOrigins(newCompositeProvider(newStaticProvider(nil, time.Now), nil), []*outboundTransport{b})[b] {
+		t.Fatal("no shell: fromShell must be false")
 	}
 }
 

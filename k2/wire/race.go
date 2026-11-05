@@ -169,6 +169,9 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 				winner = &r
 				slog.Info("DIAG: transport-race-winner", "winner", r.transportType, "winnerMs", time.Since(raceStart).Milliseconds(), "tried", i)
 				res := &RaceResult{Dialer: r.dialer, TransportType: r.transportType, TCPWS: r.tcpws}
+				if testHookRaceWinner != nil {
+					testHookRaceWinner(r.transportType)
+				}
 				// tcpws won — drain remaining results to find connected QUIC candidates.
 				// QUIC results may arrive nearly simultaneously (echo-probe completes ~same time).
 				if r.transportType == "tcpws" {
@@ -221,6 +224,14 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 func metaPhaseBudget() time.Duration {
 	return metaReadTimeout + echoTimeoutRace + 500*time.Millisecond
 }
+
+// drainQUICGrace is how long a tcpws win waits for a QUIC candidate still in
+// flight (drainQUICBackup). A var only so tests can widen it.
+var drainQUICGrace = 50 * time.Millisecond
+
+// testHookRaceWinner, when non-nil (tests only), is called in the collector
+// with the winner's transport type, before the QUIC-backup drain.
+var testHookRaceWinner func(transportType string)
 
 // RaceWorstCase is the longest RaceTransport can run on its own deadlines: a
 // candidate whose transport handshake completes just before raceTimeout,
@@ -451,7 +462,7 @@ func drainQUICBackup(
 	// Brief grace period for nearly-simultaneous QUIC results. Echo-probe
 	// finishes within milliseconds of tcpws in practice (observed: 2ms).
 	// Keep short to avoid blocking the return path and delaying cleanup.
-	timer := time.NewTimer(50 * time.Millisecond)
+	timer := time.NewTimer(drainQUICGrace)
 	defer timer.Stop()
 
 	for i := 0; i < remaining; i++ {
