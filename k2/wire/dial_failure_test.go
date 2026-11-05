@@ -70,7 +70,7 @@ func TestConnectFailures_TransportFailureRecorded(t *testing.T) {
 		if _, err := tm.DialTCP(context.Background(), "x:80", nil); err == nil {
 			t.Fatal("dial unexpectedly succeeded")
 		}
-		seq, last := tm.ConnectFailures()
+		seq, last, _ := tm.ConnectFailures()
 		if seq != uint64(i) || last.Before(before) {
 			t.Fatalf("after %d failures: seq=%d last=%v", i, seq, last)
 		}
@@ -78,7 +78,7 @@ func TestConnectFailures_TransportFailureRecorded(t *testing.T) {
 	// DialUDP / DialStreamUDP are user dials too.
 	tm.DialUDP(context.Background(), "x:53")
 	tm.DialStreamUDP(context.Background(), "x:53")
-	if seq, _ := tm.ConnectFailures(); seq != 5 {
+	if seq, _, _ := tm.ConnectFailures(); seq != 5 {
 		t.Fatalf("seq=%d after 3 TCP + 2 UDP failures, want 5", seq)
 	}
 }
@@ -90,7 +90,7 @@ func TestConnectFailures_MetadataRejectRecorded(t *testing.T) {
 	rej := &ProxyLayerError{Err: fmt.Errorf("%w: %w", ErrMetadataRejected, &StreamError{Code: 402, Message: "payment"})}
 	tm, _ := newFailTM(rej)
 	tm.DialTCP(context.Background(), "x:80", nil)
-	if seq, last := tm.ConnectFailures(); seq != 1 || last.IsZero() {
+	if seq, last, _ := tm.ConnectFailures(); seq != 1 || last.IsZero() {
 		t.Fatalf("metadata reject not recorded: seq=%d last=%v", seq, last)
 	}
 }
@@ -105,12 +105,12 @@ func TestConnectFailures_AnsweredClears(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tm, d := newFailTM(errRefused)
 			tm.DialTCP(context.Background(), "x:80", nil)
-			if _, last := tm.ConnectFailures(); last.IsZero() {
+			if _, last, _ := tm.ConnectFailures(); last.IsZero() {
 				t.Fatal("precondition: failure not recorded")
 			}
 			d.set(answer)
 			tm.DialTCP(context.Background(), "x:80", nil)
-			seq, last := tm.ConnectFailures()
+			seq, last, _ := tm.ConnectFailures()
 			if !last.IsZero() {
 				t.Fatalf("answered dial (%v) did not clear the failure", answer)
 			}
@@ -131,10 +131,10 @@ func TestConnectFailures_NoOpinionCases(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tm, d := newFailTM(errRefused)
 			tm.DialTCP(context.Background(), "x:80", nil)
-			seq0, last0 := tm.ConnectFailures()
+			seq0, last0, _ := tm.ConnectFailures()
 			d.set(e)
 			tm.DialTCP(context.Background(), "x:80", nil)
-			seq, last := tm.ConnectFailures()
+			seq, last, _ := tm.ConnectFailures()
 			if seq != seq0 || !last.Equal(last0) {
 				t.Fatalf("%v changed evidence: seq %d→%d last %v→%v", e, seq0, seq, last0, last)
 			}
@@ -145,7 +145,7 @@ func TestConnectFailures_NoOpinionCases(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		tm.DialTCP(ctx, "x:80", nil)
-		if seq, last := tm.ConnectFailures(); seq != 0 || !last.IsZero() {
+		if seq, last, _ := tm.ConnectFailures(); seq != 0 || !last.IsZero() {
 			t.Fatalf("a dial the caller abandoned was recorded: seq=%d", seq)
 		}
 	})
@@ -168,7 +168,7 @@ func TestConnectFailures_ClearedByResetsAndReplace(t *testing.T) {
 			tm, _ := newFailTM(errRefused)
 			tm.DialTCP(context.Background(), "x:80", nil)
 			clear(tm)
-			if _, last := tm.ConnectFailures(); !last.IsZero() {
+			if _, last, _ := tm.ConnectFailures(); !last.IsZero() {
 				t.Fatalf("%s left the pre-%s failure unresolved", name, name)
 			}
 		})
@@ -185,7 +185,7 @@ func TestConnectFailures_ClearedByResetsAndReplace(t *testing.T) {
 			clear(tm)
 			close(d.block)
 			<-done
-			if seq, last := tm.ConnectFailures(); seq != 0 || !last.IsZero() {
+			if seq, last, _ := tm.ConnectFailures(); seq != 0 || !last.IsZero() {
 				t.Fatalf("a dial started before %s recorded evidence after it: seq=%d", name, seq)
 			}
 		})
@@ -200,7 +200,64 @@ func TestConnectFailures_TCPWSFallbackSuccessClears(t *testing.T) {
 	if _, err := tm.DialTCP(context.Background(), "x:80", nil); err != nil {
 		t.Fatalf("tcpws fallback dial failed: %v", err)
 	}
-	if _, last := tm.ConnectFailures(); !last.IsZero() {
+	if _, last, _ := tm.ConnectFailures(); !last.IsZero() {
 		t.Fatal("tcpws success did not clear the failure")
+	}
+}
+
+// Review C1: k2s answers the code-less legacy "unauthorized" when it cannot
+// reach Center (undecidable verdict under enforce). That is not this node
+// being dead — and engine maps it to a terminal 401 — so it must record
+// nothing, neither failure nor answer. Coded rejects (402 subscription, 503
+// node auth fault, 401/403 Center verdict) are node dial failures.
+func TestConnectFailures_OnlyCodedMetadataRejectsCount(t *testing.T) {
+	codeLess := &ProxyLayerError{Err: fmt.Errorf("%w: %w", ErrMetadataRejected,
+		fmt.Errorf("%w: unauthorized", ErrStreamRejected))}
+	t.Run("code-less records nothing", func(t *testing.T) {
+		tm, _ := newFailTM(codeLess)
+		for i := 0; i < 5; i++ {
+			tm.DialTCP(context.Background(), "x:80", nil)
+		}
+		if seq, last, _ := tm.ConnectFailures(); seq != 0 || !last.IsZero() {
+			t.Fatalf("code-less reject recorded: seq=%d last=%v", seq, last)
+		}
+	})
+	t.Run("code-less does not clear an earlier failure", func(t *testing.T) {
+		tm, d := newFailTM(errRefused)
+		tm.DialTCP(context.Background(), "x:80", nil)
+		d.set(codeLess)
+		tm.DialTCP(context.Background(), "x:80", nil)
+		if seq, last, _ := tm.ConnectFailures(); seq != 1 || last.IsZero() {
+			t.Fatalf("code-less reject changed evidence: seq=%d last=%v", seq, last)
+		}
+	})
+	for _, code := range []int{401, 402, 403, metadataRejectCodeNodeFault} {
+		t.Run(fmt.Sprintf("coded %d records", code), func(t *testing.T) {
+			rej := &ProxyLayerError{Err: fmt.Errorf("%w: %w", ErrMetadataRejected, &StreamError{Code: code, Message: "x"})}
+			tm, _ := newFailTM(rej)
+			tm.DialTCP(context.Background(), "x:80", nil)
+			if seq, last, _ := tm.ConnectFailures(); seq != 1 || last.IsZero() {
+				t.Fatalf("coded %d reject not recorded: seq=%d", code, seq)
+			}
+		})
+	}
+}
+
+// Review I1 support: every clear moves the generation reported to engine.
+func TestConnectFailures_GenMovesOnEveryClear(t *testing.T) {
+	tm, _ := newFailTM(errRefused)
+	_, _, g0 := tm.ConnectFailures()
+	tm.DialTCP(context.Background(), "x:80", nil)
+	if _, _, g := tm.ConnectFailures(); g != g0 {
+		t.Fatalf("a dial moved gen %d→%d", g0, g)
+	}
+	tm.ResetConnections()
+	_, _, g1 := tm.ConnectFailures()
+	tm.Reset()
+	_, _, g2 := tm.ConnectFailures()
+	tm.ReplacePrimary(&fnDialer{err: errRefused}, "quic-443")
+	_, _, g3 := tm.ConnectFailures()
+	if !(g0 < g1 && g1 < g2 && g2 < g3) {
+		t.Fatalf("gen did not move on each clear: %d %d %d %d", g0, g1, g2, g3)
 	}
 }

@@ -27,11 +27,12 @@ func NewWireOutbound(name string, dialer wire.Dialer, reporter WireErrorReporter
 
 func (w *wireOutbound) DialTCP(ctx context.Context, dest string, earlyData []byte) (net.Conn, error) {
 	start := time.Now()
-	conn, err := w.dialer.DialTCP(ctx, dest, earlyData)
+	d := w.current()
+	conn, err := d.DialTCP(ctx, dest, earlyData)
 	dialLatency := time.Since(start)
 	if err != nil {
 		slog.Warn("DIAG: proxy-dial-fail", "dest", dest, "transport", "tcp", "outbound", w.name, "err", err)
-		if w.wireReporter != nil && !isProxyLayerError(err) {
+		if w.wireReporter != nil && !isProxyLayerError(err) && w.stillCurrent(d) {
 			w.wireReporter.ReportWireError(err)
 		}
 		return nil, err
@@ -47,11 +48,12 @@ func (w *wireOutbound) DialTCP(ctx context.Context, dest string, earlyData []byt
 
 func (w *wireOutbound) DialUDP(ctx context.Context, dest string) (net.PacketConn, net.Addr, error) {
 	start := time.Now()
-	conn, err := w.dialer.DialUDP(ctx, dest)
+	d := w.current()
+	conn, err := d.DialUDP(ctx, dest)
 	dialLatency := time.Since(start)
 	if err != nil {
 		slog.Warn("DIAG: proxy-dial-fail", "dest", dest, "transport", "udp", "outbound", w.name, "err", err)
-		if w.wireReporter != nil && !isProxyLayerError(err) {
+		if w.wireReporter != nil && !isProxyLayerError(err) && w.stillCurrent(d) {
 			w.wireReporter.ReportWireError(err)
 		}
 		return nil, nil, err
@@ -63,6 +65,32 @@ func (w *wireOutbound) DialUDP(ctx context.Context, dest string) (net.PacketConn
 		w.wireReporter.ClearWireError()
 	}
 	return conn, nil, nil // nil destAddr = pre-connected
+}
+
+// current is the Dialer this dial goes to: for a wire.CurrentDialer (the
+// engine's SwappableDialer) the currently-installed inner Dialer, captured
+// once so the failure check below compares against exactly what was dialed.
+func (w *wireOutbound) current() wire.Dialer {
+	if cd, ok := w.dialer.(wire.CurrentDialer); ok {
+		if d := cd.Current(); d != nil {
+			return d
+		}
+	}
+	return w.dialer
+}
+
+// stillCurrent reports whether d is still the installed Dialer. A dial that
+// was in flight on a transport the engine has since replaced (Phase B swap
+// to another server) fails against a dead, superseded node; its error says
+// nothing about the session now running on the replacement and must not
+// become lastError (PVE S1: connected on F1 with a stale 503 from the old
+// node's in-flight dial).
+func (w *wireOutbound) stillCurrent(d wire.Dialer) bool {
+	cd, ok := w.dialer.(wire.CurrentDialer)
+	if !ok {
+		return true
+	}
+	return cd.Current() == d
 }
 
 func (w *wireOutbound) Name() string { return w.name }

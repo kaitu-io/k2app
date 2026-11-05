@@ -438,3 +438,198 @@ func TestPhaseASuccessKeepsStickyPaymentError(t *testing.T) {
 		t.Fatalf("lastError = %v, want the sticky 402", le)
 	}
 }
+
+// --- fix round 1 ------------------------------------------------------------
+
+// Review C1, end to end: the node keeps answering the code-less legacy
+// "unauthorized" (k2s cannot reach Center), with no live connection and user
+// traffic trying. That must never strike, never re-race and never fail the
+// engine with 401 — the client stays connected and heals on the next lazy
+// redial once Center answers, as before the dead-node change.
+func TestEchoDeadNode_CodeLessRejectNeverFails401(t *testing.T) {
+	hs := newFoHarness(t, foOpts{
+		fallbacks: map[string][]string{foURLA: {foURLB}},
+		net:       []checkResult{checkMatched},
+	})
+	hs.servers.setAlive("b.example", true)
+	codeLess := &wire.ProxyLayerError{Err: fmt.Errorf("%w: %w", wire.ErrMetadataRejected,
+		fmt.Errorf("%w: unauthorized", wire.ErrStreamRejected))}
+	raceTransportFn = func(ctx context.Context, cfg wire.Config, _ string, _ wire.DirectDialer, _ *wire.CookieJar) (*wire.RaceResult, error) {
+		hs.servers.mu.Lock()
+		hs.servers.races[cfg.Host]++
+		hs.servers.mu.Unlock()
+		return nil, fmt.Errorf("transport race: %w", codeLess)
+	}
+	d := &rejectingDialer{deadNodeDialer: newDeadNodeDialer(), err: codeLess}
+	hs.e.mu.Lock()
+	hs.target.tm.SetPrimary(d, "quic-443")
+	ot := hs.target
+	hs.e.mu.Unlock()
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, nil, nil, nil, time.Now())
+	hm.reRaceChan = hs.e.reRaceChan
+	st := &echoLoopState{}
+
+	for i := 0; i < 20*echoReraceThreshold; i++ {
+		userDial(ot)
+		hm.probeOnce(ot, st, time.Now())
+		if st.strikes != 0 {
+			t.Fatalf("probe %d: strikes=%d on a code-less reject", i, st.strikes)
+		}
+	}
+	time.Sleep(20 * time.Millisecond) // let the loop act on anything queued
+	if n := d.dials.Load(); n != 20*echoReraceThreshold {
+		t.Fatalf("precondition: %d user dials, want %d", n, 20*echoReraceThreshold)
+	}
+	if n := hs.servers.raceCount("a.example"); n != 0 {
+		t.Fatalf("code-less reject triggered %d re-races", n)
+	}
+	if s, le := hs.engineState(); s != StateConnected || le != nil {
+		t.Fatalf("engine = %s / %v, want connected / nil (Center outage must not disconnect)", s, le)
+	}
+	if hs.h.fatalCount() != 0 {
+		t.Fatalf("OnOutboundFatal = %d", hs.h.fatalCount())
+	}
+}
+
+// Review I1: strikes from before a Reset never combine with a failure after
+// it. Two strikes, Reset, one fresh failure → strikes 1, no re-race.
+func TestEchoProbe_StrikesDroppedAcrossReset(t *testing.T) {
+	for name, reset := range map[string]func(*wire.TransportManager){
+		"Reset":            (*wire.TransportManager).Reset,
+		"ResetConnections": (*wire.TransportManager).ResetConnections,
+	} {
+		t.Run(name, func(t *testing.T) {
+			ot, _ := newDeadNodeTransport("t-reset-strikes")
+			hm, ch := newHMForEcho(t, []*outboundTransport{ot})
+			st := &echoLoopState{}
+			for i := 0; i < echoReraceThreshold-1; i++ {
+				userDial(ot)
+				hm.probeOnce(ot, st, time.Now())
+			}
+			if st.strikes != echoReraceThreshold-1 {
+				t.Fatalf("precondition: strikes=%d, want %d", st.strikes, echoReraceThreshold-1)
+			}
+			reset(ot.tm)
+			userDial(ot) // first dial on the new path fails
+			hm.probeOnce(ot, st, time.Now())
+			if st.strikes != 1 {
+				t.Fatalf("strikes=%d after %s + one failure, want 1", st.strikes, name)
+			}
+			if reraced(ch) {
+				t.Fatalf("re-raced on strikes carried across %s", name)
+			}
+		})
+	}
+}
+
+// Review I2 (controller ruling): while the engine's network is reported down
+// (mobile airplane mode / no network), failing dials never strike.
+func TestEchoProbe_NetworkDownFailingDialsNoStrike(t *testing.T) {
+	ot, _ := newDeadNodeTransport("t-netdown")
+	hm, ch := newHMForEcho(t, []*outboundTransport{ot})
+	var up atomic.Bool
+	hm.netUp = up.Load
+	st := &echoLoopState{}
+	for i := 0; i < 4*echoReraceThreshold; i++ {
+		userDial(ot)
+		hm.probeOnce(ot, st, time.Now())
+		if st.strikes != 0 {
+			t.Fatalf("probe %d: strikes=%d with the network down", i, st.strikes)
+		}
+	}
+	if reraced(ch) {
+		t.Fatal("re-raced with the network down")
+	}
+	// Control: the same traffic with the network up does strike.
+	up.Store(true)
+	for i := 0; i < echoReraceThreshold; i++ {
+		userDial(ot)
+		hm.probeOnce(ot, st, time.Now())
+	}
+	if !reraced(ch) {
+		t.Fatal("control: network up, failing dials should re-race")
+	}
+}
+
+// The engine wires hm.netUp to its netCoordinator.
+func TestEngine_HealthNetUpFollowsNetCoordinator(t *testing.T) {
+	e := New()
+	hm := newHealthMonitor(nil, nil, nil, nil, nil, time.Now())
+	nc := newNetCoordinator(func() {}, func() {})
+	t.Cleanup(nc.close)
+	e.mu.Lock()
+	e.netCoord = nc
+	e.mu.Unlock()
+	e.wireHealthNetUp(hm)
+	if !hm.networkUp() {
+		t.Fatal("network up at start, gate reports down")
+	}
+	nc.handleEvent(&NetEvent{Signal: SignalUnavailable, Source: "test"})
+	if hm.networkUp() {
+		t.Fatal("netCoordinator reports down, gate reports up")
+	}
+}
+
+// PVE S6: a successful Phase-B swap clears a stale non-user-action wire
+// error left by proxy dials on the dead node; 401/402 would stay sticky
+// (ClearWireError, covered by TestPhaseASuccessKeepsStickyPaymentError).
+func TestPhaseBSwapClearsStaleWireError(t *testing.T) {
+	hs := newFoHarness(t, foOpts{
+		fallbacks: map[string][]string{foURLA: {foURLB}},
+		net:       []checkResult{checkMatched},
+	})
+	hs.servers.setAlive("b.example", true)
+	hs.e.ReportWireError(errors.New("dial tcp: i/o timeout")) // 503 from the dead node
+	if _, le := hs.engineState(); le == nil {
+		t.Fatal("precondition: no wire error recorded")
+	}
+	hs.escalate()
+	eventually(t, "target switched to b", func() bool { return hs.targetURL() == foURLB })
+	eventually(t, "wire error cleared by the swap", func() bool {
+		_, le := hs.engineState()
+		return le == nil
+	})
+	if gs := hs.e.GetStatus(); gs.State != StateConnected || gs.Error != nil {
+		t.Fatalf("GetStatus = %+v, want connected/nil after the Phase-B swap", gs)
+	}
+}
+
+// PVE S8 timing: the FIRST Phase-A that returns 401/402 fails the engine
+// with that code — no second echo-strike cycle to reach the streak
+// threshold, no replacement spent.
+func TestReplaceLoop_FirstPhaseAUserActionFailsImmediately(t *testing.T) {
+	for _, code := range []int{ErrCodeAuthRejected, ErrCodePaymentRequired} {
+		t.Run(fmt.Sprint(code), func(t *testing.T) {
+			hs := newFoHarness(t, foOpts{
+				fallbacks: map[string][]string{foURLA: {foURLB}},
+				net:       []checkResult{checkMatched},
+			})
+			hs.servers.setAlive("b.example", true)
+			rej := &wire.ProxyLayerError{Err: fmt.Errorf("%w: %w", wire.ErrMetadataRejected,
+				&wire.StreamError{Code: code, Message: "center verdict"})}
+			raceTransportFn = func(ctx context.Context, cfg wire.Config, _ string, _ wire.DirectDialer, _ *wire.CookieJar) (*wire.RaceResult, error) {
+				hs.servers.mu.Lock()
+				hs.servers.races[cfg.Host]++
+				hs.servers.mu.Unlock()
+				return nil, fmt.Errorf("transport race: %w", rej)
+			}
+			hs.signal() // exactly one echo signal → one Phase-A
+			eventually(t, "engine failed", func() bool {
+				s, _ := hs.engineState()
+				return s != StateConnected
+			})
+			if _, le := hs.engineState(); le == nil || le.Code != code {
+				t.Fatalf("lastError = %v, want %d", le, code)
+			}
+			if n := hs.servers.raceCount("a.example"); n != 1 {
+				t.Fatalf("Phase-A ran %d times, want 1", n)
+			}
+			if hs.provider.count() != 0 {
+				t.Fatalf("NextURL called %d times on a %d", hs.provider.count(), code)
+			}
+			if hs.h.fatalCount() != 1 {
+				t.Fatalf("OnOutboundFatal = %d, want 1", hs.h.fatalCount())
+			}
+		})
+	}
+}

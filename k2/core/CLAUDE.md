@@ -75,7 +75,7 @@ type Outbound interface {
 | `wireOutbound` | `outbound_wire.go` | No (engine owns tm) | no-op |
 | `k2pOutbound` | `outbound_k2p.go` | Yes (ICE/QUIC conn) | closes inner dialer |
 
-- `wireOutbound`: wraps `wire.Dialer` + DIAG logging (`proxy-dial-fail`, `proxy-dial-slow`) + WireErrorReporter
+- `wireOutbound`: wraps `wire.Dialer` + DIAG logging (`proxy-dial-fail`, `proxy-dial-slow`) + WireErrorReporter. For a `wire.CurrentDialer` (engine's SwappableDialer) it dials the installed inner Dialer captured once and drops `ReportWireError` when that Dialer was swapped out mid-dial (Phase B moved to another server — PVE S1 stale 503 on the new node)
 - `k2pOutbound`: lazy-connect via `k2p.Dial()` on first use. Dead connection detection via quic-go typed errors triggers reset + reconnect. Concurrency: `connectMu` (serialization) → `mu` (state).
 
 ## Router (router.go)

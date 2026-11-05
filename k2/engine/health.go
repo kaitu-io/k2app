@@ -204,6 +204,21 @@ type healthMonitor struct {
 	// Config.MobilePowerSaving (engine.go) rather than a constructor param,
 	// to avoid touching the many existing newHealthMonitor call sites.
 	mobilePowerSaving bool
+
+	// netUp reports whether the engine's network is up (netCoordinator,
+	// set by engine.Start before start()). The not-probed dial-failure strike
+	// counts only while it is: with the platform reporting no network
+	// (mobile airplane mode / no network), failing dials say nothing about
+	// the node, and striking would start periodic replace-loop work (hold
+	// ticks, Phase-A races) that used to stay silent. Desktop never reports
+	// unavailable, so a desktop link drop still reaches the loop. nil = up
+	// (tests that build a healthMonitor directly).
+	netUp func() bool
+}
+
+// networkUp reads netUp; called from the probe goroutine with no lock held.
+func (hm *healthMonitor) networkUp() bool {
+	return hm.netUp == nil || hm.netUp()
 }
 
 func newHealthMonitor(
@@ -1009,6 +1024,13 @@ type echoLoopState struct {
 	// connFailSeen is the tm.ConnectFailures seq seen at the previous probe;
 	// a strike on a not-probed outcome needs it to have moved since.
 	connFailSeen uint64
+	// connGenSeen is the tm.ConnectFailures connection generation seen at the
+	// previous probe. When it moved (Reset / ResetConnections /
+	// ReplacePrimary) and this probe finds no live connection, strikes from
+	// the old connection are dropped before counting — the invariant the old
+	// not-probed arithmetic gave for free (strikes→0 on the first probe after
+	// a Reset), kept now that a not-probed probe can strike.
+	connGenSeen uint64
 }
 
 // echoProbeLoop runs one transport's exponential-trust echo schedule until
@@ -1082,8 +1104,16 @@ func (hm *healthMonitor) probeOnce(ot *outboundTransport, st *echoLoopState, now
 	cancel()
 	probeNow := time.Now()
 
-	failSeq, failAt := ot.tm.ConnectFailures()
-	dialFailing := notProbedDialFailing(failSeq, st.connFailSeen, failAt, probeNow)
+	failSeq, failAt, failGen := ot.tm.ConnectFailures()
+	notProbed := wire.IsEchoNotProbed(err)
+	if notProbed && failGen != st.connGenSeen {
+		// A Reset / ResetConnections / ReplacePrimary happened since the last
+		// probe: the strikes belong to the old connection (or the old network
+		// path). Never let them combine with a failure on the new one.
+		st.strikes = 0
+	}
+	st.connGenSeen = failGen
+	dialFailing := notProbed && notProbedDialFailing(failSeq, st.connFailSeen, failAt, probeNow) && hm.networkUp()
 	st.connFailSeen = failSeq
 	res := echoStepDial(st.trustIdx, st.strikes, err, dialFailing)
 

@@ -603,6 +603,7 @@ func (e *Engine) Start(cfg Config) error {
 	// Start health monitor (1Hz wire stats sampling + health FSM).
 	hm := newHealthMonitor(primaryOT, allOTs, tunnel, cfg.HealthCallback, func() { e.onHealthCritical() }, time.Now())
 	hm.mobilePowerSaving = cfg.MobilePowerSaving
+	e.wireHealthNetUp(hm)
 	hm.start()
 	e.health = hm
 
@@ -2206,6 +2207,14 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 		if raceErr == nil {
 			continue
 		}
+		// 401/402 is Center's verdict on this device: another same-server
+		// re-race cannot change it, so fail on the FIRST one rather than
+		// waiting out a second echo-strike cycle for the streak (PVE S8: the
+		// first Phase-A already had the 402; waiting cost ~48s). Same as the
+		// hold / no-candidates paths, which check on every Phase-A.
+		if e.failIfUserAction(target, raceErr) {
+			return
+		}
 		e.mu.Lock()
 		target.reRaceFailStreak++
 		streak := target.reRaceFailStreak
@@ -2214,9 +2223,6 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 		if streak < reRaceFailThresholdForReplace {
 			// Wait for next echo signal; give same server another chance.
 			continue
-		}
-		if e.failIfUserAction(target, raceErr) {
-			return
 		}
 		if provider == nil {
 			// Only reachable in tests that build an Engine by hand: Start
@@ -2297,6 +2303,20 @@ func (e *Engine) phaseA(ctx context.Context, target *outboundTransport, dd wire.
 		e.ClearWireError()
 	}
 	return nil, false
+}
+
+// wireHealthNetUp installs hm's network-up gate (healthMonitor.netUp) on the
+// engine's netCoordinator. Same pattern as onWakeReconnect: read netCoord
+// under e.mu, query it outside. Before netCoord exists (Start still running)
+// or after Stop cleared it, report up — the gate only ever withholds a
+// strike.
+func (e *Engine) wireHealthNetUp(hm *healthMonitor) {
+	hm.netUp = func() bool {
+		e.mu.Lock()
+		nc := e.netCoord
+		e.mu.Unlock()
+		return nc == nil || nc.isNetworkUp()
+	}
 }
 
 func closeRaceResult(r *wire.RaceResult) {
@@ -2606,6 +2626,11 @@ func (e *Engine) replaceOutboundServer(
 			"from", config.TruncateVia(fromURL),
 			"to", config.TruncateVia(newURL),
 			"attempt", attempt)
+		// The replacement just connected: a wire error left by proxy dials
+		// on the dead node is stale (PVE S6: connected+503 ~8s after the
+		// swap, until the first dial through the new node). Same rule as
+		// phaseA — 401/402 stay sticky.
+		e.ClearWireError()
 		return nil
 	}
 }
