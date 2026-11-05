@@ -149,6 +149,7 @@ type Conn struct {
 
 	rttStats  *utils.RTTStats
 	connStats utils.ConnectionStats
+	recvPN    recvPNStats // kuic: receive-side loss accounting, run loop only
 
 	cryptoStreamManager   *cryptoStreamManager
 	sentPacketHandler     ackhandler.SentPacketHandler
@@ -871,6 +872,14 @@ type ConnectionStats struct {
 	// (does not monotonically increase, because packets that are declared lost
 	// can subsequently be received).
 	PacketsLost uint64
+
+	// PacketsReceived1RTT is the number of unique 1-RTT packets received and
+	// processed (kuic addition). PacketNumberSpan1RTT is how many 1-RTT packet
+	// numbers the peer used between the first and the largest one received.
+	// Their deltas over a window give the loss of the peer→us direction:
+	// 1 − ΔPacketsReceived1RTT/ΔPacketNumberSpan1RTT. See u_recv_pn_stats.go.
+	PacketsReceived1RTT  uint64
+	PacketNumberSpan1RTT uint64
 }
 
 func (c *Conn) ConnectionStats() ConnectionStats {
@@ -886,6 +895,9 @@ func (c *Conn) ConnectionStats() ConnectionStats {
 		PacketsReceived: c.connStats.PacketsReceived.Load(),
 		BytesLost:       c.connStats.BytesLost.Load(),
 		PacketsLost:     c.connStats.PacketsLost.Load(),
+
+		PacketsReceived1RTT:  c.connStats.PacketsReceived1RTT.Load(),
+		PacketNumberSpan1RTT: c.connStats.PacketNumberSpan1RTT.Load(),
 	}
 }
 
@@ -1786,6 +1798,7 @@ func (c *Conn) handleUnpackedShortHeaderPacket(
 	if err := c.receivedPacketHandler.ReceivedPacket(pn, ecn, protocol.Encryption1RTT, rcvTime, isAckEliciting); err != nil {
 		return false, nil, err
 	}
+	c.recvPN.record(pn, &c.connStats)
 	return isNonProbing, pathChallenge, nil
 }
 

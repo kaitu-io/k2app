@@ -55,6 +55,17 @@ diverges is a line to re-apply on every rebase.
    `self_go12{4,5}_test.go` helpers were deleted rather than stubbed — a stub
    returning 0 just made the caller fail.
 
+7. **Receive-side 1-RTT loss accounting** (`u_recv_pn_stats.go`, one call in
+   `connection.go` `handleUnpackedShortHeaderPacket`, two atomics in
+   `internal/utils/connstats.go`, two fields on `ConnectionStats`). quic-go
+   only measures loss at the sender, so a client that mostly downloads cannot
+   see the loss of the server→client direction. `PacketsReceived1RTT` /
+   `PacketNumberSpan1RTT` let the receiver compute it
+   (`k2/wire/downlink_loss.go`). Bias: the sender's packet-number skipping
+   (≤ 1 per 256). Tests: `u_recv_pn_stats_test.go`,
+   `integrationtests/self/u_recv_loss_test.go` (lossy proxy, clean control,
+   uplink-only discriminator).
+
 ## The spec's transport parameters are authoritative
 
 When a dial carries a `ClientHelloSpec`, the spec's `quic_transport_parameters`

@@ -688,12 +688,28 @@ func TestWakeDetector_CallbackOutsideLock(t *testing.T) {
 
 // applyEWMA applies EWMA smoothing to healthMonitor fields.
 // This is the logic that sample() applies before calling assess().
+// applyEWMA drives the production EWMA (not a copy of its formula).
 func applyEWMA(hm *healthMonitor, ws wire.WireStats) {
-	if !hm.ewmaInitialized {
-		hm.smoothWireLoss = ws.PacketLossRate
-		hm.ewmaInitialized = true
-	} else {
-		hm.smoothWireLoss = ewmaAlpha*ws.PacketLossRate + (1-ewmaAlpha)*hm.smoothWireLoss
+	hm.updateSmoothLossLocked(ws)
+}
+
+// Downlink loss is observability only: heavy downlink loss with a clean
+// uplink must NOT move the health grade (k2cc serves ~30% downlink loss fine
+// for real users; see wire/downlink_loss.go). Pins the decision boundary —
+// wiring DownlinkLossRate into the EWMA turns this red.
+func TestHealthMonitor_DownlinkLossDoesNotChangeHealth(t *testing.T) {
+	tm := mockTransportManager()
+	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, nil, time.Now())
+
+	for i := 0; i < 30; i++ {
+		ws := wire.WireStats{Transport: "quic", PacketLossRate: 0, DownlinkLossRate: 0.6}
+		applyEWMA(hm, ws)
+		hm.transition(hm.assess(ws), false)
+	}
+	if hm.health != HealthHealthy || hm.smoothWireLoss != 0 {
+		t.Fatalf("health=%s smoothWireLoss=%.3f, want healthy/0 — downlink loss must not feed the health grade", hm.health, hm.smoothWireLoss)
 	}
 }
 
