@@ -2105,8 +2105,10 @@ func (e *Engine) ClearWireError() {
 //	  Phase-A failures, judgeNet("pre-phaseB") asks whether the USER's
 //	  network works before blaming the node. If not (101 iface down / 106 no
 //	  internet / 107 captive), the loop holds (holdUntilOnline): reconnecting
-//	  + reason, tunnel kept, no candidate spent. Back online → one Phase-A on
-//	  the current node; only if that fails does Phase B run.
+//	  + reason, tunnel kept, no candidate spent. Every hold wake also tries
+//	  one Phase-A on the current node (the verdict may be blind); success
+//	  ends the hold. Back online → one Phase-A on the current node; only if
+//	  that fails does Phase B run.
 //
 //	Phase B — server replacement. Asks the OutboundProvider (always a
 //	  compositeProvider: static ClientConfig.Fallbacks, then the shell's
@@ -2261,8 +2263,11 @@ func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceEr
 			return false
 		}
 		if v != netOnline {
-			if !e.holdUntilOnline(ctx, target, v) {
+			switch e.holdUntilOnline(ctx, target, dd, v) {
+			case holdExit:
 				return false
+			case holdRecovered:
+				return true
 			}
 			// Back online: the current node first — it may only have looked
 			// dead because the network was.

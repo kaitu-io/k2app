@@ -118,7 +118,8 @@ type foServers struct {
 	alive     map[string]bool
 	races     map[string]int
 	setups    map[string]int
-	onSetup   func(host string) // called (outside mu) on each setup, before the verdict
+	onSetup   func(host string)                      // called (outside mu) on each setup, before the verdict
+	onRace    func(ctx context.Context, host string) // called (outside mu) on each race, before the verdict
 	setupDone chan string
 }
 
@@ -226,12 +227,18 @@ func newFoHarness(t *testing.T, o foOpts) *foHarness {
 	}
 
 	origRace := raceTransportFn
-	raceTransportFn = func(_ context.Context, cfg wire.Config, _ string, _ wire.DirectDialer, _ *wire.CookieJar) (*wire.RaceResult, error) {
+	raceTransportFn = func(ctx context.Context, cfg wire.Config, _ string, _ wire.DirectDialer, _ *wire.CookieJar) (*wire.RaceResult, error) {
 		servers.mu.Lock()
 		servers.races[cfg.Host]++
-		alive := servers.alive[cfg.Host]
+		hook := servers.onRace
 		servers.mu.Unlock()
-		if !alive {
+		if hook != nil {
+			hook(ctx, cfg.Host)
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if !servers.isAlive(cfg.Host) {
 			return nil, fmt.Errorf("dial %s: connection refused", cfg.Host)
 		}
 		return &wire.RaceResult{Dialer: &stubDialer{}, TransportType: "quic-443"}, nil
@@ -867,5 +874,98 @@ func TestReplaceLoop_NetEventRestartsBackoff(t *testing.T) {
 	hs.e.doNetworkReconnect() // still offline after the event
 	if d := hs.nextTimer().d; d != 5*time.Second {
 		t.Fatalf("timer after a net event = %v, want 5s (backoff restarted)", d)
+	}
+}
+
+// TestReplaceLoop_HoldTickRetriesCurrentNode: with no netcheck targets the
+// verdict is always "no internet", yet a hold tick's Phase-A on the current
+// node must still bring the session back — no network event needed (old
+// webapp, k2r gateway, global mode with no direct traffic).
+func TestReplaceLoop_HoldTickRetriesCurrentNode(t *testing.T) {
+	hs := newFoHarness(t, foOpts{fallbacks: map[string][]string{foURLA: {foURLB}}})
+	hs.e.mu.Lock()
+	hs.e.netcheckTargets = nil
+	hs.e.mu.Unlock()
+
+	hs.escalate()
+	hs.waitStatus("reconnecting 106", isReconnectingCode(ErrCodeNoInternet))
+	tm := hs.nextTimer()
+	before := hs.servers.raceCount("a.example")
+
+	// A failing tick keeps the hold.
+	tm.fire()
+	tm = hs.nextTimer()
+	if n := hs.servers.raceCount("a.example"); n != before+1 {
+		t.Fatalf("races on a after a hold tick = %d, want %d", n, before+1)
+	}
+	if s, _ := hs.h.last(); !isReconnectingCode(ErrCodeNoInternet)(s) {
+		t.Fatalf("status after a failed tick re-race = %+v, want reconnecting/106", s)
+	}
+
+	hs.servers.setAlive("a.example", true)
+	tm.fire()
+	hs.waitStatus("connected via hold-tick Phase-A", func(s Status) bool {
+		return s.State == StateConnected && s.Error == nil
+	})
+	if gs := hs.e.GetStatus(); gs.State != StateConnected || gs.Error != nil {
+		t.Fatalf("GetStatus = %+v, want connected", gs)
+	}
+	if n := ReRaceFailStreak(hs.e, hs.target); n != 0 {
+		t.Fatalf("reRaceFailStreak = %d, want 0", n)
+	}
+	if n := hs.provider.count(); n != 0 {
+		t.Fatalf("provider.NextURL = %d, want 0", n)
+	}
+	if u := hs.targetURL(); u != foURLA {
+		t.Fatalf("target = %s, want a", u)
+	}
+	// Back in the loop: the next echo failure is an ordinary Phase-A.
+	hs.signal()
+	eventually(t, "loop consumed a new signal", func() bool {
+		return hs.servers.raceCount("a.example") == before+3
+	})
+}
+
+// TestReplaceLoop_StopDuringHoldWithInflightPhaseA: Stop while a hold tick's
+// Phase-A dial hangs must still return within 1s, leaking nothing.
+func TestReplaceLoop_StopDuringHoldWithInflightPhaseA(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+
+	hs := newFoHarness(t, foOpts{
+		fallbacks: map[string][]string{foURLA: {foURLB}},
+		net:       []checkResult{checkNoResponse},
+	})
+	hs.escalate()
+	hs.waitStatus("reconnecting 106", isReconnectingCode(ErrCodeNoInternet))
+	tm := hs.nextTimer()
+
+	inflight := make(chan struct{})
+	hs.servers.mu.Lock()
+	hs.servers.onRace = func(ctx context.Context, _ string) {
+		close(inflight)
+		<-ctx.Done() // a dial that never answers on its own
+	}
+	hs.servers.mu.Unlock()
+	tm.fire()
+	select {
+	case <-inflight:
+	case <-time.After(5 * time.Second):
+		t.Fatal("hold tick never started a Phase-A")
+	}
+
+	start := time.Now()
+	if err := hs.e.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	select {
+	case <-hs.done:
+	case <-time.After(time.Second):
+		t.Fatal("outboundReplaceLoop still running 1s after Stop with a Phase-A in flight")
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("Stop + loop exit took %v, want < 1s", d)
+	}
+	if s, _ := hs.h.last(); s.State != StateDisconnected || s.Error != nil {
+		t.Fatalf("last status = %+v, want disconnected without error", s)
 	}
 }
