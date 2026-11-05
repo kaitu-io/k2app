@@ -90,6 +90,9 @@ type Engine struct {
 	// holdTimerFn arms one hold backoff timer, returning its channel and a
 	// stop func. Real timer in production (New); tests inject a fake.
 	holdTimerFn func(d time.Duration) (<-chan time.Time, func())
+	// holdNow is the clock the no-candidates retry schedule reads (time.Now
+	// in production; tests inject a fake that advances with fired timers).
+	holdNow func() time.Time
 
 	// wireMode, clientVersion and outboundProvider are snapshotted from Config
 	// at Start so the background outboundReplaceLoop can build replacement TMs
@@ -156,6 +159,7 @@ func New() *Engine {
 		state:       StateDisconnected,
 		holdWake:    make(chan struct{}, 1),
 		holdTimerFn: realHoldTimer,
+		holdNow:     time.Now,
 	}
 }
 
@@ -2115,8 +2119,10 @@ func (e *Engine) ClearWireError() {
 //	  URLOwner provider) for a DIFFERENT k2v5:// URL, builds a fresh
 //	  TransportManager, and atomically swaps it into target.swappable
 //	  (replaceOutboundServer). TUN / provider / DNS hijack stay alive.
-//	  - ErrNoCandidates (manual mode / no fallbacks): no fail — hold with 503
-//	    as the reason and keep re-racing the current node.
+//	  - ErrNoCandidates (manual mode / no fallbacks): no fail and no blocking
+//	    — the target joins the loop's retrySet: timed Phase-A on the hold
+//	    backoff from the loop's own select (also on its echo signals and on
+//	    holdWake), hold 503 (or the network's reason) while any is pending.
 //	  - Exhausted: judgeNet("pre-exhaust") again. Not online → the network
 //	    died mid-failover, so the nodes excluded on the way may be innocent:
 //	    Reset() the provider's exclusions and hold. Online → OnOutboundFatal
@@ -2131,11 +2137,38 @@ func (e *Engine) ClearWireError() {
 // reclaims it. Fix: add a WaitGroup so Stop() waits for this loop to exit
 // before calling tm.Close(). Carry-over from reRaceLoop.
 func (e *Engine) outboundReplaceLoop(ctx context.Context) {
+	e.mu.Lock()
+	retries := newRetrySet(e.holdTimerFn, e.holdNow)
+	e.mu.Unlock()
+	defer retries.disarm()
+
 	for {
+		retries.arm()
+		var wake <-chan struct{}
+		if len(retries.pending) > 0 {
+			wake = e.holdWake // a network event retries every pending outbound now
+		}
 		var target *outboundTransport
 		select {
 		case <-ctx.Done():
 			return
+		case <-retries.ch:
+			retries.fired()
+			for _, t := range retries.due() {
+				if !e.retryOnce(ctx, retries, t, "wait-tick", "wait-tick") {
+					return
+				}
+			}
+			e.setHold(ctx, retries.hold())
+			continue
+		case <-wake:
+			for _, t := range retries.all() {
+				if !e.retryOnce(ctx, retries, t, "net-event", "wait-tick") {
+					return
+				}
+			}
+			e.setHold(ctx, retries.hold())
+			continue
 		case target = <-e.reRaceChan:
 		}
 
@@ -2149,6 +2182,16 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 		e.mu.Unlock()
 
 		if target == nil || target.tm == nil {
+			continue
+		}
+
+		if _, ok := retries.pending[target]; ok {
+			// Already on the no-candidates schedule: a fresh echo signal is
+			// one more reason to try now.
+			if !e.retryOnce(ctx, retries, target, "echo-signal", "echo-consecutive-fail") {
+				return
+			}
+			e.setHold(ctx, retries.hold())
 			continue
 		}
 
@@ -2176,14 +2219,34 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 			// always installs a compositeProvider.
 			continue
 		}
-		if !e.escalate(ctx, target, raceErr, dd, provider) {
+		switch e.escalate(ctx, target, raceErr, dd, provider, retries.hold()) {
+		case escExit:
 			return
+		case escNoCandidates:
+			e.mu.Lock()
+			name := target.name
+			e.mu.Unlock()
+			slog.Warn("engine: no replacement candidates, retrying current outbound on a schedule", "outbound", name)
+			retries.reason = noCandidatesError(name)
+			retries.schedule(target, 0)
 		}
+		// The loop owns the shown hold between events: the retry set's
+		// reason, or none. Also clears a leftover hold after a Phase-B swap.
+		e.setHold(ctx, retries.hold())
 	}
 }
 
+// escResult is how escalate ended.
+type escResult int
+
+const (
+	escDone         escResult = iota // recovered (Phase-A or Phase B)
+	escExit                          // ctx cancelled or the engine failed
+	escNoCandidates                  // node down, nothing to replace it: schedule retries
+)
+
 // phaseA runs one same-server re-race on target. Returns the race error (nil
-// on success: result installed, streak reset, any hold cleared) and
+// on success: result installed, streak reset; the caller owns the hold) and
 // quit=true when ctx was cancelled with a result in hand (the loop must exit).
 // reason is the DIAG: transport-rerace reason: echo-consecutive-fail (echo
 // signal), wait-tick (a wait's retry), network-back (first try after a hold).
@@ -2220,8 +2283,6 @@ func (e *Engine) phaseA(ctx context.Context, target *outboundTransport, dd wire.
 	e.mu.Lock()
 	target.reRaceFailStreak = 0
 	e.mu.Unlock()
-	// The current node answers again: any hold is over.
-	e.setHold(ctx, nil)
 	return nil, false
 }
 
@@ -2256,71 +2317,61 @@ func (e *Engine) failIfUserAction(target *outboundTransport, raceErr error) bool
 }
 
 // escalate runs the network verdict / hold / Phase-B sequence for a target
-// whose Phase-A streak reached the threshold. Returns false when the loop
-// must exit (ctx cancelled or the engine failed).
-func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceErr error, dd wire.DirectDialer, provider OutboundProvider) bool {
+// whose Phase-A streak reached the threshold. restore is the hold the loop
+// shows outside this call (the no-candidates retry set's, or nil); a network
+// hold puts it back when it ends.
+func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceErr error, dd wire.DirectDialer, provider OutboundProvider, restore *EngineError) escResult {
 	// A network event from before this verdict is already reflected in it.
 	e.drainHoldWake()
 	v := e.judgeNet(ctx, "pre-phaseB")
 	for {
 		if ctx.Err() != nil {
-			return false
+			return escExit
 		}
 		if v != netOnline {
-			switch e.holdUntilOnline(ctx, target, dd, waitNetwork, v.holdError()) {
+			switch e.holdUntilOnline(ctx, target, dd, v, restore) {
 			case holdExit:
-				return false
+				return escExit
 			case holdRecovered:
 				e.dropQueuedSignal(target)
-				return true
+				return escDone
 			}
 			// Back online: the current node first — it may only have looked
 			// dead because the network was.
 			var quit bool
 			raceErr, quit = e.phaseA(ctx, target, dd, "network-back")
 			if quit {
-				return false
+				return escExit
 			}
 			if raceErr == nil {
 				e.dropQueuedSignal(target)
-				return true
+				return escDone
 			}
 			e.mu.Lock()
 			target.reRaceFailStreak++
 			e.mu.Unlock()
 			if e.failIfUserAction(target, raceErr) {
-				return false
+				return escExit
 			}
 		}
 
 		err := e.replaceOutboundServer(ctx, target, raceErr, dd, provider)
 		if err == nil {
-			// reRaceFailStreak reset inside replaceOutboundServer; a hold
-			// left from an earlier no-candidates wait is over too.
-			e.setHold(ctx, nil)
-			return true
+			return escDone // reRaceFailStreak reset inside replaceOutboundServer
 		}
 		if ctx.Err() != nil {
-			return false
+			return escExit
 		}
 		if errors.Is(err, ErrNoCandidates) {
 			// Manual mode / no fallbacks: nothing to switch to. Never fail —
-			// keep re-racing the current node on the wait backoff, and say
-			// why it is not up.
-			e.mu.Lock()
-			name := target.name
-			e.mu.Unlock()
-			slog.Warn("engine: no replacement candidates, re-racing current outbound", "outbound", name)
-			if e.holdUntilOnline(ctx, target, dd, waitNoCandidates, noCandidatesError(name)) == holdExit {
-				return false
-			}
-			e.dropQueuedSignal(target)
-			return true
+			// the loop retries the current node on a schedule (retrySet)
+			// without blocking the other outbounds.
+			return escNoCandidates
 		}
 
 		v = e.judgeNet(ctx, "pre-exhaust")
 		if ctx.Err() != nil {
-			return false
+			return escExit
 		}
 		if v != netOnline {
 			// The network died during the failover: the candidates excluded
@@ -2331,7 +2382,7 @@ func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceEr
 			continue
 		}
 		e.failExhausted(target, err)
-		return false
+		return escExit
 	}
 }
 

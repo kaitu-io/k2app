@@ -114,29 +114,16 @@ func sameHold(a, b *EngineError) bool {
 	return a.Code == b.Code
 }
 
-// holdOutcome is how a wait ended.
+// holdOutcome is how a network hold ended.
 type holdOutcome int
 
 const (
-	holdOnline    holdOutcome = iota // network wait: judgeNet said online; caller re-races the current node
+	holdOnline    holdOutcome = iota // judgeNet said online; caller re-races the current node
 	holdRecovered                    // a wait-tick Phase-A reconnected the current node; done
 	holdExit                         // ctx cancelled or the engine failed; the loop must exit
 )
 
-// waitMode selects what ends a wait.
-type waitMode int
-
-const (
-	// waitNetwork: the user's network is not online. Ends when judgeNet says
-	// online (holdOnline) or the current node answers (holdRecovered).
-	waitNetwork waitMode = iota
-	// waitNoCandidates: the node is down and nothing can replace it (manual
-	// mode / no fallbacks). Only the current node answering ends it; an
-	// online verdict just shows 503 as the reason.
-	waitNoCandidates
-)
-
-// noCandidatesError is the wait reason when the network is fine but the
+// noCandidatesError is the wait reason when the network is fine but an
 // outbound has no replacement: the node itself is unreachable (503), and the
 // engine keeps retrying it rather than disconnecting.
 func noCandidatesError(name string) *EngineError {
@@ -144,26 +131,26 @@ func noCandidatesError(name string) *EngineError {
 		"outbound "+name+" unreachable and has no replacement candidates; retrying")
 }
 
-// holdUntilOnline waits with first reason reason, re-checking on every wake —
-// backoff timer (holdBackoff) or a network event via holdWake. Each wake
-// first re-judges the network:
-//   - waitNetwork and online → clear the hold, return holdOnline (the caller
-//     re-races).
+// holdUntilOnline holds on verdict v (not netOnline): the user's network is
+// broken, which affects every outbound alike, so the replace loop blocks here.
+// It re-checks on every wake — backoff timer (holdBackoff) or a network
+// event via holdWake. Each wake first re-judges the network:
+//   - online → show restore (the hold the loop had before: nil, or the
+//     no-candidates 503 while retries are pending), return holdOnline (the
+//     caller re-races).
 //   - otherwise → one Phase-A on the current node (reason=wait-tick),
 //     whatever the verdict says: the verdict can be blind (no netcheck
 //     targets — old webapp, k2r gateway; global mode with no direct traffic)
-//     and a node that answers proves the session fine. Success: phaseA
-//     clears the hold and resets the streak → holdRecovered. A 401/402 fails
-//     the engine → holdExit. Any other failure keeps waiting with the
-//     verdict's reason, or 503 (noCandidatesError) when the network is online
-//     — pushed only when the code changes.
+//     and a node that answers proves the session fine → show restore,
+//     holdRecovered. A 401/402 fails the engine → holdExit. Any other
+//     failure keeps holding with the re-judged reason (pushed on change).
 //
 // ctx cancelled → holdExit; Stop/fail own clearing the hold then. The
 // netcheck and the Phase-A run under ctx, so Stop interrupts them too.
 //
 // A network event restarts the backoff at its first step: a fresh network
 // often needs a few seconds (DHCP, portal redirect) before it answers.
-func (e *Engine) holdUntilOnline(ctx context.Context, target *outboundTransport, dd wire.DirectDialer, mode waitMode, reason *EngineError) holdOutcome {
+func (e *Engine) holdUntilOnline(ctx context.Context, target *outboundTransport, dd wire.DirectDialer, v netVerdict, restore *EngineError) holdOutcome {
 	e.mu.Lock()
 	name := target.name
 	timerFn := e.holdTimerFn
@@ -172,8 +159,8 @@ func (e *Engine) holdUntilOnline(ctx context.Context, target *outboundTransport,
 		timerFn = realHoldTimer
 	}
 
-	slog.Warn("engine: waiting before retrying outbound", "outbound", name, "code", reason.Code)
-	e.setHold(ctx, reason)
+	slog.Warn("engine: holding for the network", "outbound", name, "verdict", v.String())
+	e.setHold(ctx, v.holdError())
 	step := 0
 	for {
 		d := holdBackoff[min(step, len(holdBackoff)-1)]
@@ -190,13 +177,13 @@ func (e *Engine) holdUntilOnline(ctx context.Context, target *outboundTransport,
 			trigger = "net-event"
 			step = 0
 		}
-		v := e.judgeNet(ctx, trigger)
+		v = e.judgeNet(ctx, trigger)
 		if ctx.Err() != nil {
 			return holdExit
 		}
-		if v == netOnline && mode == waitNetwork {
+		if v == netOnline {
 			slog.Info("engine: network back, leaving hold", "outbound", name)
-			e.setHold(ctx, nil)
+			e.setHold(ctx, restore)
 			return holdOnline
 		}
 		raceErr, quit := e.phaseA(ctx, target, dd, "wait-tick")
@@ -204,19 +191,173 @@ func (e *Engine) holdUntilOnline(ctx context.Context, target *outboundTransport,
 			return holdExit
 		}
 		if raceErr == nil {
-			slog.Info("engine: current outbound answered while waiting, leaving hold",
+			slog.Info("engine: current outbound answered during hold, leaving hold",
 				"outbound", name, "verdict", v.String())
-			return holdRecovered // phaseA cleared the hold and reset the streak
+			e.setHold(ctx, restore)
+			return holdRecovered
 		}
 		if e.failIfUserAction(target, raceErr) {
 			return holdExit
 		}
-		next := v.holdError()
-		if next == nil { // online, no candidates
-			next = noCandidatesError(name)
-		}
-		e.setHold(ctx, next)
+		e.setHold(ctx, v.holdError())
 	}
+}
+
+// retryState schedules the next retry of an outbound that has no replacement
+// candidates (see retrySet).
+type retryState struct {
+	nextAt time.Time
+	step   int // index into holdBackoff of the delay that produced nextAt
+}
+
+// retrySet is the replace loop's no-candidates retry schedule: outbounds
+// whose node is down with nothing to replace it (manual mode / no
+// fallbacks). Instead of blocking the loop on one of them (which would
+// starve every other outbound's Phase A / Phase B), each gets a timed Phase-A
+// on the holdBackoff cadence, driven from the loop's own select. Owned by the
+// loop goroutine — no lock; it dies with the loop (Stop/fail).
+type retrySet struct {
+	pending map[*outboundTransport]*retryState
+	reason  *EngineError // hold shown while pending is non-empty
+
+	timerFn func(time.Duration) (<-chan time.Time, func())
+	now     func() time.Time
+
+	// The one armed timer, for the earliest nextAt (nil ch = none; a nil
+	// channel never fires in select).
+	ch    <-chan time.Time
+	stop  func()
+	armAt time.Time
+}
+
+func newRetrySet(timerFn func(time.Duration) (<-chan time.Time, func()), now func() time.Time) *retrySet {
+	if timerFn == nil {
+		timerFn = realHoldTimer
+	}
+	if now == nil {
+		now = time.Now
+	}
+	return &retrySet{pending: map[*outboundTransport]*retryState{}, timerFn: timerFn, now: now}
+}
+
+// hold is the hold the loop should show for the retry set: nil when nothing
+// is pending.
+func (r *retrySet) hold() *EngineError {
+	if len(r.pending) == 0 {
+		return nil
+	}
+	return r.reason
+}
+
+// schedule (re)arms target's retry at step (clamped to the last backoff).
+func (r *retrySet) schedule(target *outboundTransport, step int) {
+	step = min(step, len(holdBackoff)-1)
+	r.pending[target] = &retryState{nextAt: r.now().Add(holdBackoff[step]), step: step}
+}
+
+// arm keeps exactly one timer armed for the earliest pending retry. Re-arms
+// only when the earliest time changed, so an idle loop arms nothing new.
+func (r *retrySet) arm() {
+	if len(r.pending) == 0 {
+		r.disarm()
+		return
+	}
+	var earliest time.Time
+	for _, st := range r.pending {
+		if earliest.IsZero() || st.nextAt.Before(earliest) {
+			earliest = st.nextAt
+		}
+	}
+	if r.ch != nil && earliest.Equal(r.armAt) {
+		return
+	}
+	r.disarm()
+	d := earliest.Sub(r.now())
+	if d < 0 {
+		d = 0
+	}
+	r.ch, r.stop = r.timerFn(d)
+	r.armAt = earliest
+}
+
+func (r *retrySet) disarm() {
+	if r.stop != nil {
+		r.stop()
+	}
+	r.ch, r.stop, r.armAt = nil, nil, time.Time{}
+}
+
+// fired is called when r.ch delivered: the timer is spent.
+func (r *retrySet) fired() {
+	r.ch, r.stop, r.armAt = nil, nil, time.Time{}
+}
+
+// due returns the pending targets whose retry time has come.
+func (r *retrySet) due() []*outboundTransport {
+	now := r.now()
+	var out []*outboundTransport
+	for t, st := range r.pending {
+		if !st.nextAt.After(now) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// all returns every pending target.
+func (r *retrySet) all() []*outboundTransport {
+	out := make([]*outboundTransport, 0, len(r.pending))
+	for t := range r.pending {
+		out = append(out, t)
+	}
+	return out
+}
+
+// retryOnce is one scheduled attempt for a no-candidates target: re-judge the
+// network (so the hold shows the network's reason when it is the network
+// that is down), then one Phase-A. Success removes the target (streak reset
+// by phaseA; a queued echo signal for it is dropped); failure advances its
+// backoff (5s→10s→30s→30s…). A 401/402 fails the engine. Returns false when
+// the loop must exit. The caller syncs the shown hold afterwards.
+func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTransport, trigger, reason string) bool {
+	e.mu.Lock()
+	connected := e.state == StateConnected
+	dd := e.directDialer
+	name := target.name
+	e.mu.Unlock()
+	if !connected {
+		return ctx.Err() == nil
+	}
+	v := e.judgeNet(ctx, trigger)
+	if ctx.Err() != nil {
+		return false
+	}
+	raceErr, quit := e.phaseA(ctx, target, dd, reason)
+	if quit || ctx.Err() != nil {
+		return false
+	}
+	if raceErr == nil {
+		slog.Info("engine: outbound without candidates answered again", "outbound", name)
+		delete(r.pending, target)
+		e.dropQueuedSignal(target)
+		return true
+	}
+	if e.failIfUserAction(target, raceErr) {
+		return false
+	}
+	r.reason = v.holdError()
+	if r.reason == nil {
+		r.reason = noCandidatesError(name)
+	}
+	next := 0
+	if st, ok := r.pending[target]; ok {
+		next = st.step + 1
+	}
+	if trigger == "net-event" {
+		next = 0 // a fresh network: start the cadence over
+	}
+	r.schedule(target, next)
+	return true
 }
 
 // drainHoldWake drops a pending holdWake token. A network event that

@@ -106,11 +106,37 @@ func (n *foNet) callCount() int {
 
 // foTimer is one hold backoff timer the loop asked for.
 type foTimer struct {
-	d  time.Duration
-	ch chan time.Time
+	d     time.Duration
+	ch    chan time.Time
+	at    time.Time // fake-clock deadline
+	clock *foClock
 }
 
-func (t foTimer) fire() { t.ch <- time.Time{} }
+// fire advances the fake clock to the timer's deadline, then delivers.
+func (t foTimer) fire() {
+	t.clock.advanceTo(t.at)
+	t.ch <- time.Time{}
+}
+
+// foClock is the fake clock behind e.holdNow; it moves only when a timer fires.
+type foClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *foClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *foClock) advanceTo(t time.Time) {
+	c.mu.Lock()
+	if t.After(c.now) {
+		c.now = t
+	}
+	c.mu.Unlock()
+}
 
 // foServers decides which hosts answer Phase-A races and Phase-B setups.
 type foServers struct {
@@ -301,9 +327,11 @@ func newFoHarness(t *testing.T, o foOpts) *foHarness {
 	e.directTrack = newTrackingDialer(nil)
 	e.netcheck = fnet.run
 	e.netcheckTargets = []config.NetcheckTarget{{URL: "http://check.example/generate_204", Status: 204}}
+	clock := &foClock{now: time.Unix(1_000_000, 0)}
+	e.holdNow = clock.Now
 	e.holdTimerFn = func(d time.Duration) (<-chan time.Time, func()) {
 		ch := make(chan time.Time, 1)
-		timers <- foTimer{d: d, ch: ch}
+		timers <- foTimer{d: d, ch: ch, at: clock.Now().Add(d), clock: clock}
 		return ch, func() {}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1116,4 +1144,95 @@ func TestReplaceLoop_StopDuringHoldWithInflightPhaseA(t *testing.T) {
 	if s, _ := hs.h.last(); s.State != StateDisconnected || s.Error != nil {
 		t.Fatalf("last status = %+v, want disconnected without error", s)
 	}
+}
+
+// sendSignal delivers one echo-failure signal for t.
+func (hs *foHarness) sendSignal(t *outboundTransport) {
+	hs.t.Helper()
+	select {
+	case hs.e.reRaceChan <- t:
+	case <-time.After(5 * time.Second):
+		hs.t.Fatal("reRaceChan send blocked: loop not consuming")
+	}
+}
+
+// TestReplaceLoop_NoCandidatesDoesNotBlockOtherOutbounds: outbound A has no
+// candidates and stays dead (on the retry schedule); outbound B's node dies
+// and B has a fallback — B must fail over at once, not after A recovers.
+func TestReplaceLoop_NoCandidatesDoesNotBlockOtherOutbounds(t *testing.T) {
+	const urlD, urlE = "k2v5://d.example:443", "k2v5://e.example:443"
+	hs := newFoHarness(t, foOpts{
+		fallbacks: map[string][]string{urlD: {urlE}}, // only B (d) has a fallback
+		net:       []checkResult{checkMatched},
+	})
+	hs.servers.setAlive("e.example", true)
+	tmB := wire.NewTransportManager()
+	targetB := &outboundTransport{
+		tm:        tmB,
+		wireCfg:   wire.Config{Host: "d.example", Port: 443, DialAddr: "d.example:443"},
+		dialAddr:  "d.example:443",
+		name:      "k2v5-d.example",
+		url:       urlD,
+		swappable: wire.NewSwappableDialer(tmB),
+	}
+	hs.e.mu.Lock()
+	hs.e.outboundTMs = append(hs.e.outboundTMs, targetB)
+	hs.e.mu.Unlock()
+
+	hs.escalate() // A → no candidates → retry schedule
+	hs.waitStatus("reconnecting 503 for A", isReconnectingCode(ErrCodeServerUnreachable))
+	tmA := hs.nextTimer()
+	if tmA.d != 5*time.Second {
+		t.Fatalf("A's first retry timer = %v, want 5s", tmA.d)
+	}
+
+	for i := 0; i < reRaceFailThresholdForReplace; i++ {
+		hs.sendSignal(targetB)
+	}
+	eventually(t, "B failed over to e while A is pending", func() bool {
+		hs.e.mu.Lock()
+		defer hs.e.mu.Unlock()
+		return targetB.url == urlE
+	})
+	// A is still pending, so the hold stays.
+	if gs := hs.e.GetStatus(); !isReconnectingCode(ErrCodeServerUnreachable)(gs) {
+		t.Fatalf("GetStatus after B's failover = %+v, want reconnecting/503 (A still down)", gs)
+	}
+
+	// A recovers on its scheduled retry → hold clears.
+	hs.servers.setAlive("a.example", true)
+	tmA.fire()
+	hs.waitStatus("connected once A answers", func(s Status) bool {
+		return s.State == StateConnected && s.Error == nil
+	})
+}
+
+// TestReplaceLoop_NoCandidatesEchoSignalRetriesNow: a fresh echo signal for a
+// pending outbound triggers an immediate attempt, no timer needed.
+func TestReplaceLoop_NoCandidatesEchoSignalRetriesNow(t *testing.T) {
+	hs := newFoHarness(t, foOpts{net: []checkResult{checkMatched}})
+	hs.escalate()
+	hs.waitStatus("reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
+	hs.nextTimer() // armed, never fired
+
+	hs.servers.setAlive("a.example", true)
+	hs.signal()
+	hs.waitStatus("connected via the echo-signal attempt", func(s Status) bool {
+		return s.State == StateConnected && s.Error == nil
+	})
+}
+
+// TestReplaceLoop_NoCandidatesNetEventRetriesNow: a network event retries
+// every pending outbound immediately.
+func TestReplaceLoop_NoCandidatesNetEventRetriesNow(t *testing.T) {
+	hs := newFoHarness(t, foOpts{net: []checkResult{checkMatched}})
+	hs.escalate()
+	hs.waitStatus("reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
+	hs.nextTimer()
+
+	hs.servers.setAlive("a.example", true)
+	hs.e.doNetworkReconnect()
+	hs.waitStatus("connected via the net-event attempt", func(s Status) bool {
+		return s.State == StateConnected && s.Error == nil
+	})
 }
