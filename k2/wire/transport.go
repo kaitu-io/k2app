@@ -1135,7 +1135,7 @@ func (tm *TransportManager) FallbackActive() bool {
 func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 	gen := tm.connGen()
 	c, err := tm.dialTCP(ctx, addr, earlyData)
-	tm.recordUserDial(ctx, gen, err, time.Now())
+	tm.recordUserDial(ctx, gen, err, tm.connFailNow())
 	return c, err
 }
 
@@ -1224,7 +1224,7 @@ func (tm *TransportManager) dialTCP(ctx context.Context, addr string, earlyData 
 func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	gen := tm.connGen()
 	c, err := tm.dialUDP(ctx, addr)
-	tm.recordUserDial(ctx, gen, err, time.Now())
+	tm.recordUserDial(ctx, gen, err, tm.connFailNow())
 	return c, err
 }
 
@@ -1298,7 +1298,7 @@ func (tm *TransportManager) dialUDP(ctx context.Context, addr string) (net.Packe
 func (tm *TransportManager) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	gen := tm.connGen()
 	c, err := tm.dialStreamUDP(ctx, addr)
-	tm.recordUserDial(ctx, gen, err, time.Now())
+	tm.recordUserDial(ctx, gen, err, tm.connFailNow())
 	return c, err
 }
 

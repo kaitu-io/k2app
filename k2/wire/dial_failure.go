@@ -25,7 +25,7 @@ import (
 // and wire's QUIC recovery probe (runProbeOnce) bypass these methods, so a
 // probe can never manufacture the evidence that makes its own result count.
 // engine reads it through ConnectFailures; see engine/health.go
-// notProbedDialFailing.
+// echoStepDial / readDialFailEvidence.
 
 // connFailState is the evidence. seq counts every connect-level failure ever
 // recorded (monotonic); at is the newest failure still unresolved (zero =
@@ -37,25 +37,56 @@ import (
 // slip between them (a pre-clear failure recorded as post-clear) nor be
 // overwritten.
 type connFailState struct {
-	mu  deadlock.Mutex
-	seq uint64
-	at  time.Time
-	gen uint64
+	mu    deadlock.Mutex
+	seq   uint64
+	first time.Time // first failure of the current unresolved run (cleared with at)
+	at    time.Time
+	gen   uint64
+	clock func() time.Time // nil = time.Now; SetConnFailClock (tests)
 }
 
-// ConnectFailures reports the user-dial connect-failure evidence: seq counts
-// every connect-level failure ever recorded on this manager (monotonic; a
-// caller compares it with the value it saw last time to learn whether a NEW
-// failure happened in between), last is the time of the newest failure that
-// is still unresolved — zero once a later user dial was answered, or after
-// Reset / ResetConnections / ReplacePrimary — and gen is the connection
-// generation, which those three bump (a caller holding per-connection state,
-// like engine's echo strikes, drops it when gen moves).
-func (tm *TransportManager) ConnectFailures() (seq uint64, last time.Time, gen uint64) {
+// ConnectFailureInfo is a snapshot of the user-dial connect-failure
+// evidence. Seq counts every connect-level failure ever recorded
+// (monotonic; compare with the value seen last time to learn whether a NEW
+// failure happened in between). First and Last bound the current unresolved
+// run of failures — both zero once a later user dial was answered, or after
+// Reset / ResetConnections / ReplacePrimary. Gen is the connection
+// generation, which those three bump.
+type ConnectFailureInfo struct {
+	Seq         uint64
+	First, Last time.Time
+	Gen         uint64
+}
+
+// SetConnFailClock replaces the clock used to timestamp user-dial failures.
+// For tests that drive engine timelines on a fake clock; production never
+// calls it.
+func (tm *TransportManager) SetConnFailClock(now func() time.Time) {
+	c := &tm.connFail
+	c.mu.Lock()
+	c.clock = now
+	c.mu.Unlock()
+}
+
+func (tm *TransportManager) connFailNow() time.Time {
+	c := &tm.connFail
+	c.mu.Lock()
+	clock := c.clock
+	c.mu.Unlock()
+	if clock == nil {
+		return time.Now()
+	}
+	return clock()
+}
+
+// ConnectFailures reports the user-dial connect-failure evidence (see
+// ConnectFailureInfo). A caller holding per-connection state, like engine's
+// echo strikes, drops it when Gen moves.
+func (tm *TransportManager) ConnectFailures() ConnectFailureInfo {
 	c := &tm.connFail
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.seq, c.at, c.gen
+	return ConnectFailureInfo{Seq: c.seq, First: c.first, Last: c.at, Gen: c.gen}
 }
 
 // connGen returns the current connection generation (read at dial start).
@@ -72,7 +103,7 @@ func (tm *TransportManager) clearConnFailure() {
 	c := &tm.connFail
 	c.mu.Lock()
 	c.gen++
-	c.at = time.Time{}
+	c.at, c.first = time.Time{}, time.Time{}
 	c.mu.Unlock()
 }
 
@@ -131,14 +162,17 @@ func (tm *TransportManager) recordUserDial(ctx context.Context, gen uint64, err 
 // overwritten by a dial that started before it.
 func (c *connFailState) store(gen uint64, failed bool, now time.Time) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.gen != gen {
-		return // straddled a Reset / ResetConnections / ReplacePrimary
-	}
-	if failed {
+	switch {
+	case c.gen != gen:
+		// straddled a Reset / ResetConnections / ReplacePrimary
+	case !failed:
+		c.at, c.first = time.Time{}, time.Time{}
+	case c.at.IsZero():
+		c.first = now // a new unresolved run starts
+		fallthrough
+	default:
 		c.seq++
 		c.at = now
-	} else {
-		c.at = time.Time{}
 	}
+	c.mu.Unlock()
 }

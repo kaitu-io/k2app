@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -86,43 +87,110 @@ func reraced(ch chan *outboundTransport) bool {
 	}
 }
 
+// dfClock drives user-dial evidence ages: the TransportManager's failure
+// timestamps (SetConnFailClock) and healthMonitor.clock must share it.
+type dfClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func newDFClock() *dfClock { return &dfClock{t: time.Unix(1_000_000, 0)} }
+
+func (c *dfClock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *dfClock) advance(d time.Duration) {
+	c.mu.Lock()
+	c.t = c.t.Add(d)
+	c.mu.Unlock()
+}
+
+func (c *dfClock) set(t time.Time) {
+	c.mu.Lock()
+	c.t = t
+	c.mu.Unlock()
+}
+
+func useFakeClock(hm *healthMonitor, ots ...*outboundTransport) *dfClock {
+	clk := newDFClock()
+	hm.clock = clk.now
+	for _, ot := range ots {
+		ot.tm.SetConnFailClock(clk.now)
+	}
+	return clk
+}
+
+// probeStep is the interval tests advance between a user dial and the next
+// probe: long enough that three strikes span dialFailReraceAfter(0).
+const probeStep = 3 * time.Second
+
+// evFailing is dial-failure evidence for a run old enough for any re-race.
+func evFailing(fresh bool) dialFailEvidence {
+	return dialFailEvidence{failing: true, fresh: fresh, runFor: time.Hour}
+}
+
 // --- pure functions -------------------------------------------------------
 
 func TestEchoStepDial_NotProbedWithDialFailureStrikes(t *testing.T) {
-	r := echoStepDial(0, 0, errNoConn, true)
+	r := echoStepDial(0, 0, errNoConn, evFailing(true))
 	if r.Classify != echoNotProbedDialFailing || r.NewStrikes != 1 || r.ShouldRerace {
 		t.Fatalf("strike 1: %+v", r)
 	}
-	r = echoStepDial(r.NewTrust, r.NewStrikes, errNoConn, true)
+	r = echoStepDial(r.NewTrust, r.NewStrikes, errNoConn, evFailing(true))
 	if r.NewStrikes != 2 || r.ShouldRerace {
 		t.Fatalf("strike 2: %+v", r)
 	}
-	r = echoStepDial(r.NewTrust, r.NewStrikes, errNoConn, true)
+	r = echoStepDial(r.NewTrust, r.NewStrikes, errNoConn, evFailing(true))
 	if r.NewStrikes != echoReraceThreshold || !r.ShouldRerace {
 		t.Fatalf("strike 3 must re-race: %+v", r)
 	}
 }
 
-// Trust arithmetic (hence probe cadence) must be the not-probed one in every
-// state, with or without dial evidence: only strikes may differ.
-func TestEchoStepDial_TrustArithmeticUnchangedGrid(t *testing.T) {
+// S9 cadence: while user dials are failing, every trust/strike state probes
+// at most every echoIntervals[echoDialFailTrust] (2s); a fresh failure is a
+// strike, a quiet failing tick keeps the count; a re-race needs both
+// threshold strikes and the run age milestone.
+func TestEchoStepDial_FailingCadenceGrid(t *testing.T) {
+	if echoIntervals[echoDialFailTrust] != 2*time.Second {
+		t.Fatalf("failing cadence = %v, want 2s (timeline in echoStepDial)", echoIntervals[echoDialFailTrust])
+	}
 	maxTrust := int32(len(echoIntervals)) - 1
-	for trust := int32(0); trust <= maxTrust+1; trust++ {
+	for trust := int32(0); trust <= maxTrust; trust++ {
 		for strikes := int32(0); strikes <= echoReraceThreshold+1; strikes++ {
-			ref := echoStep(trust, strikes, errNoConn)
-			got := echoStepDial(trust, strikes, errNoConn, true)
-			if got.NewTrust != ref.NewTrust {
-				t.Fatalf("(trust=%d strikes=%d): trust %d, not-probed gives %d — cadence changed", trust, strikes, got.NewTrust, ref.NewTrust)
-			}
-			if got.NewStrikes != strikes+1 || got.ShouldRerace != (strikes+1 >= echoReraceThreshold) {
-				t.Fatalf("(trust=%d strikes=%d): %+v", trust, strikes, got)
+			for _, fresh := range []bool{true, false} {
+				for _, k := range []int{0, 1, 2} {
+					for _, age := range []time.Duration{dialFailReraceAfter(k) - time.Millisecond, dialFailReraceAfter(k)} {
+						ev := dialFailEvidence{failing: true, fresh: fresh, runFor: age, reraces: k}
+						got := echoStepDial(trust, strikes, errNoConn, ev)
+						want := strikes
+						if fresh {
+							want++
+						}
+						if got.NewTrust != echoDialFailTrust || got.NewStrikes != want ||
+							got.ShouldRerace != (want >= echoReraceThreshold && age >= dialFailReraceAfter(k)) {
+							t.Fatalf("(trust=%d strikes=%d %+v): %+v", trust, strikes, ev, got)
+						}
+					}
+				}
 			}
 		}
 	}
 }
 
+func TestDialFailReraceAfter(t *testing.T) {
+	for k, want := range []time.Duration{8 * time.Second, 24 * time.Second, 40 * time.Second, 56 * time.Second} {
+		if got := dialFailReraceAfter(k); got != want {
+			t.Fatalf("dialFailReraceAfter(%d) = %v, want %v", k, got, want)
+		}
+	}
+}
+
 // Without dial evidence, or for any outcome other than not-probed,
-// echoStepDial is echoStep.
+// echoStepDial is echoStep — idle/offline cadence and the F1 cached-
+// connection echo path are untouched.
 func TestEchoStepDial_OtherwiseIdenticalToEchoStep(t *testing.T) {
 	errs := []error{nil, errNoConn, context.DeadlineExceeded, errors.New("echo: read response: EOF")}
 	maxTrust := int32(len(echoIntervals)) - 1
@@ -130,37 +198,45 @@ func TestEchoStepDial_OtherwiseIdenticalToEchoStep(t *testing.T) {
 		for trust := int32(0); trust <= maxTrust; trust++ {
 			for strikes := int32(0); strikes <= echoReraceThreshold; strikes++ {
 				ref := echoStep(trust, strikes, err)
-				if got := echoStepDial(trust, strikes, err, false); got != ref {
+				if got := echoStepDial(trust, strikes, err, dialFailEvidence{}); got != ref {
 					t.Fatalf("no evidence, err=%v (%d,%d): %+v != %+v", err, trust, strikes, got, ref)
 				}
 				if wire.IsEchoNotProbed(err) {
 					continue
 				}
-				if got := echoStepDial(trust, strikes, err, true); got != ref {
-					t.Fatalf("evidence must only affect not-probed; err=%v (%d,%d): %+v != %+v", err, trust, strikes, got, ref)
+				for _, fresh := range []bool{true, false} {
+					if got := echoStepDial(trust, strikes, err, evFailing(fresh)); got != ref {
+						t.Fatalf("evidence must only affect not-probed; err=%v (%d,%d): %+v != %+v", err, trust, strikes, got, ref)
+					}
 				}
 			}
 		}
 	}
 }
 
-func TestNotProbedDialFailing(t *testing.T) {
+func TestReadDialFailEvidence(t *testing.T) {
 	now := time.Unix(1_000_000, 0)
+	first := now.Add(-20 * time.Second)
+	cf := func(seq uint64, last time.Time) wire.ConnectFailureInfo {
+		return wire.ConnectFailureInfo{Seq: seq, First: first, Last: last}
+	}
 	cases := []struct {
-		name      string
-		seq, seen uint64
-		last      time.Time
-		want      bool
+		name  string
+		cf    wire.ConnectFailureInfo
+		seen  uint64
+		netUp bool
+		want  dialFailEvidence
 	}{
-		{"new recent failure", 5, 4, now.Add(-time.Second), true},
-		{"no new failure since last probe", 5, 5, now.Add(-time.Second), false},
-		{"cleared by success or Reset", 5, 4, time.Time{}, false},
-		{"older than window", 5, 4, now.Add(-echoDialFailWindow), false},
-		{"just inside window", 5, 4, now.Add(-echoDialFailWindow + time.Millisecond), true},
+		{"new recent failure", cf(5, now.Add(-time.Second)), 4, true, dialFailEvidence{true, true, 20 * time.Second, 2}},
+		{"no new failure since last probe", cf(5, now.Add(-time.Second)), 5, true, dialFailEvidence{true, false, 20 * time.Second, 2}},
+		{"cleared by success or Reset", wire.ConnectFailureInfo{Seq: 5}, 4, true, dialFailEvidence{}},
+		{"older than window", cf(5, now.Add(-echoDialFailWindow)), 4, true, dialFailEvidence{}},
+		{"just inside window", cf(5, now.Add(-echoDialFailWindow+time.Millisecond)), 4, true, dialFailEvidence{true, true, 20 * time.Second, 2}},
+		{"network down", cf(5, now.Add(-time.Second)), 4, false, dialFailEvidence{}},
 	}
 	for _, c := range cases {
-		if got := notProbedDialFailing(c.seq, c.seen, c.last, now); got != c.want {
-			t.Errorf("%s: got %v want %v", c.name, got, c.want)
+		if got := readDialFailEvidence(c.cf, c.seen, now, 2, c.netUp); got != c.want {
+			t.Errorf("%s: got %+v want %+v", c.name, got, c.want)
 		}
 	}
 	if echoDialFailWindow > 30*time.Second {
@@ -174,9 +250,11 @@ func TestNotProbedDialFailing(t *testing.T) {
 func TestEchoProbe_DeadNodeNoConnFailingTrafficReRaces(t *testing.T) {
 	ot, _ := newDeadNodeTransport("t-dead")
 	hm, ch := newHMForEcho(t, []*outboundTransport{ot})
+	clk := useFakeClock(hm, ot)
 	st := &echoLoopState{}
 	for i := 1; i <= echoReraceThreshold; i++ {
 		userDial(ot)
+		clk.advance(probeStep)
 		hm.probeOnce(ot, st, time.Now())
 		if i < echoReraceThreshold {
 			if st.strikes != int32(i) {
@@ -319,6 +397,7 @@ func TestEchoDeadNode_NoConnRefusingDialsFailsOver(t *testing.T) {
 
 	hm := newHealthMonitor(ot, []*outboundTransport{ot}, nil, nil, nil, time.Now())
 	hm.reRaceChan = hs.e.reRaceChan
+	clk := useFakeClock(hm, ot)
 	st := &echoLoopState{}
 
 	deadline := time.Now().Add(10 * time.Second)
@@ -333,6 +412,7 @@ func TestEchoDeadNode_NoConnRefusingDialsFailsOver(t *testing.T) {
 			break // switched (target.tm replaced by Phase B)
 		}
 		userDial(ot)
+		clk.advance(probeStep)
 		hm.probeOnce(ot, st, time.Now())
 		time.Sleep(time.Millisecond)
 	}
@@ -367,6 +447,7 @@ func TestEchoDeadNode_402RejectFailsWith402WithoutReplacement(t *testing.T) {
 	hs.e.mu.Unlock()
 	hm := newHealthMonitor(ot, []*outboundTransport{ot}, nil, nil, nil, time.Now())
 	hm.reRaceChan = hs.e.reRaceChan
+	clk := useFakeClock(hm, ot)
 	st := &echoLoopState{}
 
 	deadline := time.Now().Add(10 * time.Second)
@@ -378,6 +459,7 @@ func TestEchoDeadNode_402RejectFailsWith402WithoutReplacement(t *testing.T) {
 			t.Fatal("engine never failed on a 402-rejecting node")
 		}
 		userDial(ot)
+		clk.advance(probeStep)
 		hm.probeOnce(ot, st, time.Now())
 		time.Sleep(time.Millisecond)
 	}
@@ -529,9 +611,11 @@ func TestEchoProbe_NetworkDownFailingDialsNoStrike(t *testing.T) {
 	hm, ch := newHMForEcho(t, []*outboundTransport{ot})
 	var up atomic.Bool
 	hm.netUp = up.Load
+	clk := useFakeClock(hm, ot)
 	st := &echoLoopState{}
 	for i := 0; i < 4*echoReraceThreshold; i++ {
 		userDial(ot)
+		clk.advance(probeStep)
 		hm.probeOnce(ot, st, time.Now())
 		if st.strikes != 0 {
 			t.Fatalf("probe %d: strikes=%d with the network down", i, st.strikes)
@@ -540,10 +624,15 @@ func TestEchoProbe_NetworkDownFailingDialsNoStrike(t *testing.T) {
 	if reraced(ch) {
 		t.Fatal("re-raced with the network down")
 	}
+	// Offline cadence is the old not-probed ramp, not the failing 2s.
+	if want := int32(len(echoIntervals) - 1); st.trustIdx != want {
+		t.Fatalf("network down: trustIdx=%d, want the 16s ceiling %d", st.trustIdx, want)
+	}
 	// Control: the same traffic with the network up does strike.
 	up.Store(true)
 	for i := 0; i < echoReraceThreshold; i++ {
 		userDial(ot)
+		clk.advance(probeStep)
 		hm.probeOnce(ot, st, time.Now())
 	}
 	if !reraced(ch) {
@@ -627,9 +716,220 @@ func TestReplaceLoop_FirstPhaseAUserActionFailsImmediately(t *testing.T) {
 			if hs.provider.count() != 0 {
 				t.Fatalf("NextURL called %d times on a %d", hs.provider.count(), code)
 			}
-			if hs.h.fatalCount() != 1 {
-				t.Fatalf("OnOutboundFatal = %d, want 1", hs.h.fatalCount())
-			}
+			// OnOutboundFatal fires right after fail(), outside e.mu.
+			eventually(t, "OnOutboundFatal", func() bool { return hs.h.fatalCount() == 1 })
 		})
+	}
+}
+
+// --- fix round 2 ------------------------------------------------------------
+
+func codeLessReject() error {
+	return &wire.ProxyLayerError{Err: fmt.Errorf("%w: %w", wire.ErrMetadataRejected,
+		fmt.Errorf("%w: unauthorized", wire.ErrStreamRejected))}
+}
+
+func codedReject(code int) error {
+	return &wire.ProxyLayerError{Err: fmt.Errorf("%w: %w", wire.ErrMetadataRejected,
+		&wire.StreamError{Code: code, Message: "center verdict"})}
+}
+
+func TestReplaceLoopUserAction(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want int // 0 = not user action
+	}{
+		{"code-less metadata reject", codeLessReject(), 0},
+		{"bare legacy stream reject", fmt.Errorf("%w: unauthorized", wire.ErrStreamRejected), 0},
+		{"code-less inside a race exit", fmt.Errorf("transport race: %w", errors.Join(codeLessReject(), errors.New("tcpws: timeout"))), 0},
+		{"coded 401", codedReject(401), 401},
+		{"coded 402", codedReject(402), 402},
+		{"coded 403", codedReject(403), 403},
+		{"coded 503 node auth fault", codedReject(503), 0},
+		{"transport error", errors.New("dial: connection refused"), 0},
+	}
+	for _, c := range cases {
+		ce := replaceLoopUserAction(c.err)
+		got := 0
+		if ce != nil {
+			got = ce.Code
+			if ce.Category != CategoryClient {
+				t.Errorf("%s: category %s, want client", c.name, ce.Category)
+			}
+		}
+		if got != c.want {
+			t.Errorf("%s: user action %d, want %d", c.name, got, c.want)
+		}
+	}
+	// Initial-connect classification is deliberately unchanged.
+	if ce := ClassifyError(codeLessReject()); ce.Code != ErrCodeAuthRejected {
+		t.Fatalf("ClassifyError(code-less) = %d, must stay 401 (out of scope)", ce.Code)
+	}
+}
+
+// N2 ruling, end to end: during the re-race the current node and every
+// candidate answer the code-less reject (Center unreachable from the nodes).
+// No fail, never 401, reconnecting 503; once auth works again → connected.
+func TestReplaceLoop_CodeLessRejectEverywhereRetriesThenRecovers(t *testing.T) {
+	hs := newFoHarness(t, foOpts{
+		fallbacks: map[string][]string{foURLA: {foURLB, foURLC}},
+		net:       []checkResult{checkMatched},
+	})
+	var authOK atomic.Bool
+	raceTransportFn = func(ctx context.Context, cfg wire.Config, _ string, _ wire.DirectDialer, _ *wire.CookieJar) (*wire.RaceResult, error) {
+		hs.servers.mu.Lock()
+		hs.servers.races[cfg.Host]++
+		hs.servers.mu.Unlock()
+		if authOK.Load() {
+			return &wire.RaceResult{Dialer: &stubDialer{}, TransportType: "quic-443"}, nil
+		}
+		return nil, fmt.Errorf("transport race: %w", codeLessReject())
+	}
+	hs.servers.mu.Lock()
+	hs.servers.setupErrs["b.example"] = codeLessReject()
+	hs.servers.setupErrs["c.example"] = codeLessReject()
+	hs.servers.mu.Unlock()
+
+	hs.escalate()
+	hs.waitStatus("reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
+	if s, le := hs.engineState(); s != StateConnected || le != nil {
+		t.Fatalf("engine = %s / %v, want connected / nil (a Center outage must not end the session)", s, le)
+	}
+	if hs.h.sawCode(ErrCodeAuthRejected) || hs.h.sawState(StateDisconnected) {
+		t.Fatal("status showed 401 or disconnected for a code-less reject")
+	}
+	hs.servers.mu.Lock()
+	setupsB, setupsC := hs.servers.setups["b.example"], hs.servers.setups["c.example"]
+	hs.servers.mu.Unlock()
+	if setupsB != 1 || setupsC != 1 {
+		t.Fatalf("candidate rotation: setups b=%d c=%d, want 1 each", setupsB, setupsC)
+	}
+	if hs.h.fatalCount() != 0 {
+		t.Fatalf("OnOutboundFatal = %d, want 0", hs.h.fatalCount())
+	}
+
+	// A wait tick while Center is still down keeps retrying.
+	before := hs.servers.raceCount("a.example")
+	hs.nextTimer().fire()
+	next := hs.nextTimer() // armed only after the tick's Phase-A failed
+	if n := hs.servers.raceCount("a.example"); n != before+1 {
+		t.Fatalf("wait tick races on a = %d, want %d", n, before+1)
+	}
+	if s, _ := hs.h.last(); !isReconnectingCode(ErrCodeServerUnreachable)(s) {
+		t.Fatalf("status after a failed tick = %+v, want reconnecting/503", s)
+	}
+
+	authOK.Store(true)
+	next.fire()
+	hs.waitStatus("connected again", func(s Status) bool { return s.State == StateConnected && s.Error == nil })
+	if s, le := hs.engineState(); s != StateConnected || le != nil {
+		t.Fatalf("engine = %s / %v after auth recovered", s, le)
+	}
+}
+
+// 403 ruling: a coded 403 is user action like 401/402.
+func TestReplaceLoop_Coded403(t *testing.T) {
+	t.Run("Phase-A 403 fails immediately", func(t *testing.T) {
+		hs := newFoHarness(t, foOpts{
+			fallbacks: map[string][]string{foURLA: {foURLB}},
+			net:       []checkResult{checkMatched},
+		})
+		hs.servers.setAlive("b.example", true)
+		raceTransportFn = func(ctx context.Context, cfg wire.Config, _ string, _ wire.DirectDialer, _ *wire.CookieJar) (*wire.RaceResult, error) {
+			return nil, fmt.Errorf("transport race: %w", codedReject(ErrCodeForbidden))
+		}
+		hs.signal()
+		eventually(t, "engine failed", func() bool { s, _ := hs.engineState(); return s != StateConnected })
+		_, le := hs.engineState()
+		if le == nil || le.Code != ErrCodeForbidden || le.Category != CategoryClient {
+			t.Fatalf("lastError = %+v, want 403/client", le)
+		}
+		if hs.provider.count() != 0 {
+			t.Fatalf("NextURL called %d times on a Phase-A 403", hs.provider.count())
+		}
+	})
+	t.Run("Phase-B candidate 403 outranks 503 at exhaustion", func(t *testing.T) {
+		hs := newFoHarness(t, foOpts{
+			fallbacks: map[string][]string{foURLA: {foURLB, foURLC}},
+			net:       []checkResult{checkMatched},
+		})
+		// a refuses (transport), b answers 403, c refuses.
+		hs.servers.mu.Lock()
+		hs.servers.setupErrs["b.example"] = codedReject(ErrCodeForbidden)
+		hs.servers.mu.Unlock()
+		hs.escalate()
+		eventually(t, "engine failed", func() bool { s, _ := hs.engineState(); return s != StateConnected })
+		_, le := hs.engineState()
+		if le == nil || le.Code != ErrCodeForbidden {
+			t.Fatalf("lastError = %+v, want the candidate's 403 over 503", le)
+		}
+	})
+}
+
+// N1: a Reset that lands DURING a probe must still drop that probe's strike
+// at the next not-probed probe.
+func TestEchoProbe_ResetDuringProbeDropsItsStrike(t *testing.T) {
+	ot, d := newDeadNodeTransport("t-reset-during")
+	hm, ch := newHMForEcho(t, []*outboundTransport{ot})
+	st := &echoLoopState{}
+	// Probe 1 runs on a live (dying) connection: it times out, and a network
+	// Reset lands while it is running.
+	ep := &resetDuringEcho{deadNodeDialer: d, tm: ot.tm}
+	ot.tm.SetPrimary(ep, "quic-443")
+	hm.probeOnce(ot, st, time.Now())
+	if st.strikes != 1 {
+		t.Fatalf("precondition: probe 1 strikes=%d, want 1 (echo timeout)", st.strikes)
+	}
+	// From now on there is no connection; the first post-Reset dial fails.
+	ep.noConn.Store(true)
+	userDial(ot)
+	hm.probeOnce(ot, st, time.Now())
+	if st.strikes != 1 {
+		t.Fatalf("strikes=%d, want 1: the strike from the probe the Reset interrupted carried over", st.strikes)
+	}
+	if reraced(ch) {
+		t.Fatal("re-raced")
+	}
+}
+
+type resetDuringEcho struct {
+	*deadNodeDialer
+	tm     *wire.TransportManager
+	noConn atomic.Bool
+}
+
+func (r *resetDuringEcho) RunEchoProbe(context.Context) error {
+	if r.noConn.Load() {
+		return errNoConn
+	}
+	r.tm.Reset() // the network changed while the probe was in flight
+	return context.DeadlineExceeded
+}
+
+// N3: a clear racing a fail() must not erase the session's final error.
+func TestClearWireError_NotWhenDisconnected(t *testing.T) {
+	e := New()
+	e.mu.Lock()
+	e.state = StateDisconnected
+	e.lastError = newEngineError(ErrCodeServerUnreachable, "outbound exhausted")
+	e.mu.Unlock()
+	e.ClearWireError()
+	e.mu.Lock()
+	le := e.lastError
+	e.mu.Unlock()
+	if le == nil {
+		t.Fatal("ClearWireError erased the final error of a disconnected engine")
+	}
+	// Control: connected → cleared.
+	e.mu.Lock()
+	e.state = StateConnected
+	e.mu.Unlock()
+	e.ClearWireError()
+	e.mu.Lock()
+	le = e.lastError
+	e.mu.Unlock()
+	if le != nil {
+		t.Fatalf("control: connected engine kept %v", le)
 	}
 }

@@ -2084,7 +2084,10 @@ func (e *Engine) ReportWireError(err error) {
 // EngineError.RequiresUserAction for why 403 is deliberately not among them.
 func (e *Engine) ClearWireError() {
 	e.mu.Lock()
-	if e.lastError == nil || e.lastError.RequiresUserAction() {
+	// Not connected: lastError is the session's final verdict (fail() set
+	// it, or Stop is clearing it) — a late clear from a dial or a Phase-A /
+	// Phase-B success racing that must not erase it (review N3).
+	if e.state != StateConnected || e.lastError == nil || e.lastError.RequiresUserAction() {
 		e.mu.Unlock()
 		return
 	}
@@ -2332,8 +2335,8 @@ func closeRaceResult(r *wire.RaceResult) {
 // OnOutboundFatal still fires: the gateway relies on it to retry the saved
 // session later (e.g. after the user renews).
 func (e *Engine) failIfUserAction(target *outboundTransport, raceErr error) bool {
-	ce := ClassifyError(raceErr)
-	if !ce.RequiresUserAction() {
+	ce := replaceLoopUserAction(raceErr)
+	if ce == nil {
 		return false
 	}
 	e.mu.Lock()
@@ -2439,7 +2442,7 @@ func (e *Engine) failExhausted(target *outboundTransport, err error) {
 	}
 	var failErr error = outboundExhaustedError(outboundName, err)
 	var pbe *phaseBExhaustedError
-	if errors.As(err, &pbe) && pbe.userAction.RequiresUserAction() {
+	if errors.As(err, &pbe) && pbe.userAction != nil {
 		failErr = pbe.userAction
 	}
 	if sticky.RequiresUserAction() {
@@ -2532,6 +2535,13 @@ func (e *Engine) replaceOutboundServer(
 	// misconfigured node must not end the session), but if every candidate
 	// fails it is the true cause, not "server unreachable".
 	var userAction *EngineError
+	// allCodeLess: the current node AND every candidate tried so far
+	// answered the code-less legacy reject — the nodes are fine, Center is
+	// unreachable from them. Exhausting the candidates then must not fail
+	// the engine: it goes on the no-candidates retry schedule (reconnecting
+	// 503) and recovers when auth works again (review N2 ruling).
+	allCodeLess := isCodeLessReject(lastWireErr)
+	tried := 0
 
 	for {
 		if ctx.Err() != nil {
@@ -2544,6 +2554,14 @@ func (e *Engine) replaceOutboundServer(
 			err := fmt.Errorf("provider: %w", providerErr)
 			if userAction != nil {
 				return &phaseBExhaustedError{err: err, userAction: userAction}
+			}
+			if allCodeLess && tried > 0 {
+				// The candidates were excluded for a Center outage, not for
+				// being dead: forget the exclusions for the next round.
+				if r, ok := provider.(interface{ Reset() }); ok {
+					r.Reset()
+				}
+				return fmt.Errorf("%w: every node rejected without an auth verdict (Center unreachable?): %w", ErrNoCandidates, err)
 			}
 			return err
 		}
@@ -2561,8 +2579,12 @@ func (e *Engine) replaceOutboundServer(
 				"outbound", target.name,
 				"tryURL", config.TruncateVia(newURL),
 				"err", setupErr)
-			if ce := ClassifyError(setupErr); ce.RequiresUserAction() {
+			tried++
+			if ce := replaceLoopUserAction(setupErr); ce != nil {
 				userAction = ce
+			}
+			if !isCodeLessReject(setupErr) {
+				allCodeLess = false
 			}
 			// Tell the provider this URL also failed so it excludes and
 			// returns the next candidate on the next call.
