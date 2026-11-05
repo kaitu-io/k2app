@@ -55,11 +55,11 @@ HTTP-aligned error codes for frontend consumption (ranges are load-bearing: 1xx 
 | 108 | network | Timeout | net.Error.Timeout(), context.DeadlineExceeded |
 | 400 | client | Bad config | parse URL, missing auth |
 | 401 | client | Auth rejected | stream rejected |
-| 402 | client | Payment required | subscription expired |
+| 402 | client | Payment required | by code, producer-typed: `wire.ErrMetadataRejected` wrapping `StreamError{Code:402}` (node metadata auth) and `config.FetchStatusError{Status:402}` (Center k2subs fetch; 400/401/403 map to same code, 5xx→503, else 570). Text fallback `payment required` only; bare word `subscription` deliberately NOT matched. A sticky 401/402 is not overwritten by outbound exhaustion, and a 401/402 re-race skips replacement candidates |
 | 403 | client | Forbidden | pin mismatch, blocked CA |
 | 412 | client | Environment setup failed (operator must fix the host) | any `provider.Start` failure (`providerStartError`, classified at the call site — sing-tun/wintun text is OS-localized); gateway `install intercept` / `iptables` / `ip6tables` messages |
 | 502 | server | Protocol error | TLS/QUIC handshake failure |
-| 503 | server | Server unreachable | TCP dial, connection refused |
+| 503 | server | Server unreachable | TCP dial, connection refused; outbound replacement candidates exhausted (`outboundExhaustedError`, set by the producer) |
 | 504 | server | Rule bundles unavailable (retryable) | no bundle on disk after embedded seed, or a configured `match.region` bundle missing |
 | 570 | server | Unclassified | fallback |
 

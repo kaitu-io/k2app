@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -994,3 +995,32 @@ func searchSubstring(s, substr string) bool {
 	return false
 }
 
+// TestSubscription_FetchNon200ReturnsTypedStatusError: a non-200 from Center
+// must come back as *FetchStatusError carrying the HTTP status, so the engine
+// can classify it by code (402 membership expired → 402) instead of by text.
+func TestSubscription_FetchNon200ReturnsTypedStatusError(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusPaymentRequired)
+		_, _ = w.Write([]byte("membership expired"))
+	}))
+	defer srv.Close()
+
+	raw := "k2subs://u:p@" + srv.Listener.Addr().String() + "/api"
+	s, err := NewSubscription(raw, "")
+	if err != nil {
+		t.Fatalf("NewSubscription: %v", err)
+	}
+	s.endpoint = srv.URL + "/api"
+
+	err = s.Fetch(context.Background(), srv.Client())
+	var fse *FetchStatusError
+	if !errors.As(err, &fse) {
+		t.Fatalf("Fetch error = %v (%T), want *FetchStatusError", err, err)
+	}
+	if fse.Status != http.StatusPaymentRequired || fse.Body != "membership expired" {
+		t.Fatalf("FetchStatusError = %+v, want Status 402 Body %q", fse, "membership expired")
+	}
+	if got, want := err.Error(), "subscription fetch: status 402: membership expired"; got != want {
+		t.Fatalf("Error() = %q, want %q (log text must not change)", got, want)
+	}
+}

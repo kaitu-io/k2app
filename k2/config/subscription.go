@@ -361,6 +361,22 @@ func (s *Subscription) SetTunnelsForTest(tunnels []Tunnel) {
 	s.mu.Unlock()
 }
 
+// FetchStatusError is returned by Fetch when Center answers with a non-200
+// HTTP status. It carries the status so callers classify by code, not by
+// message text (engine.ClassifyError maps 402 "membership expired" to 402).
+// Error() keeps the historical "subscription fetch: status N: body" text.
+type FetchStatusError struct {
+	Status int    // HTTP status code from Center
+	Body   string // trimmed plain-text body hint (≤256 bytes), may be empty
+}
+
+func (e *FetchStatusError) Error() string {
+	if e.Body != "" {
+		return fmt.Sprintf("subscription fetch: status %d: %s", e.Status, e.Body)
+	}
+	return fmt.Sprintf("subscription fetch: status %d", e.Status)
+}
+
 // Fetch fetches the subscription endpoint and updates tunnels.
 // On failure, existing tunnels are preserved.
 func (s *Subscription) Fetch(ctx context.Context, client *http.Client) error {
@@ -388,10 +404,7 @@ func (s *Subscription) Fetch(ctx context.Context, client *http.Client) error {
 
 	if resp.StatusCode != http.StatusOK {
 		hint, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
-		if len(hint) > 0 {
-			return fmt.Errorf("subscription fetch: status %d: %s", resp.StatusCode, strings.TrimSpace(string(hint)))
-		}
-		return fmt.Errorf("subscription fetch: status %d", resp.StatusCode)
+		return &FetchStatusError{Status: resp.StatusCode, Body: strings.TrimSpace(string(hint))}
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))

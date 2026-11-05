@@ -192,7 +192,7 @@ func TestClassifyError_StreamErrorPriority(t *testing.T) {
 }
 
 func TestClassifyError_PaymentRequired(t *testing.T) {
-	result := ClassifyError(errors.New("subscription expired"))
+	result := ClassifyError(errors.New("payment required"))
 	if result.Code != 402 {
 		t.Errorf("code = %d, want 402", result.Code)
 	}
@@ -459,5 +459,60 @@ func TestEngineStart_ProviderFailureIsEnvironmentSetup(t *testing.T) {
 	}
 	if !strings.Contains(e.StatusJSON(), `"code":412`) {
 		t.Errorf("StatusJSON = %s, want code 412 surfaced to the UI", e.StatusJSON())
+	}
+}
+
+func TestClassifyError_SubscriptionWordIsNotPayment(t *testing.T) {
+	for _, msg := range []string{
+		"outbound k2v5-0 exhausted: provider: subscription: no matching session for URL",
+		"subscription: fetch https://x/api/subs: timeout",
+	} {
+		if got := ClassifyError(errors.New(msg)); got.Code == ErrCodePaymentRequired {
+			t.Errorf("%q classified as 402", msg)
+		}
+	}
+}
+
+func TestOutboundExhaustedError_Is503Server(t *testing.T) {
+	ee := outboundExhaustedError("k2v5-0", errors.New("provider: x"))
+	if ee.Code != 503 || ee.Category != CategoryServer {
+		t.Fatalf("got %d/%s", ee.Code, ee.Category)
+	}
+	if !strings.Contains(ee.Message, "k2v5-0") || !strings.Contains(ee.Message, "provider: x") {
+		t.Errorf("message missing outbound/cause: %q", ee.Message)
+	}
+	if got := ClassifyError(fmt.Errorf("wrap: %w", ee)); got.Code != 503 {
+		t.Fatalf("wrapped -> %d", got.Code)
+	}
+}
+
+// TestClassifyError_SubscriptionFetchStatus: the k2subs fetch reports Center's
+// HTTP status as a typed config.FetchStatusError. ClassifyError maps it by
+// status code, through the wrapping that subscription.Resolve adds. A real
+// Center 402 ("membership expired") must stay 402/client.
+func TestClassifyError_SubscriptionFetchStatus(t *testing.T) {
+	cases := []struct {
+		status   int
+		wantCode int
+		wantCat  string
+	}{
+		{400, ErrCodeBadConfig, CategoryClient},
+		{401, ErrCodeAuthRejected, CategoryClient},
+		{402, ErrCodePaymentRequired, CategoryClient},
+		{403, ErrCodeForbidden, CategoryClient},
+		{404, ErrCodeConnectionFatal, CategoryServer},
+		{500, ErrCodeServerUnreachable, CategoryServer},
+		{503, ErrCodeServerUnreachable, CategoryServer},
+	}
+	for _, tc := range cases {
+		err := fmt.Errorf("subscription fetch failed (no cache): %w",
+			&config.FetchStatusError{Status: tc.status, Body: "membership expired"})
+		got := ClassifyError(err)
+		if got.Code != tc.wantCode || got.Category != tc.wantCat {
+			t.Errorf("status %d → %d/%s, want %d/%s", tc.status, got.Code, got.Category, tc.wantCode, tc.wantCat)
+		}
+		if got.Message != err.Error() {
+			t.Errorf("status %d message = %q, want %q", tc.status, got.Message, err.Error())
+		}
 	}
 }
