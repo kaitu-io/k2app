@@ -972,6 +972,9 @@ type Subscription struct {
 	// LastRenewalSignedAt 已落地的 Apple RenewalInfo 里最新的 signedDate（毫秒）。Apple 不保证通知顺序，
 	// 重投的旧通知靠它拦下。
 	LastRenewalSignedAt int64 `gorm:"column:last_renewal_signed_at;not null;default:0" json:"-"`
+	// BillingIssueSince 进入 grace/billing_retry 的时刻（unix 秒）。不清零——worker 按当前 status 过滤，
+	// 再次进入扣费失败时由 applyRenewalInfo 重新打戳。
+	BillingIssueSince int64 `gorm:"column:billing_issue_since;not null;default:0;index" json:"-"`
 }
 
 // Subscription.Provider / SubscriptionCredit.Provider 的取值域。二者共用同一套字面量——
