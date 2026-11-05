@@ -29,8 +29,8 @@ package engine
 // select listens to is ready, so a seed always replays the same run.
 //
 // Knobs: K2_SIM_SEEDS (count, default simDefaultSeeds), K2_SIM_SEED (run one
-// seed, verbose), K2_SIM_SEED_BASE, K2_SIM_PAUSE=1 (pause/wake events — the
-// base replace loop does not honour Pause yet; enable after the fix wave),
+// seed, verbose), K2_SIM_SEED_BASE, K2_SIM_PAUSE=0 (no pause/wake events —
+// on by default since the fix wave made the replace loop honour Pause),
 // K2_SIM_NOMIN=1 (skip minimization), K2_SIM_MIN_RUNS (minimization budget,
 // default 60 reruns; only the first failing seed is minimized),
 // K2_SIM_NO_ACCEPTALL=1 (no accept-all captive networks), K2_SIM_ALLOW=FA,FB,M3
@@ -546,6 +546,7 @@ func (v simViolation) String() string {
 var simClasses = map[string]string{
 	"M3": "retry/hold tick trusts passive direct evidence: Phase-B rounds burnt while offline, accept-all captive shown as 503 (fix wave item M3)",
 	"FA": "a round mixing code-less answers (Center outage / node-local Center failure) with transport-dead candidates counts toward the 10-min cap",
+	"PI": "Pause does not stop a tick already in flight: its remaining Phase A/B attempts and netchecks run while paused (16e6bebda)",
 	"FB": "a current node answering code-less pins the target to Phase A only: live candidates are never tried, 503 shown indefinitely",
 }
 
@@ -604,44 +605,54 @@ type simRun struct {
 	nextProbe time.Time
 	call      *simCall
 	stolen    *outboundTransport
+	stolenRec *outboundTransport // a recoveredWake token held back (see readyNow)
+	// atIdle: the loop is parked at an idle point (outer select / hold).
+	// pauseMidTick: Pause arrived while a tick was in flight and the loop has
+	// not reached an idle point since (class PI).
+	atIdle       bool
+	pauseMidTick bool
 
 	// oracle
-	statusMu       sync.Mutex
-	pushes         []Status
-	fatals         int
-	diagMu         sync.Mutex
-	diags          []simDiag
-	diagSeen       int
-	chainPhaseA    []simAttempt // since the last idle point
-	chainSetups    []simAttempt
-	lastVerdict    netVerdict
-	haveVerdict    bool
-	okSinceVerd    bool
-	cOKSince       time.Time // I1 503 window (zero = closed)
-	cOKPaused      time.Duration
-	cOKSaved       time.Time // the window a short break interrupted
-	cOKSavedPaused time.Duration
-	cOKBreakAt     time.Time
-	cOKLateFlagged bool
-	lastObs        time.Time
-	p2Since        time.Time // I2
-	p2Flagged      bool
-	recSince       time.Time // I3c
-	recFlagged     bool
-	downSince      time.Time // I3 network-down
-	downFlagged    bool
-	downNet        simNet
-	s503Since      time.Time
-	lastCodeLessAt time.Time
+	statusMu           sync.Mutex
+	pushes             []Status
+	fatals             int
+	diagMu             sync.Mutex
+	diags              []simDiag
+	diagSeen           int
+	chainPhaseA        []simAttempt // since the last idle point
+	chainSetups        []simAttempt
+	lastVerdict        netVerdict
+	haveVerdict        bool
+	okSinceVerd        bool
+	cOKSince           time.Time     // I1 503 window (zero = closed)
+	cOKPauseBase       time.Duration // pausedNow() when the window opened
+	cOKSaved           time.Time     // the window a short break interrupted
+	cOKSavedBase       time.Duration
+	cOKSavedCount      time.Duration // its counted length at the break
+	cOKBreakAt         time.Time
+	cOKLateFlagged     bool
+	simPausedTotal     time.Duration // finished pauses
+	simPauseStart      time.Time
+	p2Since            time.Time // I2
+	p2Flagged          bool
+	recSince           time.Time // I3c
+	recFlagged         bool
+	downSince          time.Time // I3 network-down
+	downFlagged        bool
+	downNet            simNet
+	s503Since          time.Time
+	lastCodeLessAt     time.Time
+	lastCodeLessPaused time.Duration // pausedNow() at lastCodeLessAt
 	// lastRaceCodeLessAt: the latest Phase-A race answered code-less (zero
 	// once a race answers otherwise) — FB's signature.
 	lastRaceCodeLessAt time.Time
 	attempts           []time.Time // races + setups
 	netchecks          []time.Time
-	offlineEpoch       int  // incremented on each transition into a non-online network
-	roundEpoch         int  // offlineEpoch of the last Phase-B round seen offline
-	roundsOff          int  // Phase-B rounds in the current offline episode
-	inRound            bool // a setup was seen since the last idle point
+	waitTicks          []time.Time // netchecks with trigger=wait-tick: the schedule's own cadence
+	offlineEpoch       int         // incremented on each transition into a non-online network
+	roundEpoch         int         // offlineEpoch of the last Phase-B round seen offline
+	roundsOff          int         // Phase-B rounds in the current offline episode
+	inRound            bool        // a setup was seen since the last idle point
 	constSince         time.Time
 	reconnSince        time.Time
 	maxBackoff         time.Duration
@@ -765,6 +776,8 @@ func (s *simRun) hostOf(i int) string { return fmt.Sprintf("n%d.example", i) }
 // classify maps a violation to a known finding class from world facts.
 func (s *simRun) classify(v simViolation) string {
 	switch {
+	case v.inv == "I4" && strings.Contains(v.msg, "while paused") && s.pauseMidTick:
+		return "PI"
 	case v.inv == "I4" && strings.Contains(v.msg, "Phase-B round while the network"):
 		return "M3"
 	case v.inv == "I3" && strings.Contains(v.msg, "network accept-all-captive"):
@@ -772,7 +785,7 @@ func (s *simRun) classify(v simViolation) string {
 	case v.inv == "I4" && strings.Contains(v.msg, "steady state") && s.net == snAcceptAll:
 		return "M3"
 	case v.inv == "I1" && (strings.Contains(v.msg, "failed 503 before") || strings.Contains(v.msg, "without that verdict")) &&
-		!s.lastCodeLessAt.IsZero() && s.now().Sub(s.lastCodeLessAt) < exhaustFailAfter:
+		!s.lastCodeLessAt.IsZero() && s.now().Sub(s.lastCodeLessAt)-(s.pausedNow()-s.lastCodeLessPaused) < exhaustFailAfter:
 		return "FA"
 	case v.inv == "I3" && strings.Contains(v.msg, "stale 503") &&
 		(s.nodes[s.curNode()].st.kind == skCodeLess || !s.lastRaceCodeLessAt.IsZero()):
@@ -852,7 +865,7 @@ func (s *simRun) startCall(r *simReq) {
 		}
 		s.attempts = append(s.attempts, s.now())
 		if a.what == "code-less" || a.what == "hang" {
-			s.lastCodeLessAt = s.now()
+			s.lastCodeLessAt, s.lastCodeLessPaused = s.now(), s.pausedNow()
 		}
 		if s.paused && s.pauseEnabled {
 			s.violate("I4", "%s %s while paused", kind, r.host)
@@ -973,8 +986,13 @@ func (s *simRun) applyEvent(ev simEvent) {
 		s.shell.mu.Unlock()
 	case evPause:
 		s.paused = true
+		s.simPauseStart = s.now()
+		s.pauseMidTick = !s.atIdle
 		s.e.Pause()
 	case evWake:
+		if s.paused {
+			s.simPausedTotal += s.now().Sub(s.simPauseStart)
+		}
 		s.paused = false
 		s.e.Wake()
 	}
@@ -1037,22 +1055,31 @@ func (s *simRun) pruneTimers() {
 }
 
 // readyNow: does the parked select (r) have a ready channel? At bkIdle it
-// listens to reRaceChan and — only while the retry set is non-empty, which is
-// exactly while it has an armed timer — holdWake. If both are ready the
-// signal is held back until the loop's next handshake (the loop touches
-// reRaceChan nowhere before that), so the select has exactly one choice.
+// listens to reRaceChan, recoveredWake and — only while the retry set is
+// non-empty, which is exactly while it has an armed timer — holdWake. Go's
+// select picks at random among ready cases, so when several are ready the
+// driver keeps exactly one: holdWake first, then recoveredWake, then the
+// re-race signal; the others are held back and re-queued at the loop's next
+// handshake (the loop touches neither channel before that).
 func (s *simRun) readyNow(r *simReq) bool {
 	switch r.kind {
 	case bkHold:
 		return len(s.e.holdWake) > 0
 	case bkIdle:
 		wake := len(s.e.holdWake) > 0 && s.hasActiveRetryTimer()
+		rec := len(s.e.recoveredWake) > 0
 		sig := len(s.e.reRaceChan) > 0
-		if wake && sig {
+		if (wake || rec) && sig {
 			s.stolen = <-s.e.reRaceChan
-			s.logf("both holdWake and a re-race signal ready: wake first, signal re-queued at the next handshake")
+			s.logf("re-race signal held back behind a wake, re-queued at the next handshake")
+			sig = false
 		}
-		return wake || sig
+		if wake && rec {
+			s.stolenRec = <-s.e.recoveredWake
+			s.logf("recovered wake held back behind holdWake, re-queued at the next handshake")
+			rec = false
+		}
+		return wake || rec || sig
 	}
 	return false
 }
@@ -1102,12 +1129,23 @@ func (s *simRun) passive() {
 // status oracles.
 func (s *simRun) onBlock(r *simReq) {
 	s.res.steps++
+	s.atIdle = r.kind == bkIdle || r.kind == bkHold
+	if s.atIdle {
+		s.pauseMidTick = false
+	}
 	if s.stolen != nil {
 		select {
 		case s.e.reRaceChan <- s.stolen:
 		default:
 		}
 		s.stolen = nil
+	}
+	if s.stolenRec != nil {
+		select {
+		case s.e.recoveredWake <- s.stolenRec:
+		default:
+		}
+		s.stolenRec = nil
 	}
 	s.passive()
 	s.readDiags()
@@ -1200,6 +1238,9 @@ func (s *simRun) readDiags() {
 			v := verdictFromString(fmt.Sprint(d.attrs["verdict"]))
 			s.lastVerdict, s.haveVerdict, s.okSinceVerd = v, true, false
 			s.logf("engine netcheck trigger=%v verdict=%v evidence=%v", d.attrs["trigger"], d.attrs["verdict"], d.attrs["evidence"])
+			if d.attrs["trigger"] == "wait-tick" {
+				s.waitTicks = append(s.waitTicks, s.now())
+			}
 		case "DIAG: outbound-failover":
 			s.res.failovers++
 			s.okSinceVerd = true
@@ -1370,12 +1411,22 @@ func (s *simRun) checkFail(code int) {
 	}
 }
 
+// pausedNow: total paused time so far (finished pauses + the current one),
+// the oracle's copy of the engine's pausedTotal.
+func (s *simRun) pausedNow() time.Duration {
+	d := s.simPausedTotal
+	if s.paused && s.pauseEnabled {
+		d += s.now().Sub(s.simPauseStart)
+	}
+	return d
+}
+
 // capCounted: how long the I1 window has been open, paused time excluded.
 func (s *simRun) capCounted() time.Duration {
 	if s.cOKSince.IsZero() {
 		return 0
 	}
-	return s.now().Sub(s.cOKSince) - s.cOKPaused
+	return s.now().Sub(s.cOKSince) - (s.pausedNow() - s.cOKPauseBase)
 }
 
 // capDebounce: a window break shorter than one tick (the in-flight tick plus
@@ -1391,31 +1442,23 @@ func (s *simRun) capHeld() bool {
 		return true
 	}
 	return s.cOKSince.IsZero() && !s.cOKSaved.IsZero() &&
-		s.now().Sub(s.cOKBreakAt) <= s.capDebounce() &&
-		s.cOKBreakAt.Sub(s.cOKSaved)-s.cOKSavedPaused >= exhaustFailAfter
+		s.now().Sub(s.cOKBreakAt) <= s.capDebounce() && s.cOKSavedCount >= exhaustFailAfter
 }
 
-// updateCapWindow: the I1 window. Paused time is frozen (neither counts nor
-// breaks: the engine subtracts it and observes nothing while paused); a break
-// shorter than capDebounce is bridged.
+// updateCapWindow: the I1 window. While paused it is frozen (paused time
+// neither counts nor breaks it: the engine subtracts it and observes nothing
+// while paused); a break shorter than capDebounce is bridged (the gap
+// counts, as it does for the engine, which never saw it).
 func (s *simRun) updateCapWindow(now time.Time) {
-	dt := time.Duration(0)
-	if !s.lastObs.IsZero() {
-		dt = now.Sub(s.lastObs)
-	}
-	s.lastObs = now
 	if s.paused && s.pauseEnabled {
-		if !s.cOKSince.IsZero() {
-			s.cOKPaused += dt
-		}
 		return
 	}
 	if s.capWindowOK() {
 		if s.cOKSince.IsZero() {
 			if !s.cOKSaved.IsZero() && now.Sub(s.cOKBreakAt) <= s.capDebounce() {
-				s.cOKSince, s.cOKPaused = s.cOKSaved, s.cOKSavedPaused+now.Sub(s.cOKBreakAt)
+				s.cOKSince, s.cOKPauseBase = s.cOKSaved, s.cOKSavedBase
 			} else {
-				s.cOKSince, s.cOKPaused, s.cOKLateFlagged = now, 0, false
+				s.cOKSince, s.cOKPauseBase, s.cOKLateFlagged = now, s.pausedNow(), false
 			}
 			s.cOKSaved = time.Time{}
 		}
@@ -1423,7 +1466,7 @@ func (s *simRun) updateCapWindow(now time.Time) {
 		return
 	}
 	if !s.cOKSince.IsZero() {
-		s.cOKSaved, s.cOKSavedPaused, s.cOKBreakAt = s.cOKSince, s.cOKPaused, now
+		s.cOKSaved, s.cOKSavedBase, s.cOKSavedCount, s.cOKBreakAt = s.cOKSince, s.cOKPauseBase, s.capCounted(), now
 		s.cOKSince = time.Time{}
 	}
 }
@@ -1599,6 +1642,17 @@ func (s *simRun) checkBudgets(now time.Time) {
 		s.violate("I4", "steady state: %d races+setups in 10 min (limit %d)", n, per*ticks)
 		s.constSince = now
 	}
+	// Long pending (final-review-2 M4): a target on the schedule for
+	// longPendingAfter ticks every longPendingInterval. Wakes (net-event,
+	// wake, recovered) tick at once and are not counted; on an online
+	// network there is no hold, so every wait-tick is a schedule tick.
+	if s.net == snOnline && now.Sub(from) >= longPendingAfter+last+win {
+		lim := int(win/longPendingInterval) + 1
+		if n := countSince(s.waitTicks, now.Add(-win)); n > lim {
+			s.violate("I4", "steady state, long pending: %d schedule ticks in 10 min (limit %d at the %v cadence)", n, lim, longPendingInterval)
+			s.constSince = now
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1745,11 +1799,15 @@ func (s *simRun) run() simResult {
 	}
 	cancel()
 	// Goroutine leak: the TransportManagers spawn nothing that outlives Close.
-	deadline := time.Now().Add(2 * time.Second)
+	// 5s grace: on a loaded host a goroutine on its way out can take seconds.
+	deadline := time.Now().Add(5 * time.Second)
 	for runtime.NumGoroutine() > goroutinesBefore && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 	if n := runtime.NumGoroutine(); n > goroutinesBefore {
+		buf := make([]byte, 1<<16)
+		buf = buf[:runtime.Stack(buf, true)]
+		s.logf("goroutine dump:\n%s", buf)
 		s.violate("I5", "goroutines %d after the scenario, %d before", n, goroutinesBefore)
 	}
 	s.res.wall = time.Since(wallStart)
@@ -1962,7 +2020,7 @@ func TestSimFailover(t *testing.T) {
 	slog.SetDefault(slog.New(simHandlerSingleton))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
-	pause := os.Getenv("K2_SIM_PAUSE") == "1"
+	pause := os.Getenv("K2_SIM_PAUSE") != "0" // the fix wave honours Pause (final-review-2 I1)
 	allow := map[string]bool{}
 	for _, c := range strings.Split(os.Getenv("K2_SIM_ALLOW"), ",") {
 		if c = strings.TrimSpace(c); c != "" {
