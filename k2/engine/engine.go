@@ -2280,13 +2280,22 @@ func (e *Engine) phaseA(ctx context.Context, target *outboundTransport, dd wire.
 		closeRaceResult(result)
 		return nil, true
 	}
-	if !e.applyReRaceResult(target, result) {
+	installed := e.applyReRaceResult(target, result)
+	if !installed {
 		// target no longer live — dispose of new Dialer and move on
 		closeRaceResult(result)
 	}
 	e.mu.Lock()
 	target.reRaceFailStreak = 0
 	e.mu.Unlock()
+	if installed {
+		// The node just answered a full race: a runtime wire error left by
+		// proxy dials while it was unreachable (typically 503 during a hold or
+		// a no-candidates retry) is stale. Without this it showed as
+		// connected+503 until the next successful user dial (PVE S3/S6:
+		// 1-8s). 401/402 stay sticky — ClearWireError never clears them.
+		e.ClearWireError()
+	}
 	return nil, false
 }
 

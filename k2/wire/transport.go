@@ -511,6 +511,18 @@ type TransportManager struct {
 	// Post-reset grace: first QUIC dial after Reset gets extended budget.
 	freshAfterReset atomic.Bool
 
+	// User-dial connect-failure evidence (dial_failure.go): the only signal
+	// that a node refusing/killing every connection is dead while no cached
+	// connection exists for the echo probe to test. connFailSeq counts
+	// connect-level failures of user dials (Dial* — never the echo probe or
+	// wire's own recovery probe); connFailAt is the newest one still
+	// unresolved (0 = none: a later answered dial, Reset, ResetConnections or
+	// ReplacePrimary clears it). connGen is bumped by those clears so a dial
+	// that straddles one does not record evidence about the old connection.
+	connFailSeq atomic.Uint64
+	connFailAt  atomic.Int64 // UnixNano; 0 = no unresolved failure
+	connGen     atomic.Uint64
+
 	// Background QUIC probe: actively tests QUIC recovery during fallback.
 	probeCancel context.CancelFunc
 
@@ -1038,6 +1050,9 @@ func (tm *TransportManager) ReplacePrimary(d Dialer, transportType string) {
 	tm.flapDampedLoggedWindow = time.Time{}
 	tm.mu.Unlock()
 	tm.quicEchoRecovered.Store(false)
+	// The connect failures were against the old connection; the re-race
+	// that produced d just connected.
+	tm.clearConnFailure()
 
 	// Close old primary outside lock (Rule #4).
 	if old != nil {
@@ -1124,6 +1139,13 @@ func (tm *TransportManager) FallbackActive() bool {
 // DialTCP opens a TCP proxy connection.
 // Prefers QUIC, falls back to TCP-WS. Tracks fallback state for recovery.
 func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
+	gen := tm.connGen.Load()
+	c, err := tm.dialTCP(ctx, addr, earlyData)
+	tm.recordUserDial(ctx, gen, err, time.Now())
+	return c, err
+}
+
+func (tm *TransportManager) dialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 	tm.mu.RLock()
 	primary := tm.primary
 	primaryType := tm.primaryType
@@ -1206,6 +1228,13 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData 
 // availability, so it is excluded from recordDialOutcome entirely (neither
 // success nor failure).
 func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
+	gen := tm.connGen.Load()
+	c, err := tm.dialUDP(ctx, addr)
+	tm.recordUserDial(ctx, gen, err, time.Now())
+	return c, err
+}
+
+func (tm *TransportManager) dialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	tm.mu.RLock()
 	primary := tm.primary
 	primaryType := tm.primaryType
@@ -1273,6 +1302,13 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 // DialStreamUDP opens a stream-backed UDP session (reliable).
 // Prefers QUIC stream, falls back to TCP-WS (already stream-based).
 func (tm *TransportManager) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
+	gen := tm.connGen.Load()
+	c, err := tm.dialStreamUDP(ctx, addr)
+	tm.recordUserDial(ctx, gen, err, time.Now())
+	return c, err
+}
+
+func (tm *TransportManager) dialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	tm.mu.RLock()
 	primary := tm.primary
 	primaryType := tm.primaryType
@@ -1625,6 +1661,7 @@ func (tm *TransportManager) ResetConnections() {
 		"activeChannel", tm.ActiveChannel(),
 	)
 	tm.resetDialers()
+	tm.clearConnFailure()
 	tm.quicEchoRecovered.Store(false)
 	tm.freshAfterReset.Store(true)
 	// The data-path window (dpRing) is same-path evidence like the scores
@@ -1659,6 +1696,7 @@ func (tm *TransportManager) Reset() {
 		"wasFallback", tm.FallbackActive(),
 	)
 	tm.resetDialers()
+	tm.clearConnFailure()
 
 	tm.mu.Lock()
 	tm.selState = selectorState{active: "quic"}
