@@ -122,6 +122,10 @@ export interface ClientConfig {
   // stream for per-device traffic attribution. Observation only on the server —
   // never an auth-exemption signal.
   client_version?: string;
+  // Ordered fallback k2v5:// URLs keyed by the exact route `via` string.
+  fallbacks?: Record<string, string[]>;
+  // Network-reachability probe targets (expected HTTP status, optional exact body).
+  netcheck?: { url: string; status: number; body?: string }[];
 }
 
 export const CLIENT_CONFIG_DEFAULTS: ClientConfig = {

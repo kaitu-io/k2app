@@ -29,9 +29,25 @@ type ClientConfig struct {
 	Telemetry     TelemetryConfig `yaml:"telemetry,omitempty" json:"telemetry,omitempty"`           // anonymous usage telemetry (Phase 1: rule miss)
 	ClientVersion string          `yaml:"client_version,omitempty" json:"client_version,omitempty"` // client app version, forwarded to the node via the metadata stream for per-device attribution. Set by the webapp; "" = legacy/unknown.
 
+	// Fallbacks maps a primary route via (exact string match) to ordered
+	// fallback k2v5:// URLs the engine may switch to when the primary is dead.
+	// Sanitized by ValidateClient: non-k2v5 entries and unknown keys are dropped.
+	Fallbacks map[string][]string `yaml:"fallbacks,omitempty" json:"fallbacks,omitempty"`
+	// Netcheck lists endpoints used to judge whether the local network is up.
+	Netcheck []NetcheckTarget `yaml:"netcheck,omitempty" json:"netcheck,omitempty"`
+
 	// Derived fields (not serialized to YAML/JSON).
 	Server string `yaml:"-" json:"-"` // first k2v5:// URL from routes
 
+}
+
+// NetcheckTarget is one network-reachability probe target.
+// Status is the expected HTTP status (204 or 200); a non-empty Body must equal
+// the response body exactly.
+type NetcheckTarget struct {
+	URL    string `json:"url"            yaml:"url"`
+	Status int    `json:"status"         yaml:"status"`
+	Body   string `json:"body,omitempty" yaml:"body,omitempty"`
 }
 
 // TelemetryConfig groups anonymous telemetry sub-features. Zero value means

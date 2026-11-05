@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 )
@@ -221,5 +222,36 @@ func TestIsOutboundURL_RespectsReservedSchemes(t *testing.T) {
 		if got := IsOutboundURL(via); got != want {
 			t.Errorf("IsOutboundURL(%q) = %v, want %v", via, got, want)
 		}
+	}
+}
+
+func TestClientConfig_FallbacksAndNetcheckRoundTrip(t *testing.T) {
+	raw := `{"routes":[{"via":"k2v5://a"}],"fallbacks":{"k2v5://a":["k2v5://b","k2subs://x","direct"]},"netcheck":[{"url":"http://c/generate_204","status":204}]}`
+	var cfg ClientConfig
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateClient(&cfg); err != nil {
+		t.Fatal(err)
+	}
+	got := cfg.Fallbacks["k2v5://a"]
+	if len(got) != 1 || got[0] != "k2v5://b" {
+		t.Errorf("fallbacks = %v, want [k2v5://b]", got)
+	}
+	if len(cfg.Netcheck) != 1 || cfg.Netcheck[0].Status != 204 {
+		t.Errorf("netcheck = %+v", cfg.Netcheck)
+	}
+}
+
+func TestClientConfig_FallbackForUnknownPrimaryDropped(t *testing.T) {
+	cfg := ClientConfig{
+		Routes:    []RouteConfig{{Via: "k2v5://a"}},
+		Fallbacks: map[string][]string{"k2v5://zzz": {"k2v5://b"}},
+	}
+	if err := ValidateClient(&cfg); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Fallbacks) != 0 {
+		t.Errorf("fallbacks = %v, want empty", cfg.Fallbacks)
 	}
 }
