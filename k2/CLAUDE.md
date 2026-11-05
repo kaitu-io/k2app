@@ -85,7 +85,7 @@ No package doc yet for these: `signal.Store.mu` (RWMutex) → `PeerEntry.WriteMu
 Layers: Platform Shell → Engine → Core → Provider → Wire.
 1. **No upward imports** (wire must not import engine; core must not import daemon).
 2. **No type assertion of a layer interface to a lower layer's concrete type** (`tm.primary.(*QUICClient)`) — with a third transport or a test mock the assertion silently becomes a no-op.
-3. **Optional capabilities use a registered interface** defined in the lower package; the upper layer asserts on the interface. Registered: `wire.StatsProvider` (QUICClient, TCPWSClient → engine stats), `wire.EchoProber` (QUICClient, TCPWSClient → engine echo probe). **Add new ones to this list.**
+3. **Optional capabilities use a registered interface** defined in the lower package; the upper layer asserts on the interface. Registered: `wire.StatsProvider` (QUICClient, TCPWSClient → engine stats), `wire.EchoProber` (QUICClient, TCPWSClient → engine echo probe), `engine.URLOwner` (subscription.Manager → engine compositeProvider), `wire.CurrentDialer` (SwappableDialer → core wireOutbound: dial the installed inner Dialer, drop the wire-error report if it was swapped out mid-dial). **Add new ones to this list.**
 
 ## Resource Ownership
 

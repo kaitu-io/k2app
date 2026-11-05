@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sasha-s/go-deadlock"
@@ -41,13 +43,25 @@ const (
 // (e.g. daemon.mu). See CLAUDE.md Lock Ordering Graph.
 // handler.OnStatus is called OUTSIDE engine.mu (read-copy-act pattern).
 type Engine struct {
-	mu          deadlock.Mutex
-	state       string
-	paused      bool
+	mu     deadlock.Mutex
+	state  string
+	paused bool
+	// pausedAt (on holdNow's clock) is when the current pause began;
+	// pausedTotal accumulates finished pauses. The exhaustion cap subtracts
+	// paused time (retrySet.counted): a paused engine does no retry work, so
+	// its time must not count toward exhaustFailAfter. Guarded by e.mu.
+	pausedAt    time.Time
+	pausedTotal time.Duration
 	client      *config.ClientConfig
 	connectedAt time.Time
 	lastError   *EngineError
 	handler     EventHandler
+
+	// holdErr is set while the engine holds a connected session waiting for
+	// the user's network (netcheck verdict iface-down / no-internet /
+	// captive). Non-nil makes buildStatusLocked report reconnecting + this
+	// reason. Guarded by e.mu; cleared in Stop and fail.
+	holdErr *EngineError
 
 	cancel         context.CancelFunc
 	tunnel         *core.ClientTunnel
@@ -63,8 +77,43 @@ type Engine struct {
 	outboundTMs  []*outboundTransport // all wire TMs, for health/reconnect
 	primaryTM    *outboundTransport   // first k2v5 route's TM (DNS transport)
 	directDialer wire.DirectDialer
+	// directTrack wraps cfg.DirectDialer for the core direct outbound only;
+	// its LastOK is passive "direct traffic still works" evidence for the
+	// netcheck verdict. Written once per Start (under e.mu at commit).
+	directTrack  *trackingDialer
 	reRaceChan   chan *outboundTransport
 	reRaceCancel context.CancelFunc
+	// replaceLoopIdle (test-only, nil in production) is called each time
+	// outboundReplaceLoop is about to block waiting for its next event.
+	replaceLoopIdle func()
+
+	// netcheck actively probes cfg.Client.Netcheck targets outside the tunnel
+	// (netChecker.run); netcheckTargets labels its results in DIAG: netcheck.
+	// Written once per Start (under e.mu at commit), read by judgeNet.
+	netcheck        func(ctx context.Context) ([]checkResult, []time.Duration)
+	netcheckTargets []config.NetcheckTarget
+
+	// holdWake (cap 1) wakes a network hold and the retry schedule at once,
+	// instead of waiting out the backoff timer. The value is the netcheck
+	// trigger: "net-event" (doNetworkReconnect, after its pushes) or "wake"
+	// (Wake, the end of a Pause — paused ticks did nothing). A token already
+	// pending wins; both kinds act the same apart from the label. Created in
+	// New, never replaced.
+	holdWake chan string
+	// recoveredWake (cap 1) carries a target the health monitor saw answer
+	// again (targetRecovered). The replace loop ticks it at once when it is
+	// on the retry schedule (final-review-2 M8), and a network hold re-judges
+	// at once when it is the held target (device D2): status clears without
+	// waiting out a 30/60s step. Not a re-race signal (review C): at most
+	// one tick per holdBackoff[0] since the last attempt
+	// (retrySet.recoveredDue / holdUntilOnline). Created in New.
+	recoveredWake chan *outboundTransport
+	// holdTimerFn arms one hold backoff timer, returning its channel and a
+	// stop func. Real timer in production (New); tests inject a fake.
+	holdTimerFn func(d time.Duration) (<-chan time.Time, func())
+	// holdNow is the clock the no-candidates retry schedule reads (time.Now
+	// in production; tests inject a fake that advances with fired timers).
+	holdNow func() time.Time
 
 	// wireMode, clientVersion and outboundProvider are snapshotted from Config
 	// at Start so the background outboundReplaceLoop can build replacement TMs
@@ -117,6 +166,26 @@ type outboundTransport struct {
 	// for a different server". Reset to 0 on any RaceTransport success
 	// or successful hot-swap. Guarded by e.mu.
 	reRaceFailStreak int
+
+	// fromShell: url was handed out by the shell provider (k2subs
+	// subscription.Manager) — at Start or by a Phase-B swap. Such a target
+	// answered ErrNoCandidates only because a subscription refresh dropped or
+	// re-keyed its URL; that is an exhaustion (capped → OnOutboundFatal → k2r
+	// rebuilds from a fresh subscription; the desktop daemon only logs it and
+	// ends disconnected 503), not manual mode (R1
+	// review M-4). Guarded by e.mu.
+	fromShell bool
+
+	// scheduled: on the replace loop's retry schedule (retrySet.schedule
+	// sets, leave and the loop's exit clear). Read by the health monitor's
+	// targetRecovered so an answering node wakes the loop only for a
+	// scheduled target — not on every echo success (final-review-2 M8).
+	scheduled atomic.Bool
+	// held: blocked in a network hold (holdUntilOnline sets it for its
+	// target, clears it on return). targetRecovered wakes the hold the same
+	// way it wakes the schedule (device D2: the node carried traffic 2s after
+	// the network came back, the hold ended ~29s later at its backoff tick).
+	held atomic.Bool
 }
 
 // reRaceFailThresholdForReplace is the RaceTransport-failure count after
@@ -128,7 +197,11 @@ const reRaceFailThresholdForReplace = 2
 // New creates a new Engine in the disconnected state.
 func New() *Engine {
 	return &Engine{
-		state: StateDisconnected,
+		state:         StateDisconnected,
+		holdWake:      make(chan string, 1),
+		recoveredWake: make(chan *outboundTransport, 1),
+		holdTimerFn:   realHoldTimer,
+		holdNow:       time.Now,
 	}
 }
 
@@ -353,7 +426,10 @@ func (e *Engine) Start(cfg Config) error {
 	// Each unique k2v5:// URL gets its own TransportManager via setupOutboundTransport.
 	// Multiple URLs race in parallel (errgroup). buildOutboundMap already deduplicates.
 	outbounds := make([]core.Outbound, 2+len(outboundMap))
-	outbounds[outboundDirect] = core.NewDirectOutbound(cfg.DirectDialer)
+	// Only the core direct exit is tracked — see trackingDialer for why wire
+	// dials and DNS direct keep the raw cfg.DirectDialer.
+	directTrack := newTrackingDialer(cfg.DirectDialer)
+	outbounds[outboundDirect] = core.NewDirectOutbound(directTrack)
 	outbounds[outboundReject] = nil
 
 	// Collect unique k2v5 URLs in config route order (deterministic).
@@ -521,6 +597,22 @@ func (e *Engine) Start(cfg Config) error {
 		}
 	}
 
+	// 8.5. Netcheck (failover network verdict, outboundReplaceLoop): probes go
+	// out through the raw DirectDialer (protected on Android, never the TUN)
+	// and resolve with a direct DNS client of their own (netcheckDNSServers)
+	// — in proxy mode too, where no DNS middleware exists.
+	var netcheckDNSOpts []dns.DirectDNSOption
+	if dc, ok := cfg.DirectDialer.(wire.DialerController); ok {
+		netcheckDNSOpts = append(netcheckDNSOpts, dns.WithDialer(&net.Dialer{Control: dc.ControlFunc()}))
+	}
+	netChecker := newNetChecker(client.Netcheck, cfg.DirectDialer,
+		directResolve(dns.NewDirectDNSClient(netcheckDNSServers(client), netcheckDNSOpts...).Query))
+
+	// The provider is built (and asked which URLs the shell owns) before
+	// e.mu: OwnsURL takes the shell's own locks.
+	composite := newCompositeProvider(newStaticProvider(client.Fallbacks, time.Now), cfg.OutboundProvider)
+	shellURLs := shellOrigins(composite, allOTs)
+
 	// 9. Commit — verify not cancelled before saving resources.
 	e.mu.Lock()
 	if ctx.Err() != nil {
@@ -558,19 +650,28 @@ func (e *Engine) Start(cfg Config) error {
 	// Start health monitor (1Hz wire stats sampling + health FSM).
 	hm := newHealthMonitor(primaryOT, allOTs, tunnel, cfg.HealthCallback, func() { e.onHealthCritical() }, time.Now())
 	hm.mobilePowerSaving = cfg.MobilePowerSaving
+	e.wireHealthNetUp(hm)
+	e.wireHealthRecovered(hm)
 	hm.start()
 	e.health = hm
 
 	// Store directDialer for re-race (avoids re-parsing URL).
 	e.directDialer = cfg.DirectDialer
+	e.directTrack = directTrack
 
 	// Snapshot Config fields that outboundReplaceLoop needs long after Start
-	// returns. WireMode is immutable after Start; OutboundProvider is
-	// expected to be long-lived (daemon implements it). Nil provider is
-	// fine — the loop then skips the Phase-B escalation branch and behaves
-	// like today (Phase-A only).
+	// returns. WireMode is immutable after Start; the shell's
+	// OutboundProvider (desktop/gateway subscription manager, may be nil) is
+	// expected to be long-lived. Every platform gets a compositeProvider:
+	// static ClientConfig.Fallbacks first, then the shell provider for URLs
+	// it owns; a URL nobody owns answers ErrNoCandidates (retry in place).
 	e.wireMode = cfg.WireMode
-	e.outboundProvider = cfg.OutboundProvider
+	e.outboundProvider = composite
+	for _, ot := range allOTs {
+		ot.fromShell = shellURLs[ot]
+	}
+	e.netcheck = netChecker.run
+	e.netcheckTargets = client.Netcheck
 
 	// Re-race loop: replaces recoveryProbe.
 	e.reRaceChan = make(chan *outboundTransport, 1)
@@ -660,11 +761,18 @@ func (e *Engine) reconnect(preserveScoreboard bool) bool {
 	outboundTMs := e.outboundTMs
 	pdns := e.proxyDNS
 	dh := e.dnsH
+	// Transient reconnecting push. While holding, buildStatusLocked already
+	// reports reconnecting with the hold reason — keep it rather than
+	// flashing a reason-less reconnecting.
+	rs := Status{State: StateReconnecting}
+	if e.holdErr != nil {
+		rs = e.buildStatusLocked()
+	}
 	e.mu.Unlock()
 
 	// Notify handler of transient reconnecting state (for UI feedback).
 	if handler != nil {
-		handler.OnStatus(Status{State: StateReconnecting})
+		handler.OnStatus(rs)
 	}
 
 	// Reset order matters (shared transports — see comment in Start):
@@ -705,6 +813,13 @@ func (e *Engine) reconnect(preserveScoreboard bool) bool {
 // TransportManager.Reset and forgets the health-reconnect backoff.
 func (e *Engine) doNetworkReconnect() {
 	slog.Info("engine: network reconnect")
+	// A hold in outboundReplaceLoop re-judges the network now rather than
+	// waiting out its backoff. Deferred, so the wake happens only after
+	// pathReconnect has DELIVERED its status pushes: those are built while
+	// the hold is still set, and a wake sent first lets the hold clear and
+	// push "connected" before them — the stale "reconnecting" would then be
+	// the last status the UI sees.
+	defer e.wakeHold()
 	e.pathReconnect(false)
 }
 
@@ -848,6 +963,7 @@ func (e *Engine) Pause() {
 		return
 	}
 	e.paused = true
+	e.pausedAt = e.holdNow()
 	slog.Info("engine: paused")
 	handler := e.handler
 	outboundTMs := e.outboundTMs
@@ -867,6 +983,23 @@ func (e *Engine) Pause() {
 	}
 }
 
+// netcheckDNSServers is the netcheck's resolver list: ClientConfig.NetcheckDNS
+// when set, else the direct resolvers (DNS.Direct). final-review-2 M6.
+func netcheckDNSServers(client *config.ClientConfig) []string {
+	if len(client.NetcheckDNS) > 0 {
+		return client.NetcheckDNS
+	}
+	return client.DNS.Direct
+}
+
+// pauseState reports whether the engine is paused and the total length of
+// its finished pauses (see pausedTotal).
+func (e *Engine) pauseState() (bool, time.Duration) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.paused, e.pausedTotal
+}
+
 // Wake restores the engine after a Pause, forcing fresh transport connections.
 func (e *Engine) Wake() {
 	e.mu.Lock()
@@ -875,12 +1008,19 @@ func (e *Engine) Wake() {
 		return
 	}
 	e.paused = false
+	if d := e.holdNow().Sub(e.pausedAt); d > 0 {
+		e.pausedTotal += d
+	}
 	slog.Info("engine: woke")
 	handler := e.handler
 	outboundTMs := e.outboundTMs
 	pdns := e.proxyDNS
 	s := e.buildStatusLocked()
 	e.mu.Unlock()
+	// A hold / the retry schedule skipped every tick while paused
+	// (final-review-2 I1): attempt now. Deferred past the status push, like
+	// doNetworkReconnect's wake.
+	defer e.wakeHoldFor("wake")
 
 	// Scoreboard-preserving, same as Pause — see its doc comment.
 	for _, ot := range outboundTMs {
@@ -1005,6 +1145,7 @@ func (e *Engine) Stop() error {
 	e.connectedAt = time.Time{}
 	e.paused = false
 	e.lastError = nil // unconditional clear on stop
+	e.holdErr = nil
 	e.setStateLocked(StateDisconnected)
 	stopHandler := e.handler
 	stopStatus := e.buildStatusLocked()
@@ -1082,16 +1223,35 @@ func (e *Engine) GetStatus() Status {
 // (native getStatusJSON, webapp initial fetch, 15s safety-net poll) must see
 // "paused" here too, otherwise the one-shot OnStatus(StatePaused) push gets
 // immediately overwritten by the next poll reporting "connected".
+//
+// holdErr overrides connected (not paused): while the engine waits for the
+// user's network it reports reconnecting + the netcheck reason. Every status
+// push and query must come through here so the hold cannot be bypassed.
+// An error the user must act on (401/402) outranks the hold: "renew your
+// membership" is actionable, "waiting for the network" is not.
 func (e *Engine) buildStatusLocked() Status {
 	state := e.state
 	if e.paused {
 		state = StatePaused
+	}
+	if e.holdErr != nil && state == StateConnected && !e.lastError.RequiresUserAction() {
+		return Status{
+			State:       StateReconnecting,
+			Error:       e.holdErr,
+			ConnectedAt: e.connectedAt,
+		}
 	}
 	return Status{
 		State:       state,
 		Error:       e.lastError,
 		ConnectedAt: e.connectedAt,
 	}
+}
+
+// setHoldLocked sets (non-nil) or clears (nil) the hold reason. Field write
+// only — caller holds e.mu and pushes the resulting status outside the lock.
+func (e *Engine) setHoldLocked(ee *EngineError) {
+	e.holdErr = ee
 }
 
 // StatusJSON returns the engine status as a JSON string.
@@ -1202,6 +1362,7 @@ func (e *Engine) fail(err error) error {
 	}
 	outbounds := e.outbounds
 	e.outbounds = nil
+	e.holdErr = nil
 
 	e.setStateLocked(StateDisconnected)
 	handler := e.handler
@@ -1590,6 +1751,16 @@ var raceTransportFn = wire.RaceTransport
 // Performs: ParseURL → resolveDialAddr → RaceTransport → TM setup.
 // The caller must close the returned outboundTransport on error paths.
 // Returns the outboundTransport and the TCP-WS dialer (for DNS transport from primary outbound).
+// raceCtxTimeout bounds every engine-side wire.RaceTransport (initial setup,
+// Phase-B candidate setup, Phase-A re-race). Derived from the race's own
+// worst case plus raceCtxMargin: a ctx that ends first cuts a slow-but-alive
+// node's metadata verdict into a bare timeout, which the replace loop reads
+// as node death (PVE S15). TestRaceCtxOutlivesWireWorstCase pins it.
+var raceCtxTimeout = wire.RaceWorstCase() + raceCtxMargin
+
+// raceCtxMargin is raceCtxTimeout's slack over wire.RaceWorstCase (≥ 1s).
+const raceCtxMargin = time.Second
+
 func setupOutboundTransport(
 	ctx context.Context,
 	via string,
@@ -1617,7 +1788,7 @@ func setupOutboundTransport(
 	// switch or re-race must never trigger a redundant Center cold-auth.
 	jar := wire.NewCookieJar()
 
-	raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
+	raceCtx, raceCancel := context.WithTimeout(ctx, raceCtxTimeout)
 	raceResult, err := wire.RaceTransport(raceCtx, wireCfg, wireCfg.DialAddr, directDialer, jar)
 	raceCancel()
 	if err != nil {
@@ -1999,7 +2170,10 @@ func (e *Engine) ReportWireError(err error) {
 // EngineError.RequiresUserAction for why 403 is deliberately not among them.
 func (e *Engine) ClearWireError() {
 	e.mu.Lock()
-	if e.lastError == nil || e.lastError.RequiresUserAction() {
+	// Not connected: lastError is the session's final verdict (fail() set
+	// it, or Stop is clearing it) — a late clear from a dial or a Phase-A /
+	// Phase-B success racing that must not erase it (review N3).
+	if e.state != StateConnected || e.lastError == nil || e.lastError.RequiresUserAction() {
 		e.mu.Unlock()
 		return
 	}
@@ -2014,24 +2188,49 @@ func (e *Engine) ClearWireError() {
 }
 
 // outboundReplaceLoop waits for wire-health signals (currently: echoLoop's
-// 3-consecutive-fail) and responds in two escalating phases:
+// 3-consecutive-fail) and responds in escalating phases:
 //
 //	Phase A — same-server wire re-race. Runs wire.RaceTransport against the
 //	  outbound's current URL. On success, hot-swaps the winning Dialer into
-//	  the existing TransportManager via ReplacePrimary/SwapTCPWS. Same
-//	  behavior as the pre-Step-3 reRaceLoop.
+//	  the existing TransportManager via ReplacePrimary/SwapTCPWS, and clears
+//	  any no-candidates hold.
 //
-//	Phase B — server replacement. After reRaceFailThresholdForReplace
-//	  consecutive Phase-A failures, asks OutboundProvider for a DIFFERENT
-//	  k2v5:// URL, builds a fresh TransportManager in the background, and
-//	  atomically swaps it into target.swappable. The old TM is Closed
-//	  immediately — in-flight smux / QUIC streams receive ConnectionClosed
-//	  within ms and application layers retry. TUN / provider / DNS hijack
-//	  stay alive throughout (zero DNS-leakage window).
+//	Network verdict — after reRaceFailThresholdForReplace consecutive
+//	  Phase-A failures, judgeNet("pre-phaseB") asks whether the USER's
+//	  network works before blaming the node. If not (101 iface down / 106 no
+//	  internet / 107 captive), the loop holds (holdUntilOnline): reconnecting
+//	  + reason, tunnel kept, no candidate spent. Every hold wake also tries
+//	  one Phase-A on the current node (the verdict may be wrong); success
+//	  ends the hold. Back online → one Phase-A on the current node; only if
+//	  that fails does Phase B run. No netcheck targets (k2r gateway, CLI,
+//	  old webapp) → verdict unknown → no gating at all: the loop behaves as
+//	  it did before the verdict existed (only iface-down still holds).
 //
-// If Phase B's provider is nil (appext / gateway) or returns ErrExhausted
-// (all subscription tunnels already tried and failed), the loop fires
-// handler.OnOutboundFatal and calls e.fail to terminate the tunnel.
+//	Phase B — server replacement. Asks the OutboundProvider (always a
+//	  compositeProvider: static ClientConfig.Fallbacks, then the shell's
+//	  URLOwner provider) for a DIFFERENT k2v5:// URL, builds a fresh
+//	  TransportManager, and atomically swaps it into target.swappable
+//	  (replaceOutboundServer). TUN / provider / DNS hijack stay alive.
+//	  - ErrNoCandidates (manual mode / no fallbacks): no fail and no blocking
+//	    — the target joins the loop's retrySet: timed Phase-A on the hold
+//	    backoff from the loop's own select (also on its echo signals and on
+//	    holdWake), hold 503 (or the network's reason) while any is pending.
+//	  - Exhausted: judgeNet("pre-exhaust") again — always an active probe,
+//	    never passive evidence (it may predate the outage). Network broken →
+//	    it died mid-failover, so the nodes excluded on the way may be
+//	    innocent: Reset() the provider's exclusions and hold. Online/unknown
+//	    → an account verdict (sticky 401/402 lastError, or every candidate
+//	    rejected with a coded 401/402/403) fails at once; anything else goes
+//	    on the retrySet (reconnecting 503, DIAG: outbound-exhausted), whose
+//	    ticks re-run Phase A then Phase B. Only exhaustFailAfter (10 min) of
+//	    continuous online exhaustion fails the engine (failAtExhaustCap →
+//	    OnOutboundFatal + e.fail 503) — R1: a misread "node dead" can no
+//	    longer disconnect.
+//
+// A 401/402/403 re-race rejection skips all of this: it is Center's verdict
+// on the device, no node can fix it, so the loop fails with it. Those two
+// (failIfUserAction, failAtExhaustCap) are the loop's only ways to end the
+// session (TestReplaceLoopFailSitesAllowList).
 //
 // Known TOCTOU (P2, not fixed): If Stop() fires between the ctx.Err() check
 // and ReplacePrimary, and tm.Close() wins the tm.mu race, the new Dialer is
@@ -2039,11 +2238,68 @@ func (e *Engine) ClearWireError() {
 // reclaims it. Fix: add a WaitGroup so Stop() waits for this loop to exit
 // before calling tm.Close(). Carry-over from reRaceLoop.
 func (e *Engine) outboundReplaceLoop(ctx context.Context) {
+	e.mu.Lock()
+	retries := newRetrySet(e.holdTimerFn, e.holdNow)
+	e.mu.Unlock()
+	retries.paused = e.pauseState
+	defer retries.disarm()
+	defer retries.clear()
+
 	for {
+		retries.arm()
+		if e.replaceLoopIdle != nil {
+			e.replaceLoopIdle() // test hook: the loop is about to block
+		}
+		var wake <-chan string
+		if len(retries.pending) > 0 {
+			wake = e.holdWake // a network event / Wake retries every pending outbound now
+		}
 		var target *outboundTransport
 		select {
 		case <-ctx.Done():
 			return
+		case <-retries.ch:
+			retries.fired()
+			if paused, _ := e.pauseState(); paused {
+				// Paused (iOS screen lock, Android memory trim): no netcheck,
+				// no race — a race would reinstall the connections Pause
+				// released. Targets keep their place; Wake ticks them
+				// (final-review-2 I1).
+				retries.deferDue()
+				continue
+			}
+			for _, t := range retries.due() {
+				if !e.retryOnce(ctx, retries, t, "wait-tick", "wait-tick") {
+					return
+				}
+			}
+			e.setHold(ctx, retries.hold())
+			continue
+		case trigger := <-wake:
+			if paused, _ := e.pauseState(); paused {
+				continue // Wake pokes again when the pause ends
+			}
+			for _, t := range retries.all() {
+				if !e.retryOnce(ctx, retries, t, trigger, "wait-tick") {
+					return
+				}
+			}
+			e.setHold(ctx, retries.hold())
+			continue
+		case t := <-e.recoveredWake:
+			// The health monitor saw t's node answer (final-review-2 M8):
+			// tick it now instead of after its 30/60s step. A tick, not a
+			// re-race signal — at most one per holdBackoff[0], so a node
+			// whose echo answers while its race still fails cannot spin the
+			// loop (review C).
+			if paused, _ := e.pauseState(); paused || !retries.recoveredDue(t) {
+				continue
+			}
+			if !e.retryOnce(ctx, retries, t, "recovered", "wait-tick") {
+				return
+			}
+			e.setHold(ctx, retries.hold())
+			continue
 		case target = <-e.reRaceChan:
 		}
 
@@ -2059,41 +2315,36 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 		if target == nil || target.tm == nil {
 			continue
 		}
-
-		// --- Phase A: same-server re-race --------------------------------
-		slog.Warn("DIAG: transport-rerace",
-			"reason", "echo-consecutive-fail",
-			"outbound", target.name,
-			"previousTransport", target.tm.PrimaryType(),
-		)
-
-		raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
-		result, raceErr := raceTransportFn(raceCtx, target.wireCfg, target.wireCfg.DialAddr, dd, target.jar)
-		raceCancel()
-
-		if raceErr == nil {
-			if ctx.Err() != nil {
-				result.Dialer.Close()
-				if result.QUICBackup != nil {
-					result.QUICBackup.Close()
-				}
-				return
-			}
-			if !e.applyReRaceResult(target, result) {
-				// target no longer live — dispose of new Dialer and move on
-				result.Dialer.Close()
-				if result.QUICBackup != nil {
-					result.QUICBackup.Close()
-				}
-			}
-			e.mu.Lock()
-			target.reRaceFailStreak = 0
-			e.mu.Unlock()
+		if paused, _ := e.pauseState(); paused {
+			// An echo signal while paused (sim PE): no race, no escalate — a
+			// race would reinstall what Pause released. Dropped; after Wake
+			// the probe signals again if the node is still failing.
 			continue
 		}
 
-		// Phase A failed.
-		slog.Warn("engine: re-race failed", "outbound", target.name, "err", raceErr)
+		if _, ok := retries.pending[target]; ok {
+			// On the retry schedule: only its timer and network events
+			// (holdWake) attempt it, so the 5/10/30s backoff holds. An echo
+			// signal would bypass it — with failing traffic the probe can
+			// signal every ~16s of run age (review C).
+			continue
+		}
+
+		raceErr, quit := e.phaseA(ctx, target, dd, "echo-consecutive-fail")
+		if quit {
+			return
+		}
+		if raceErr == nil {
+			continue
+		}
+		// 401/402 is Center's verdict on this device: another same-server
+		// re-race cannot change it, so fail on the FIRST one rather than
+		// waiting out a second echo-strike cycle for the streak (PVE S8: the
+		// first Phase-A already had the 402; waiting cost ~48s). Same as the
+		// hold / no-candidates paths, which check on every Phase-A.
+		if e.failIfUserAction(target, raceErr) {
+			return
+		}
 		e.mu.Lock()
 		target.reRaceFailStreak++
 		streak := target.reRaceFailStreak
@@ -2104,60 +2355,403 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 			continue
 		}
 		if provider == nil {
-			// No provider = no escalation path. Leave streak high; if the
-			// situation ever self-heals (e.g. upstream comes back up), a
-			// future Phase-A success will clear it. Matches pre-Step-3
-			// behavior (same-server retries forever).
+			// Only reachable in tests that build an Engine by hand: Start
+			// always installs a compositeProvider.
 			continue
 		}
-
-		// A 401/402 re-race rejection is Center's verdict on this device, not
-		// on this node: no replacement candidate can pass the same check, so
-		// don't spend them — fail with the error the user can act on.
-		// OnOutboundFatal still fires: the gateway relies on it to retry the
-		// saved session later (e.g. after the user renews).
-		if ce := ClassifyError(raceErr); ce.RequiresUserAction() {
-			e.mu.Lock()
-			handler := e.handler
-			outboundName := target.name
-			e.mu.Unlock()
-			slog.Error("engine: re-race rejected by account check, not replacing outbound",
-				"outbound", outboundName, "code", ce.Code, "err", raceErr)
-			_ = e.fail(ce)
-			if handler != nil {
-				handler.OnOutboundFatal(outboundName, ce)
-			}
+		res, exhaustErr, lastRaceErr := e.escalate(ctx, target, raceErr, dd, provider, retries.hold())
+		switch res {
+		case escExit:
 			return
-		}
-
-		// --- Phase B: ask provider for a replacement URL ----------------
-		if err := e.replaceOutboundServer(ctx, target, raceErr, dd, provider); err != nil {
-			// Exhausted or ctx cancelled. If it was ctx, just exit quietly.
-			if ctx.Err() != nil {
-				return
-			}
+		case escNoCandidates:
 			e.mu.Lock()
-			handler := e.handler
-			outboundName := target.name
-			sticky := e.lastError
+			name := target.name
 			e.mu.Unlock()
-			slog.Error("engine: outbound replacement exhausted",
-				"outbound", outboundName, "err", err)
-			if handler != nil {
-				handler.OnOutboundFatal(outboundName, err)
-			}
-			// A sticky 401/402 (ReportWireError, e.g. membership lapsed
-			// mid-session) is still the true cause: no node could have
-			// fixed it, so don't replace it with "server unreachable".
-			var failErr error = outboundExhaustedError(outboundName, err)
-			if sticky.RequiresUserAction() {
-				failErr = sticky
-			}
-			_ = e.fail(failErr)
-			return
+			slog.Warn("engine: no replacement candidates, retrying current outbound on a schedule", "outbound", name)
+			retries.reason = noCandidatesError(name)
+			retries.schedule(target, 0)
+		case escPaused:
+			// Pause landed before or during the escalation (sim PI): nothing
+			// learned, no cap. The target joins the schedule so Wake's
+			// immediate tick resumes it (Phase A, then Phase B).
+			name := e.targetName(target)
+			slog.Info("engine: paused during escalation, retrying on Wake", "outbound", name)
+			retries.reason = retryingHoldError(name)
+			retries.schedule(target, 0)
+		case escExhausted:
+			// Every candidate failed on a working network. Not a disconnect
+			// (R1): retry on the schedule; only exhaustFailAfter of sustained
+			// online exhaustion fails the engine (retryOnce → failAtExhaustCap).
+			retries.schedule(target, 0)
+			retries.enterExhausted(target, e.targetName(target), exhaustErr,
+				exhaustCounts(netOnline, lastRaceErr, exhaustErr))
 		}
-		// Successful swap — reRaceFailStreak reset inside replaceOutboundServer.
+		retries.notePhaseA(target, lastRaceErr)
+		// The loop owns the shown hold between events: the retry set's
+		// reason, or none. Also clears a leftover hold after a Phase-B swap.
+		e.setHold(ctx, retries.hold())
 	}
+}
+
+// escResult is how escalate ended.
+type escResult int
+
+const (
+	escDone         escResult = iota // recovered (Phase-A or Phase B)
+	escExit                          // ctx cancelled or the engine failed
+	escNoCandidates                  // node down, nothing to replace it: schedule retries (no cap)
+	escExhausted                     // every candidate failed on a working network: schedule retries (capped)
+	escHeld                          // the network died during the round: nothing learned, stay as scheduled
+	escPaused                        // a Pause landed during the round: aborted, stay (or go) on the schedule unchanged
+)
+
+// errPausedRound is replaceOutboundServer's error when a Pause landed during
+// the round: before a candidate setup, or after one succeeded (the fresh
+// TransportManager is closed, not swapped in — a swap would reinstall the
+// connections Pause released). Untried candidates are not excluded.
+var errPausedRound = errors.New("engine: paused during the replacement round")
+
+// retryingHoldError is the shown hold of a target that went on the retry
+// schedule because a Pause aborted its escalation (escPaused): its next tick
+// (Wake's) sets the real reason.
+func retryingHoldError(name string) *EngineError {
+	return newEngineError(ErrCodeServerUnreachable, "outbound "+name+" unreachable; retrying")
+}
+
+// targetName reads target.name under e.mu.
+func (e *Engine) targetName(target *outboundTransport) string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return target.name
+}
+
+// phaseA runs one same-server re-race on target. Returns the race error (nil
+// on success: result installed, streak reset; the caller owns the hold) and
+// quit=true when ctx was cancelled with a result in hand (the loop must exit).
+// reason is the DIAG: transport-rerace reason: echo-consecutive-fail (echo
+// signal), wait-tick (a wait's retry), network-back (first try after a hold).
+func (e *Engine) phaseA(ctx context.Context, target *outboundTransport, dd wire.DirectDialer, reason string) (error, bool) {
+	e.mu.Lock()
+	name := target.name
+	tm := target.tm
+	wireCfg := target.wireCfg
+	jar := target.jar
+	e.mu.Unlock()
+
+	slog.Warn("DIAG: transport-rerace",
+		"reason", reason,
+		"outbound", name,
+		"previousTransport", tm.PrimaryType(),
+	)
+
+	raceCtx, raceCancel := context.WithTimeout(ctx, raceCtxTimeout)
+	result, raceErr := raceTransportFn(raceCtx, wireCfg, wireCfg.DialAddr, dd, jar)
+	raceCancel()
+
+	if raceErr != nil {
+		slog.Warn("engine: re-race failed", "outbound", name, "err", raceErr)
+		return raceErr, false
+	}
+	if ctx.Err() != nil {
+		closeRaceResult(result)
+		return nil, true
+	}
+	installed := false
+	if paused, _ := e.pauseState(); paused {
+		// Paused while the race ran: the node answered, but installing would
+		// undo the release Pause made (final-review-2 I1). Wake's
+		// ResetConnections redials it lazily.
+		slog.Info("engine: re-race answered while paused, not installed", "outbound", name)
+	} else {
+		installed = e.applyReRaceResult(target, result)
+	}
+	if !installed {
+		// target no longer live (or paused) — dispose of new Dialer and move on
+		closeRaceResult(result)
+	}
+	e.mu.Lock()
+	target.reRaceFailStreak = 0
+	e.mu.Unlock()
+	if installed {
+		// The node just answered a full race: a runtime wire error left by
+		// proxy dials while it was unreachable (typically 503 during a hold or
+		// a no-candidates retry) is stale. Without this it showed as
+		// connected+503 until the next successful user dial (PVE S3/S6:
+		// 1-8s). 401/402 stay sticky — ClearWireError never clears them.
+		e.ClearWireError()
+	}
+	return nil, false
+}
+
+// wireHealthRecovered installs hm's recovery callback: when a target's node
+// answers again (an answered user dial ends its failure run, or an echo
+// succeeds) its Phase-A failure streak is reset. Phase-A failures from an
+// earlier outage must not count toward the next one — otherwise two
+// separate 20s refusals in one session reach Phase B (review A ruling). A
+// target on the retry schedule is also ticked at once (recoveredWake).
+func (e *Engine) wireHealthRecovered(hm *healthMonitor) {
+	hm.targetRecovered = func(ot *outboundTransport) {
+		e.mu.Lock()
+		ot.reRaceFailStreak = 0
+		e.mu.Unlock()
+		// A scheduled target ticks now (final-review-2 M8), a held one
+		// re-judges its hold now (device D2). Never blocks: a pending token
+		// is enough.
+		if ot.scheduled.Load() || ot.held.Load() {
+			select {
+			case e.recoveredWake <- ot:
+			default:
+			}
+		}
+	}
+}
+
+// wireHealthNetUp installs hm's network-up gate (healthMonitor.netUp) on the
+// engine's netCoordinator. Same pattern as onWakeReconnect: read netCoord
+// under e.mu, query it outside. Before netCoord exists (Start still running)
+// or after Stop cleared it, report up — the gate only ever withholds a
+// strike.
+func (e *Engine) wireHealthNetUp(hm *healthMonitor) {
+	hm.netUp = func() bool {
+		e.mu.Lock()
+		nc := e.netCoord
+		e.mu.Unlock()
+		return nc == nil || nc.isNetworkUp()
+	}
+}
+
+func closeRaceResult(r *wire.RaceResult) {
+	r.Dialer.Close()
+	if r.QUICBackup != nil {
+		r.QUICBackup.Close()
+	}
+}
+
+// failIfUserAction fails the engine with an account verdict and reports
+// true: a 401/402/403 re-race rejection (replaceLoopUserAction), a sticky
+// 401/402 lastError passed in at exhaustion, or an exhaustion where every
+// candidate was rejected with a coded 401/402/403 (exhaustedError). That is
+// Center's verdict on this device, not on this node: no replacement
+// candidate can pass the same check, so don't spend them. OnOutboundFatal
+// still fires: the gateway relies on it to retry the saved session later
+// (e.g. after the user renews).
+//
+// One of the replace loop's only two ways to end the session; the other is
+// failExhausted, from the exhaustion cap. TestReplaceLoopFailSitesAllowList
+// pins both.
+func (e *Engine) failIfUserAction(target *outboundTransport, raceErr error) bool {
+	ce := replaceLoopUserAction(raceErr)
+	if ce == nil {
+		return false
+	}
+	e.mu.Lock()
+	handler := e.handler
+	outboundName := target.name
+	e.mu.Unlock()
+	slog.Error("engine: re-race rejected by account check, not replacing outbound",
+		"outbound", outboundName, "code", ce.Code, "err", raceErr)
+	_ = e.fail(ce)
+	if handler != nil {
+		handler.OnOutboundFatal(outboundName, ce)
+	}
+	return true
+}
+
+// failIfExhaustedByAccount: a candidate exhaustion whose true cause is an
+// account verdict fails at once (failIfUserAction) instead of going on the
+// retry schedule — first a sticky lastError 401/402 (ReportWireError, e.g.
+// membership lapsed mid-session), then every candidate tried rejected with a
+// coded 401/402/403. A mix (some coded, some dead) is scheduled; at the cap
+// failExhausted still reports the coded verdict over 503.
+func (e *Engine) failIfExhaustedByAccount(target *outboundTransport, err error) bool {
+	e.mu.Lock()
+	sticky := e.lastError
+	e.mu.Unlock()
+	if sticky.RequiresUserAction() && e.failIfUserAction(target, sticky) {
+		return true
+	}
+	return e.failIfUserAction(target, err)
+}
+
+// escalate runs the network verdict / hold / Phase-B sequence for a target
+// whose Phase-A streak reached the threshold. restore is the hold the loop
+// shows outside this call (the no-candidates retry set's, or nil); a network
+// hold puts it back when it ends. On escExhausted the error is the round's
+// exhaustion (an *exhaustedError chain). The third result is the current
+// node's latest Phase-A error (for exhaustCounts).
+func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceErr error, dd wire.DirectDialer, provider OutboundProvider, restore *EngineError) (escResult, error, error) {
+	if paused, _ := e.pauseState(); paused {
+		// Pause landed during the Phase-A race that reached the threshold:
+		// no netcheck, no candidates (sim PI (d)). The caller schedules it.
+		return escPaused, nil, raceErr
+	}
+	// A network event from before this verdict is already reflected in it.
+	e.drainHoldWake()
+	v := e.judgeNet(ctx, "pre-phaseB")
+	for {
+		if ctx.Err() != nil {
+			return escExit, nil, raceErr
+		}
+		if v.blocksFailover() {
+			switch e.holdUntilOnline(ctx, target, dd, v, restore, raceErr) {
+			case holdExit:
+				return escExit, nil, raceErr
+			case holdRecovered:
+				e.dropQueuedSignal(target)
+				return escDone, nil, raceErr
+			}
+			if paused, _ := e.pauseState(); paused {
+				// Pause landed during the hold's last netcheck (sim PI): no
+				// network-back race. The caller schedules it; Wake ticks it.
+				return escPaused, nil, raceErr
+			}
+			// Back online: the current node first — it may only have looked
+			// dead because the network was.
+			var quit bool
+			raceErr, quit = e.phaseA(ctx, target, dd, "network-back")
+			if quit {
+				return escExit, nil, raceErr
+			}
+			if raceErr == nil {
+				e.dropQueuedSignal(target)
+				return escDone, nil, raceErr
+			}
+			e.mu.Lock()
+			target.reRaceFailStreak++
+			e.mu.Unlock()
+			if e.failIfUserAction(target, raceErr) {
+				return escExit, nil, raceErr
+			}
+		}
+
+		err := e.replaceOutboundServer(ctx, target, raceErr, dd, provider)
+		if triedNone(err) && !errors.Is(err, ErrNoCandidates) && ctx.Err() == nil {
+			// Not one candidate was tried: everything is still excluded from
+			// earlier rounds (a k2subs session's exclusions never expire —
+			// every past failover leaves its old node and failed candidates
+			// behind). A round that tried nothing learned nothing: forget the
+			// exclusions and run exactly one more round (review 4 concern 4).
+			if r, ok := provider.(interface{ Reset() }); ok {
+				r.Reset()
+			}
+			err = e.replaceOutboundServer(ctx, target, raceErr, dd, provider)
+		}
+		if err == nil {
+			return escDone, nil, raceErr // reRaceFailStreak reset inside replaceOutboundServer
+		}
+		if ctx.Err() != nil {
+			return escExit, nil, raceErr
+		}
+		if errors.Is(err, errPausedRound) {
+			return escPaused, nil, raceErr
+		}
+		if e.noCandidates(target, err) {
+			// Manual mode / no fallbacks: nothing to switch to. Never fail —
+			// the loop retries the current node on a schedule (retrySet)
+			// without blocking the other outbounds.
+			return escNoCandidates, nil, raceErr
+		}
+		if paused, _ := e.pauseState(); paused {
+			return escPaused, nil, raceErr // sim PI (c)
+		}
+
+		v = e.judgeNet(ctx, "pre-exhaust")
+		if ctx.Err() != nil {
+			return escExit, nil, raceErr
+		}
+		if v.blocksFailover() {
+			// The network died during the failover: the candidates excluded
+			// on the way may be innocent. Forget them, then hold.
+			if r, ok := provider.(interface{ Reset() }); ok {
+				r.Reset()
+			}
+			continue
+		}
+		if e.failIfExhaustedByAccount(target, err) {
+			return escExit, nil, raceErr
+		}
+		return escExhausted, err, raceErr
+	}
+}
+
+// failExhausted fails the engine for a target that has been exhausted on an
+// online network for exhaustFailAfter: OnOutboundFatal (k2r / the desktop
+// gateway rebuild the session on it), then e.fail(503) — unless a 401/402 is
+// the true cause, in which case no node could have fixed it and it is
+// reported as-is rather than "server unreachable" (spec §4.2). Precedence: a
+// sticky lastError 401/402 (ReportWireError, e.g. membership lapsed
+// mid-session), then the last 401/402/403 a candidate's setup was rejected
+// with in the last round (exhaustedError.userAction), then 503.
+//
+// Called from failAtExhaustCap only (TestReplaceLoopFailSitesAllowList).
+func (e *Engine) failExhausted(target *outboundTransport, err error) {
+	e.mu.Lock()
+	handler := e.handler
+	outboundName := target.name
+	sticky := e.lastError
+	e.mu.Unlock()
+	slog.Error("engine: outbound replacement exhausted",
+		"outbound", outboundName, "err", err)
+	if handler != nil {
+		handler.OnOutboundFatal(outboundName, err)
+	}
+	var failErr error = outboundExhaustedError(outboundName, err)
+	var x *exhaustedError
+	if errors.As(err, &x) && x.userAction != nil {
+		failErr = x.userAction
+	}
+	if sticky.RequiresUserAction() {
+		failErr = sticky
+	}
+	_ = e.fail(failErr)
+}
+
+// exhaustedError is replaceOutboundServer's error when the provider ran out
+// of candidates (Unwrap keeps errors.Is on the provider error working, e.g.
+// ErrNoCandidates for manual mode). tried == 0: nothing was set up this
+// round (everything still excluded). userAction: the last coded 401/402/403
+// a candidate's setup was rejected with; allUserAction: every candidate
+// tried was (an account verdict: fail at once, replaceLoopUserAction).
+type exhaustedError struct {
+	err           error
+	tried         int
+	userAction    *EngineError
+	allUserAction bool
+	allCodeLess   bool // tried > 0 and every candidate answered code-less (Center down)
+	anyCodeLess   bool // at least one candidate answered code-less: the round does not count toward the cap (sim FA)
+}
+
+func (x *exhaustedError) Error() string { return x.err.Error() }
+func (x *exhaustedError) Unwrap() error { return x.err }
+
+// noCandidates reports a provider answer of "nothing to switch to" that
+// means manual mode / no fallbacks (retry forever, no cap): ErrNoCandidates
+// for a target whose URL did not come from the shell provider. A shell
+// target answered it because a subscription refresh dropped its URL — that
+// is an exhaustion (R1 review M-4).
+func (e *Engine) noCandidates(target *outboundTransport, err error) bool {
+	if !errors.Is(err, ErrNoCandidates) {
+		return false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return !target.fromShell
+}
+
+// triedNone reports a provider exhaustion that set up no candidate at all.
+func triedNone(err error) bool {
+	var x *exhaustedError
+	return errors.As(err, &x) && x.tried == 0
+}
+
+// exhaustedTried is the candidate count of a provider exhaustion (0 if err
+// is not one).
+func exhaustedTried(err error) int {
+	var x *exhaustedError
+	if errors.As(err, &x) {
+		return x.tried
+	}
+	return 0
 }
 
 // applyReRaceResult installs a successful Phase-A RaceTransport result into
@@ -2221,24 +2815,63 @@ func (e *Engine) replaceOutboundServer(
 ) error {
 	e.mu.Lock()
 	currentURL := target.url
+	fromURL := target.url
+	fromName := target.name
 	wireMode := e.wireMode
 	clientVersion := e.clientVersion
 	e.mu.Unlock()
 	reason := lastWireErr
+	attempt := 0
+	// Last 401/402 from a candidate setup: not a reason to stop (one
+	// misconfigured node must not end the session), but if every candidate
+	// fails it is the true cause, not "server unreachable".
+	var userAction *EngineError
+	userActionCount := 0
+	// allCodeLess: every candidate tried answered the code-less legacy
+	// reject — the candidates are fine, Center is unreachable from them.
+	// Their exclusions are then Reset at exhaustion (review 3 I-2). Like
+	// every exhaustion it goes on the retry schedule (R1), whose ticks re-run
+	// Phase A and then Phase B, so it recovers on the current node or a
+	// candidate once auth works again (review N2 / B rulings).
+	allCodeLess := true
+	anyCodeLess := false
+	tried := 0
 
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 
+		attempt++
 		newURL, providerErr := provider.NextURL(currentURL, reason)
 		if providerErr != nil {
-			return fmt.Errorf("provider: %w", providerErr)
+			err := fmt.Errorf("provider: %w", providerErr)
+			if allCodeLess && tried > 0 {
+				// The candidates were excluded for a Center outage, not for
+				// being dead: forget the exclusions now. Every path that
+				// leaves the schedule relies on it (review 3 I-2) — a node
+				// dying within candidateExcludeTTL after the outage would
+				// otherwise find its live fallbacks still excluded.
+				// retryOnce also Resets before a tick's Phase B (harmless
+				// double).
+				if r, ok := provider.(interface{ Reset() }); ok {
+					r.Reset()
+				}
+				err = fmt.Errorf("every candidate rejected without an auth verdict (Center unreachable?): %w", err)
+			}
+			return &exhaustedError{err: err, tried: tried, userAction: userAction,
+				allUserAction: tried > 0 && userActionCount == tried,
+				allCodeLess:   tried > 0 && allCodeLess, anyCodeLess: anyCodeLess}
 		}
 		if newURL == "" {
 			return fmt.Errorf("provider returned empty URL")
 		}
 
+		if paused, _ := e.pauseState(); paused {
+			// Pause landed mid-round (sim PI (a)): no further setup. newURL
+			// was handed out, not excluded — it was never tried.
+			return errPausedRound
+		}
 		slog.Info("engine: attempting outbound replacement",
 			"outbound", target.name,
 			"newURL", config.TruncateVia(newURL))
@@ -2249,6 +2882,16 @@ func (e *Engine) replaceOutboundServer(
 				"outbound", target.name,
 				"tryURL", config.TruncateVia(newURL),
 				"err", setupErr)
+			tried++
+			if ce := replaceLoopUserAction(setupErr); ce != nil {
+				userAction = ce
+				userActionCount++
+			}
+			if isCodeLessReject(setupErr) {
+				anyCodeLess = true
+			} else {
+				allCodeLess = false
+			}
 			// Tell the provider this URL also failed so it excludes and
 			// returns the next candidate on the next call.
 			currentURL = newURL
@@ -2260,9 +2903,11 @@ func (e *Engine) replaceOutboundServer(
 			return ctx.Err()
 		}
 
-		// Verify target still alive and owned.
+		// Verify target still alive and owned, and the engine not paused
+		// (sim PI (b): a swap would reinstall what Pause released).
 		e.mu.Lock()
 		stillConnected := e.state == StateConnected
+		paused := e.paused
 		found := false
 		for _, ot := range e.outboundTMs {
 			if ot == target {
@@ -2276,6 +2921,15 @@ func (e *Engine) replaceOutboundServer(
 			newOT.tm.Close()
 			return fmt.Errorf("target outbound no longer live")
 		}
+		if paused {
+			newOT.tm.Close()
+			slog.Info("engine: replacement answered while paused, not swapped in",
+				"outbound", fromName, "tryURL", config.TruncateVia(newURL))
+			return errPausedRound
+		}
+
+		// Asked before e.mu: OwnsURL takes the shell's own locks.
+		fromShell := providerShellOwns(provider, newURL)
 
 		// Atomic swap. SwappableDialer returns the previously-installed
 		// Dialer, which is the old *TransportManager we must Close.
@@ -2288,6 +2942,7 @@ func (e *Engine) replaceOutboundServer(
 		target.name = newOT.name
 		target.url = newURL
 		target.jar = newOT.jar
+		target.fromShell = fromShell
 		target.reRaceFailStreak = 0
 		e.mu.Unlock()
 
@@ -2306,9 +2961,16 @@ func (e *Engine) replaceOutboundServer(
 			oldTM.Close()
 		}
 
-		slog.Info("engine: outbound replaced",
-			"outbound", target.name,
-			"newURL", config.TruncateVia(newURL))
+		slog.Info("DIAG: outbound-failover",
+			"outbound", fromName,
+			"from", config.TruncateVia(fromURL),
+			"to", config.TruncateVia(newURL),
+			"attempt", attempt)
+		// The replacement just connected: a wire error left by proxy dials
+		// on the dead node is stale (PVE S6: connected+503 ~8s after the
+		// swap, until the first dial through the new node). Same rule as
+		// phaseA — 401/402 stay sticky.
+		e.ClearWireError()
 		return nil
 	}
 }

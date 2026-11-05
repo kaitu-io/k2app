@@ -2647,3 +2647,107 @@ func TestBuildRouteEntries_ProtocolNormalized(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildStatus_HoldErrOverridesConnected pins the engine-owned hold state:
+// while the engine waits for the user's network, a connected engine reports
+// reconnecting + the netcheck reason; paused still wins over hold.
+func TestBuildStatus_HoldErrOverridesConnected(t *testing.T) {
+	e := New()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.state = StateConnected
+	e.connectedAt = time.Now()
+
+	e.setHoldLocked(netNoInternet.holdError())
+	s := e.buildStatusLocked()
+	if s.State != StateReconnecting {
+		t.Fatalf("hold: state = %q, want %q", s.State, StateReconnecting)
+	}
+	if s.Error == nil || s.Error.Code != ErrCodeNoInternet {
+		t.Fatalf("hold: error = %+v, want code %d", s.Error, ErrCodeNoInternet)
+	}
+	if !s.ConnectedAt.Equal(e.connectedAt) {
+		t.Fatalf("hold: ConnectedAt = %v, want %v (session uptime survives a hold)", s.ConnectedAt, e.connectedAt)
+	}
+
+	e.paused = true
+	if s := e.buildStatusLocked(); s.State != StatePaused {
+		t.Fatalf("paused+hold: state = %q, want %q", s.State, StatePaused)
+	}
+	e.paused = false
+
+	e.setHoldLocked(nil)
+	s = e.buildStatusLocked()
+	if s.State != StateConnected || s.Error != nil {
+		t.Fatalf("no hold: status = {%q, %+v}, want {connected, nil}", s.State, s.Error)
+	}
+
+	// Hold only overrides connected — a connecting engine stays connecting.
+	e.setHoldLocked(netNoInternet.holdError())
+	e.state = StateConnecting
+	if s := e.buildStatusLocked(); s.State != StateConnecting {
+		t.Fatalf("connecting+hold: state = %q, want %q", s.State, StateConnecting)
+	}
+}
+
+func TestStop_ClearsHoldErr(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+	e.ForceConnected()
+	e.SetHoldForTest(netNoInternet.holdError())
+	if s := e.GetStatus(); s.Error == nil || s.Error.Code != ErrCodeNoInternet {
+		t.Fatalf("held status error = %+v, want code %d", s.Error, ErrCodeNoInternet)
+	}
+	if err := e.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if s := e.GetStatus(); s.State != StateDisconnected || s.Error != nil {
+		t.Fatalf("status after Stop = {%q, %+v}, want {disconnected, nil}", s.State, s.Error)
+	}
+	statuses := h.getStatuses()
+	last := statuses[len(statuses)-1]
+	if last.State != StateDisconnected || last.Error != nil {
+		t.Fatalf("Stop push = {%q, %+v}, want {disconnected, nil}", last.State, last.Error)
+	}
+	// The real consequence of a missed clear: the NEXT session would come up
+	// "connected" yet report reconnecting + 106 from a stale hold.
+	e.ForceConnected()
+	if s := e.GetStatus(); s.State != StateConnected || s.Error != nil {
+		t.Fatalf("next session inherited the previous session's hold: {%q, %+v}", s.State, s.Error)
+	}
+}
+
+func TestFail_ClearsHoldErr(t *testing.T) {
+	e := New()
+	e.ForceConnected()
+	e.SetHoldForTest(netCaptive.holdError())
+	_ = e.fail(errors.New("boom"))
+	e.mu.Lock()
+	hold := e.holdErr
+	e.mu.Unlock()
+	if hold != nil {
+		t.Fatalf("holdErr after fail = %+v, want nil", hold)
+	}
+	if s := e.GetStatus(); s.Error != nil && s.Error.Code == ErrCodeCaptivePortal {
+		t.Fatalf("status after fail still carries the hold: %+v", s.Error)
+	}
+}
+
+// TestReconnect_PushCarriesHoldErr: reconnect's transient "reconnecting" push
+// must not drop the hold reason the UI is showing.
+func TestReconnect_PushCarriesHoldErr(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+	e.ForceConnected()
+	e.SetHoldForTest(netNoInternet.holdError())
+	if !e.reconnect(true) {
+		t.Fatal("reconnect returned false on a connected engine")
+	}
+	statuses := h.getStatuses()
+	last := statuses[len(statuses)-1]
+	if last.State != StateReconnecting || last.Error == nil || last.Error.Code != ErrCodeNoInternet {
+		t.Fatalf("reconnect push = {%q, %+v}, want {reconnecting, 106}", last.State, last.Error)
+	}
+}

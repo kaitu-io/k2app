@@ -16,7 +16,13 @@
     "disabled": "Dinonaktifkan",
     "clickToStop": "Klik untuk Putuskan",
     "reconnectingToServer": "Menyambung kembali ke server...",
-    "waitingForNetwork": "Menunggu jaringan..."
+    "waitingForNetwork": "Menunggu jaringan...",
+    "reconnectReason": {
+      "networkUnavailable": "Jaringan terputus. Akan tersambung kembali otomatis saat pulih.",
+      "noInternet": "Jaringan ini tidak memiliki akses internet. Akan tersambung kembali otomatis saat pulih.",
+      "captivePortal": "Wi-Fi ini memerlukan login di halaman web",
+      "serverUnreachable": "Jalur sementara tidak dapat dijangkau, mencoba lagi"
+    }
   },
   "common": {
     "justNow": "Baru saja",
@@ -73,7 +79,9 @@
       "repairDNS": "Perbaikan DNS gagal",
       "repairRoute": "Perbaikan rute gagal",
       "repairPreFailed": "Persiapan perbaikan jaringan gagal",
-      "unavailable": "Tidak ada koneksi jaringan. Periksa jaringan perangkat Anda dan coba lagi."
+      "unavailable": "Tidak ada koneksi jaringan. Periksa jaringan perangkat Anda dan coba lagi.",
+      "noInternet": "Jaringan ini tidak memiliki akses internet",
+      "captivePortal": "Wi-Fi ini memerlukan login di halaman web"
     },
     "server": {
       "unavailable": "Server tidak tersedia, silakan coba lagi nanti",
@@ -124,7 +132,8 @@
       "startFailed": "Gagal memulai layanan, silakan coba lagi",
       "reconnectFailed": "Gagal menyambung kembali, silakan coba lagi",
       "timeout": "Operasi habis waktu, silakan coba lagi",
-      "allAddrsFailed": "Semua alamat server gagal, silakan ganti node"
+      "allAddrsFailed": "Semua alamat server gagal, silakan ganti node",
+      "serverUnreachable": "Saat ini tidak ada jalur yang dapat dijangkau. Coba lagi nanti."
     },
     "action": {
       "timeout": "Operasi habis waktu, silakan coba lagi",

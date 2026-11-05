@@ -16,7 +16,13 @@
     "disabled": "Deshabilitado",
     "clickToStop": "Haz Clic para Desconectar",
     "reconnectingToServer": "Reconectando al servidor...",
-    "waitingForNetwork": "Esperando conexión de red..."
+    "waitingForNetwork": "Esperando conexión de red...",
+    "reconnectReason": {
+      "networkUnavailable": "Red desconectada. Se volverá a conectar cuando vuelva.",
+      "noInternet": "Esta red no tiene acceso a internet. Se volverá a conectar cuando vuelva.",
+      "captivePortal": "Esta Wi-Fi requiere iniciar sesión en una página web",
+      "serverUnreachable": "Línea no disponible temporalmente, reintentando"
+    }
   },
   "common": {
     "justNow": "Justo ahora",
@@ -73,7 +79,9 @@
       "repairDNS": "Error en la reparación de DNS",
       "repairRoute": "Error en la reparación de rutas",
       "repairPreFailed": "Error en la preparación de la reparación de red",
-      "unavailable": "Sin conexión de red. Verifica la red de tu dispositivo e intenta de nuevo."
+      "unavailable": "Sin conexión de red. Verifica la red de tu dispositivo e intenta de nuevo.",
+      "noInternet": "Esta red no tiene acceso a internet",
+      "captivePortal": "Esta Wi-Fi requiere iniciar sesión en una página web"
     },
     "server": {
       "unavailable": "Servidor no disponible, por favor intenta más tarde",
@@ -124,7 +132,8 @@
       "startFailed": "Error al iniciar el servicio, por favor intenta de nuevo",
       "reconnectFailed": "Error al reconectar, por favor intenta de nuevo",
       "timeout": "Operación agotada, por favor intenta de nuevo",
-      "allAddrsFailed": "Todos los direcciones del servidor fallaron, por favor cambia de nodo"
+      "allAddrsFailed": "Todos los direcciones del servidor fallaron, por favor cambia de nodo",
+      "serverUnreachable": "Ahora mismo no se puede conectar con ninguna línea. Inténtalo más tarde."
     },
     "action": {
       "timeout": "Operación agotada, por favor intenta de nuevo",

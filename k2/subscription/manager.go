@@ -91,6 +91,34 @@ func (m *Manager) NextURL(currentURL string, reason error) (string, error) {
 	return tunnel.URL, nil
 }
 
+// Reset clears every active Session's exclude set. The engine's
+// compositeProvider.Reset calls it when the exclusions may be innocent — a
+// Center outage (every candidate answered the code-less reject) or a network
+// that died mid-failover — so the next NextURL offers those tunnels again.
+// Ownership (which Session owns which URL) is untouched.
+//
+// Same lock order as NextURL: snapshot sessions under mu, release, then each
+// Session's excludeMu on its own.
+func (m *Manager) Reset() {
+	m.mu.RLock()
+	sessions := m.sessions
+	m.mu.RUnlock()
+	for _, sess := range sessions {
+		sess.excludeMu.Lock()
+		sess.excluded = nil
+		sess.excludeMu.Unlock()
+	}
+}
+
+// OwnsURL implements engine.URLOwner: reports whether any active Session
+// lists url as one of its tunnels.
+func (m *Manager) OwnsURL(url string) bool {
+	m.mu.RLock()
+	sessions := m.sessions
+	m.mu.RUnlock()
+	return findSessionByURL(sessions, url) != nil
+}
+
 func findSessionByURL(sessions []*Session, url string) *Session {
 	for _, s := range sessions {
 		for _, t := range s.sub.Tunnels() {

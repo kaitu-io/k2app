@@ -16,7 +16,13 @@
     "disabled": "Deaktiviert",
     "clickToStop": "Zum Trennen klicken",
     "reconnectingToServer": "Wird erneut mit Server verbunden...",
-    "waitingForNetwork": "Wartet auf Netzwerk..."
+    "waitingForNetwork": "Wartet auf Netzwerk...",
+    "reconnectReason": {
+      "networkUnavailable": "Netzwerk getrennt. Die Verbindung wird automatisch wiederhergestellt.",
+      "noInternet": "Dieses Netzwerk hat keinen Internetzugang. Die Verbindung wird automatisch wiederhergestellt.",
+      "captivePortal": "Für dieses WLAN ist eine Anmeldung auf einer Webseite erforderlich",
+      "serverUnreachable": "Leitung vorübergehend nicht erreichbar, neuer Versuch läuft"
+    }
   },
   "common": {
     "justNow": "Gerade eben",
@@ -73,7 +79,9 @@
       "repairDNS": "DNS-Reparatur fehlgeschlagen",
       "repairRoute": "Routenreparatur fehlgeschlagen",
       "repairPreFailed": "Netzwerkreparaturvorbereitung fehlgeschlagen",
-      "unavailable": "Keine Netzwerkverbindung. Überprüfen Sie Ihre Gerätenetze und versuchen Sie es erneut."
+      "unavailable": "Keine Netzwerkverbindung. Überprüfen Sie Ihre Gerätenetze und versuchen Sie es erneut.",
+      "noInternet": "Dieses Netzwerk hat keinen Internetzugang",
+      "captivePortal": "Für dieses WLAN ist eine Anmeldung auf einer Webseite erforderlich"
     },
     "server": {
       "unavailable": "Server nicht verfügbar. Bitte versuchen Sie es später erneut",
@@ -124,7 +132,8 @@
       "startFailed": "Service konnte nicht gestartet werden. Bitte versuchen Sie es erneut",
       "reconnectFailed": "Erneute Verbindung fehlgeschlagen. Bitte versuchen Sie es erneut",
       "timeout": "Operation abgelaufen. Bitte versuchen Sie es erneut",
-      "allAddrsFailed": "Alle Serveradressen fehlgeschlagen. Bitte wechseln Sie den Knoten"
+      "allAddrsFailed": "Alle Serveradressen fehlgeschlagen. Bitte wechseln Sie den Knoten",
+      "serverUnreachable": "Derzeit ist keine Leitung erreichbar. Bitte später erneut versuchen."
     },
     "action": {
       "timeout": "Operation abgelaufen. Bitte versuchen Sie es erneut",

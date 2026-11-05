@@ -186,6 +186,8 @@ export const ERROR_CODES = {
  */
 export const ENGINE_ERROR_CODES = {
   ErrCodeNetworkUnavailable: 101,
+  ErrCodeNoInternet: 106,
+  ErrCodeCaptivePortal: 107,
   ErrCodeTimeout: 108,
   ErrCodeBadConfig: 400,
   ErrCodeAuthRejected: 401,
@@ -378,6 +380,8 @@ export const API_ERROR_CATALOG: Readonly<Record<number, ErrorEntry>> = {
 export const ENGINE_ERROR_CATALOG: Readonly<Record<number, ErrorEntry>> = {
   // --- k2/engine/error.go ---
   [ENGINE_ERROR_CODES.ErrCodeNetworkUnavailable]: { key: 'common:errors.network.unavailable', defaultValue: 'No network connection. Check your device network and try again.' },
+  [ENGINE_ERROR_CODES.ErrCodeNoInternet]: { key: 'common:errors.network.noInternet', defaultValue: 'This network has no internet access' },
+  [ENGINE_ERROR_CODES.ErrCodeCaptivePortal]: { key: 'common:errors.network.captivePortal', defaultValue: 'This Wi-Fi requires signing in on a web page' },
   [ENGINE_ERROR_CODES.ErrCodeTimeout]: { key: 'common:errors.network.timeout', defaultValue: 'Connection timed out, please check your network' },
   [ENGINE_ERROR_CODES.ErrCodeBadConfig]: { key: 'common:errors.config.badConfig', defaultValue: 'Configuration error, please check the server address' },
   [ENGINE_ERROR_CODES.ErrCodeAuthRejected]: { key: 'common:errors.vpn.authFailed', defaultValue: 'Authentication failed, please sign in again' },
@@ -385,7 +389,8 @@ export const ENGINE_ERROR_CATALOG: Readonly<Record<number, ErrorEntry>> = {
   [ENGINE_ERROR_CODES.ErrCodeForbidden]: { key: 'common:errors.vpn.forbidden', defaultValue: 'Server certificate verification failed' },
   [ENGINE_ERROR_CODES.ErrCodeEnvironmentSetupFailed]: { key: 'common:errors.vpn.environmentSetupFailed', defaultValue: 'Network setup failed. Restart your device and try again.' },
   [ENGINE_ERROR_CODES.ErrCodeProtocolError]: { key: 'common:errors.vpn.protocolError', defaultValue: 'Protocol handshake failed, please try another node' },
-  [ENGINE_ERROR_CODES.ErrCodeServerUnreachable]: { key: 'common:errors.network.unreachable', defaultValue: 'Server unreachable, please check your network connection' },
+  // Not common:errors.network.unreachable: that key is the cloud-API copy and blames the user's network.
+  [ENGINE_ERROR_CODES.ErrCodeServerUnreachable]: { key: 'common:errors.vpn.serverUnreachable', defaultValue: 'No line can be reached right now, please try again later' },
   [ENGINE_ERROR_CODES.ErrCodeRuleBundlesUnavailable]: { key: 'common:errors.engine.ruleBundlesUnavailable', defaultValue: 'Failed to download routing rules. Check network and retry.' },
   [ENGINE_ERROR_CODES.ErrCodeConnectionFatal]: { key: 'common:errors.vpn.connectionFatal', defaultValue: 'Connection failed, please retry or switch node' },
 
@@ -414,6 +419,28 @@ export const ENGINE_ERROR_CATALOG: Readonly<Record<number, ErrorEntry>> = {
  */
 export const ENGINE_NETWORK_ERROR_CODES: readonly number[] = [
   ENGINE_ERROR_CODES.ErrCodeNetworkUnavailable, // 101
+  ENGINE_ERROR_CODES.ErrCodeNoInternet,         // 106
+  ENGINE_ERROR_CODES.ErrCodeCaptivePortal,      // 107
   ENGINE_ERROR_CODES.ErrCodeTimeout,            // 108
   ENGINE_ERROR_CODES.ErrCodeServerUnreachable,  // 503
 ];
+
+/**
+ * Reason copy shown WHILE reconnecting, keyed by the engine code carried on a
+ * `reconnecting` status (the engine's hold verdict). Separate from
+ * ENGINE_ERROR_CATALOG because the same code reads differently mid-retry
+ * ("…reconnects when it is back") than as a terminal failure. Codes absent
+ * here (and a reconnecting status with no error) show the generic copy.
+ */
+export const RECONNECT_REASON_CATALOG: Readonly<Record<number, ErrorEntry>> = {
+  [ENGINE_ERROR_CODES.ErrCodeNetworkUnavailable]: { key: 'common:status.reconnectReason.networkUnavailable', defaultValue: 'Network disconnected, will reconnect when it is back' },
+  [ENGINE_ERROR_CODES.ErrCodeNoInternet]: { key: 'common:status.reconnectReason.noInternet', defaultValue: 'This network has no internet access, will reconnect when it is back' },
+  [ENGINE_ERROR_CODES.ErrCodeCaptivePortal]: { key: 'common:status.reconnectReason.captivePortal', defaultValue: 'This Wi-Fi requires signing in on a web page' },
+  [ENGINE_ERROR_CODES.ErrCodeServerUnreachable]: { key: 'common:status.reconnectReason.serverUnreachable', defaultValue: 'Line temporarily unreachable, retrying' },
+};
+
+/** Fully-qualified reason key for a reconnecting status, or null = generic copy. */
+export function getReconnectReasonKey(code: number | null | undefined): string | null {
+  if (code == null) return null;
+  return RECONNECT_REASON_CATALOG[code]?.key ?? null;
+}

@@ -16,6 +16,11 @@ const (
 	raceTimeout     = 5 * time.Second
 	staggerTCPWS    = 800 * time.Millisecond
 	echoTimeoutRace = 1 * time.Second
+
+	// raceCollectorSlack: the collector re-arms its deadline this long past
+	// the latest pending candidate's, so the candidate's own expiry (and its
+	// error) lands first.
+	raceCollectorSlack = 100 * time.Millisecond
 )
 
 // RaceResult is the output of a successful transport race.
@@ -56,7 +61,13 @@ type connectedQUIC struct {
 // (nil disables cookies).
 func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDialer DirectDialer, jar *CookieJar) (*RaceResult, error) {
 	raceStart := time.Now()
-	raceCtx, raceCancel := context.WithTimeout(ctx, raceTimeout)
+	// raceTimeout bounds each candidate's TRANSPORT step only (candDeadline):
+	// a candidate whose handshake completed gets metaPhaseBudget more for
+	// the metadata verdict + echo (PVE S15). raceCtx itself has no deadline;
+	// the caller's ctx still bounds everything.
+	raceCtx, raceCancel := context.WithCancel(ctx)
+	transportUntil := raceStart.Add(raceTimeout)
+	var cands [2]*candDeadline // [0] quic-443, [1] tcpws
 
 	results := make(chan raceCandidate, 2)
 	var wg sync.WaitGroup
@@ -69,12 +80,16 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 
 	slog.Info("DIAG: transport-race-start", "candidates", 3)
 
-	launch := func(name string, fn func(context.Context) raceCandidate) {
+	launch := func(idx int, fn func(context.Context) raceCandidate) {
 		spawned++
+		cd := newCandDeadline(raceCtx, transportUntil)
+		cands[idx] = cd
 		wg.Add(1)
 		safego.Go(func() {
 			defer wg.Done()
-			results <- fn(raceCtx)
+			r := fn(cd.ctx)
+			cd.finish()
+			results <- r
 		})
 	}
 
@@ -121,7 +136,7 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 	var candErrs [2]error
 
 	// --- Candidate 1: QUIC on port 443 ---
-	launch("quic-443", func(ctx context.Context) raceCandidate {
+	launch(0, func(ctx context.Context) raceCandidate {
 		return buildAndProbeQUIC(ctx, cfg, dialAddr, directDialer, jar)
 	})
 
@@ -136,22 +151,32 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 	}
 
 	// --- Candidate 2: TCP-WS ---
-	launch("tcpws", func(ctx context.Context) raceCandidate {
+	launch(1, func(ctx context.Context) raceCandidate {
 		return buildTCPWSCandidate(ctx, cfg, dialAddr, directDialer, jar)
 	})
 
 	// --- Collect remaining results ---
-	for i := consumed; i < spawned; i++ {
+	// The collector's own deadline is the transport deadline, extended for
+	// as long as some candidate is past its handshake and waiting on its
+	// metadata verdict (candDeadline.pending).
+	deadline := time.NewTimer(time.Until(transportUntil))
+	defer deadline.Stop()
+	for i := consumed; i < spawned; {
 		select {
 		case r := <-results:
+			i++
 			if r.err == nil {
 				winner = &r
-				slog.Info("DIAG: transport-race-winner", "winner", r.transportType, "winnerMs", time.Since(raceStart).Milliseconds(), "tried", i+1)
+				slog.Info("DIAG: transport-race-winner", "winner", r.transportType, "winnerMs", time.Since(raceStart).Milliseconds(), "tried", i)
 				res := &RaceResult{Dialer: r.dialer, TransportType: r.transportType, TCPWS: r.tcpws}
+				if testHookRaceWinner != nil {
+					testHookRaceWinner(r.transportType)
+				}
 				// tcpws won — drain remaining results to find connected QUIC candidates.
 				// QUIC results may arrive nearly simultaneously (echo-probe completes ~same time).
 				if r.transportType == "tcpws" {
-					res = drainQUICBackup(res, results, spawned-i-1, &quicBackupMu, &quicBackup)
+					// i already counts this result (incremented above).
+					res = drainQUICBackup(res, results, spawned-i, &quicBackupMu, &quicBackup)
 				}
 				return res, nil
 			}
@@ -161,11 +186,25 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 			case "tcpws":
 				candErrs[1] = r.err
 			}
-		case <-raceCtx.Done():
+		case <-deadline.C:
+			if until, ok := latestPending(cands); ok {
+				deadline.Reset(time.Until(until) + raceCollectorSlack)
+				continue
+			}
 			slog.Warn("DIAG: transport-race-fail",
 				"quic443Err", candErrs[0],
 				"tcpwsErr", candErrs[1],
 			)
+			return nil, raceExitError(candErrs[0], candErrs[1])
+		case <-ctx.Done():
+			slog.Warn("DIAG: transport-race-fail",
+				"quic443Err", candErrs[0],
+				"tcpwsErr", candErrs[1],
+			)
+			if anyPending(cands) {
+				// Reached the node, no verdict before the caller gave up.
+				return nil, raceExitError(candErrs[0], errors.Join(candErrs[1], ErrMetadataTimeout))
+			}
 			return nil, raceExitError(candErrs[0], candErrs[1])
 		}
 	}
@@ -177,6 +216,125 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 	exitErr := raceExitError(candErrs[0], candErrs[1])
 	maybeProbeECHBlock(cfg, directDialer, exitErr)
 	return nil, exitErr
+}
+
+// metaPhaseBudget is how long a candidate may take after its transport
+// handshake completed: the metadata verdict (metaReadTimeout, which outlives
+// k2s's 5s remote-auth timeout) plus the race echo, plus slack.
+func metaPhaseBudget() time.Duration {
+	return metaReadTimeout + echoTimeoutRace + 500*time.Millisecond
+}
+
+// drainQUICGrace is how long a tcpws win waits for a QUIC candidate still in
+// flight (drainQUICBackup). A var only so tests can widen it.
+var drainQUICGrace = 50 * time.Millisecond
+
+// testHookRaceWinner, when non-nil (tests only), is called in the collector
+// with the winner's transport type, before the QUIC-backup drain.
+var testHookRaceWinner func(transportType string)
+
+// RaceWorstCase is the longest RaceTransport can run on its own deadlines: a
+// candidate whose transport handshake completes just before raceTimeout,
+// then the whole metaPhaseBudget, then the collector's slack. A caller ctx
+// shorter than this cuts a slow-but-alive node's verdict (PVE S15) and turns
+// it into a bare timeout; the engine derives its race ctx from this value.
+func RaceWorstCase() time.Duration {
+	return raceTimeout + metaPhaseBudget() + raceCollectorSlack
+}
+
+// candDeadline is one race candidate's deadline: transportUntil while its
+// transport handshake runs; once connect() reports the handshake done
+// (transportUp hook), metaPhaseBudget from then. Expiry cancels only this
+// candidate's ctx. Fields under mu; the timer callback takes mu too.
+type candDeadline struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	mu    sync.Mutex
+	state int // candTransport → candUp → candDone
+	until time.Time
+	timer *time.Timer
+}
+
+const (
+	candTransport = iota // handshake in progress
+	candUp               // handshake done, metadata / echo pending
+	candDone             // returned or expired
+)
+
+func newCandDeadline(parent context.Context, transportUntil time.Time) *candDeadline {
+	c := &candDeadline{until: transportUntil}
+	ctx, cancel := context.WithCancel(parent)
+	c.cancel = cancel
+	c.ctx = withTransportUpHook(ctx, c.up)
+	c.timer = time.AfterFunc(time.Until(transportUntil), c.expire)
+	return c
+}
+
+// up: the transport handshake completed — switch to the metadata budget.
+func (c *candDeadline) up() {
+	c.mu.Lock()
+	if c.state == candTransport {
+		c.state = candUp
+		c.until = time.Now().Add(metaPhaseBudget())
+		c.timer.Reset(time.Until(c.until))
+	}
+	c.mu.Unlock()
+}
+
+// expire is the timer callback. A callback that lost a race with up()'s
+// Reset sees the new, later deadline and leaves it to the re-armed timer.
+func (c *candDeadline) expire() {
+	c.mu.Lock()
+	fire := c.state == candTransport || (c.state == candUp && !time.Now().Before(c.until))
+	if fire {
+		c.state = candDone
+	}
+	c.mu.Unlock()
+	if fire {
+		c.cancel()
+	}
+}
+
+// finish: the candidate returned. Its ctx is left to raceCancel (the winner's
+// ctx stays alive until RaceTransport returns, as before).
+func (c *candDeadline) finish() {
+	c.mu.Lock()
+	c.state = candDone
+	c.mu.Unlock()
+	c.timer.Stop()
+}
+
+// pending reports whether the candidate is past its handshake and still
+// waiting, and until when.
+func (c *candDeadline) pending() (time.Time, bool) {
+	if c == nil {
+		return time.Time{}, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.until, c.state == candUp
+}
+
+// latestPending is the latest deadline among candidates still waiting on
+// their metadata verdict.
+func latestPending(cands [2]*candDeadline) (time.Time, bool) {
+	var latest time.Time
+	found := false
+	for _, c := range cands {
+		if until, ok := c.pending(); ok {
+			found = true
+			if until.After(latest) {
+				latest = until
+			}
+		}
+	}
+	return latest, found
+}
+
+func anyPending(cands [2]*candDeadline) bool {
+	_, ok := latestPending(cands)
+	return ok
 }
 
 // raceExitError joins the per-candidate errors while PRESERVING their chains:
@@ -304,7 +462,7 @@ func drainQUICBackup(
 	// Brief grace period for nearly-simultaneous QUIC results. Echo-probe
 	// finishes within milliseconds of tcpws in practice (observed: 2ms).
 	// Keep short to avoid blocking the return path and delaying cleanup.
-	timer := time.NewTimer(50 * time.Millisecond)
+	timer := time.NewTimer(drainQUICGrace)
 	defer timer.Stop()
 
 	for i := 0; i < remaining; i++ {

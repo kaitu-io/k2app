@@ -173,6 +173,21 @@ export interface WebappBrandConfig {
    *  api/brand.go's social registry — locked by cross-layer-contract.test.ts.
    *  Web client = Android serverClientId and the iOS `aud` the server checks. */
   social: { googleWebClientId: string; googleIosClientId: string };
+  /**
+   * Connectivity-check targets the engine probes to tell "no internet" /
+   * "captive portal" apart from "our servers are down" (ClientConfig.netcheck).
+   * Plain HTTP only, and the endpoint must not redirect: the engine compares
+   * `status` exactly and `body` (when set) byte for byte, so any other answer
+   * reads as a captive portal. Pick endpoints reachable from the brand's market.
+   */
+  netcheck: readonly { url: string; status: number; body?: string }[];
+  /**
+   * Resolvers the engine's netcheck uses for the `netcheck` hosts
+   * (ClientConfig.netcheck_dns). Netcheck only: direct-routed traffic keeps
+   * the engine's dns.direct default. `[]` = send nothing; the netcheck then
+   * uses dns.direct (mainland-China resolvers).
+   */
+  netcheckDns: readonly string[];
   theme: BrandThemeTokens;
   features: BrandFeatures;
 }

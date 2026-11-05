@@ -14,6 +14,8 @@ import (
 // Used by StatusJSON() and exposed to frontend via daemon API.
 const (
 	ErrCodeNetworkUnavailable     = 101 // Client network unreachable, no route to host
+	ErrCodeNoInternet             = 106 // Interface up but no netcheck target answers (netcheck verdict)
+	ErrCodeCaptivePortal          = 107 // Netcheck targets answer with the wrong response — captive portal / interception
 	ErrCodeTimeout                = 108 // Connection or handshake timeout
 	ErrCodeBadConfig              = 400 // Invalid wire URL, missing auth, bad scheme
 	ErrCodeAuthRejected           = 401 // Server rejected authentication (stream rejected)
@@ -58,7 +60,7 @@ func categoryForCode(code int) string {
 	switch code {
 	case ErrCodeBadConfig, ErrCodeAuthRejected, ErrCodePaymentRequired, ErrCodeForbidden, ErrCodeEnvironmentSetupFailed:
 		return CategoryClient
-	case ErrCodeNetworkUnavailable, ErrCodeTimeout:
+	case ErrCodeNetworkUnavailable, ErrCodeNoInternet, ErrCodeCaptivePortal, ErrCodeTimeout:
 		return CategoryNetwork
 	case ErrCodeProtocolError, ErrCodeServerUnreachable, ErrCodeRuleBundlesUnavailable, ErrCodeConnectionFatal:
 		return CategoryServer
@@ -141,6 +143,15 @@ func ClassifyError(err error) *EngineError {
 		}
 	}
 
+	// Priority 0b': the node answered the transport handshake but its auth
+	// verdict never came (wire.ErrMetadataTimeout — k2s stuck on a hanging
+	// Center, PVE S15). Server side, retryable: never the 401 a code-less
+	// reject maps to below. It does not wrap ErrMetadataRejected; a joined
+	// race error carrying a real reject too is classified by that reject.
+	if errors.Is(err, wire.ErrMetadataTimeout) && !errors.Is(err, wire.ErrMetadataRejected) {
+		return newEngineError(ErrCodeServerUnreachable, err.Error())
+	}
+
 	// Priority 0b: metadata (device-auth) rejection — the server rejected this
 	// connection on the metadata stream. Producer-classified via
 	// wire.ErrMetadataRejected; the embedded StreamError carries the server's
@@ -169,6 +180,15 @@ func ClassifyError(err error) *EngineError {
 				return newEngineError(se.Code, err.Error())
 			}
 		}
+		// Code-less reject at initial connect stays 401 (review 4 N-2, kept
+		// on purpose): k2s built from 476f01c49 (2026-03-25, QUIC metadata
+		// stream) up to 4f54ee50b (2026-07-31, verdict-driven codes) answers a
+		// GENUINELY bad credential with this same code-less "unauthorized"
+		// (boolean validator), and nodes may run such builds for months. A
+		// retryable 503 there would hide a real credential failure behind
+		// "server unreachable". Cost: during a Center outage/hang a fresh
+		// connect shows 401 (display only; the replace loop treats it as
+		// code-less, see replace_verdict.go).
 		return newEngineError(ErrCodeAuthRejected, err.Error())
 	}
 

@@ -107,14 +107,22 @@ type Config struct {
 //     same logical subscription session — i.e. it maintains its own
 //     "already-tried-and-failed" exclude set and filters accordingly.
 //   - When the provider exhausts its candidates, it returns (""/wrapped-err).
-//     The engine then fires EventHandler.OnOutboundFatal and calls
-//     e.fail to terminate the tunnel.
+//     The engine does not disconnect for that (R1): the outbound goes on the
+//     replace loop's retry schedule (reconnecting 503). Only after
+//     exhaustFailAfter (10 min) of continuous online exhaustion does it fire
+//     EventHandler.OnOutboundFatal and call e.fail — or at once when the
+//     cause is an account verdict (401/402/403).
 //
 // Concurrency: the engine invokes NextURL from a single
 // outboundReplaceLoop goroutine and calls are therefore serialized across
 // all outbounds owned by a given Engine. A provider that is shared between
 // multiple Engine instances (unusual — daemon owns at most one) must
 // synchronize internally.
+//
+// Optional capability: a provider may also implement URLOwner (OwnsURL).
+// The engine's compositeProvider only delegates a failing URL to the shell
+// provider when it implements URLOwner and claims that URL; otherwise the
+// URL gets ErrNoCandidates. subscription.Manager implements URLOwner.
 type OutboundProvider interface {
 	NextURL(currentURL string, reason error) (string, error)
 }

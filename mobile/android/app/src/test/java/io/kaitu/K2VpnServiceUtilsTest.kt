@@ -8,6 +8,25 @@ import org.junit.Test
 
 class K2VpnServiceUtilsTest {
 
+    // ==================== reconnectReason ====================
+
+    @Test
+    fun reconnectReason_maps_engine_hold_codes() {
+        fun r(json: String) = K2VpnServiceUtils.reconnectReason(org.json.JSONObject(json))
+        assertEquals(ReconnectReason.NETWORK_UNAVAILABLE, r("{\"state\":\"reconnecting\",\"error\":{\"code\":101}}"))
+        assertEquals(ReconnectReason.NO_INTERNET, r("{\"state\":\"reconnecting\",\"error\":{\"code\":106}}"))
+        assertEquals(ReconnectReason.CAPTIVE_PORTAL, r("{\"state\":\"reconnecting\",\"error\":{\"code\":107}}"))
+        assertEquals(ReconnectReason.SERVER_UNREACHABLE, r("{\"state\":\"reconnecting\",\"error\":{\"code\":503}}"))
+    }
+
+    @Test
+    fun reconnectReason_generic_without_error_or_for_other_codes() {
+        fun r(json: String) = K2VpnServiceUtils.reconnectReason(org.json.JSONObject(json))
+        assertEquals(ReconnectReason.GENERIC, r("{\"state\":\"reconnecting\"}"))
+        assertEquals(ReconnectReason.GENERIC, r("{\"state\":\"reconnecting\",\"error\":null}"))
+        assertEquals(ReconnectReason.GENERIC, r("{\"state\":\"reconnecting\",\"error\":{\"code\":570}}"))
+    }
+
     // ==================== parseCIDR ====================
 
     @Test

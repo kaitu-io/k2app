@@ -53,6 +53,17 @@ func NewSwappableDialer(d Dialer) *SwappableDialer {
 	return s
 }
 
+// CurrentDialer is the registered optional interface (k2/CLAUDE.md § Layer
+// Boundaries) for a Dialer that forwards to a replaceable inner Dialer.
+// core's wireOutbound dials Current() directly and compares it again when
+// the dial fails, so an error from a Dialer that was swapped out while the
+// dial was in flight is not reported as the session's wire error.
+type CurrentDialer interface {
+	Current() Dialer
+}
+
+var _ CurrentDialer = (*SwappableDialer)(nil)
+
 // Current returns the currently-installed Dialer. Useful when callers need
 // to type-assert for optional interfaces (StatsProvider, EchoProber).
 func (s *SwappableDialer) Current() Dialer {

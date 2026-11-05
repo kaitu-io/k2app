@@ -16,7 +16,13 @@
     "disabled": "Dilumpuhkan",
     "clickToStop": "Klik untuk Putuskan",
     "reconnectingToServer": "Menyambung semula ke pelayan...",
-    "waitingForNetwork": "Menunggu rangkaian..."
+    "waitingForNetwork": "Menunggu rangkaian...",
+    "reconnectReason": {
+      "networkUnavailable": "Rangkaian terputus. Akan bersambung semula secara automatik apabila pulih.",
+      "noInternet": "Rangkaian ini tiada akses internet. Akan bersambung semula secara automatik apabila pulih.",
+      "captivePortal": "Wi-Fi ini memerlukan log masuk di halaman web",
+      "serverUnreachable": "Talian tidak dapat dicapai buat sementara, mencuba semula"
+    }
   },
   "common": {
     "justNow": "Baru-baru ini",
@@ -73,7 +79,9 @@
       "repairDNS": "Pembaikan DNS gagal",
       "repairRoute": "Pembaikan laluan gagal",
       "repairPreFailed": "Persediaan pembaikan rangkaian gagal",
-      "unavailable": "Tiada sambungan rangkaian. Semak rangkaian peranti anda dan cuba lagi."
+      "unavailable": "Tiada sambungan rangkaian. Semak rangkaian peranti anda dan cuba lagi.",
+      "noInternet": "Rangkaian ini tiada akses internet",
+      "captivePortal": "Wi-Fi ini memerlukan log masuk di halaman web"
     },
     "server": {
       "unavailable": "Pelayan tidak tersedia, sila cuba lagi kemudian",
@@ -124,7 +132,8 @@
       "startFailed": "Gagal memulakan perkhidmatan, sila cuba lagi",
       "reconnectFailed": "Gagal menyambung semula, sila cuba lagi",
       "timeout": "Operasi tamat tempoh, sila cuba lagi",
-      "allAddrsFailed": "Semua alamat pelayan gagal, sila tukar nod"
+      "allAddrsFailed": "Semua alamat pelayan gagal, sila tukar nod",
+      "serverUnreachable": "Tiada talian yang boleh dicapai buat masa ini. Sila cuba lagi kemudian."
     },
     "action": {
       "timeout": "Operasi tamat tempoh, sila cuba lagi",

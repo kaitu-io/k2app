@@ -85,9 +85,9 @@ func maybeProbeECHBlock(cfg Config, directDialer DirectDialer, joined error) {
 	if cfg.ECH == "" {
 		return
 	}
-	// ErrMetadataRejected means a candidate got past the TLS/ECH handshake to
-	// auth — ECH is not being blocked.
-	if errors.Is(joined, ErrMetadataRejected) {
+	// ErrMetadataRejected / ErrMetadataTimeout mean a candidate got past the
+	// TLS/ECH handshake to auth — ECH is not being blocked.
+	if errors.Is(joined, ErrMetadataRejected) || errors.Is(joined, ErrMetadataTimeout) {
 		return
 	}
 	sni := echPublicName(cfg.ECH)

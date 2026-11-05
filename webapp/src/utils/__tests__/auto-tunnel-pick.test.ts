@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickAutoTunnel } from '../auto-tunnel-pick';
+import { pickAutoTunnel, pickAutoCandidates } from '../auto-tunnel-pick';
 import type { Tunnel } from '../../services/api-types';
 
 function tunnel(id: number, domain: string, recommendScore: number, serverUrl?: string, country = ''): Tunnel {
@@ -286,5 +286,70 @@ describe('pickAutoTunnel distribution', () => {
     for (const t of input) {
       expect(Math.abs((counts.get(t.domain) ?? 0) - N * p), t.domain).toBeLessThanOrEqual(fiveSigma(N, p));
     }
+  });
+});
+
+describe('pickAutoCandidates', () => {
+  /** Tunnel on a machine identified by ipv4 (and optionally ipv6). */
+  const onMachine = (id: number, ipv4: string, score: number, country = '', ipv6 = ''): Tunnel => {
+    const t = tunnel(id, `t${id}`, score, undefined, country);
+    return { ...t, node: { ...t.node, ipv4, ipv6 } };
+  };
+  const key = (t: Tunnel) => t.node.ipv4 || t.node.ipv6;
+
+  it('pickAutoCandidates returns distinct machines', () => {
+    // 6 tunnels on 3 machines, count=4 → 3 results, one per machine.
+    const tunnels = [
+      onMachine(1, '10.0.0.1', 0.9), onMachine(2, '10.0.0.1', 0.8),
+      onMachine(3, '10.0.0.2', 0.7), onMachine(4, '10.0.0.2', 0.6),
+      onMachine(5, '10.0.0.3', 0.5), onMachine(6, '10.0.0.3', 0.4),
+    ];
+    for (let seed = 1; seed <= 20; seed++) {
+      const got = pickAutoCandidates(tunnels, [], 4, prng(seed));
+      expect(got).toHaveLength(3);
+      expect(new Set(got.map(key)).size).toBe(3);
+    }
+  });
+
+  it('falls back to ipv6 as the machine key when ipv4 is empty', () => {
+    const tunnels = [onMachine(1, '', 0.9, '', '2001:db8::1'), onMachine(2, '', 0.8, '', '2001:db8::1')];
+    expect(pickAutoCandidates(tunnels, [], 4, prng(3))).toHaveLength(1);
+  });
+
+  it('treats tunnels with neither ipv4 nor ipv6 as separate machines', () => {
+    const tunnels = [onMachine(1, '', 0.9), onMachine(2, '', 0.8), onMachine(3, '', 0.7)];
+    const got = pickAutoCandidates(tunnels, [], 4, prng(5));
+    expect(new Set(got.map(t => t.id)).size).toBe(got.length);
+    expect(got.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('pickAutoCandidates first equals pickAutoTunnel with same rng', () => {
+    const tunnels = Array.from({ length: 12 }, (_, i) => onMachine(i + 1, `10.0.1.${i % 6}`, 1 - i / 13));
+    for (let seed = 1; seed <= 30; seed++) {
+      const first = pickAutoCandidates(tunnels, [], 4, prng(seed))[0];
+      expect(first).toBe(pickAutoTunnel(tunnels, [], prng(seed)));
+    }
+  });
+
+  it('pickAutoCandidates honours excludedCountries', () => {
+    const tunnels = [
+      onMachine(1, '10.0.2.1', 0.9, 'HK'), onMachine(2, '10.0.2.2', 0.8, 'JP'),
+      onMachine(3, '10.0.2.3', 0.7, 'hk'), onMachine(4, '10.0.2.4', 0.6, 'SG'),
+    ];
+    for (let seed = 1; seed <= 10; seed++) {
+      const got = pickAutoCandidates(tunnels, ['hk'], 4, prng(seed));
+      expect(got.map(t => t.node.country.toLowerCase())).not.toContain('hk');
+      expect(got).toHaveLength(2);
+    }
+  });
+
+  it('defaults to 4 candidates', () => {
+    const tunnels = Array.from({ length: 8 }, (_, i) => onMachine(i + 1, `10.0.3.${i}`, 1 - i / 9));
+    expect(pickAutoCandidates(tunnels, [], undefined, prng(9))).toHaveLength(4);
+  });
+
+  it('pickAutoCandidates empty pool returns []', () => {
+    expect(pickAutoCandidates([])).toEqual([]);
+    expect(pickAutoCandidates([tunnel(1, 'dead', 0)])).toEqual([]);
   });
 });

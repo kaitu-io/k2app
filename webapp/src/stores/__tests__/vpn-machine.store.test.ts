@@ -930,3 +930,68 @@ describe('teardown invalidates in-flight status requests', () => {
     }
   });
 });
+
+// ==================== Reconnecting reason (engine hold verdict) ====================
+
+describe('reconnecting carries the engine reason', () => {
+  async function connected() {
+    const mod = await getStore();
+    const { transformStatus } = await import('../../services/status-transform');
+    const { getReconnectReasonKey, RECONNECT_REASON_CATALOG } = await import('../../utils/errorCatalog');
+    mod.dispatch('USER_CONNECT');
+    mod.dispatch('BACKEND_CONNECTED');
+    return { ...mod, transformStatus, getReconnectReasonKey, RECONNECT_REASON_CATALOG };
+  }
+
+  it('push {state:reconnecting, error:{code:106}} → reconnecting with the 106 reason copy', async () => {
+    const m = await connected();
+    m.applyStatus(m.transformStatus({ state: 'reconnecting', error: { code: 106, message: 'no internet' } }));
+    act(() => { vi.advanceTimersByTime(3000); }); // connected → reconnecting is debounced
+
+    const s = m.useVPNMachineStore.getState();
+    expect(s.state).toBe('reconnecting');
+    expect(s.error?.code).toBe(106);
+    expect(m.getReconnectReasonKey(s.error?.code)).toBe(m.RECONNECT_REASON_CATALOG[106].key);
+  });
+
+  it('a reason change while already reconnecting replaces the reason', async () => {
+    const m = await connected();
+    m.applyStatus(m.transformStatus({ state: 'reconnecting', error: { code: 106 } }));
+    act(() => { vi.advanceTimersByTime(3000); });
+    m.applyStatus(m.transformStatus({ state: 'reconnecting', error: { code: 107 } }));
+    expect(m.useVPNMachineStore.getState().state).toBe('reconnecting');
+    expect(m.useVPNMachineStore.getState().error?.code).toBe(107);
+
+    // Reason cleared (engine still reconnecting, no verdict) → generic copy again.
+    m.applyStatus(m.transformStatus({ state: 'reconnecting' }));
+    expect(m.useVPNMachineStore.getState().state).toBe('reconnecting');
+    expect(m.useVPNMachineStore.getState().error).toBeNull();
+  });
+
+  it('the latest reason pushed during the debounce window is the one applied', async () => {
+    const m = await connected();
+    m.applyStatus(m.transformStatus({ state: 'reconnecting', error: { code: 101 } }));
+    act(() => { vi.advanceTimersByTime(1000); });
+    m.applyStatus(m.transformStatus({ state: 'reconnecting', error: { code: 503 } }));
+    act(() => { vi.advanceTimersByTime(3000); });
+    expect(m.useVPNMachineStore.getState().state).toBe('reconnecting');
+    expect(m.useVPNMachineStore.getState().error?.code).toBe(503);
+  });
+
+  it('reconnecting without error (iOS today) → generic copy (no reason key)', async () => {
+    const m = await connected();
+    m.applyStatus(m.transformStatus({ state: 'reconnecting' }));
+    act(() => { vi.advanceTimersByTime(3000); });
+    const s = m.useVPNMachineStore.getState();
+    expect(s.state).toBe('reconnecting');
+    expect(s.error).toBeNull();
+    expect(m.getReconnectReasonKey(s.error?.code)).toBeNull();
+  });
+
+  it('reason keys exist only for 101 / 106 / 107 / 503', async () => {
+    const m = await connected();
+    expect(Object.keys(m.RECONNECT_REASON_CATALOG).map(Number).sort((a, b) => a - b)).toEqual([101, 106, 107, 503]);
+    expect(m.getReconnectReasonKey(570)).toBeNull();
+    expect(m.getReconnectReasonKey(undefined)).toBeNull();
+  });
+});

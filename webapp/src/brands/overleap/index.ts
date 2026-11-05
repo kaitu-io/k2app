@@ -54,6 +54,17 @@ export const OVERLEAP_BRAND: WebappBrandConfig = {
     googleWebClientId: '808676014960-fvo8an88b4c79f1ua9n0pctr40ta09fm.apps.googleusercontent.com',
     googleIosClientId: '808676014960-ug0b6ahv3lm2s1fboj0dinmtp5p0t6qu.apps.googleusercontent.com',
   },
+  // Verified over plain HTTP from overseas on 2026-11-05 (curl: 204 0 / 204 0 / 200 69).
+  // Apple's body ends in a newline; the engine compares it exactly.
+  netcheck: [
+    { url: 'http://connectivitycheck.gstatic.com/generate_204', status: 204 },
+    { url: 'http://www.gstatic.com/generate_204', status: 204 },
+    { url: 'http://captive.apple.com/hotspot-detect.html', status: 200, body: '<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>\n' },
+  ],
+  // Overseas market: the engine's default resolvers are mainland ones. Only the
+  // netcheck uses these — direct-routed traffic keeps the engine default, as
+  // before F2 (ClientConfig.netcheck_dns, not dns.direct).
+  netcheckDns: ['1.1.1.1:53', '8.8.8.8:53', '1.0.0.1:53', '8.8.4.4:53'],
   theme: OVERLEAP_THEME,
   features: {
     invite: false,

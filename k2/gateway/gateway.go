@@ -596,9 +596,10 @@ func (g *Gateway) doUpLocked(cfg *GatewayConfig) error {
 //   - multi-slot: bindings are deterministic, hot replacement is off
 //     (fail-closed).
 //   - no subscription session (every route is a plain k2v5:// URL): the
-//     manager has nothing to rotate through. Asked anyway, it answers
-//     ErrNoSubscription and the engine shuts down for good after the second
-//     failed re-race — a node unreachable for 15 s.
+//     manager has nothing to rotate through. Asked anyway, it would answer
+//     ErrNoSubscription, which the engine reads as an exhaustion: reconnecting
+//     503 for 10 min (exhaustFailAfter), then OnOutboundFatal + fail — where
+//     re-racing the same server in place is what the router needs.
 func outboundProviderFor(mgr *subscription.Manager, sessions int, multiSlot bool) engine.OutboundProvider {
 	if multiSlot || sessions == 0 {
 		return nil
@@ -770,13 +771,17 @@ func (h engineEvents) OnStatus(status engine.Status) { h.g.OnStatus(status) }
 // OnStats implements engine.EventHandler.
 func (h engineEvents) OnStats(tx, rx int64) {}
 
-// OnOutboundFatal implements engine.EventHandler. The engine fires it when
-// the OutboundProvider has no server left to try, then shuts itself down for
-// good (Engine.fail): it never reconnects on its own, and the rules it was
-// serving stay behind on a dead listener. A router has nobody watching to
-// press connect again — a node that is unreachable for 15 s on an idle router
-// is enough to get here (OpenWrt 25.12, 2026-09-30) — so the gateway brings
-// the saved session back itself, on the boot-time retry schedule.
+// OnOutboundFatal implements engine.EventHandler. The engine fires it when an
+// outbound has had no server left to try for ~10 min on a working network
+// (engine exhaustFailAfter, R1 — before that it stays connected and retries,
+// with the rules up: proxied LAN traffic fails, rule-direct traffic works),
+// or when a subscription refresh dropped the outbound's URL for as long; then
+// it shuts itself down for good (Engine.fail): it never reconnects on its
+// own, and the rules it was serving stay behind on a dead listener. A router
+// has nobody watching to press connect again (OpenWrt 25.12, 2026-09-30:
+// back then 15 s of an unreachable node on an idle router got here), so the
+// gateway brings the saved session back itself — re-resolving the
+// subscription — on the boot-time retry schedule.
 func (h engineEvents) OnOutboundFatal(outbound string, err error) {
 	slog.Warn("gateway: outbound fatal, reconnecting from the saved session",
 		"url", config.TruncateVia(outbound), "err", err)

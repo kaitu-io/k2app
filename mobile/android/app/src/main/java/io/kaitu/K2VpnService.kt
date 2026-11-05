@@ -393,7 +393,15 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
                         when (state) {
                             "connected" -> updateNotification("Connected")
                             "connecting" -> updateNotification("Connecting...")
-                            "reconnecting" -> updateNotification("Reconnecting...")
+                            "reconnecting" -> updateNotification(getString(
+                                when (K2VpnServiceUtils.reconnectReason(obj)) {
+                                    ReconnectReason.NETWORK_UNAVAILABLE -> R.string.notification_reconnect_network_unavailable
+                                    ReconnectReason.NO_INTERNET -> R.string.notification_reconnect_no_internet
+                                    ReconnectReason.CAPTIVE_PORTAL -> R.string.notification_reconnect_captive_portal
+                                    ReconnectReason.SERVER_UNREACHABLE -> R.string.notification_reconnect_server_unreachable
+                                    ReconnectReason.GENERIC -> R.string.notification_reconnecting
+                                }
+                            ))
                             "disconnected" -> {
                                 val hasError = obj.has("error") && !obj.isNull("error")
                                 if (hasError) {

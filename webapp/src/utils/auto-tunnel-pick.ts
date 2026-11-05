@@ -75,3 +75,43 @@ export function pickAutoTunnel(
   const second = pool[j];
   return second.recommendScore > first.recommendScore ? second : first;
 }
+
+/**
+ * Machine identity for de-duplication: node ipv4, else ipv6. A tunnel with
+ * neither counts as its own machine (null = never collides).
+ *
+ * Several tunnels can live on one machine; a fallback on the same machine
+ * fails together with the primary, so it buys nothing.
+ */
+function machineKey(t: Tunnel): string | null {
+  return t.node?.ipv4 || t.node?.ipv6 || null;
+}
+
+/**
+ * Pick the Auto primary plus fallbacks, each on a different machine.
+ *
+ * The first element is exactly what `pickAutoTunnel` returns for the same
+ * arguments and rng, so the primary's distribution is unchanged. Each later
+ * element is another `pickAutoTunnel` draw (same rng) from the pool with every
+ * tunnel on an already-chosen machine removed. Stops at `count` or when the
+ * pool runs dry; `[]` when there is no eligible tunnel at all.
+ *
+ * @param count total tunnels to return, primary included (default 4)
+ */
+export function pickAutoCandidates(
+  tunnels: Tunnel[],
+  excludedCountries: readonly string[] = [],
+  count = 4,
+  rng: () => number = Math.random,
+): Tunnel[] {
+  const picked: Tunnel[] = [];
+  let pool = tunnels;
+  while (picked.length < count) {
+    const t = pickAutoTunnel(pool, excludedCountries, rng);
+    if (!t) break;
+    picked.push(t);
+    const key = machineKey(t);
+    pool = pool.filter(x => x !== t && (key === null || machineKey(x) !== key));
+  }
+  return picked;
+}

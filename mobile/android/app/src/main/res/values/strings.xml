@@ -1,4 +1,10 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
     <string name="package_name">io.kaitu</string>
+    <!-- VPN notification while reconnecting; matches the other (English) notification states -->
+    <string name="notification_reconnecting">Reconnecting...</string>
+    <string name="notification_reconnect_network_unavailable">Network disconnected, will reconnect when it is back</string>
+    <string name="notification_reconnect_no_internet">This network has no internet access, will reconnect when it is back</string>
+    <string name="notification_reconnect_captive_portal">This Wi-Fi requires signing in on a web page</string>
+    <string name="notification_reconnect_server_unreachable">Line temporarily unreachable, retrying</string>
 </resources>

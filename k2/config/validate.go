@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"net/url"
@@ -73,7 +74,45 @@ func ValidateClient(cfg *ClientConfig) error {
 		return err
 	}
 
+	sanitizeFallbacks(cfg)
+
 	return nil
+}
+
+// sanitizeFallbacks drops fallback entries that cannot be used: keys that are
+// not the exact via of any route, and values that are not k2v5:// URLs.
+// Dropped entries are logged with credentials redacted.
+func sanitizeFallbacks(cfg *ClientConfig) {
+	if len(cfg.Fallbacks) == 0 {
+		return
+	}
+	vias := make(map[string]bool, len(cfg.Routes))
+	for _, r := range cfg.Routes {
+		vias[r.Via] = true
+	}
+	for primary, list := range cfg.Fallbacks {
+		if !vias[primary] {
+			slog.Warn("config: fallbacks key matches no route via, dropped", "primary", TruncateVia(primary))
+			delete(cfg.Fallbacks, primary)
+			continue
+		}
+		kept := make([]string, 0, len(list))
+		for _, u := range list {
+			if !strings.HasPrefix(u, "k2v5://") {
+				slog.Warn("config: non-k2v5 fallback dropped", "primary", TruncateVia(primary), "fallback", TruncateVia(u))
+				continue
+			}
+			kept = append(kept, u)
+		}
+		if len(kept) == 0 {
+			delete(cfg.Fallbacks, primary)
+			continue
+		}
+		cfg.Fallbacks[primary] = kept
+	}
+	if len(cfg.Fallbacks) == 0 {
+		cfg.Fallbacks = nil
+	}
 }
 
 // validateReservedViaSchemes rejects routes whose Via uses a scheme reserved

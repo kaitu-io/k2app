@@ -204,6 +204,46 @@ type healthMonitor struct {
 	// Config.MobilePowerSaving (engine.go) rather than a constructor param,
 	// to avoid touching the many existing newHealthMonitor call sites.
 	mobilePowerSaving bool
+
+	// netUp reports whether the engine's network is up (netCoordinator,
+	// set by engine.Start before start()). The not-probed dial-failure strike
+	// counts only while it is: with the platform reporting no network
+	// (mobile airplane mode / no network), failing dials say nothing about
+	// the node, and striking would start periodic replace-loop work (hold
+	// ticks, Phase-A races) that used to stay silent. Desktop never reports
+	// unavailable, so a desktop link drop still reaches the loop. nil = up
+	// (tests that build a healthMonitor directly).
+	netUp func() bool
+
+	// clock (nil = time.Now) timestamps user-dial evidence ages. Test-only.
+	clock func() time.Time
+
+	// targetRecovered (nil = no-op) is told when a target's node answered
+	// again: an echo succeeded, or an answered user dial ended its failure
+	// run. The engine resets the target's Phase-A failure streak (review A).
+	// Called from the probe goroutine with no lock held.
+	targetRecovered func(*outboundTransport)
+}
+
+// recovered reports a target's node answering again (see targetRecovered).
+func (hm *healthMonitor) recovered(ot *outboundTransport) {
+	if hm.targetRecovered != nil {
+		hm.targetRecovered(ot)
+	}
+}
+
+// clockNow is the clock for user-dial evidence ages (tests inject clock to
+// drive timelines; it must match the TransportManager's SetConnFailClock).
+func (hm *healthMonitor) clockNow() time.Time {
+	if hm.clock != nil {
+		return hm.clock()
+	}
+	return time.Now()
+}
+
+// networkUp reads netUp; called from the probe goroutine with no lock held.
+func (hm *healthMonitor) networkUp() bool {
+	return hm.netUp == nil || hm.netUp()
 }
 
 func newHealthMonitor(
@@ -790,6 +830,10 @@ const (
 	// echoNotProbed: the probe never reached a live connection (see
 	// wire.ErrEchoNoConnection) — no evidence either way.
 	echoNotProbed
+	// echoNotProbedDialFailing: not probed, AND user dials are failing to
+	// connect (readDialFailEvidence). A strike when a new failure arrived
+	// since the previous probe; cadence pinned at 2s (see echoStepDial).
+	echoNotProbedDialFailing
 )
 
 // echoStep is the state-machine transition for one probe outcome.
@@ -808,8 +852,9 @@ func echoStep(trust, strikes int32, err error) echoStepResult {
 		// trust would pin the loop at the 1s cadence while unconnected (mobile
 		// wakeups), and freezing strikes would carry a dead path's strikes
 		// across a network Reset into the new path (premature re-race).
-		// Known pre-existing gap, unchanged here: a dead node with no cached
-		// connection never accumulates strikes via this path.
+		// The dead-node case (no cached connection because the node refuses
+		// or kills every connection) is handled by echoStepDial, which adds
+		// strikes only on user-dial evidence; this function stays unchanged.
 		return echoStepResult{NewTrust: min(trust+1, maxTrust), NewStrikes: 0, Classify: echoNotProbed}
 	case wire.IsEchoUnsupported(err):
 		// Pre-echo server: treat as success-equivalent for trust accounting.
@@ -826,6 +871,124 @@ func echoStep(trust, strikes int32, err error) echoStepResult {
 			ShouldRerace: newStrikes >= echoReraceThreshold,
 			Classify:     echoFail,
 		}
+	}
+}
+
+// echoStepDial is echoStep plus user-dial evidence, for the one case the
+// probe cannot judge alone: no live connection (wire.ErrEchoNoConnection).
+// A node that refuses, resets or auth-rejects every connection leaves no
+// cached connection, so without this it never reached a re-race (PVE S8/S9).
+//
+// ev (dialFailEvidence) is only consulted for a not-probed outcome; every
+// other outcome — including the whole cached-connection echo path F1 relies
+// on — is echoStep's, unchanged.
+//
+// While user dials are failing (ev.failing: an unresolved failure < 30s old,
+// network up):
+//   - a probe preceded by a NEW failure (ev.fresh) is a strike; one without
+//     is neither strike nor reset (strikes frozen) — failures from real
+//     traffic arrive in bursts (a QUIC dial waits out its 5s budget), and
+//     resetting on a quiet tick would make the count depend on tick/burst
+//     alignment;
+//   - for the first echoDialFailFastFor (60s) of the run the cadence is held
+//     at echoIntervals[echoDialFailTrust] (2s); after that it is the normal
+//     not-probed backoff again (1s→16s). A QUIC not-probed probe does no I/O
+//     (no cached connection to probe); a TCP-WS one re-attempts a connect.
+//     The device is already active with failing traffic, and the fast
+//     cadence also ends with the run (answered dial, Reset, 30s silence).
+//   - a re-race needs echoReraceThreshold strikes AND the run to have lasted
+//     dialFailReraceAfter(ev.reraces) — 8s for the first, 24s for the
+//     second, then every 16s — measured from the run's first failure (wire
+//     ConnectFailureInfo.First), so the two bounds hold wherever the probe
+//     timer was when the node died.
+//
+// Dead node, steady state (16s cadence), t0 = first failing user dial: first
+// strike ≤ t0+16, strikes 2/3 at +2s/+4s → re-race #1 ≤ t0+20; its Phase-A
+// fails by ≤ t0+25 (wire raceTimeout 5s); strikes refill at 2s meanwhile, so
+// re-race #2 fires at ~t0+26 (≥ 24s gate); it fails by ~t0+31, then netcheck
+// and the fallback's setup → DIAG: outbound-failover ≈ t0+33..36 (bound 45s).
+// TestDeadNodeTimeline_FailoverWithin45s drives this on a fake clock: Phase B
+// starts 29-31s after t0 at one failing dial per 1-2s (PVE S9 measured ~1.6
+// refused connects/s), worst 37s at one per 3s. Sparser traffic is slower: a
+// quiet failing tick is not a strike.
+//
+// Node refusing for only 20s: re-race #2 cannot fire before t0+24, and the
+// first answered user dial after the node is back clears the run (First
+// resets, so does the re-race count), so at most one Phase-A fails —
+// reRaceFailThresholdForReplace (2) is not reached, no Phase B
+// (TestDeadNodeTimeline_20sRefusalNeverPhaseB).
+//
+// Idle (no traffic → no failures) and offline (network reported down) never
+// enter this branch: cadence and arithmetic stay exactly echoStep's.
+func echoStepDial(trust, strikes int32, err error, ev dialFailEvidence) echoStepResult {
+	if !ev.failing || !wire.IsEchoNotProbed(err) {
+		return echoStep(trust, strikes, err)
+	}
+	newStrikes := strikes
+	if ev.fresh {
+		newStrikes++
+	}
+	newTrust := int32(echoDialFailTrust)
+	if ev.runFor >= echoDialFailFastFor {
+		// Past the first failover window: back to the not-probed backoff
+		// (1s→16s), strikes still counted (review C bound).
+		newTrust = min(trust+1, int32(len(echoIntervals)-1))
+	}
+	return echoStepResult{
+		NewTrust:     newTrust,
+		NewStrikes:   newStrikes,
+		ShouldRerace: newStrikes >= echoReraceThreshold && ev.runFor >= dialFailReraceAfter(ev.reraces),
+		Classify:     echoNotProbedDialFailing,
+	}
+}
+
+// dialFailEvidence is probeOnce's reading of tm.ConnectFailures for one
+// not-probed probe.
+type dialFailEvidence struct {
+	failing bool          // unresolved failure < echoDialFailWindow old, network up
+	fresh   bool          // a new failure since the previous probe
+	runFor  time.Duration // since the first failure of the current run
+	reraces int           // re-races already fired for this run
+}
+
+// echoDialFailTrust pins the trust index while user dials are failing, for
+// the first echoDialFailFastFor of the run: echoIntervals[1] = 2s.
+const echoDialFailTrust = 1
+
+// echoDialFailFastFor bounds the 2s cadence to the start of a failure run:
+// its only purpose is the first failover (≤45s). A run that outlives it —
+// manual mode on a dead node, a background app retrying for hours — probes
+// on the normal not-probed backoff again (review C).
+const echoDialFailFastFor = 60 * time.Second
+
+// dialFailReraceAfter is how long a run of failing user dials must have
+// lasted before its k-th re-race (k = re-races already fired for the run).
+// See echoStepDial for the timeline these numbers come from.
+func dialFailReraceAfter(k int) time.Duration {
+	if k == 0 {
+		return 8 * time.Second
+	}
+	return 24*time.Second + time.Duration(k-1)*16*time.Second
+}
+
+// echoDialFailWindow bounds how old the newest unresolved user-dial failure
+// may be and still count (same 30s reasoning as echoStrikeTCPHealthyWindow:
+// it spans the 16s probe ceiling with margin). It also bounds the fast
+// cadence: 30s after the last failure the run no longer counts.
+const echoDialFailWindow = 30 * time.Second
+
+// readDialFailEvidence derives dialFailEvidence from a ConnectFailures
+// snapshot and the previous probe's view (seen seq, run start, re-races).
+// Pure.
+func readDialFailEvidence(cf wire.ConnectFailureInfo, seenSeq uint64, now time.Time, reraces int, netUp bool) dialFailEvidence {
+	if cf.Last.IsZero() || now.Sub(cf.Last) >= echoDialFailWindow || !netUp {
+		return dialFailEvidence{}
+	}
+	return dialFailEvidence{
+		failing: true,
+		fresh:   cf.Seq != seenSeq,
+		runFor:  now.Sub(cf.First),
+		reraces: reraces,
 	}
 }
 
@@ -951,6 +1114,31 @@ type echoLoopState struct {
 	// (transport, state-change), avoiding spam when probing a pre-echo
 	// server at high cadence.
 	unsupportedLogged bool
+	// connFailSeen is the tm.ConnectFailures seq seen at the previous probe;
+	// a strike on a not-probed outcome needs it to have moved since.
+	connFailSeen uint64
+	// dfRunFirst / dfReraces: the run of failing user dials the last
+	// not-probed re-race belonged to (its First) and how many re-races it has
+	// fired — dialFailReraceAfter's k. A new run (different First) restarts k.
+	dfRunFirst time.Time
+	dfReraces  int
+	// connGenSeen is the tm.ConnectFailures connection generation seen at the
+	// previous probe. When it moved (Reset / ResetConnections /
+	// ReplacePrimary) and this probe finds no live connection, strikes from
+	// the old connection are dropped before counting — the invariant the old
+	// not-probed arithmetic gave for free (strikes→0 on the first probe after
+	// a Reset), kept now that a not-probed probe can strike.
+	connGenSeen uint64
+	// tmSeen is the TransportManager the bookkeeping above belongs to; a
+	// Phase-B swap replaces ot.tm and restarts it (review E).
+	tmSeen *wire.TransportManager
+	// dfWarned is the First of the failure run whose DIAG: echo-probe-fail
+	// Warn was already logged (one per run, review C).
+	dfWarned time.Time
+	// dfStrikes: strikes holds dial-failure strikes (the last probe was
+	// echoNotProbedDialFailing), not echo strikes — only those are dropped
+	// when the run ends (review D, scoped by review 3 M-1).
+	dfStrikes bool
 }
 
 // echoProbeLoop runs one transport's exponential-trust echo schedule until
@@ -1018,13 +1206,64 @@ func (hm *healthMonitor) probeOnce(ot *outboundTransport, st *echoLoopState, now
 	primaryChannel := channelForType(transport)
 	activeChannel := ot.tm.ActiveChannel()
 
+	// The connection generation is read BEFORE the probe: a Reset landing
+	// while the probe runs then shows up as a move at the NEXT probe, so a
+	// strike earned on the old connection is still dropped there (review N1).
+	failGen := ot.tm.ConnectFailures().Gen
+
 	echoCtx, cancel := context.WithTimeout(context.Background(), echoProbeTimeout)
 	start := time.Now()
 	err := ep.RunEchoProbe(echoCtx)
 	cancel()
 	probeNow := time.Now()
 
-	res := echoStep(st.trustIdx, st.strikes, err)
+	cf := ot.tm.ConnectFailures()
+	notProbed := wire.IsEchoNotProbed(err)
+	if ot.tm != st.tmSeen {
+		// First probe, or a Phase-B swap installed a new TransportManager:
+		// its seq / gen / run start from zero and none of the old one's
+		// bookkeeping applies (review E). Failures it already recorded are
+		// fresh to this probe.
+		st.tmSeen = ot.tm
+		st.connFailSeen, st.connGenSeen, st.dfRunFirst, st.dfReraces = 0, failGen, time.Time{}, 0
+		// Strikes earned on the old (dead) TransportManager never carry
+		// onto the new node (review 3 M-2).
+		st.strikes, st.dfStrikes = 0, false
+	}
+	if !st.dfRunFirst.IsZero() && !cf.First.Equal(st.dfRunFirst) {
+		// The failure run seen at the previous probe is over. Strikes kept
+		// frozen through its quiet ticks must not leak into the next probe's
+		// echo path (review D) — only those: echo strikes from a cached
+		// connection stay, because there the echo is the evidence.
+		if st.dfStrikes {
+			st.strikes = 0
+		}
+		// Without a Reset in between, it ended on an answered user dial:
+		// the node is back (review A). Only on the no-cached-connection
+		// path (review 3 M-1): over a cached connection an "answered" dial
+		// can be a UDP open that sent nothing (wire recordUserDial), while
+		// with no connection the answer needed a fresh handshake.
+		if notProbed && failGen == st.connGenSeen {
+			hm.recovered(ot)
+		}
+	}
+	if !cf.First.Equal(st.dfRunFirst) {
+		st.dfRunFirst, st.dfReraces = cf.First, 0
+	}
+	if notProbed && failGen != st.connGenSeen {
+		// A Reset / ResetConnections / ReplacePrimary happened since the last
+		// probe: the strikes belong to the old connection (or the old network
+		// path). Never let them combine with a failure on the new one.
+		st.strikes = 0
+	}
+	st.connGenSeen = failGen
+	var ev dialFailEvidence
+	// hm.networkUp is read only when there is evidence to gate.
+	if notProbed && !cf.Last.IsZero() {
+		ev = readDialFailEvidence(cf, st.connFailSeen, hm.clockNow(), st.dfReraces, hm.networkUp())
+	}
+	st.connFailSeen = cf.Seq
+	res := echoStepDial(st.trustIdx, st.strikes, err, ev)
 
 	// Strike gating (final-review I1 + I4). echoStep stays pure and always
 	// classifies the outcome — scoring below is fed unconditionally either
@@ -1040,6 +1279,7 @@ func (hm *healthMonitor) probeOnce(ot *outboundTransport, st *echoLoopState, now
 	switch res.Classify {
 	case echoOK:
 		st.unsupportedLogged = false
+		hm.recovered(ot)
 		// echo-probe-ok is logged inside wire.EchoProbe at DEBUG with rttMs;
 		// no need to duplicate here.
 	case echoUnsupported:
@@ -1049,6 +1289,22 @@ func (hm *healthMonitor) probeOnce(ot *outboundTransport, st *echoLoopState, now
 		}
 	case echoNotProbed:
 		slog.Debug("engine: echo probe skipped, no live connection", "transport", transport, "err", err.Error())
+	case echoNotProbedDialFailing:
+		st.unsupportedLogged = false
+		// One Warn per failure run; the rest (every 2s while fast) at Debug
+		// (review C). DIAG: transport-rerace still marks every re-race.
+		level := slog.LevelDebug
+		if !st.dfWarned.Equal(cf.First) {
+			st.dfWarned = cf.First
+			level = slog.LevelWarn
+		}
+		slog.Log(context.Background(), level, "DIAG: echo-probe-fail",
+			"transport", transport,
+			"err", err.Error(),
+			"reason", "no-connection-dials-failing",
+			"trustIdx", st.trustIdx,
+			"strikes", res.NewStrikes,
+		)
 	case echoFail:
 		st.unsupportedLogged = false
 		slog.Warn("DIAG: echo-probe-fail",
@@ -1061,6 +1317,7 @@ func (hm *healthMonitor) probeOnce(ot *outboundTransport, st *echoLoopState, now
 
 	st.trustIdx = res.NewTrust
 	st.strikes = res.NewStrikes
+	st.dfStrikes = res.Classify == echoNotProbedDialFailing
 
 	if res.ShouldRerace && hm.reRaceChan != nil {
 		// Cap-1 channel + select-default in engine.outboundReplaceLoop gives
@@ -1070,6 +1327,9 @@ func (hm *healthMonitor) probeOnce(ot *outboundTransport, st *echoLoopState, now
 		default:
 		}
 		st.strikes = 0
+		if res.Classify == echoNotProbedDialFailing {
+			st.dfReraces++
+		}
 	}
 
 	// Task 7: feed the dual-channel scoreboard with this probe's outcome and

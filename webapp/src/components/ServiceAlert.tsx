@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { useVPNMachine } from '../stores/vpn-machine.store';
 import { useVPNMachineStore } from '../stores/vpn-machine.store';
 import { isNetworkError } from '../services/vpn-types';
+import { ENGINE_ERROR_CODES } from '../utils/errorCatalog';
 import { useServiceBlocker } from '../hooks/useServiceBlocker';
 import {
   canOpenServiceSettings,
@@ -100,7 +101,7 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { isServiceDown, error } = useVPNMachine();
+  const { isServiceDown, error, state } = useVPNMachine();
   const initialization = useVPNMachineStore((s) => s.initialization);
   const [isResolving, setIsResolving] = useState(false);
 
@@ -181,7 +182,14 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
 
   // Determine alert type (priority: initialization > service failure > network error)
   const isInitializing = initialization && !initialization.ready;
-  const hasNetworkError = error && isNetworkError(error.code);
+  // A reconnecting 503 is the engine's own "line unreachable, retrying" hold:
+  // it has just judged the user's network fine, and the connect button's
+  // reason line already says so — the "check your network" banner would
+  // contradict it for up to 10 minutes. 101/106/107/108 while reconnecting,
+  // and 503 after a disconnect, keep the banner.
+  const reconnectingServerHold =
+    state === 'reconnecting' && error?.code === ENGINE_ERROR_CODES.ErrCodeServerUnreachable;
+  const hasNetworkError = error && isNetworkError(error.code) && !reconnectingServerHold;
 
   let alertType: AlertType | null = null;
   if (isInitializing) {

@@ -95,6 +95,9 @@ const TRANSITIONS: Record<VPNState, Partial<Record<VPNEvent, VPNState>>> = {
     SERVICE_UNREACHABLE:  'serviceDown',
   },
   reconnecting: {
+    // Self-transition: the engine re-reports reconnecting when its reason
+    // (error overlay: 101 / 106 / 107 / 503, or none) changes — apply it.
+    BACKEND_RECONNECTING: 'reconnecting',
     BACKEND_CONNECTED:    'connected',
     BACKEND_DISCONNECTED: 'idle',
     BACKEND_ERROR:        'idle',
@@ -132,12 +135,15 @@ export const useVPNMachineStore = create<VPNMachineState>()(
 
 const RECONNECT_DEBOUNCE_MS = 3000;
 let reconnectDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+/** Error overlay of the latest BACKEND_RECONNECTING seen during the debounce window. */
+let pendingReconnectError: ControlError | null = null;
 
 function clearReconnectDebounce() {
   if (reconnectDebounceTimer) {
     clearTimeout(reconnectDebounceTimer);
     reconnectDebounceTimer = null;
   }
+  pendingReconnectError = null;
 }
 
 // ============ Dispatch ============
@@ -164,14 +170,19 @@ export function dispatch(event: VPNEvent, payload?: DispatchPayload): void {
 
   // Special: debounce connected → reconnecting
   if (currentState === 'connected' && event === 'BACKEND_RECONNECTING') {
+    // The reason (error overlay) rides along: the latest one pushed during the
+    // window is what the user sees once the debounce fires.
+    pendingReconnectError = payload?.error ?? null;
     if (reconnectDebounceTimer) return; // already debouncing
     console.debug('[VPNMachine] dispatch: reconnect debounce started (3s)');
     reconnectDebounceTimer = setTimeout(() => {
       reconnectDebounceTimer = null;
+      const error = pendingReconnectError;
+      pendingReconnectError = null;
       const s = useVPNMachineStore.getState().state;
-      console.debug('[VPNMachine] dispatch: debounced reconnect fired, state=' + s);
+      console.debug('[VPNMachine] dispatch: debounced reconnect fired, state=' + s + ', reason=' + (error?.code ?? 'none'));
       if (s === 'connected') {
-        useVPNMachineStore.setState({ state: 'reconnecting', revision: useVPNMachineStore.getState().revision + 1 });
+        useVPNMachineStore.setState({ state: 'reconnecting', error, revision: useVPNMachineStore.getState().revision + 1 });
       }
     }, RECONNECT_DEBOUNCE_MS);
     return;

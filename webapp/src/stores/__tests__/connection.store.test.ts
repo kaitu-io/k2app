@@ -1998,3 +1998,115 @@ describe('connect() Auto with the real picker', () => {
     expect(vpn.useVPNMachineStore.getState().error?.code).toBe(572);
   });
 });
+
+// ==================== Auto failover: primary + fallbacks on distinct machines ====================
+
+describe('connect() Auto sends fallbacks', () => {
+  afterEach(async () => {
+    const { cacheStore } = await import('../../services/cache-store');
+    cacheStore.clear();
+  });
+
+  /** mulberry32, so connect()'s Math.random draws can be replayed. */
+  const prng = (seed: number) => {
+    let a = seed >>> 0;
+    return () => {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  };
+
+  /** n tunnels, each on its own machine (distinct ipv4). */
+  const machines = (n: number) => Array.from({ length: n }, (_, i) => ({
+    id: i + 1, domain: `m${i}.example.com`, name: `m${i}`, protocol: 'k2v5', port: 443,
+    serverUrl: `k2v5://m${i}.example.com:443`, recommendScore: 0.9 - i * 0.05,
+    node: { country: 'JP', ipv4: `10.9.0.${i}`, ipv6: '' },
+  })) as any[];
+
+  async function setup(tunnels: any[]) {
+    const stores = await getStores();
+    const { cacheStore } = await import('../../services/cache-store');
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildTunnelUrl).mockImplementation(async (u: string) => u.replace('k2v5://', 'k2v5://u:t@'));
+    mockRun.mockResolvedValue({ code: 0 });
+    cacheStore.set('api:tunnels', { items: tunnels });
+    return { ...stores, authService };
+  }
+
+  const upConfig = () => mockRun.mock.calls.find((c: any[]) => c[0] === 'up')![1].config;
+
+  it('Auto builds 4 tunnel URLs (primary + 3 fallbacks) and keys fallbacks by the primary via', async () => {
+    const { useConnectionStore, authService } = await setup(machines(8));
+    await useConnectionStore.getState().connect();
+
+    expect(vi.mocked(authService.buildTunnelUrl)).toHaveBeenCalledTimes(4);
+    const cfg = upConfig();
+    const primaryVia = cfg.routes.find((r: any) => r.match.all).via as string;
+    expect(Object.keys(cfg.fallbacks)).toEqual([primaryVia]);
+    const fb = cfg.fallbacks[primaryVia] as string[];
+    expect(fb).toHaveLength(3);
+    expect(new Set([primaryVia, ...fb]).size).toBe(4);
+    for (const u of fb) expect(u.startsWith('k2v5://u:t@')).toBe(true);
+    expect(cfg.netcheck.length).toBeGreaterThan(0);
+  });
+
+  it('a failing fallback URL build is dropped without affecting the primary', async () => {
+    const tunnels = machines(8);
+    const { useConnectionStore, authService } = await setup(tunnels);
+    // Same seed for the expectation and for connect()'s Math.random draws.
+    const { pickAutoCandidates } = await import('../../utils/auto-tunnel-pick');
+    const expected = pickAutoCandidates(tunnels, [], 4, prng(7));
+    expect(expected).toHaveLength(4);
+    const doomed = expected[2].serverUrl;
+    vi.mocked(authService.buildTunnelUrl).mockImplementation(async (u: string) => {
+      if (u === doomed) throw new Error('storage exploded');
+      return u.replace('k2v5://', 'k2v5://u:t@');
+    });
+    const spy = vi.spyOn(Math, 'random').mockImplementation(prng(7));
+    await useConnectionStore.getState().connect();
+    spy.mockRestore();
+
+    const auth = (u: string) => u.replace('k2v5://', 'k2v5://u:t@');
+    const cfg = upConfig();
+    expect(cfg.routes.some((r: any) => r.via === auth(expected[0].serverUrl))).toBe(true);
+    expect(cfg.fallbacks).toEqual({
+      [auth(expected[0].serverUrl)]: [auth(expected[1].serverUrl), auth(expected[3].serverUrl)],
+    });
+  });
+
+  it('one tunnel in Auto → no fallbacks key', async () => {
+    const { useConnectionStore, authService } = await setup(machines(1));
+    await useConnectionStore.getState().connect();
+    expect(vi.mocked(authService.buildTunnelUrl)).toHaveBeenCalledTimes(1);
+    expect('fallbacks' in upConfig()).toBe(false);
+  });
+
+  it('manual selection builds exactly 1 tunnel URL and sends no fallbacks', async () => {
+    const tunnels = machines(8);
+    const { useConnectionStore, authService } = await setup(tunnels);
+    useConnectionStore.getState().selectCloudTunnel(tunnels[2]);
+    await useConnectionStore.getState().connect();
+
+    expect(vi.mocked(authService.buildTunnelUrl)).toHaveBeenCalledTimes(1);
+    expect('fallbacks' in upConfig()).toBe(false);
+  });
+
+  it('the 504 global-routes retry carries the same fallbacks', async () => {
+    const { useConnectionStore } = await setup(machines(8));
+    const { useConfigStore } = await import('../config.store');
+    useConfigStore.setState({ country: 'tr', countryVia: 'direct', autoDetect: false });
+    mockRun.mockReset();
+    mockRun
+      .mockResolvedValueOnce({ code: 504, message: 'rule bundles unavailable' })
+      .mockResolvedValueOnce({ code: 0 });
+    await useConnectionStore.getState().connect();
+
+    const ups = mockRun.mock.calls.filter((c: any[]) => c[0] === 'up');
+    expect(ups).toHaveLength(2);
+    expect(ups[1][1].config.fallbacks).toEqual(ups[0][1].config.fallbacks);
+    expect(Object.values(ups[1][1].config.fallbacks as Record<string, string[]>)[0]).toHaveLength(3);
+  });
+});

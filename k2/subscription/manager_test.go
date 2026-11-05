@@ -3,6 +3,7 @@ package subscription
 import (
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -55,4 +56,78 @@ func TestManager_NextURL_Exhausted_ReturnsError(t *testing.T) {
 	if !strings.Contains(err.Error(), "all subscribed tunnels failed") {
 		t.Fatalf("unexpected err: %v", err)
 	}
+}
+
+func TestManager_OwnsURL(t *testing.T) {
+	urlA := "k2v5://udid:tok@a.example/?ech=x"
+	mgr := &Manager{}
+	if mgr.OwnsURL(urlA) {
+		t.Fatal("OwnsURL with no sessions = true, want false")
+	}
+	mgr.sessions = []*Session{newTestSession(t, []string{urlA})}
+	if !mgr.OwnsURL(urlA) {
+		t.Fatal("OwnsURL(session URL) = false, want true")
+	}
+	if mgr.OwnsURL("k2v5://udid:tok@unknown.example/?ech=x") {
+		t.Fatal("OwnsURL(unknown) = true, want false")
+	}
+}
+
+// Reset (engine compositeProvider.Reset → shell provider): clears every
+// session's per-session exclusions, so a URL excluded during a Center outage
+// is offered again. Per-URL ownership is unchanged.
+func TestManager_Reset_ClearsExclusions(t *testing.T) {
+	urlA := "k2v5://udid:tok@a.example/?ech=x"
+	urlB := "k2v5://udid:tok@b.example/?ech=x"
+	mgr := &Manager{}
+	mgr.sessions = []*Session{newTestSession(t, []string{urlA, urlB})}
+
+	if got, err := mgr.NextURL(urlA, nil); err != nil || got != urlB {
+		t.Fatalf("NextURL(a) = %q, %v; want b", got, err)
+	}
+	if _, err := mgr.NextURL(urlB, nil); err == nil {
+		t.Fatal("precondition: a and b excluded must exhaust")
+	}
+	mgr.Reset()
+	if got, err := mgr.NextURL(urlB, nil); err != nil || got != urlA {
+		t.Fatalf("after Reset NextURL(b) = %q, %v; want a (exclusions cleared)", got, err)
+	}
+	if !mgr.OwnsURL(urlA) || !mgr.OwnsURL(urlB) {
+		t.Fatal("Reset changed URL ownership")
+	}
+	(&Manager{}).Reset() // no sessions: no-op
+}
+
+// Reset runs on the engine's replace-loop goroutine while the shell may be
+// resolving / closing sessions and the probe service reads candidates: it
+// must be race-free against every other Manager method.
+func TestManager_Reset_ConcurrentWithOtherMethods(t *testing.T) {
+	urlA := "k2v5://udid:tok@a.example/?ech=x"
+	urlB := "k2v5://udid:tok@b.example/?ech=x"
+	mgr := &Manager{}
+	mgr.sessions = []*Session{newTestSession(t, []string{urlA, urlB})}
+	var wg sync.WaitGroup
+	for g := 0; g < 4; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 200; i++ {
+				_, _ = mgr.NextURL(urlA, nil)
+				mgr.Reset()
+				_ = mgr.OwnsURL(urlB)
+				_ = mgr.CandidateURLs()
+				_ = mgr.Sessions()
+			}
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 200; i++ {
+			mgr.mu.Lock()
+			mgr.sessions = []*Session{newTestSession(t, []string{urlA, urlB})}
+			mgr.mu.Unlock()
+		}
+	}()
+	wg.Wait()
 }

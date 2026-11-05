@@ -35,10 +35,10 @@ func (b *eventBridge) OnStatus(status engine.Status) {
 
 func (b *eventBridge) OnStats(tx, rx int64) { b.handler.OnStats(tx, rx) }
 
-// OnOutboundFatal implements engine.EventHandler. Mobile/sysext shells do
-// not install OutboundProvider (k2subs:// Subscription machinery lives in
-// the daemon, not in appext), so this callback never fires in practice.
-// Left as a no-op to keep the gomobile-exported EventHandler surface
-// stable; if/when mobile grows its own subscription system, add a
-// matching method to the gomobile EventHandler and forward here.
+// OnOutboundFatal implements engine.EventHandler. It does fire on mobile:
+// right before the engine fails on an account verdict (failIfUserAction) or
+// after 10 min of online exhaustion (failExhausted) with the static
+// fallbacks. The disconnected status that follows via OnStatus carries
+// everything the app needs, so this is a no-op — kept off the
+// gomobile-exported EventHandler surface on purpose.
 func (b *eventBridge) OnOutboundFatal(outbound string, err error) {}

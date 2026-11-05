@@ -160,8 +160,10 @@ func IsEchoUnsupported(err error) bool {
 // drop it and the next dial rebuilds it lazily), the cached one was already
 // closed, or a tcpws connect failed with a non-timeout error. Such a probe
 // says nothing about the server's echo support or about the data path, so it
-// is neither "unsupported" nor a failure — engine's echoStep leaves trust and
-// strikes untouched and RecordEchoResult records nothing.
+// is neither "unsupported" nor a failure on its own — engine's echoStep gives
+// it the unsupported arithmetic and RecordEchoResult records nothing. It
+// strikes only when user dials are failing to connect at the same time
+// (TransportManager.ConnectFailures, dial_failure.go; engine echoStepDial).
 //
 // Before this marker every such error fell through IsEchoUnsupported's
 // fail-open default: on Android the connectivity change raised right after

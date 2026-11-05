@@ -7,7 +7,7 @@
  * CI's `npx tsc --noEmit` checks it, and nothing imports it, so it never
  * ships in a bundle. Everything is exported only to satisfy noUnusedLocals.
  */
-import type { MatchConfig, PresetName, RouteConfig } from './client-config';
+import type { ClientConfig, MatchConfig, PresetName, RouteConfig } from './client-config';
 
 // PresetName must accept the SP3 additions.
 export const gamesPreset: PresetName = 'games';
@@ -25,3 +25,11 @@ export const protocolRule: MatchConfig = { protocol: ['stun', 'dtls', 'quic', 'b
 export const badProtocolRule: MatchConfig = { protocol: ['http'] };
 
 export const gamesRoute: RouteConfig = { via: 'direct', match: { preset: 'games' } };
+
+// fallbacks / netcheck wire fields (Go ClientConfig.Fallbacks / Netcheck).
+export const failoverConfig: ClientConfig = {
+  routes: [{ via: 'k2v5://a', match: { preset: 'overseas' } }],
+  fallbacks: { 'k2v5://a': ['k2v5://b'] },
+  netcheck: [{ url: 'http://c/generate_204', status: 204 }, { url: 'http://d/', status: 200, body: 'ok' }],
+  netcheck_dns: ['1.1.1.1:53'],
+};

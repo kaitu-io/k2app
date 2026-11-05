@@ -16,7 +16,13 @@
     "disabled": "已禁用",
     "clickToStop": "点击断开",
     "reconnectingToServer": "正在重连服务器...",
-    "waitingForNetwork": "等待网络连接..."
+    "waitingForNetwork": "等待网络连接...",
+    "reconnectReason": {
+      "networkUnavailable": "网络已断开，恢复后自动连接",
+      "noInternet": "当前网络无法访问互联网，恢复后自动连接",
+      "captivePortal": "此 Wi-Fi 需要网页登录",
+      "serverUnreachable": "线路暂时无法连接，正在重试"
+    }
   },
   "common": {
     "justNow": "刚刚",
@@ -73,7 +79,9 @@
       "repairDNS": "DNS 修复失败",
       "repairRoute": "路由修复失败",
       "repairPreFailed": "网络修复准备失败",
-      "unavailable": "网络不可用，请检查设备的网络连接"
+      "unavailable": "网络不可用，请检查设备的网络连接",
+      "noInternet": "当前网络无法访问互联网",
+      "captivePortal": "此 Wi-Fi 需要网页登录"
     },
     "server": {
       "unavailable": "服务器不可用，请稍后重试",
@@ -116,7 +124,8 @@
       "startFailed": "启动服务失败，请重试",
       "reconnectFailed": "重新连接失败，请重试",
       "timeout": "操作超时，请重试",
-      "allAddrsFailed": "所有服务器地址均连接失败，请更换节点"
+      "allAddrsFailed": "所有服务器地址均连接失败，请更换节点",
+      "serverUnreachable": "线路暂时都无法连接，请稍后重试"
     },
     "auth": {
       "logoutFailed": "登出失败，请重试",

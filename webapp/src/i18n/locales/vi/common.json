@@ -16,7 +16,13 @@
     "disabled": "Đã tắt",
     "clickToStop": "Nhấp để ngắt kết nối",
     "reconnectingToServer": "Đang kết nối lại với máy chủ...",
-    "waitingForNetwork": "Đang chờ mạng..."
+    "waitingForNetwork": "Đang chờ mạng...",
+    "reconnectReason": {
+      "networkUnavailable": "Mất kết nối mạng. Sẽ tự động kết nối lại khi có mạng.",
+      "noInternet": "Mạng này không có kết nối Internet. Sẽ tự động kết nối lại khi có mạng.",
+      "captivePortal": "Wi-Fi này yêu cầu đăng nhập trên trang web",
+      "serverUnreachable": "Tạm thời không thể kết nối tới tuyến, đang thử lại"
+    }
   },
   "common": {
     "justNow": "Vừa xong",
@@ -73,7 +79,9 @@
       "repairDNS": "Sửa chữa DNS không thành công",
       "repairRoute": "Sửa chữa tuyến đường không thành công",
       "repairPreFailed": "Chuẩn bị sửa chữa mạng không thành công",
-      "unavailable": "Không có kết nối mạng. Kiểm tra mạng thiết bị của bạn và thử lại."
+      "unavailable": "Không có kết nối mạng. Kiểm tra mạng thiết bị của bạn và thử lại.",
+      "noInternet": "Mạng này không có kết nối Internet",
+      "captivePortal": "Wi-Fi này yêu cầu đăng nhập trên trang web"
     },
     "server": {
       "unavailable": "Máy chủ không khả dụng, vui lòng thử lại sau",
@@ -124,7 +132,8 @@
       "startFailed": "Không thể bắt đầu dịch vụ, vui lòng thử lại",
       "reconnectFailed": "Kết nối lại không thành công, vui lòng thử lại",
       "timeout": "Hoạt động hết thời gian, vui lòng thử lại",
-      "allAddrsFailed": "Tất cả địa chỉ máy chủ không thành công, vui lòng chuyển nút"
+      "allAddrsFailed": "Tất cả địa chỉ máy chủ không thành công, vui lòng chuyển nút",
+      "serverUnreachable": "Hiện không thể kết nối tới tuyến nào. Vui lòng thử lại sau."
     },
     "action": {
       "timeout": "Hoạt động hết thời gian, vui lòng thử lại",
