@@ -67,6 +67,14 @@ const (
 	// one tick: an oracle window the engine could not have sampled is never
 	// held against it.
 	simMinDwell = 90 * time.Second
+
+	// Spec values the oracles hold the engine to, written out rather than
+	// read from the product constants (exhaustFailAfter, longPendingAfter,
+	// longPendingInterval): a mutation of the constant must not move the
+	// oracle with it (spec §4.2 amendment 2026-11-05; final-review-2 M4).
+	simSpecCap         = 10 * time.Minute
+	simSpecLongPending = 10 * time.Minute
+	simSpecLongTick    = 60 * time.Second
 )
 
 // Fake durations of the edge calls (fake clock).
@@ -562,6 +570,7 @@ type simResult struct {
 	failAt     time.Duration
 	failovers  int
 	caps       int
+	lpPairs    int // long-pending tick pairs the I4 cadence check judged
 	steps      int
 	i2Lat      []time.Duration // P2 start → failover
 	hash       uint64
@@ -649,10 +658,13 @@ type simRun struct {
 	attempts           []time.Time // races + setups
 	netchecks          []time.Time
 	waitTicks          []time.Time // netchecks with trigger=wait-tick: the schedule's own cadence
-	offlineEpoch       int         // incremented on each transition into a non-online network
-	roundEpoch         int         // offlineEpoch of the last Phase-B round seen offline
-	roundsOff          int         // Phase-B rounds in the current offline episode
-	inRound            bool        // a setup was seen since the last idle point
+	lpFlagged          bool        // long-pending cadence flagged for this reconnecting stretch
+	lpLastJudged       time.Time
+	netOnlineSince     time.Time // the network has been online since
+	offlineEpoch       int       // incremented on each transition into a non-online network
+	roundEpoch         int       // offlineEpoch of the last Phase-B round seen offline
+	roundsOff          int       // Phase-B rounds in the current offline episode
+	inRound            bool      // a setup was seen since the last idle point
 	constSince         time.Time
 	reconnSince        time.Time
 	maxBackoff         time.Duration
@@ -785,7 +797,7 @@ func (s *simRun) classify(v simViolation) string {
 	case v.inv == "I4" && strings.Contains(v.msg, "steady state") && s.net == snAcceptAll:
 		return "M3"
 	case v.inv == "I1" && (strings.Contains(v.msg, "failed 503 before") || strings.Contains(v.msg, "without that verdict")) &&
-		!s.lastCodeLessAt.IsZero() && s.now().Sub(s.lastCodeLessAt)-(s.pausedNow()-s.lastCodeLessPaused) < exhaustFailAfter:
+		!s.lastCodeLessAt.IsZero() && s.now().Sub(s.lastCodeLessAt)-(s.pausedNow()-s.lastCodeLessPaused) < simSpecCap:
 		return "FA"
 	case v.inv == "I3" && strings.Contains(v.msg, "stale 503") &&
 		(s.nodes[s.curNode()].st.kind == skCodeLess || !s.lastRaceCodeLessAt.IsZero()):
@@ -1407,7 +1419,7 @@ func (s *simRun) checkFail(code int) {
 		if !s.cOKSince.IsZero() {
 			since = fmtDur(s.cOKSince.Sub(s.t0))
 		}
-		s.violate("I1", "failed 503 before %v of continuous online, non-code-less, transport-dead exhaustion (window open since %s)", exhaustFailAfter, since)
+		s.violate("I1", "failed 503 before %v of continuous online, non-code-less, transport-dead exhaustion (window open since %s)", simSpecCap, since)
 	}
 }
 
@@ -1435,14 +1447,14 @@ func (s *simRun) capCounted() time.Duration {
 // not reset the window.
 func (s *simRun) capDebounce() time.Duration { return s.tickBound() + s.maxChain() }
 
-// capHeld: the window has lasted exhaustFailAfter, or did until a break the
+// capHeld: the window has lasted simSpecCap, or did until a break the
 // engine could not yet have observed.
 func (s *simRun) capHeld() bool {
-	if s.capCounted() >= exhaustFailAfter {
+	if s.capCounted() >= simSpecCap {
 		return true
 	}
 	return s.cOKSince.IsZero() && !s.cOKSaved.IsZero() &&
-		s.now().Sub(s.cOKBreakAt) <= s.capDebounce() && s.cOKSavedCount >= exhaustFailAfter
+		s.now().Sub(s.cOKBreakAt) <= s.capDebounce() && s.cOKSavedCount >= simSpecCap
 }
 
 // updateCapWindow: the I1 window. While paused it is frozen (paused time
@@ -1472,7 +1484,7 @@ func (s *simRun) updateCapWindow(now time.Time) {
 }
 
 // checkCapLate (I1 liveness): once the window is open the cap must fire
-// within exhaustFailAfter plus detection (the engine has to notice the dead
+// within simSpecCap plus detection (the engine has to notice the dead
 // node and run its first counted round) plus one tick spacing and one tick.
 // Only where the engine can see the failure: user traffic, a real network
 // verdict, candidates mode.
@@ -1480,7 +1492,7 @@ func (s *simRun) checkCapLate() {
 	if s.cOKLateFlagged || !s.sc.traffic || s.sc.noTargets || s.sc.mode == "manual" || s.net != snOnline {
 		return
 	}
-	b := exhaustFailAfter + s.i2Detect() + 2*(s.tickBound()+s.maxChain())
+	b := simSpecCap + s.i2Detect() + 2*(s.tickBound()+s.maxChain())
 	if c := s.capCounted(); c > b {
 		s.cOKLateFlagged = true
 		s.violate("I1", "cap late: online transport-dead exhaustion for %v and the session still not ended (bound %v)", c.Round(time.Second), b)
@@ -1502,6 +1514,11 @@ func (s *simRun) observe(idle bool) {
 	}
 	// I1 window.
 	s.updateCapWindow(now)
+	if s.net != snOnline {
+		s.netOnlineSince = time.Time{}
+	} else if s.netOnlineSince.IsZero() {
+		s.netOnlineSince = now
+	}
 	// I2.
 	if s.p2() {
 		if s.p2Since.IsZero() {
@@ -1549,7 +1566,7 @@ func (s *simRun) observe(idle bool) {
 			s.reconnSince = now
 		}
 	} else {
-		s.reconnSince = time.Time{}
+		s.reconnSince, s.lpFlagged = time.Time{}, false
 	}
 	// I3a: the shown hold follows the latest network verdict.
 	if s.haveVerdict && s.lastVerdict.blocksFailover() && !s.okSinceVerd && st.State != StatePaused {
@@ -1643,14 +1660,23 @@ func (s *simRun) checkBudgets(now time.Time) {
 		s.constSince = now
 	}
 	// Long pending (final-review-2 M4): a target on the schedule for
-	// longPendingAfter ticks every longPendingInterval. Wakes (net-event,
-	// wake, recovered) tick at once and are not counted; on an online
+	// simSpecLongPending ticks every simSpecLongTick. The engine's
+	// pendingSince is at most one tick after the status turned reconnecting,
+	// so once a wait-tick lands past reconnSince + simSpecLongPending + one
+	// tick + maxChain the next one is ≥ simSpecLongTick later (less the
+	// netcheck-duration jitter of the DIAG timestamps). Wakes (net-event,
+	// wake, recovered) only push the next tick further out. On an online
 	// network there is no hold, so every wait-tick is a schedule tick.
-	if s.net == snOnline && now.Sub(from) >= longPendingAfter+last+win {
-		lim := int(win/longPendingInterval) + 1
-		if n := countSince(s.waitTicks, now.Add(-win)); n > lim {
-			s.violate("I4", "steady state, long pending: %d schedule ticks in 10 min (limit %d at the %v cadence)", n, lim, longPendingInterval)
-			s.constSince = now
+	if s.net == snOnline && len(s.waitTicks) >= 2 && !s.lpFlagged {
+		t1, t2 := s.waitTicks[len(s.waitTicks)-2], s.waitTicks[len(s.waitTicks)-1]
+		thr := s.reconnSince.Add(simSpecLongPending + s.tickBound() + s.maxChain())
+		if t2 != s.lpLastJudged && !t1.Before(thr) && !t1.Before(s.netOnlineSince) {
+			s.lpLastJudged = t2
+			s.res.lpPairs++
+		}
+		if !t1.Before(thr) && !t1.Before(s.netOnlineSince) && t2.Sub(t1) < simSpecLongTick-2*simDurNCNoResp+simDurNCFast {
+			s.lpFlagged = true
+			s.violate("I4", "long pending: schedule ticks %v apart after %v reconnecting (want ≥ %v)", t2.Sub(t1).Round(100*time.Millisecond), now.Sub(s.reconnSince).Round(time.Second), simSpecLongTick)
 		}
 	}
 }
@@ -2046,6 +2072,7 @@ func TestSimFailover(t *testing.T) {
 		fails     = map[int]int{}
 		failovers int
 		caps      int
+		lpPairs   int
 		steps     int
 		lat       []time.Duration
 		modes     = map[string]int{}
@@ -2058,6 +2085,7 @@ func TestSimFailover(t *testing.T) {
 		steps += r.steps
 		failovers += r.failovers
 		caps += r.caps
+		lpPairs += r.lpPairs
 		lat = append(lat, r.i2Lat...)
 		if r.failCode != 0 {
 			fails[r.failCode]++
@@ -2098,8 +2126,8 @@ func TestSimFailover(t *testing.T) {
 		}
 		return lat[int(p*float64(len(lat)-1))]
 	}
-	t.Logf("sim: %d seeds in %v (%.1f seeds/s), %d failing (%v), accepted findings %v; modes %v; steps %d; failovers %d; caps %d; session ends by code %v; I2 latency n=%d p50=%v p99=%v max=%v",
-		len(seeds), el.Round(time.Millisecond), float64(len(seeds))/el.Seconds(), failed, byInv, accepted, modes, steps, failovers, caps, fails,
+	t.Logf("sim: %d seeds in %v (%.1f seeds/s), %d failing (%v), accepted findings %v; modes %v; steps %d; failovers %d; caps %d; long-pending tick pairs %d; session ends by code %v; I2 latency n=%d p50=%v p99=%v max=%v",
+		len(seeds), el.Round(time.Millisecond), float64(len(seeds))/el.Seconds(), failed, byInv, accepted, modes, steps, failovers, caps, lpPairs, fails,
 		len(lat), pct(0.5).Round(time.Second), pct(0.99).Round(time.Second), pct(1).Round(time.Second))
 	if os.Getenv("K2_SIM_SEED") != "" {
 		r := simRunScenario(simGen(seeds[0], pause), pause)
