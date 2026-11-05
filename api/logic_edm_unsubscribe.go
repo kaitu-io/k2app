@@ -42,6 +42,7 @@ var edmOptOutExemptSlugs = map[string]bool{
 	privateNodeWelcomeSlug:  true, // 定制线路欢迎 / 装机引导
 	routerWelcomeSlug:       true, // 路由器版欢迎 / 装机引导
 	trafficAbuseWarningSlug: true, // 流量滥用警告
+	billingIssueSlug:        true, // 扣费失败提醒（服务通知）
 }
 
 // inRecallHoldoutForEmail 召回邮件对照组判定：已退订 EDM 的用户两组都不进——他们在召回组会被

@@ -153,6 +153,14 @@
     "manage": {
       "blockedHint": "Vous avez un abonnement avec renouvellement automatique actif (gérez-le ci-dessous). Vous ne pouvez pas acheter à nouveau ici tant qu'il est actif — cela évite la double facturation.",
       "conflictAlert": "Vous avez déjà un abonnement actif et ne pouvez pas acheter à nouveau. Utilisez l'entrée de gestion d'abonnement pour apporter des modifications."
+    },
+    "billingIssue": {
+      "title": "Le paiement a échoué",
+      "body": "Apple n'a pas pu prélever votre moyen de paiement. Mettez-le à jour et votre abonnement reprendra automatiquement.",
+      "bodyGeneric": "Le paiement a échoué. Mettez à jour votre moyen de paiement et votre abonnement reprendra automatiquement.",
+      "trialBody": "Votre essai est terminé, mais le premier prélèvement a échoué. Mettez à jour votre moyen de paiement pour activer votre abonnement.",
+      "update": "Mettre à jour le moyen de paiement",
+      "appleElsewhere": "Sur votre iPhone, ouvrez Réglages → Compte Apple → Paiement et livraison pour mettre à jour votre moyen de paiement."
     }
   },
   "deviceInstall": {

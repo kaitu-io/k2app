@@ -153,6 +153,14 @@
     "manage": {
       "blockedHint": "Você tem uma assinatura ativa com auto-renovação (gerencie abaixo). Você não pode comprar novamente aqui enquanto estiver ativa — isto previne faturamento duplo.",
       "conflictAlert": "Você já tem uma assinatura ativa e não pode comprar novamente. Use a entrada de gerenciamento de assinatura para fazer alterações."
+    },
+    "billingIssue": {
+      "title": "Pagamento não concluído",
+      "body": "A Apple não conseguiu cobrar sua forma de pagamento. Atualize-a e sua assinatura será retomada automaticamente.",
+      "bodyGeneric": "O pagamento não foi concluído. Atualize sua forma de pagamento e sua assinatura será retomada automaticamente.",
+      "trialBody": "O teste terminou, mas a primeira cobrança não foi concluída. Atualize sua forma de pagamento para ativar a assinatura.",
+      "update": "Atualizar forma de pagamento",
+      "appleElsewhere": "No iPhone, acesse Ajustes → Conta Apple → Pagamento e Entrega para atualizar sua forma de pagamento."
     }
   },
   "deviceInstall": {

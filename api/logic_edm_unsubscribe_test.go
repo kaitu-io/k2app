@@ -348,12 +348,13 @@ func TestEDMOptOut_TransactionalMailUnaffected(t *testing.T) {
 	assert.Equal(t, []string{email, email}, to, "opted-out user must still receive transactional mail")
 }
 
-// 豁免名单恰好是增长负责人定下的三封服务通知——多一个少一个都要有人显式改这里。
+// 豁免名单恰好是这几封服务通知（含扣费失败提醒）——多一个少一个都要有人显式改这里。
 func TestEDMOptOutExemptSlugs_ExactList(t *testing.T) {
 	assert.Equal(t, map[string]bool{
 		privateNodeWelcomeSlug:  true,
 		routerWelcomeSlug:       true,
 		trafficAbuseWarningSlug: true,
+		billingIssueSlug:        true,
 	}, edmOptOutExemptSlugs)
 	for _, s := range []string{"renewal-3d", "private-node-renewal-7d", "winback-7d", "abandoned-1h", "abandoned-3d",
 		trialRecallSlugs[trialRecallS1], trialRecallSlugs[trialRecallS2]} {

@@ -758,6 +758,10 @@ func applyRenewalInfo(ctx context.Context, sub *Subscription, ri *appstore.Renew
 	}
 	if status != "" {
 		updates["status"] = status
+		// 进入扣费失败的时刻：与 status 同一个带守卫的 UPDATE。仅在"之前不是"时打戳，重放不覆盖。
+		if isBillingIssueStatus(status) && !isBillingIssueStatus(sub.Status) {
+			updates["billing_issue_since"] = time.Now().Unix()
+		}
 	}
 	if len(updates) == 0 {
 		log.Infof(ctx, "[applyRenewalInfo] sub %s no state change (subtype=%s currentStatus=%s)",
@@ -900,6 +904,7 @@ func GetActiveSubscriptions(userID uint64) []DataSubscription {
 			Manage:           manage,
 			IsTrial:          isTrial,
 			TrialEndsAt:      trialEndsAt,
+			BillingIssue:     isBillingIssueStatus(s.Status),
 		})
 	}
 	return out

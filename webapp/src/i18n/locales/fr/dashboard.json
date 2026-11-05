@@ -160,7 +160,8 @@
       "viewPlans": "Voir les forfaits"
     },
     "trialRenewOff": "Jours d'essai restants : {{days}}. Après le {{date}}, le service sera interrompu. Activez le renouvellement automatique pour continuer à l'utiliser. Après le paiement, vous pouvez désactiver le renouvellement automatique dans l'App Store à tout moment et continuer à utiliser la période payée.",
-    "trialContinue": "Continuer à utiliser"
+    "trialContinue": "Continuer à utiliser",
+    "billingIssueHint": "Le paiement a échoué. Mettez à jour votre moyen de paiement pour vous connecter"
   },
   "appBypass": {
     "v2": {

@@ -153,6 +153,14 @@
     "manage": {
       "blockedHint": "You have an active auto-renewing subscription (manage it below). You cannot purchase again here while it is active — this prevents double billing.",
       "conflictAlert": "You already have an active subscription and cannot purchase again. Use the subscription management entry to make changes."
+    },
+    "billingIssue": {
+      "title": "Payment didn't go through",
+      "body": "Apple couldn't charge your payment method. Update it and your membership will resume automatically.",
+      "bodyGeneric": "The payment didn't go through. Update your payment method and your membership will resume automatically.",
+      "trialBody": "Your trial has ended, but the first charge didn't go through. Update your payment method to start your membership.",
+      "update": "Update payment method",
+      "appleElsewhere": "On your iPhone, go to Settings → Apple Account → Payment & Shipping to update your payment method."
     }
   },
   "deviceInstall": {

@@ -289,3 +289,15 @@ func TestRenewalReminder_ExcludesNeverPaid(t *testing.T) {
 	assert.True(t, ids[paid.ID], "付过费的即将到期用户进候选")
 	assert.False(t, ids[trial.ID], "从没付过费的用户不进续费提醒 / 召回候选")
 }
+
+func TestRenewalReminderTask_RunsBillingIssueReminders(t *testing.T) {
+	skipIfNoConfig(t)
+	h := withPushHarness(t)
+	u, _, _ := seedPushUser(t, false, true)
+	cleanupPushLogs(t, u.ID)
+	seedIssueSub(t, u.ID, time.Now(), 3*24*time.Hour+time.Hour)
+	require.NoError(t, handleRenewalReminderTask(context.Background(), nil))
+	logs := pushLogsOf(t, u.ID)
+	require.Len(t, logs, 1)
+	assert.Contains(t, h.enqueued, logs[0].ID)
+}

@@ -16,6 +16,7 @@ import { useUser } from '../hooks/useUser';
 import MembershipBenefits from './MembershipBenefits';
 import type { DataSubscription } from '../services/api-types';
 import { statsService } from '../services/stats';
+import BillingIssueCard from './BillingIssueCard';
 
 interface SubscriptionManagePanelProps {
   activeSub?: DataSubscription;
@@ -48,6 +49,8 @@ export default function SubscriptionManagePanel({ activeSub }: SubscriptionManag
         <Typography variant="h6" fontWeight={700}>
           {t('purchase:purchase.stripe.manageTitle')}
         </Typography>
+
+        {activeSub?.billingIssue && <BillingIssueCard sub={activeSub} />}
 
         <Alert severity="info" data-testid="manage-blocked-hint">
           {t('purchase:purchase.manage.blockedHint')}

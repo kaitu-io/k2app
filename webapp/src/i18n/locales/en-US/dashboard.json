@@ -160,7 +160,8 @@
       "viewPlans": "View Plans"
     },
     "trialRenewOff": "Trial days left: {{days}}. Service will stop after {{date}}. Turn on auto-renew to keep using it. You can turn off auto-renew in the App Store any time after you're charged and keep using it for the period you paid for.",
-    "trialContinue": "Keep using"
+    "trialContinue": "Keep using",
+    "billingIssueHint": "Payment didn't go through. Update your payment method to connect."
   },
   "appBypass": {
     "v2": {

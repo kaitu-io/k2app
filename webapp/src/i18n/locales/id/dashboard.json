@@ -160,7 +160,8 @@
       "viewPlans": "Lihat Paket"
     },
     "trialRenewOff": "Sisa hari uji coba: {{days}}. Setelah {{date}} layanan akan berhenti. Aktifkan perpanjangan otomatis untuk tetap menggunakannya. Setelah ditagih, Anda tetap bisa mematikan perpanjangan otomatis di App Store kapan saja dan terus memakai periode yang sudah dibayar.",
-    "trialContinue": "Lanjutkan"
+    "trialContinue": "Lanjutkan",
+    "billingIssueHint": "Pembayaran gagal. Perbarui metode pembayaran untuk terhubung"
   },
   "appBypass": {
     "v2": {

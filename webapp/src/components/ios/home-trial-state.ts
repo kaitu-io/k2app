@@ -5,6 +5,7 @@
 
 import type { DataUser } from '../../services/api-types';
 import { purchaseSurfaceAvailable } from '../../utils/purchase-surface';
+import { billingIssueSub } from '../../utils/billing-issue';
 import { daysRemaining } from './membership-format';
 
 export type HomeTrialState =
@@ -13,6 +14,8 @@ export type HomeTrialState =
 
 export function homeTrialState(user: DataUser | null, nowSec: number): HomeTrialState {
   if (!purchaseSurfaceAvailable()) return { kind: 'none' };
+  // 付款失败卡片（首页另有展示）优先，试用提醒让位。
+  if (billingIssueSub(user?.subscriptions)) return { kind: 'none' };
   const sub = user?.subscriptions?.find((s) => s.provider === 'apple' && s.trialEndsAt > nowSec && s.autoRenew === false);
   if (!sub) return { kind: 'none' };
   const daysLeft = daysRemaining(sub.trialEndsAt, nowSec);

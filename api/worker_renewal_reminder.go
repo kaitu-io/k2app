@@ -54,6 +54,12 @@ func handleRenewalReminderTask(ctx context.Context, _ []byte) error {
 		processLifecyclePushes(ctx, days)
 	}
 
+	// 扣费失败（Apple grace / billing_retry）第 0/3/7 天提醒；失败只记日志，不影响任务结果。
+	bSent, bSkipped, bFailed := processBillingIssueReminders(ctx, time.Now())
+	totalSent += bSent
+	totalSkipped += bSkipped
+	totalFailed += bFailed
+
 	log.Infof(ctx, "[EMAIL-LIFECYCLE] Daily task completed: sent=%d, skipped=%d, failed=%d",
 		totalSent, totalSkipped, totalFailed)
 

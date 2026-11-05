@@ -153,6 +153,14 @@
     "manage": {
       "blockedHint": "Bạn có đăng ký tự động gia hạn hoạt động (quản lý bên dưới). Bạn không thể mua lại ở đây khi nó hoạt động — điều này ngăn chặn thanh toán kép.",
       "conflictAlert": "Bạn đã có đăng ký hoạt động và không thể mua lại. Sử dụng mục nhập quản lý đăng ký để thực hiện thay đổi."
+    },
+    "billingIssue": {
+      "title": "Thanh toán không thành công",
+      "body": "Apple không thể trừ tiền từ phương thức thanh toán của bạn. Hãy cập nhật phương thức thanh toán, gói thành viên sẽ tự động khôi phục.",
+      "bodyGeneric": "Thanh toán không thành công. Hãy cập nhật phương thức thanh toán, gói thành viên sẽ tự động khôi phục.",
+      "trialBody": "Thời gian dùng thử đã kết thúc nhưng lần trừ tiền đầu tiên không thành công. Hãy cập nhật phương thức thanh toán để kích hoạt gói thành viên.",
+      "update": "Cập nhật phương thức thanh toán",
+      "appleElsewhere": "Trên iPhone, vào Cài đặt → Tài khoản Apple → Thanh toán & Giao hàng để cập nhật phương thức thanh toán."
     }
   },
   "deviceInstall": {

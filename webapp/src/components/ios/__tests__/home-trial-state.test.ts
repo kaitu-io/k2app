@@ -29,6 +29,10 @@ describe('homeTrialState', () => {
     expect(s).toEqual({ kind: 'renewOff', daysLeft: 3, endsAtSec: NOW + 2.5 * DAY, urgent: false });
   });
 
+  it('billing issue yields to the home billing issue card', () => {
+    expect(homeTrialState(userWith(sub({ billingIssue: true })), NOW)).toEqual({ kind: 'none' });
+  });
+
   it('urgent when daysLeft <= 2', () => {
     const s = homeTrialState(userWith(sub({ trialEndsAt: NOW + 1.5 * DAY })), NOW);
     expect(s).toMatchObject({ kind: 'renewOff', daysLeft: 2, urgent: true });
