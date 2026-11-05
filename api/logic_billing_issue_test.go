@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -118,6 +119,11 @@ func TestBackfillBillingIssueSince(t *testing.T) {
 	grace := seedAppleSub(t, u.ID, "grace", false)
 	time.Sleep(time.Millisecond)
 	active := seedAppleSub(t, u.ID, "active", false)
+	time.Sleep(time.Millisecond)
+	stripeRetry := seedAppleSub(t, u.ID, "billing_retry", false)
+	require.NoError(t, db.Get().Model(&Subscription{}).Where("id = ?", stripeRetry.ID).Update("provider", "stripe").Error)
+	time.Sleep(time.Millisecond)
+	appleExpired := seedAppleSub(t, u.ID, "expired", false)
 	require.NoError(t, db.Get().Model(&Subscription{}).Where("id = ?", grace.ID).Update("billing_issue_since", 500).Error)
 
 	now := time.Now().Unix()
@@ -127,8 +133,153 @@ func TestBackfillBillingIssueSince(t *testing.T) {
 	assert.Equal(t, now, billingIssueSinceOf(t, retry.ID))
 	assert.Equal(t, int64(500), billingIssueSinceOf(t, grace.ID))
 	assert.Equal(t, int64(0), billingIssueSinceOf(t, active.ID))
+	assert.Equal(t, int64(0), billingIssueSinceOf(t, stripeRetry.ID), "stripe billing_retry untouched")
+	assert.Equal(t, int64(0), billingIssueSinceOf(t, appleExpired.ID), "apple expired untouched")
 
 	n, err = backfillBillingIssueSince(ctx, db.Get(), now+10)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), n, "idempotent")
+}
+
+// ---- 第 0 / 3 / 7 天提醒 ----
+
+func setBillingIssueSince(t *testing.T, id uint64, since int64) {
+	t.Helper()
+	require.NoError(t, db.Get().Model(&Subscription{}).Where("id = ?", id).Update("billing_issue_since", since).Error)
+}
+
+func candidateIDs(t *testing.T, day int, now time.Time) map[uint64]bool {
+	t.Helper()
+	subs, err := billingIssueCandidates(day, now)
+	require.NoError(t, err)
+	out := map[uint64]bool{}
+	for _, s := range subs {
+		out[s.ID] = true
+	}
+	return out
+}
+
+func TestBillingIssueCandidates(t *testing.T) {
+	skipIfNoConfig(t)
+	now := time.Now()
+	u, _, _ := seedPushUser(t, false, false)
+	mk := func(offset time.Duration) uint64 {
+		s := seedAppleSub(t, u.ID, "billing_retry", false)
+		setBillingIssueSince(t, s.ID, now.Add(-offset).Unix())
+		time.Sleep(time.Millisecond)
+		return s.ID
+	}
+	day3 := mk(3*24*time.Hour + time.Hour)
+	day2 := mk(3*24*time.Hour - time.Hour)
+	day0 := mk(time.Hour)
+	day7 := mk(7*24*time.Hour + 23*time.Hour)
+	old := mk(8*24*time.Hour + time.Hour)
+
+	c0, c3, c7 := candidateIDs(t, 0, now), candidateIDs(t, 3, now), candidateIDs(t, 7, now)
+	assert.True(t, c0[day0])
+	assert.False(t, c0[day2])
+	assert.False(t, c0[day3])
+	assert.True(t, c3[day3])
+	assert.False(t, c3[day2])
+	assert.False(t, c3[day0])
+	assert.True(t, c7[day7])
+	assert.False(t, c7[old])
+	assert.False(t, c7[day3])
+	for _, c := range []map[uint64]bool{c0, c3, c7} {
+		assert.False(t, c[old], "过了 8 天的任何一天都不命中")
+	}
+}
+
+func TestBillingIssueCandidates_Filters(t *testing.T) {
+	skipIfNoConfig(t)
+	now := time.Now()
+	since := now.Add(-3*24*time.Hour - time.Hour).Unix()
+	u, _, _ := seedPushUser(t, false, false)
+	mk := func(status string, mutate map[string]any) uint64 {
+		s := seedAppleSub(t, u.ID, status, false)
+		upd := map[string]any{"billing_issue_since": since}
+		for k, v := range mutate {
+			upd[k] = v
+		}
+		require.NoError(t, db.Get().Model(&Subscription{}).Where("id = ?", s.ID).Updates(upd).Error)
+		time.Sleep(time.Millisecond)
+		return s.ID
+	}
+	grace := mk("grace", nil)
+	retry := mk("billing_retry", nil)
+	active := mk("active", nil)
+	expired := mk("expired", nil)
+	revoked := mk("revoked", nil)
+	sandbox := mk("billing_retry", map[string]any{"environment": "Sandbox"})
+	stripe := mk("billing_retry", map[string]any{"provider": "stripe"})
+
+	got := candidateIDs(t, 3, now)
+	assert.True(t, got[grace])
+	assert.True(t, got[retry])
+	for name, id := range map[string]uint64{"active": active, "expired": expired, "revoked": revoked, "sandbox": sandbox, "stripe": stripe} {
+		assert.False(t, got[id], name)
+	}
+}
+
+func seedIssueSub(t *testing.T, userID uint64, now time.Time, age time.Duration) Subscription {
+	t.Helper()
+	s := seedAppleSub(t, userID, "billing_retry", false)
+	setBillingIssueSince(t, s.ID, now.Add(-age).Unix())
+	var fresh Subscription
+	require.NoError(t, db.Get().First(&fresh, s.ID).Error)
+	return fresh
+}
+
+func TestBillingIssueReminders_PushOnlyDays3And7(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	t.Run("day0 sends no push", func(t *testing.T) {
+		h := withPushHarness(t)
+		u, _, _ := seedPushUser(t, false, true)
+		cleanupPushLogs(t, u.ID)
+		seedIssueSub(t, u.ID, now, time.Hour)
+		processBillingIssueReminders(ctx, now)
+		assert.Empty(t, pushLogsOf(t, u.ID))
+		assert.Empty(t, h.enqueued)
+	})
+
+	t.Run("day3 pushes once, rerun deduped", func(t *testing.T) {
+		h := withPushHarness(t)
+		u, _, _ := seedPushUser(t, false, true)
+		cleanupPushLogs(t, u.ID)
+		sub := seedIssueSub(t, u.ID, now, 3*24*time.Hour+time.Hour)
+		processBillingIssueReminders(ctx, now)
+		logs := pushLogsOf(t, u.ID)
+		require.Len(t, logs, 1)
+		assert.Equal(t, fmt.Sprintf("billing_issue_3:%d:%d", sub.ID, sub.BillingIssueSince), logs[0].DedupKey)
+		assert.Equal(t, "/purchase", logs[0].Route)
+		assert.Equal(t, string(PushCategoryTransactional), logs[0].Category)
+		assert.Contains(t, h.enqueued, logs[0].ID)
+		n := len(h.enqueued)
+		processBillingIssueReminders(ctx, now)
+		assert.Len(t, pushLogsOf(t, u.ID), 1)
+		assert.Len(t, h.enqueued, n)
+	})
+}
+
+func TestBillingIssueReminders_EmailMissingTemplateDoesNotBlockPush(t *testing.T) {
+	skipIfNoConfig(t)
+	require.False(t, templateSlugExists(billingIssueSlug), "测试前提：库里没有 billing-issue 模板")
+	h := withPushHarness(t)
+	u, _, _ := seedPushUser(t, false, true)
+	cleanupPushLogs(t, u.ID)
+	now := time.Now()
+	seedIssueSub(t, u.ID, now, 7*24*time.Hour+time.Hour)
+	var failed int
+	assert.NotPanics(t, func() { _, _, failed = processBillingIssueReminders(context.Background(), now) })
+	assert.Len(t, pushLogsOf(t, u.ID), 1)
+	assert.NotEmpty(t, h.enqueued)
+	assert.Equal(t, 0, failed)
+}
+
+func TestEdmOptOutExempt_BillingIssue(t *testing.T) {
+	assert.True(t, edmOptOutExemptSlugs[billingIssueSlug])
+	assert.Equal(t, []int{0, 3, 7}, billingIssueReminderDays)
 }

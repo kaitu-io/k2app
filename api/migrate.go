@@ -216,12 +216,12 @@ func Migrate() error {
 
 	// 存量回填：上线前已在 grace/billing_retry 的订阅没有 billing_issue_since，补成现在
 	// （只补 0，幂等），否则提醒 worker 永远等不到它们。
-	if n, err := backfillBillingIssueSince(ctx, db.Get(), time.Now().Unix()); err != nil {
+	n, err := backfillBillingIssueSince(ctx, db.Get(), time.Now().Unix())
+	if err != nil {
 		log.Errorf(ctx, "backfill billing_issue_since failed: %v", err)
 		return err
-	} else {
-		log.Infof(ctx, "backfilled billing_issue_since for %d subscriptions", n)
 	}
+	log.Infof(ctx, "backfilled billing_issue_since for %d subscriptions", n)
 
 	log.Infof(ctx, "database migration completed successfully")
 	return nil
