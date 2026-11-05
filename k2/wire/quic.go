@@ -344,6 +344,10 @@ type QUICClient struct {
 	closed    bool
 	ccSender  *k2cc.K2CCSender // stored for stats access
 
+	// downLoss turns the connection's cumulative receive-side counters into
+	// a recent downlink loss rate for WireStats (own lock, field-only).
+	downLoss downlinkLossWindow
+
 	// udpMuxRebuilds counts dead stream-UDP mux evictions, reported by the
 	// udp-mux-rebuild DIAG event.
 	udpMuxRebuilds atomic.Uint64
@@ -957,6 +961,7 @@ func (c *QUICClient) newStreamUDPConn(mux *quicStreamUDPMux, alloc *SessionIDAll
 func (c *QUICClient) WireStats() WireStats {
 	c.mu.Lock()
 	sender := c.ccSender
+	conn := c.conn
 	mux := c.udpMux
 	var streamMux *quicStreamUDPMux
 	if mux != nil {
@@ -965,6 +970,11 @@ func (c *QUICClient) WireStats() WireStats {
 	c.mu.Unlock()
 
 	s := WireStats{Transport: "quic"}
+	if conn != nil {
+		// ConnectionStats is atomics-only; read outside c.mu (external call).
+		cs := conn.ConnectionStats()
+		s.DownlinkLossRate = c.downLoss.observe(conn, cs.PacketsReceived1RTT, cs.PacketNumberSpan1RTT, time.Now())
+	}
 	if sender != nil {
 		snap := sender.Snapshot()
 		s.PacketLossRate = snap.LossRate

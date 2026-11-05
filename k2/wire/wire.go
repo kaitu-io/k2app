@@ -40,7 +40,13 @@ type DialerController interface {
 // WireStats is a point-in-time snapshot of wire transport metrics.
 type WireStats struct {
 	Transport   string        // "quic" or "tcpws"
-	PacketLossRate float64       // 0.0-1.0 (QUIC only)
+	PacketLossRate float64       // 0.0-1.0 (QUIC only) — UPLINK: k2cc's sender-side MI loss
+	// DownlinkLossRate is the server→client loss over the recent window
+	// (0.0-1.0, QUIC only), from the receive-side packet-number accounting in
+	// kuic (downlink_loss.go). 0 also means "too little traffic to judge".
+	// OBSERVABILITY ONLY (heartbeat downLoss) — deliberately not a health or
+	// channel-selection input; see downlink_loss.go for why.
+	DownlinkLossRate float64
 	Throughput     float64       // bps (QUIC only)
 	SendingRate    float64       // bps (QUIC only)
 	RTT            time.Duration // smoothed (QUIC only)

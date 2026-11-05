@@ -314,14 +314,7 @@ func (hm *healthMonitor) sample() {
 	_, wakeReconnect := hm.wake.checkWake(now, hm.health, ws.Transport,
 		int(time.Since(hm.connectedAt).Seconds()))
 
-	// EWMA smoothing: dampens MI boundary artifacts (lossRate spikes)
-	// that cause false health degradation.
-	if !hm.ewmaInitialized {
-		hm.smoothWireLoss = ws.PacketLossRate
-		hm.ewmaInitialized = true
-	} else {
-		hm.smoothWireLoss = ewmaAlpha*ws.PacketLossRate + (1-ewmaAlpha)*hm.smoothWireLoss
-	}
+	hm.updateSmoothLossLocked(ws)
 
 	// Assess health from smoothed metrics.
 	level := hm.assess(ws)
@@ -396,6 +389,7 @@ func (hm *healthMonitor) sample() {
 			"health", hm.health,
 			"transport", ws.Transport,
 			"loss", fmt.Sprintf("%.3f", hm.smoothWireLoss),
+			"downLoss", fmt.Sprintf("%.3f", ws.DownlinkLossRate),
 			"rttMs", fmt.Sprintf("%.0f", float64(ws.RTT)/float64(time.Millisecond)),
 			"minRttMs", fmt.Sprintf("%.0f", float64(ws.MinRTT)/float64(time.Millisecond)),
 			"txMB", fmt.Sprintf("%.1f", float64(tx)/(1024*1024)),
@@ -492,6 +486,22 @@ func (hm *healthMonitor) assess(ws wire.WireStats) string {
 		return HealthDegraded
 	}
 	return HealthHealthy
+}
+
+// updateSmoothLossLocked folds one sample into smoothWireLoss (EWMA, dampens
+// MI boundary artifacts that cause false health degradation). Caller holds
+// hm.mu. The input is k2cc's UPLINK loss only. WireStats.DownlinkLossRate is
+// deliberately NOT folded in: production cc-summary (2026-11-05) showed users
+// with 27-37% sustained downlink loss and only good ratings — k2cc serves that
+// loss fine, so grading it critical would force reconnects and a TCP-WS
+// switch on a working session (wire/downlink_loss.go).
+func (hm *healthMonitor) updateSmoothLossLocked(ws wire.WireStats) {
+	if !hm.ewmaInitialized {
+		hm.smoothWireLoss = ws.PacketLossRate
+		hm.ewmaInitialized = true
+		return
+	}
+	hm.smoothWireLoss = ewmaAlpha*ws.PacketLossRate + (1-ewmaAlpha)*hm.smoothWireLoss
 }
 
 // transition updates health state and streaks.
