@@ -1133,7 +1133,9 @@ func TestEchoProbe_SwapRestartsDialFailureBookkeeping(t *testing.T) {
 	userDial(ot)
 	clk.advance(time.Second)
 	hm.probeOnce(ot, st, time.Now())
-	if st.connFailSeen != 1 || st.strikes != 2 {
-		t.Fatalf("after the swap: seen=%d strikes=%d, want the new TM's failure counted (seen 1, strikes 2)", st.connFailSeen, st.strikes)
+	// Strikes 1: the new TM's failure counts, the old TM's strike does not
+	// carry over (review 3 M-2; TestEchoProbe_SwapZeroesOldStrikes).
+	if st.connFailSeen != 1 || st.strikes != 1 {
+		t.Fatalf("after the swap: seen=%d strikes=%d, want the new TM's failure counted alone (seen 1, strikes 1)", st.connFailSeen, st.strikes)
 	}
 }

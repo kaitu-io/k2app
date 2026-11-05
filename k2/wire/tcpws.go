@@ -309,6 +309,9 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 		// transport errors; an explicit rejection fails the connect — TCP-WS
 		// used to drop ok/errCode entirely, which is the divergence the shared
 		// sendMetadata removes.
+		// Transport handshake done: only the metadata exchange is left, so
+		// RaceTransport's transport deadline stops applying (PVE S15).
+		transportUp(ctx)
 		mdResp, mdErr := sendMetadata(ctx, smuxMetaTransport{sess: sess}, MetadataFrame{
 			UDID:    c.cfg.UDID,
 			Token:   c.cfg.Token,
@@ -327,6 +330,13 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 				// same server/credentials cannot help. Matches the established
 				// convention at :482 for the proxy-stream rejection path.
 				return nil, &ProxyLayerError{Err: fmt.Errorf("%w: %w", ErrMetadataRejected, mdErr)}
+			}
+			if isMetadataTimeout(mdErr) {
+				// Node alive, auth verdict stuck (Center hanging): fail the
+				// connect like a code-less reject, without its 401 meaning.
+				sess.Close()
+				conn.Close()
+				return nil, &ProxyLayerError{Err: mdErr}
 			}
 			slog.Debug("TCPWSClient: metadata stream failed (best-effort)", "err", mdErr)
 		}

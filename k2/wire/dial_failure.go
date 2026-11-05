@@ -127,9 +127,10 @@ func (tm *TransportManager) clearConnFailure() {
 //     on a live connection that was never answered (a response timeout is
 //     data-path evidence, owned by recordQUICDataPath; that connection
 //     exists, so the echo probe tests it directly), and a CODE-LESS metadata
-//     reject. k2s sends the code-less legacy "unauthorized" when it cannot
-//     reach Center (undecidable verdict under enforce, metadata_auth.go
-//     default branch): that is not this node being dead, and engine
+//     reject or a metadata response timeout (ErrMetadataTimeout — the same
+//     stuck-Center case, PVE S15). k2s sends the code-less legacy
+//     "unauthorized" when it cannot reach Center (undecidable verdict under
+//     enforce, metadata_auth.go default branch): that is not this node being dead, and engine
 //     classifies it as 401 (user action → fail, no retry), so counting it
 //     would turn a Center outage into fleet-wide terminal disconnects instead
 //     of today's self-healing lazy redial.
@@ -139,6 +140,8 @@ func (tm *TransportManager) recordUserDial(ctx context.Context, gen uint64, err 
 	case err == nil:
 	case ctx.Err() != nil, errors.Is(err, ErrNotConnected), errors.Is(err, ErrDatagramRelayUnhealthy):
 		return
+	case errors.Is(err, ErrMetadataTimeout):
+		return // node reached, verdict stuck (Center hanging): no opinion, like code-less
 	case errors.Is(err, ErrMetadataRejected):
 		var se *StreamError
 		if !errors.As(err, &se) {

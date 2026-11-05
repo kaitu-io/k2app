@@ -1135,6 +1135,10 @@ type echoLoopState struct {
 	// dfWarned is the First of the failure run whose DIAG: echo-probe-fail
 	// Warn was already logged (one per run, review C).
 	dfWarned time.Time
+	// dfStrikes: strikes holds dial-failure strikes (the last probe was
+	// echoNotProbedDialFailing), not echo strikes — only those are dropped
+	// when the run ends (review D, scoped by review 3 M-1).
+	dfStrikes bool
 }
 
 // echoProbeLoop runs one transport's exponential-trust echo schedule until
@@ -1222,14 +1226,24 @@ func (hm *healthMonitor) probeOnce(ot *outboundTransport, st *echoLoopState, now
 		// fresh to this probe.
 		st.tmSeen = ot.tm
 		st.connFailSeen, st.connGenSeen, st.dfRunFirst, st.dfReraces = 0, failGen, time.Time{}, 0
+		// Strikes earned on the old (dead) TransportManager never carry
+		// onto the new node (review 3 M-2).
+		st.strikes, st.dfStrikes = 0, false
 	}
 	if !st.dfRunFirst.IsZero() && !cf.First.Equal(st.dfRunFirst) {
 		// The failure run seen at the previous probe is over. Strikes kept
 		// frozen through its quiet ticks must not leak into the next probe's
-		// echo path (review D). Without a Reset in between, it ended on an
-		// answered user dial: the node is back (review A).
-		st.strikes = 0
-		if failGen == st.connGenSeen {
+		// echo path (review D) — only those: echo strikes from a cached
+		// connection stay, because there the echo is the evidence.
+		if st.dfStrikes {
+			st.strikes = 0
+		}
+		// Without a Reset in between, it ended on an answered user dial:
+		// the node is back (review A). Only on the no-cached-connection
+		// path (review 3 M-1): over a cached connection an "answered" dial
+		// can be a UDP open that sent nothing (wire recordUserDial), while
+		// with no connection the answer needed a fresh handshake.
+		if notProbed && failGen == st.connGenSeen {
 			hm.recovered(ot)
 		}
 	}
@@ -1303,6 +1317,7 @@ func (hm *healthMonitor) probeOnce(ot *outboundTransport, st *echoLoopState, now
 
 	st.trustIdx = res.NewTrust
 	st.strikes = res.NewStrikes
+	st.dfStrikes = res.Classify == echoNotProbedDialFailing
 
 	if res.ShouldRerace && hm.reRaceChan != nil {
 		// Cap-1 channel + select-default in engine.outboundReplaceLoop gives

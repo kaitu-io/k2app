@@ -634,6 +634,9 @@ serialize:
 	// authority; but an EXPLICIT server rejection (only possible under
 	// enforce — permissive servers always answer OK) must fail connect() with
 	// the structured code instead of limping into a closed connection.
+	// Transport handshake done: only the metadata exchange is left, so
+	// RaceTransport's transport deadline stops applying (PVE S15).
+	transportUp(ctx)
 	mdResp, mdErr := sendMetadata(ctx, quicMetaTransport{conn: conn}, MetadataFrame{
 		UDID:    c.cfg.UDID,
 		Token:   c.cfg.Token,
@@ -650,6 +653,13 @@ serialize:
 			// server/credentials cannot help. Matches the established convention
 			// at :714 for the proxy-stream rejection path.
 			return nil, &ProxyLayerError{Err: fmt.Errorf("%w: %w", ErrMetadataRejected, mdErr)}
+		}
+		if isMetadataTimeout(mdErr) {
+			// Node alive, auth verdict stuck (Center hanging): fail the
+			// connect like a code-less reject, without its 401 meaning.
+			closeQUICConnSafe(conn, "metadata response timed out")
+			transport.Close()
+			return nil, &ProxyLayerError{Err: mdErr}
 		}
 		slog.Warn("QUICClient: metadata stream failed (best-effort)", "mode", c.cfg.Mode, "err", mdErr)
 	}

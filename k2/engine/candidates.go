@@ -155,10 +155,17 @@ func (c *compositeProvider) NextURL(current string, reason error) (string, error
 	return "", ErrNoCandidates
 }
 
-// Reset clears the static provider's exclusions. The shell provider is not
-// reset — it owns its own exclusion semantics.
+// Reset clears the exclusions of the whole candidate set: the static
+// provider's and, when it can (interface{ Reset() } — subscription.Manager
+// does), the shell provider's. Callers Reset when the exclusions may be
+// innocent (a Center outage, a network that died mid-failover); resetting
+// only the static half left a k2subs session with every tunnel excluded
+// (review 3 I-1). Ownership (OwnsURL) is untouched.
 func (c *compositeProvider) Reset() {
 	if c.static != nil {
 		c.static.Reset()
+	}
+	if r, ok := c.shell.(interface{ Reset() }); ok {
+		r.Reset()
 	}
 }

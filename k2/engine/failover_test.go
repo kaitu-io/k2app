@@ -183,9 +183,10 @@ func (s *foServers) raceCount(host string) int {
 // countingProvider wraps an OutboundProvider and counts NextURL calls. It
 // forwards OwnsURL and Reset so it is transparent to the loop.
 type countingProvider struct {
-	inner OutboundProvider
-	mu    sync.Mutex
-	calls int
+	inner  OutboundProvider
+	mu     sync.Mutex
+	calls  int
+	resets int
 }
 
 func (p *countingProvider) NextURL(cur string, reason error) (string, error) {
@@ -196,9 +197,18 @@ func (p *countingProvider) NextURL(cur string, reason error) (string, error) {
 }
 
 func (p *countingProvider) Reset() {
+	p.mu.Lock()
+	p.resets++
+	p.mu.Unlock()
 	if r, ok := p.inner.(interface{ Reset() }); ok {
 		r.Reset()
 	}
+}
+
+func (p *countingProvider) resetCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.resets
 }
 
 func (p *countingProvider) count() int {
@@ -248,6 +258,7 @@ type foOpts struct {
 	shell     OutboundProvider
 	net       []checkResult
 	idle      func() // e.replaceLoopIdle, installed before the loop starts
+	targetURL string // the target's starting URL; default foURLA
 }
 
 func hostOf(u string) string {
@@ -320,13 +331,17 @@ func newFoHarness(t *testing.T, o foOpts) *foHarness {
 		setupOutboundTransportFn = origSetup
 	})
 
+	startURL := o.targetURL
+	if startURL == "" {
+		startURL = foURLA
+	}
 	tm := wire.NewTransportManager()
 	target := &outboundTransport{
 		tm:        tm,
-		wireCfg:   wire.Config{Host: hostOf(foURLA), Port: 443, DialAddr: hostOf(foURLA) + ":443"},
-		dialAddr:  hostOf(foURLA) + ":443",
-		name:      "k2v5-" + hostOf(foURLA),
-		url:       foURLA,
+		wireCfg:   wire.Config{Host: hostOf(startURL), Port: 443, DialAddr: hostOf(startURL) + ":443"},
+		dialAddr:  hostOf(startURL) + ":443",
+		name:      "k2v5-" + hostOf(startURL),
+		url:       startURL,
 		swappable: wire.NewSwappableDialer(tm),
 	}
 

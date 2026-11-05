@@ -317,9 +317,11 @@ func (r *retrySet) all() []*outboundTransport {
 // retryOnce is one scheduled attempt for a no-candidates target: re-judge the
 // network (so the hold shows the network's reason when it is the network
 // that is down), then one Phase-A and — when that fails on a working
-// network — one Phase B with a Reset provider (retryPhaseB). Success removes
-// the target (streak reset by phaseA / the swap; a queued echo signal for it
-// is dropped); failure advances its backoff (5s→10s→30s→30s…). A 401/402/403
+// network with an error that is not a code-less reject (the node itself is
+// dead or refusing) — one Phase B with a Reset provider (retryPhaseB).
+// Success removes the target (streak reset by phaseA / the swap; a queued
+// echo signal for it is dropped; leaving via Phase-A also Resets the
+// provider); failure advances its backoff (5s→10s→30s→30s…). A 401/402/403
 // fails the engine. Echo signals never trigger it (outboundReplaceLoop
 // drops them for pending targets). Returns false when
 // the loop must exit. The caller syncs the shown hold afterwards.
@@ -348,12 +350,22 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 		slog.Info("engine: outbound without candidates answered again", "outbound", name)
 		delete(r.pending, target)
 		e.dropQueuedSignal(target)
+		// Exclusions gathered while it was scheduled (a Center outage's)
+		// must not outlive the schedule (review 3 I-2).
+		if rs, ok := provider.(interface{ Reset() }); ok {
+			rs.Reset()
+		}
 		return true
 	}
 	if e.failIfUserAction(target, raceErr) {
 		return false
 	}
-	if !v.blocksFailover() && provider != nil {
+	// Phase B only when the current node itself is dead or refusing. A
+	// code-less reject means the node is alive and Center is not: a
+	// candidate would answer the same, so a tick does Phase A only for the
+	// length of the outage (review 3 M-3). Once the node dies its error
+	// stops being code-less and Phase B runs again (review B).
+	if !v.blocksFailover() && provider != nil && !isCodeLessReject(raceErr) {
 		// The current node still fails on a working network: try the
 		// candidates again (review B ruling) — a target that entered the
 		// schedule for a Center outage must not sit on a node that died
@@ -389,9 +401,10 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 }
 
 // retryPhaseB is retryOnce's Phase B: escDone after a swap, escNoCandidates
-// to stay on the schedule (manual mode, every candidate code-less, or the
-// network died meanwhile), escExit when ctx ended or the engine failed — a
-// candidate exhaustion on a healthy network fails like escalate's.
+// to stay on the schedule (manual mode, every candidate code-less, no
+// candidate tried at all, or the network died meanwhile), escExit when ctx
+// ended or the engine failed — a candidate exhaustion on a healthy network
+// fails like escalate's.
 func (e *Engine) retryPhaseB(ctx context.Context, target *outboundTransport, raceErr error, dd wire.DirectDialer, provider OutboundProvider) escResult {
 	err := e.replaceOutboundServer(ctx, target, raceErr, dd, provider)
 	switch {
@@ -400,6 +413,14 @@ func (e *Engine) retryPhaseB(ctx context.Context, target *outboundTransport, rac
 	case ctx.Err() != nil:
 		return escExit
 	case errors.Is(err, ErrNoCandidates):
+		return escNoCandidates
+	}
+	var nt *noneTriedError
+	if errors.As(err, &nt) {
+		// Not one candidate was tried (all still excluded, e.g. a shell
+		// provider that cannot be Reset): nothing was learned, so the
+		// target stays on the schedule — never fail(503) from a tick that
+		// tried nothing (review 3 I-1).
 		return escNoCandidates
 	}
 	if v := e.judgeNet(ctx, "pre-exhaust"); ctx.Err() != nil {

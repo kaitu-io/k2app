@@ -2481,6 +2481,16 @@ type phaseBExhaustedError struct {
 func (p *phaseBExhaustedError) Error() string { return p.err.Error() }
 func (p *phaseBExhaustedError) Unwrap() error { return p.err }
 
+// noneTriedError is replaceOutboundServer's provider exhaustion when not a
+// single candidate was set up this round — everything was still excluded.
+// escalate treats it like any exhaustion; a retry tick stays on the schedule
+// (retryPhaseB): a round that tried nothing has learned nothing new about
+// the candidates. Same message as the wrapped error.
+type noneTriedError struct{ err error }
+
+func (n *noneTriedError) Error() string { return n.err.Error() }
+func (n *noneTriedError) Unwrap() error { return n.err }
+
 // applyReRaceResult installs a successful Phase-A RaceTransport result into
 // the target's existing TransportManager. Returns false if the target is no
 // longer owned by the engine (caller must clean up the result).
@@ -2577,9 +2587,19 @@ func (e *Engine) replaceOutboundServer(
 			}
 			if allCodeLess && tried > 0 {
 				// The candidates were excluded for a Center outage, not for
-				// being dead; retryOnce Resets the provider before its next
-				// Phase B.
+				// being dead: forget the exclusions now. Every path that
+				// leaves the schedule relies on it (review 3 I-2) — a node
+				// dying within candidateExcludeTTL after the outage would
+				// otherwise find its live fallbacks still excluded.
+				// retryOnce also Resets before a tick's Phase B (harmless
+				// double).
+				if r, ok := provider.(interface{ Reset() }); ok {
+					r.Reset()
+				}
 				return fmt.Errorf("%w: every node rejected without an auth verdict (Center unreachable?): %w", ErrNoCandidates, err)
+			}
+			if tried == 0 {
+				return &noneTriedError{err: err}
 			}
 			return err
 		}

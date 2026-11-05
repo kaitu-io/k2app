@@ -143,6 +143,15 @@ func ClassifyError(err error) *EngineError {
 		}
 	}
 
+	// Priority 0b': the node answered the transport handshake but its auth
+	// verdict never came (wire.ErrMetadataTimeout — k2s stuck on a hanging
+	// Center, PVE S15). Server side, retryable: never the 401 a code-less
+	// reject maps to below. It does not wrap ErrMetadataRejected; a joined
+	// race error carrying a real reject too is classified by that reject.
+	if errors.Is(err, wire.ErrMetadataTimeout) && !errors.Is(err, wire.ErrMetadataRejected) {
+		return newEngineError(ErrCodeServerUnreachable, err.Error())
+	}
+
 	// Priority 0b: metadata (device-auth) rejection — the server rejected this
 	// connection on the metadata stream. Producer-classified via
 	// wire.ErrMetadataRejected; the embedded StreamError carries the server's

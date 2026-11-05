@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"time"
 
 	"github.com/kaitu-io/kuic"
@@ -33,8 +34,43 @@ type metadataTransport interface {
 	writesH3FrameType() bool
 }
 
-// metaReadTimeout bounds the wait for the server's metadata response.
-const metaReadTimeout = 5 * time.Second
+// ErrMetadataTimeout marks a metadata response that never arrived although
+// the transport handshake to the node completed: the node is alive, its auth
+// verdict is stuck — typically k2s waiting on an unreachable / hanging Center
+// (PVE S15). Producer-classified like ErrMetadataRejected, and it fails
+// connect() the same way, but it deliberately does NOT wrap
+// ErrMetadataRejected: ClassifyError maps a code-less reject to 401 at
+// initial connect, and a stuck Center is not this device's credentials. In
+// the replace loop it is treated exactly like a code-less reject (engine
+// isCodeLessReject); user-dial evidence records no opinion (dial_failure.go).
+var ErrMetadataTimeout = errors.New("wire: metadata response timed out (node reached, auth verdict pending)")
+
+// metaReadTimeout bounds the wait for the server's metadata response. It must
+// outlive k2s's own remote-auth timeout (auth_remote.go remoteAuthClient, 5s)
+// with margin, so a node that gives up on Center answers its code-less reject
+// before we stop listening (PVE S15: both were 5s and the client lost by 2ms).
+// A var only so tests can shorten it.
+var metaReadTimeout = 8 * time.Second
+
+// transportUpKey carries RaceTransport's per-candidate hook: connect() calls
+// it once the transport handshake is done and only the metadata exchange is
+// left, so the race's transport deadline stops applying (race.go).
+type transportUpKey struct{}
+
+func withTransportUpHook(ctx context.Context, fn func()) context.Context {
+	return context.WithValue(ctx, transportUpKey{}, fn)
+}
+
+// transportUp signals the hook, if any (lazy user-dial connects have none).
+func transportUp(ctx context.Context) {
+	if fn, ok := ctx.Value(transportUpKey{}).(func()); ok && fn != nil {
+		fn()
+	}
+}
+
+// isMetadataTimeout reports a sendMetadata error that is the response read
+// hitting its deadline (ErrMetadataTimeout).
+func isMetadataTimeout(err error) bool { return errors.Is(err, ErrMetadataTimeout) }
 
 // sendMetadata is the single metadata-stream orchestration shared by both
 // transports. It replaces two hand-copied implementations that had already
@@ -44,8 +80,12 @@ const metaReadTimeout = 5 * time.Second
 // copies).
 //
 // Error contract:
-//   - transport-layer failure (open/write/read timeout) → plain error; the
-//     caller treats it as best-effort and must NOT fail connect().
+//   - transport-layer failure (open/write, a read that ends without an
+//     answer) → plain error; the caller treats it as best-effort and must
+//     NOT fail connect().
+//   - the response read hitting metaReadTimeout after a successful write →
+//     ErrMetadataTimeout; the caller MUST fail connect() (ProxyLayerError):
+//     the node answered the handshake and is stuck on its auth verdict.
 //   - server explicit rejection → *StreamError{Code} (coded 0x02) or an
 //     ErrStreamRejected-wrapped error (legacy 0x01); the caller MUST fail
 //     connect(), wrapping with ErrMetadataRejected. Check via isMetadataReject.
@@ -79,6 +119,14 @@ func sendMetadata(ctx context.Context, t metadataTransport, meta MetadataFrame) 
 	if err != nil {
 		if werr != nil {
 			return MetadataFrame{}, fmt.Errorf("write metadata: %w", werr)
+		}
+		// quic-go / net deadlines report net.Error.Timeout(); smux's stream
+		// deadline returns its plain smux.ErrTimeout.
+		var nErr net.Error
+		if (errors.As(err, &nErr) && nErr.Timeout()) || errors.Is(err, smux.ErrTimeout) {
+			// The request went out and the node never answered within
+			// metaReadTimeout: alive, verdict stuck (ErrMetadataTimeout).
+			return MetadataFrame{}, fmt.Errorf("%w: read response: %w", ErrMetadataTimeout, err)
 		}
 		return MetadataFrame{}, fmt.Errorf("read response: %w", err)
 	}

@@ -20,15 +20,21 @@ import (
 // initial connect; in the replace loop it must never end the session, or a
 // Center outage longer than the cookie/auth-cache TTL (15 min) disconnects
 // every client whose connection cycles (review C1/N2).
+//
+// A metadata response that timed out after the transport handshake
+// (wire.ErrMetadataTimeout) is the same case — node alive, Center stuck
+// (hanging rather than refusing, PVE S15) — and counts as code-less here:
+// never node death toward exhaustion, never user action.
 func isCodeLessReject(err error) bool {
 	if err == nil {
 		return false
 	}
-	if !errors.Is(err, wire.ErrMetadataRejected) && !errors.Is(err, wire.ErrStreamRejected) {
-		return false
-	}
 	var se *wire.StreamError
-	return !errors.As(err, &se)
+	if errors.As(err, &se) {
+		return false // a coded verdict anywhere in the chain wins
+	}
+	return errors.Is(err, wire.ErrMetadataTimeout) ||
+		errors.Is(err, wire.ErrMetadataRejected) || errors.Is(err, wire.ErrStreamRejected)
 }
 
 // replaceLoopUserAction returns the EngineError to fail with when err is
