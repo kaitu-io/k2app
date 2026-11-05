@@ -44,7 +44,7 @@ func billingIssueCandidates(day int, now time.Time) ([]Subscription, error) {
 		Where("provider = ? AND environment = ? AND status IN ?",
 			SubscriptionProviderApple, "Production", []string{"grace", "billing_retry"}).
 		Where("billing_issue_since > ? AND billing_issue_since <= ?", lower, upper).
-		Find(&subs).Error
+		Order("id").Find(&subs).Error
 	return subs, err
 }
 
@@ -60,8 +60,13 @@ func processBillingIssueReminders(ctx context.Context, now time.Time) (sent, ski
 		}
 		var dSent, dSkipped, dFailed int
 		if d == 3 || d == 7 {
+			pushed := map[uint64]bool{} // 每用户每天最多推一条（多订阅不重复打扰）
 			for i := range subs {
 				sub := &subs[i]
+				if pushed[sub.UserID] {
+					continue
+				}
+				pushed[sub.UserID] = true
 				sendTransactionalPush(ctx, sub.UserID, pushCopyBillingRetry,
 					fmt.Sprintf("billing_issue_%d:%d:%d", d, sub.ID, sub.BillingIssueSince), "/purchase")
 			}

@@ -262,6 +262,20 @@ func TestBillingIssueReminders_PushOnlyDays3And7(t *testing.T) {
 		assert.Len(t, pushLogsOf(t, u.ID), 1)
 		assert.Len(t, h.enqueued, n)
 	})
+
+	t.Run("two day3 subs of one user push once", func(t *testing.T) {
+		h := withPushHarness(t)
+		u, _, _ := seedPushUser(t, false, true)
+		cleanupPushLogs(t, u.ID)
+		first := seedIssueSub(t, u.ID, now, 3*24*time.Hour+time.Hour)
+		time.Sleep(time.Millisecond)
+		seedIssueSub(t, u.ID, now, 3*24*time.Hour+2*time.Hour)
+		processBillingIssueReminders(ctx, now)
+		logs := pushLogsOf(t, u.ID)
+		require.Len(t, logs, 1)
+		assert.Equal(t, fmt.Sprintf("billing_issue_3:%d:%d", first.ID, first.BillingIssueSince), logs[0].DedupKey)
+		assert.Equal(t, []uint64{logs[0].ID}, h.enqueued)
+	})
 }
 
 func TestBillingIssueReminders_EmailMissingTemplateDoesNotBlockPush(t *testing.T) {
@@ -282,4 +296,39 @@ func TestBillingIssueReminders_EmailMissingTemplateDoesNotBlockPush(t *testing.T
 func TestEdmOptOutExempt_BillingIssue(t *testing.T) {
 	assert.True(t, edmOptOutExemptSlugs[billingIssueSlug])
 	assert.Equal(t, []int{0, 3, 7}, billingIssueReminderDays)
+}
+
+func TestBillingIssueReminders_EmailSentToOptedOutUser(t *testing.T) {
+	skipIfNoConfig(t)
+	ctx := context.Background()
+	require.False(t, templateSlugExists(billingIssueSlug), "测试前提：库里没有 billing-issue 模板")
+	withPushHarness(t)
+
+	email := fmt.Sprintf("billing-issue-%d@example.com", time.Now().UnixNano())
+	u := chatUserWithEmail(t, email)
+	require.NoError(t, db.Get().Model(&User{}).Where("id = ?", u.ID).Update("edm_opt_out", true).Error)
+	t.Cleanup(func() { db.Get().Where("user_id = ?", u.ID).Delete(&EmailSendLog{}) })
+
+	// 模板语言取用户偏好语言：否则 SendTemplatedEmails 会走 AI 翻译分支（测试环境无 key）。
+	var fresh User
+	require.NoError(t, db.Get().Preload("LoginIdentifies").First(&fresh, u.ID).Error)
+	lang := fresh.GetLanguagePreference()
+	active := true
+	tmpl := EmailMarketingTemplate{
+		Name: "billing-issue test", Slug: billingIssueSlug, Language: lang,
+		Subject: "s", Content: "<p>c</p>", IsActive: &active, Brand: string(BrandKaitu),
+	}
+	require.NoError(t, db.Get().Create(&tmpl).Error)
+	t.Cleanup(func() { db.Get().Unscoped().Delete(&EmailMarketingTemplate{}, tmpl.ID) })
+
+	now := time.Now()
+	seedIssueSub(t, u.ID, now, 3*24*time.Hour+time.Hour)
+	sent, _, _ := processBillingIssueReminders(ctx, now)
+	assert.GreaterOrEqual(t, sent, 1)
+
+	var logs []EmailSendLog
+	batch := "billing-issue:3d:" + now.UTC().Format("2006-01-02")
+	require.NoError(t, db.Get().Where("batch_id = ? AND user_id = ?", batch, u.ID).Find(&logs).Error)
+	require.Len(t, logs, 1)
+	assert.Equal(t, EmailSendLogStatusSent, logs[0].Status)
 }
