@@ -587,8 +587,8 @@ func (hs *foHarness) fromShell() bool {
 
 // R1 review M-4: a target whose URL the shell handed out, after a
 // subscription refresh dropped that URL, answers ErrNoCandidates. That is an
-// exhaustion — capped, then OnOutboundFatal (k2r / desktop rebuild from a
-// fresh subscription) — not manual mode. A static-only target with the same
+// exhaustion — capped, then OnOutboundFatal (k2r rebuilds from a fresh
+// subscription; the desktop daemon only logs) — not manual mode. A static-only target with the same
 // answer keeps retrying forever (TestExhaust_ManualModeNeverFails).
 func TestExhaust_ShellDroppedURLIsCapped(t *testing.T) {
 	diag := recordDiag(t)
