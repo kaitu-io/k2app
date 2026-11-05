@@ -78,14 +78,45 @@ func TestDecide_ActiveAllNoRespIsNoInternet(t *testing.T) {
 	}
 }
 
-func TestDecide_NoTargetsIsInconclusiveWait(t *testing.T) {
-	active, _ := activeSpy([]checkResult{})
-	if v, _ := decideNet(netEvidence{Now: time.Now()}, active); v != netNoInternet {
-		t.Fatalf("got %v, want netNoInternet", v)
+func TestDecide_NoTargetsIsUnknown(t *testing.T) {
+	for name, rs := range map[string][]checkResult{"empty": {}, "nil": nil} {
+		active, _ := activeSpy(rs)
+		v, tag := decideNet(netEvidence{Now: time.Now()}, active)
+		if v != netUnknown || tag != "no-targets" {
+			t.Fatalf("%s results: got (%v, %q), want (netUnknown, no-targets)", name, v, tag)
+		}
+		if v.blocksFailover() || v.holdError() != nil {
+			t.Fatalf("%s results: unknown must not gate failover (blocks=%v hold=%v)", name, v.blocksFailover(), v.holdError())
+		}
 	}
-	activeNil, _ := activeSpy(nil)
-	if v, _ := decideNet(netEvidence{Now: time.Now()}, activeNil); v != netNoInternet {
-		t.Fatalf("nil results: got %v, want netNoInternet", v)
+	// The platform's interface state still decides, targets or not.
+	active, _ := activeSpy(nil)
+	if v, _ := decideNet(netEvidence{IfaceDown: true, Now: time.Now()}, active); v != netIfaceDown || !v.blocksFailover() {
+		t.Fatalf("iface down without targets: got %v, want netIfaceDown (blocking)", v)
+	}
+}
+
+func TestDecide_FutureDirectOKIsNotPassiveEvidence(t *testing.T) {
+	now := time.Now()
+	// The wall clock stepped backwards: LastDirectOK now lies in the future.
+	active, calls := activeSpy([]checkResult{checkNoResponse})
+	v, tag := decideNet(netEvidence{LastDirectOK: now.Add(5 * time.Second), Now: now}, active)
+	if v != netNoInternet || tag != "active" || *calls != 1 {
+		t.Fatalf("future LastDirectOK: got (%v, %q) with %d active calls, want (netNoInternet, active) via 1 probe", v, tag, *calls)
+	}
+	// Exactly now still counts.
+	active2, calls2 := activeSpy([]checkResult{checkNoResponse})
+	if v, tag := decideNet(netEvidence{LastDirectOK: now, Now: now}, active2); v != netOnline || tag != "passive" || *calls2 != 0 {
+		t.Fatalf("LastDirectOK == Now: got (%v, %q), %d calls; want passive online", v, tag, *calls2)
+	}
+}
+
+func TestDecide_SkipPassiveProbes(t *testing.T) {
+	now := time.Now()
+	active, calls := activeSpy([]checkResult{checkNoResponse})
+	v, tag := decideNet(netEvidence{LastDirectOK: now.Add(-time.Second), Now: now, SkipPassive: true}, active)
+	if v != netNoInternet || tag != "active" || *calls != 1 {
+		t.Fatalf("SkipPassive: got (%v, %q) with %d active calls, want (netNoInternet, active)", v, tag, *calls)
 	}
 }
 

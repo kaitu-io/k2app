@@ -34,6 +34,8 @@ type ClientConfig struct {
 	// Sanitized by ValidateClient: non-k2v5 entries and unknown keys are dropped.
 	Fallbacks map[string][]string `yaml:"fallbacks,omitempty" json:"fallbacks,omitempty"`
 	// Netcheck lists endpoints used to judge whether the local network is up.
+	// Empty (k2r gateway, CLI, old webapp): the engine cannot judge the network
+	// and does not gate node failover on it (engine netUnknown).
 	Netcheck []NetcheckTarget `yaml:"netcheck,omitempty" json:"netcheck,omitempty"`
 
 	// Derived fields (not serialized to YAML/JSON).

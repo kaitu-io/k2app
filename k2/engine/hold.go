@@ -38,8 +38,9 @@ func realHoldTimer(d time.Duration) (<-chan time.Time, func()) {
 
 // judgeNet decides whether the user's network reaches the internet, from the
 // cheapest evidence first (netCoordinator interface state, passive direct
-// dials within passiveFreshness, then the active netcheck), and logs one
-// DIAG: netcheck line. trigger: pre-phaseB, pre-exhaust, wait-tick, net-event.
+// dials within passiveFreshness — skipped for pre-exhaust — then the active
+// netcheck), and logs one DIAG: netcheck line. trigger: pre-phaseB,
+// pre-exhaust, wait-tick, net-event, echo-signal.
 //
 // If ctx is cancelled mid-check the active probes all report no response and
 // the verdict reads no-internet — callers must check ctx.Err() first.
@@ -51,7 +52,8 @@ func (e *Engine) judgeNet(ctx context.Context, trigger string) netVerdict {
 	targets := e.netcheckTargets
 	e.mu.Unlock()
 
-	ev := netEvidence{Now: time.Now()}
+	// pre-exhaust always probes: passive evidence may predate the outage.
+	ev := netEvidence{Now: time.Now(), SkipPassive: trigger == "pre-exhaust"}
 	if nc != nil {
 		ev.IfaceDown = !nc.isNetworkUp()
 	}
@@ -131,18 +133,17 @@ func noCandidatesError(name string) *EngineError {
 		"outbound "+name+" unreachable and has no replacement candidates; retrying")
 }
 
-// holdUntilOnline holds on verdict v (not netOnline): the user's network is
+// holdUntilOnline holds on verdict v (v.blocksFailover()): the user's network is
 // broken, which affects every outbound alike, so the replace loop blocks here.
 // It re-checks on every wake — backoff timer (holdBackoff) or a network
 // event via holdWake. Each wake first re-judges the network:
-//   - online → show restore (the hold the loop had before: nil, or the
-//     no-candidates 503 while retries are pending), return holdOnline (the
-//     caller re-races).
+//   - online / unknown (e.g. interface back up, no netcheck targets) → show
+//     restore (the hold the loop had before: nil, or the no-candidates 503
+//     while retries are pending), return holdOnline (the caller re-races).
 //   - otherwise → one Phase-A on the current node (reason=wait-tick),
-//     whatever the verdict says: the verdict can be blind (no netcheck
-//     targets — old webapp, k2r gateway; global mode with no direct traffic)
-//     and a node that answers proves the session fine → show restore,
-//     holdRecovered. A 401/402 fails the engine → holdExit. Any other
+//     whatever the verdict says: the verdict can be wrong (netcheck targets
+//     blocked on this network while the node still answers) and a node that
+//     answers proves the session fine → show restore, holdRecovered. A 401/402 fails the engine → holdExit. Any other
 //     failure keeps holding with the re-judged reason (pushed on change).
 //
 // ctx cancelled → holdExit; Stop/fail own clearing the hold then. The
@@ -181,8 +182,8 @@ func (e *Engine) holdUntilOnline(ctx context.Context, target *outboundTransport,
 		if ctx.Err() != nil {
 			return holdExit
 		}
-		if v == netOnline {
-			slog.Info("engine: network back, leaving hold", "outbound", name)
+		if !v.blocksFailover() {
+			slog.Info("engine: network back, leaving hold", "outbound", name, "verdict", v.String())
 			e.setHold(ctx, restore)
 			return holdOnline
 		}
@@ -326,7 +327,10 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 	name := target.name
 	e.mu.Unlock()
 	if !connected {
-		return ctx.Err() == nil
+		// engine.state leaves connected only via Stop/fail, which end the
+		// loop. Returning true here would leave target due and re-arm a 0s
+		// timer: a busy spin until Stop cancels ctx.
+		return false
 	}
 	v := e.judgeNet(ctx, trigger)
 	if ctx.Err() != nil {

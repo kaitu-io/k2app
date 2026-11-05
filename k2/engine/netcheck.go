@@ -30,6 +30,13 @@ const (
 	netNoInternet netVerdict = 2 // interface up, nothing on the internet answers
 	netCaptive    netVerdict = 3 // something answers, but not what it should (portal / interception)
 	netOnline     netVerdict = 4 // the local network reaches the internet
+	// netUnknown: no netcheck targets configured (k2r gateway, CLI, an old
+	// webapp) and no cheaper layer decided. The engine cannot judge the
+	// network, so it does not gate on it: the replace loop behaves as it did
+	// before the network verdict existed (Phase B proceeds, exhaustion fails
+	// 503). Deliberately not "no internet": a blind hold would block failover
+	// on a healthy network.
+	netUnknown netVerdict = 5
 )
 
 func (v netVerdict) String() string {
@@ -42,13 +49,23 @@ func (v netVerdict) String() string {
 		return "captive"
 	case netOnline:
 		return "online"
+	case netUnknown:
+		return "unknown"
 	default:
 		return "unknown(" + strconv.Itoa(int(v)) + ")"
 	}
 }
 
+// blocksFailover reports whether the verdict says the user's network is
+// broken, so the replace loop must hold instead of blaming the node.
+// netOnline and netUnknown never block.
+func (v netVerdict) blocksFailover() bool {
+	return v != netOnline && v != netUnknown
+}
+
 // holdError is the error the engine shows while holding on this verdict.
-// netOnline returns nil: the network is fine, so the fault lies elsewhere.
+// netOnline / netUnknown return nil: the network is fine or cannot be judged,
+// so the fault is taken to lie elsewhere.
 func (v netVerdict) holdError() *EngineError {
 	switch v {
 	case netIfaceDown:
@@ -68,6 +85,11 @@ type netEvidence struct {
 	IfaceDown    bool      // OS / platform says no usable interface
 	LastDirectOK time.Time // last successful direct (non-tunnel) round trip; zero = never
 	Now          time.Time
+	// SkipPassive ignores LastDirectOK. Set for the pre-exhaust judgement:
+	// Phase B can burn through fast-failing candidates in well under
+	// passiveFreshness, so a direct dial from just before the outage would
+	// otherwise vouch for a network that has since died.
+	SkipPassive bool
 }
 
 // passiveFreshness is how recent a direct success must be to count as proof
@@ -98,20 +120,28 @@ func (r checkResult) String() string {
 
 // decideNet judges the network from evidence, escalating to active() only
 // when the cheaper layers are inconclusive. Returns the verdict and which
-// layer decided it: "iface", "passive" or "active".
+// layer decided it: "iface", "passive", "active" or "no-targets".
+//
+// Passive evidence counts only when 0 <= Now-LastDirectOK <= passiveFreshness:
+// a negative age (wall clock stepped backwards) proves nothing.
 //
 // Active rules: any matched → online; else any other response → captive;
-// else (all no-response, or no targets at all) → no internet. Holding on an
-// empty target list is deliberate: with nothing to probe we cannot prove the
-// network is fine, so we wait rather than burn through nodes.
+// else all no-response → no internet. No targets at all (active() returns
+// nothing) → unknown: the engine cannot judge the network and does not gate
+// failover on it (see netUnknown).
 func decideNet(ev netEvidence, active func() []checkResult) (netVerdict, string) {
 	if ev.IfaceDown {
 		return netIfaceDown, "iface"
 	}
-	if !ev.LastDirectOK.IsZero() && ev.Now.Sub(ev.LastDirectOK) <= passiveFreshness {
-		return netOnline, "passive"
+	if !ev.SkipPassive && !ev.LastDirectOK.IsZero() {
+		if d := ev.Now.Sub(ev.LastDirectOK); d >= 0 && d <= passiveFreshness {
+			return netOnline, "passive"
+		}
 	}
 	rs := active()
+	if len(rs) == 0 {
+		return netUnknown, "no-targets"
+	}
 	other := false
 	for _, r := range rs {
 		switch r {

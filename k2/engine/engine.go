@@ -2110,9 +2110,11 @@ func (e *Engine) ClearWireError() {
 //	  network works before blaming the node. If not (101 iface down / 106 no
 //	  internet / 107 captive), the loop holds (holdUntilOnline): reconnecting
 //	  + reason, tunnel kept, no candidate spent. Every hold wake also tries
-//	  one Phase-A on the current node (the verdict may be blind); success
+//	  one Phase-A on the current node (the verdict may be wrong); success
 //	  ends the hold. Back online → one Phase-A on the current node; only if
-//	  that fails does Phase B run.
+//	  that fails does Phase B run. No netcheck targets (k2r gateway, CLI,
+//	  old webapp) → verdict unknown → no gating at all: the loop behaves as
+//	  it did before the verdict existed (only iface-down still holds).
 //
 //	Phase B — server replacement. Asks the OutboundProvider (always a
 //	  compositeProvider: static ClientConfig.Fallbacks, then the shell's
@@ -2123,10 +2125,12 @@ func (e *Engine) ClearWireError() {
 //	    — the target joins the loop's retrySet: timed Phase-A on the hold
 //	    backoff from the loop's own select (also on its echo signals and on
 //	    holdWake), hold 503 (or the network's reason) while any is pending.
-//	  - Exhausted: judgeNet("pre-exhaust") again. Not online → the network
-//	    died mid-failover, so the nodes excluded on the way may be innocent:
-//	    Reset() the provider's exclusions and hold. Online → OnOutboundFatal
-//	    + e.fail(503) (a sticky 401/402 wins over 503).
+//	  - Exhausted: judgeNet("pre-exhaust") again — always an active probe,
+//	    never passive evidence (it may predate the outage). Network broken →
+//	    it died mid-failover, so the nodes excluded on the way may be
+//	    innocent: Reset() the provider's exclusions and hold. Online/unknown
+//	    → OnOutboundFatal + e.fail: 503, unless a 401/402 is the true cause
+//	    (sticky lastError, or the last candidate setup rejected with one).
 //
 // A 401/402 re-race rejection skips all of this: it is Center's verdict on
 // the device, no node can fix it, so the loop fails with it.
@@ -2328,7 +2332,7 @@ func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceEr
 		if ctx.Err() != nil {
 			return escExit
 		}
-		if v != netOnline {
+		if v.blocksFailover() {
 			switch e.holdUntilOnline(ctx, target, dd, v, restore) {
 			case holdExit:
 				return escExit
@@ -2373,7 +2377,7 @@ func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceEr
 		if ctx.Err() != nil {
 			return escExit
 		}
-		if v != netOnline {
+		if v.blocksFailover() {
 			// The network died during the failover: the candidates excluded
 			// on the way may be innocent. Forget them, then hold.
 			if r, ok := provider.(interface{ Reset() }); ok {
@@ -2387,9 +2391,12 @@ func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceEr
 }
 
 // failExhausted fails the engine after every candidate failed on a healthy
-// network: OnOutboundFatal, then e.fail(503) — unless a sticky 401/402
-// (ReportWireError, e.g. membership lapsed mid-session) is the true cause:
-// no node could have fixed it, so it is not replaced with "server unreachable".
+// network: OnOutboundFatal, then e.fail(503) — unless a 401/402 is the true
+// cause, in which case no node could have fixed it and it is reported as-is
+// rather than "server unreachable" (spec §4.2). Precedence: a sticky
+// lastError 401/402 (ReportWireError, e.g. membership lapsed mid-session),
+// then the last 401/402 a candidate's setup was rejected with this round
+// (phaseBExhaustedError), then 503.
 func (e *Engine) failExhausted(target *outboundTransport, err error) {
 	e.mu.Lock()
 	handler := e.handler
@@ -2402,11 +2409,27 @@ func (e *Engine) failExhausted(target *outboundTransport, err error) {
 		handler.OnOutboundFatal(outboundName, err)
 	}
 	var failErr error = outboundExhaustedError(outboundName, err)
+	var pbe *phaseBExhaustedError
+	if errors.As(err, &pbe) && pbe.userAction.RequiresUserAction() {
+		failErr = pbe.userAction
+	}
 	if sticky.RequiresUserAction() {
 		failErr = sticky
 	}
 	_ = e.fail(failErr)
 }
+
+// phaseBExhaustedError is replaceOutboundServer's provider-exhaustion error
+// when at least one candidate's setup was rejected with a 401/402 this round:
+// failExhausted reports that instead of 503. Unwrap keeps errors.Is on the
+// provider error working.
+type phaseBExhaustedError struct {
+	err        error
+	userAction *EngineError // last 401/402 seen from a candidate setup
+}
+
+func (p *phaseBExhaustedError) Error() string { return p.err.Error() }
+func (p *phaseBExhaustedError) Unwrap() error { return p.err }
 
 // applyReRaceResult installs a successful Phase-A RaceTransport result into
 // the target's existing TransportManager. Returns false if the target is no
@@ -2476,6 +2499,10 @@ func (e *Engine) replaceOutboundServer(
 	e.mu.Unlock()
 	reason := lastWireErr
 	attempt := 0
+	// Last 401/402 from a candidate setup: not a reason to stop (one
+	// misconfigured node must not end the session), but if every candidate
+	// fails it is the true cause, not "server unreachable".
+	var userAction *EngineError
 
 	for {
 		if ctx.Err() != nil {
@@ -2485,7 +2512,11 @@ func (e *Engine) replaceOutboundServer(
 		attempt++
 		newURL, providerErr := provider.NextURL(currentURL, reason)
 		if providerErr != nil {
-			return fmt.Errorf("provider: %w", providerErr)
+			err := fmt.Errorf("provider: %w", providerErr)
+			if userAction != nil {
+				return &phaseBExhaustedError{err: err, userAction: userAction}
+			}
+			return err
 		}
 		if newURL == "" {
 			return fmt.Errorf("provider returned empty URL")
@@ -2501,6 +2532,9 @@ func (e *Engine) replaceOutboundServer(
 				"outbound", target.name,
 				"tryURL", config.TruncateVia(newURL),
 				"err", setupErr)
+			if ce := ClassifyError(setupErr); ce.RequiresUserAction() {
+				userAction = ce
+			}
 			// Tell the provider this URL also failed so it excludes and
 			// returns the next candidate on the next call.
 			currentURL = newURL

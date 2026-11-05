@@ -72,6 +72,18 @@ func (h *foHandler) sawState(state string) bool {
 	return false
 }
 
+// sawCode reports whether any pushed status carried error code.
+func (h *foHandler) sawCode(code int) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, s := range h.statuses {
+		if s.Error != nil && s.Error.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *foHandler) fatalCount() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -144,6 +156,7 @@ type foServers struct {
 	alive     map[string]bool
 	races     map[string]int
 	setups    map[string]int
+	setupErrs map[string]error                       // host → error its setup fails with (overrides alive)
 	onSetup   func(host string)                      // called (outside mu) on each setup, before the verdict
 	onRace    func(ctx context.Context, host string) // called (outside mu) on each race, before the verdict
 	setupDone chan string
@@ -249,6 +262,7 @@ func newFoHarness(t *testing.T, o foOpts) *foHarness {
 		alive:     map[string]bool{},
 		races:     map[string]int{},
 		setups:    map[string]int{},
+		setupErrs: map[string]error{},
 		setupDone: make(chan string, 16),
 	}
 
@@ -280,6 +294,12 @@ func newFoHarness(t *testing.T, o foOpts) *foHarness {
 			hook(host)
 		}
 		defer func() { servers.setupDone <- host }()
+		servers.mu.Lock()
+		forced := servers.setupErrs[host]
+		servers.mu.Unlock()
+		if forced != nil {
+			return nil, nil, forced
+		}
 		if !servers.isAlive(host) {
 			return nil, nil, fmt.Errorf("setup %s: connection refused", host)
 		}
@@ -1053,15 +1073,15 @@ func TestReplaceLoop_NetEventRestartsBackoff(t *testing.T) {
 	}
 }
 
-// TestReplaceLoop_HoldTickRetriesCurrentNode: with no netcheck targets the
-// verdict is always "no internet", yet a hold tick's Phase-A on the current
-// node must still bring the session back — no network event needed (old
-// webapp, k2r gateway, global mode with no direct traffic).
+// TestReplaceLoop_HoldTickRetriesCurrentNode: the netcheck targets never
+// answer on this network (blocked / filtered) while the node is fine, so the
+// verdict stays "no internet" — yet a hold tick's Phase-A on the current node
+// must still bring the session back, no network event needed.
 func TestReplaceLoop_HoldTickRetriesCurrentNode(t *testing.T) {
-	hs := newFoHarness(t, foOpts{fallbacks: map[string][]string{foURLA: {foURLB}}})
-	hs.e.mu.Lock()
-	hs.e.netcheckTargets = nil
-	hs.e.mu.Unlock()
+	hs := newFoHarness(t, foOpts{
+		fallbacks: map[string][]string{foURLA: {foURLB}},
+		net:       []checkResult{checkNoResponse},
+	})
 
 	hs.escalate()
 	hs.waitStatus("reconnecting 106", isReconnectingCode(ErrCodeNoInternet))
@@ -1235,4 +1255,163 @@ func TestReplaceLoop_NoCandidatesNetEventRetriesNow(t *testing.T) {
 	hs.waitStatus("connected via the net-event attempt", func(s Status) bool {
 		return s.State == StateConnected && s.Error == nil
 	})
+}
+
+// TestReplaceLoop_NetworkDropsMidFailover_StalePassiveStillHolds: a direct
+// dial succeeded just before the outage (fresh passive evidence), then the
+// network dies and the candidates fail fast — all within passiveFreshness.
+// The pre-exhaust judgement must probe, not trust that dial: hold 106, never
+// 503.
+func TestReplaceLoop_NetworkDropsMidFailover_StalePassiveStillHolds(t *testing.T) {
+	hs := newFoHarness(t, foOpts{
+		fallbacks: map[string][]string{foURLA: {foURLB, foURLC}},
+		net:       []checkResult{checkMatched},
+	})
+	hs.e.mu.Lock()
+	dt := hs.e.directTrack
+	hs.e.mu.Unlock()
+	dt.setLastOKForTest(time.Now()) // e.g. a CN direct dial under smart routing
+	hs.servers.mu.Lock()
+	hs.servers.onSetup = func(host string) {
+		if host == "b.example" {
+			hs.net.set(checkNoResponse) // the user's network dies mid-failover
+		}
+	}
+	hs.servers.mu.Unlock()
+
+	hs.escalate()
+	hs.waitStatus("reconnecting 106 after exhaustion", isReconnectingCode(ErrCodeNoInternet))
+	hs.nextTimer()
+	if st, _ := hs.engineState(); st != StateConnected {
+		t.Fatalf("engine state = %s, want connected", st)
+	}
+	if hs.h.sawState(StateDisconnected) || hs.h.fatalCount() != 0 {
+		t.Fatalf("disconnected=%v fatal=%d: a dial from before the outage vouched for a dead network",
+			hs.h.sawState(StateDisconnected), hs.h.fatalCount())
+	}
+	if n := hs.net.callCount(); n != 1 {
+		t.Fatalf("active netcheck ran %d times, want 1 (pre-phaseB passive, pre-exhaust active)", n)
+	}
+}
+
+// noTargetsHarness is a harness whose session configured no netcheck targets
+// (k2r gateway, CLI, an old webapp): netcheck runs over an empty list.
+func noTargetsHarness(t *testing.T, fallbacks map[string][]string) *foHarness {
+	t.Helper()
+	hs := newFoHarness(t, foOpts{fallbacks: fallbacks})
+	hs.e.mu.Lock()
+	hs.e.netcheckTargets = nil
+	hs.e.mu.Unlock()
+	return hs
+}
+
+// TestReplaceLoop_NoNetcheckTargetsBehavesLikeBefore: with no netcheck
+// targets and no passive evidence the verdict is unknown and must not gate:
+// a dead primary fails over to a live fallback, never showing 106.
+func TestReplaceLoop_NoNetcheckTargetsBehavesLikeBefore(t *testing.T) {
+	hs := noTargetsHarness(t, map[string][]string{foURLA: {foURLB}})
+	hs.servers.setAlive("b.example", true)
+
+	hs.escalate()
+	eventually(t, "target switched to b", func() bool { return hs.targetURL() == foURLB })
+	if hs.h.sawCode(ErrCodeNoInternet) {
+		t.Fatal("showed 106 with no netcheck targets: a blind verdict gated failover")
+	}
+	if st, le := hs.engineState(); st != StateConnected || le != nil {
+		t.Fatalf("engine = %s / %v, want connected / nil", st, le)
+	}
+	select {
+	case tm := <-hs.timers:
+		t.Fatalf("a hold timer (%v) was armed: no-targets must not hold", tm.d)
+	default:
+	}
+}
+
+// TestReplaceLoop_NoNetcheckTargetsExhaustionAndRetryLikeBefore: the other
+// two pre-branch behaviours with no targets — exhaustion fails 503, and a
+// node without candidates goes on the non-blocking retry schedule showing
+// 503 (not 106).
+func TestReplaceLoop_NoNetcheckTargetsExhaustionAndRetryLikeBefore(t *testing.T) {
+	t.Run("exhausted fails 503", func(t *testing.T) {
+		hs := noTargetsHarness(t, map[string][]string{foURLA: {foURLB, foURLC}})
+		hs.escalate()
+		select {
+		case <-hs.done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("loop did not exit after exhaustion")
+		}
+		if st, le := hs.engineState(); st != StateDisconnected || le == nil || le.Code != ErrCodeServerUnreachable {
+			t.Fatalf("engine = %s / %v, want disconnected / 503", st, le)
+		}
+		if hs.h.sawCode(ErrCodeNoInternet) {
+			t.Fatal("showed 106 with no netcheck targets")
+		}
+	})
+	t.Run("no candidates retries showing 503", func(t *testing.T) {
+		hs := noTargetsHarness(t, nil)
+		hs.escalate()
+		hs.waitStatus("reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
+		hs.nextTimer().fire()
+		if d := hs.nextTimer().d; d != 10*time.Second {
+			t.Fatalf("second retry timer = %v, want 10s", d)
+		}
+		if s, _ := hs.h.last(); !isReconnectingCode(ErrCodeServerUnreachable)(s) {
+			t.Fatalf("status after a failed retry = %+v, want reconnecting/503", s)
+		}
+		if hs.h.sawCode(ErrCodeNoInternet) {
+			t.Fatal("showed 106 with no netcheck targets")
+		}
+	})
+}
+
+// TestReplaceLoop_AllFallbacksReject402FailsWith402: the primary is dead and
+// every fallback rejects the device with 402 at setup (membership lapsed):
+// that is the true cause, reported as-is rather than 503 (spec §4.2).
+func TestReplaceLoop_AllFallbacksReject402FailsWith402(t *testing.T) {
+	hs := newFoHarness(t, foOpts{
+		fallbacks: map[string][]string{foURLA: {foURLB, foURLC}},
+		net:       []checkResult{checkMatched},
+	})
+	rejected := fmt.Errorf("%w: %w", wire.ErrMetadataRejected,
+		&wire.StreamError{Code: 402, Message: "membership expired"})
+	hs.servers.mu.Lock()
+	hs.servers.setupErrs["b.example"] = rejected
+	hs.servers.setupErrs["c.example"] = rejected
+	hs.servers.mu.Unlock()
+
+	hs.escalate()
+	select {
+	case <-hs.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("loop did not exit after exhaustion")
+	}
+	st, le := hs.engineState()
+	if st != StateDisconnected || le == nil || le.Code != ErrCodePaymentRequired {
+		t.Fatalf("engine = %s / %v, want disconnected / 402", st, le)
+	}
+	if s, _ := hs.h.last(); s.State != StateDisconnected || s.Error == nil || s.Error.Code != ErrCodePaymentRequired {
+		t.Fatalf("last status = %+v, want disconnected/402", s)
+	}
+	hs.servers.mu.Lock()
+	b, c := hs.servers.setups["b.example"], hs.servers.setups["c.example"]
+	hs.servers.mu.Unlock()
+	if b != 1 || c != 1 {
+		t.Fatalf("setups b=%d c=%d, want 1 each (one 402 must not stop the round)", b, c)
+	}
+}
+
+// TestRetryOnce_NotConnectedEndsLoop: a retry due after the engine left
+// connected (Stop/fail window before ctx is cancelled) must end the loop, not
+// leave the target due — that re-arms a 0s timer and busy-spins.
+func TestRetryOnce_NotConnectedEndsLoop(t *testing.T) {
+	e := New()
+	e.mu.Lock()
+	e.state = StateDisconnected
+	e.mu.Unlock()
+	target := &outboundTransport{name: "a"}
+	r := newRetrySet(nil, nil)
+	r.schedule(target, 0)
+	if e.retryOnce(context.Background(), r, target, "wait-tick", "wait-tick") {
+		t.Fatal("retryOnce = true with state disconnected, want false (loop must exit)")
+	}
 }
