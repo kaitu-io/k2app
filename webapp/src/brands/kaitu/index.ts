@@ -53,7 +53,10 @@ export const KAITU_BRAND: WebappBrandConfig = {
   // Mainland-reachable vendor endpoints over plain HTTP. The two vendor targets at the
   // end were verified from overseas on 2026-11-05 (200 "Microsoft Connect Test" / 204 0).
   // Mirror sites are deliberately absent: over HTTP they 301 to https, which the engine
-  // reads as a captive portal. CN-egress verification of all five: pending.
+  // reads as a captive portal. Verified from mainland China on 2026-11-05 (33 probe points):
+  // miui / hicloud / vivo / qualcomm.cn return 204 reliably; msftconnecttest resolves to
+  // overseas Akamai in CN (8/33 failed, most >1.5s), so it is only a fallback — harmless
+  // under the "any match = online" rule.
   netcheck: [
     { url: 'http://connect.rom.miui.com/generate_204', status: 204 },
     { url: 'http://connectivitycheck.platform.hicloud.com/generate_204', status: 204 },
