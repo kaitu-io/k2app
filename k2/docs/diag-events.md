@@ -27,6 +27,8 @@ Level column = the slog level at the call site(s). "Where" = file(s) relative to
 | `echo-probe-fail` | WARN | engine/health.go, wire/race.go | Echo failed. transport, err |
 | `echo-probe-unsupported` | WARN | engine/health.go, wire/race.go | Server doesn't support echo (old k2v5); rate-limited once per TM. transport, err (the stream error the verdict rests on — EOF/reset from a pre-echo server; added after 0.4.14). A probe that never reached a live connection (`wire.ErrEchoNoConnection`: none cached after a Reset, cached one already closed, tcpws connect refused) is **not** this event — before that marker it was, and fired on nearly every Android connect against echo-capable servers. Clients ≤0.4.14 still log it that way, with no err field |
 | `transport-rerace` | WARN | engine/engine.go | Runtime re-race after 3 consecutive echo fails. reason, previousTransport |
+| `netcheck` | INFO / WARN | engine/hold.go | One network verdict in the failover loop (INFO when online, WARN otherwise) — logged at `pre-phaseB` (each failed re-race once the streak reaches 2, before any candidate is asked), `pre-exhaust` (candidates ran out), and every hold wake (`hold-tick` = backoff 5s→10s→30s→30s…, `net-event` = platform network change). trigger, result (1 iface_down / 2 no_internet / 3 captive / 4 online), verdict, evidence (`iface` netCoordinator says down / `passive` public direct dial ≤10s ago / `active` probes), checks (`host=matched\|other\|noResp` per target, empty unless active), ms (whole judgement) |
+| `outbound-failover` | INFO | engine/engine.go | An outbound was hot-swapped to a replacement node (Phase B, network judged online). outbound (name before the swap), from, to (truncated URLs), attempt (NextURL calls this round, 1 = first candidate worked) |
 | `connected` | INFO | engine/engine.go | Engine connected. server, mode, disableSniff, dialMs, dnsTransport |
 | `session-end` | INFO | engine/engine.go | Engine stop (only if a session was up). uptimeS, txMB, rxMB |
 | `wire-error` | WARN | engine/engine.go | Classified wire error reported to engine. code, category, message |
@@ -206,6 +208,7 @@ grep "DIAG:" k2.log | grep -v heartbeat             # what went wrong?
 grep "DIAG: dns" k2.log                             # DNS layer (dns-proxy-* = which proxy-DNS step failed)
 grep "DIAG: quic\|DIAG: transport" k2.log           # transport layer
 grep "DIAG: wake" k2.log                            # sleep/wake
+grep "DIAG: netcheck\|DIAG: outbound-failover" k2.log  # node failover: network verdicts + node switches
 grep "DIAG: connected\|DIAG: session-end" k2.log    # session summary
 grep "level=WARN" k2.log | grep "DIAG:"             # all WARN diagnostics
 ```

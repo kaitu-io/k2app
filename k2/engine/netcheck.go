@@ -194,9 +194,13 @@ func dialResolved(ctx context.Context, dd wire.DirectDialer,
 			return nil, errors.New("netcheck: no addresses for " + host)
 		}
 	}
+	dial := (&net.Dialer{}).DialContext // nil dd: stdlib, like core.NewDirectOutbound(nil)
+	if dd != nil {
+		dial = dd.DialContext
+	}
 	var lastErr error
 	for _, ip := range ips {
-		conn, derr := dd.DialContext(ctx, network, netip.AddrPortFrom(ip.Unmap(), uint16(port)).String())
+		conn, derr := dial(ctx, network, netip.AddrPortFrom(ip.Unmap(), uint16(port)).String())
 		if derr == nil {
 			return conn, nil
 		}

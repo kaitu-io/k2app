@@ -446,6 +446,7 @@ func TestOutboundReplaceLoop_ExhaustedFailsWith503(t *testing.T) {
 	e.outboundTMs = []*outboundTransport{target}
 	e.outboundProvider = provider
 	e.reRaceChan = make(chan *outboundTransport, 1)
+	e.netcheck = onlineNetcheck // exhaustion fails only on a healthy network
 	e.mu.Unlock()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -476,6 +477,9 @@ func TestOutboundReplaceLoop_ExhaustedFailsWith503(t *testing.T) {
 		}
 	}
 }
+
+// onlineNetcheck is a netcheck whose every probe matches (network online).
+func onlineNetcheck(context.Context) []checkResult { return []checkResult{checkMatched} }
 
 type exhaustedSubsProvider struct{}
 
@@ -528,6 +532,7 @@ func TestOutboundReplaceLoop_StickyPaymentErrorSurvivesExhaustion(t *testing.T) 
 	e.outboundProvider = &exhaustedSubsProvider{}
 	e.reRaceChan = make(chan *outboundTransport, 1)
 	e.lastError = newEngineError(ErrCodePaymentRequired, "wire: metadata auth rejected: membership expired")
+	e.netcheck = onlineNetcheck // exhaustion fails only on a healthy network
 	e.mu.Unlock()
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -45,6 +45,18 @@ Note: `reconnecting` and `paused` are transient — engine.state stays `connecte
 - `Wake()`: paused → connected (forces fresh wire transport connections, scoreboard and channel choice kept)
 - `fail()`: any → disconnected + classified error
 
+### Hold (waiting for the user's network) — `hold.go`, `outboundReplaceLoop`
+
+A node that looks dead may only look dead because the user's network is. Before spending replacement candidates the replace loop judges the network (`judgeNet` → `decideNet`: netCoordinator `isNetworkUp` → passive public direct dial ≤10s via `directTrack` → active `netChecker` on `ClientConfig.Netcheck`, empty list = no internet) and logs `DIAG: netcheck`.
+
+- **When**: `pre-phaseB` (Phase-A streak ≥ `reRaceFailThresholdForReplace`, before `NextURL`) and `pre-exhaust` (provider exhausted). Not between candidates — `pre-exhaust` covers a network that dies mid-failover, and then the provider's exclusions are `Reset()` (they may be innocent) before holding.
+- **Hold**: `holdErr` = verdict's 101/106/107 (`setHold`, pushed). `buildStatusLocked` reports `reconnecting + holdErr` while connected and not paused, so every push/poll path (network reconnect, health critical, wake, daemon `status`) shows the hold without per-call-site changes. **A 401/402 `lastError` outranks the hold** (actionable beats "waiting"). Re-judge on backoff `holdBackoff` 5s→10s→30s→30s… (no cap) or immediately on `holdWake` (cap-1 chan poked by `doNetworkReconnect`; a wake restarts the backoff). Online → clear hold, one Phase-A on the **current** node, Phase B only if that fails.
+- **No candidates** (`ErrNoCandidates`: manual mode / no fallbacks / URL no provider owns): never `fail`; `holdErr` = 503 and the node keeps being re-raced; the next Phase-A success clears it.
+- **Exhausted on a healthy network**: `OnOutboundFatal` + `fail(503)` (`outboundExhaustedError`; a sticky 401/402 wins). A 401/402 Phase-A rejection still fails immediately, before any judgement.
+- **Ownership / timing**: only the replace loop writes `holdErr` (plus `Stop`/`fail`, which clear it). `setHold` is a no-op once the loop's ctx is cancelled or state ≠ connected, so a late write never lands on the next session. The hold `select`s on ctx, so `Stop` ends it immediately; in-flight netcheck HTTP is ctx-bound. Clock is injectable (`Engine.holdTimerFn`); `failover_test.go` drives everything with fakes.
+- **Providers**: `Start` always installs `newCompositeProvider(newStaticProvider(Fallbacks), cfg.OutboundProvider)` — static fallbacks first, then the shell provider for URLs it `OwnsURL`.
+- **Netcheck DNS**: its own `DirectDNSClient` on `client.DNS.Direct` (also in proxy mode), protected via `DialerController`; `directResolve` returns A before AAAA (sequential dials in one 3s budget — IPv6-first would starve IPv4 on a v6-blackholed network).
+
 ## Error Classification (error.go)
 
 HTTP-aligned error codes for frontend consumption (ranges are load-bearing: 1xx network, 4xx client, 5xx server — never mix):
@@ -61,7 +73,7 @@ HTTP-aligned error codes for frontend consumption (ranges are load-bearing: 1xx 
 | 403 | client | Forbidden | pin mismatch, blocked CA |
 | 412 | client | Environment setup failed (operator must fix the host) | any `provider.Start` failure (`providerStartError`, classified at the call site — sing-tun/wintun text is OS-localized); gateway `install intercept` / `iptables` / `ip6tables` messages |
 | 502 | server | Protocol error | TLS/QUIC handshake failure |
-| 503 | server | Server unreachable | TCP dial, connection refused; outbound replacement candidates exhausted (`outboundExhaustedError`, set by the producer) |
+| 503 | server | Server unreachable | TCP dial, connection refused; outbound replacement candidates exhausted on a healthy network (`outboundExhaustedError`, set by the producer); also the `reconnecting` hold reason when the outbound has no replacement candidates (no disconnect) |
 | 504 | server | Rule bundles unavailable (retryable) | no bundle on disk after embedded seed, or a configured `match.region` bundle missing |
 | 570 | server | Unclassified | fallback |
 
@@ -113,6 +125,8 @@ missReporter.Stop()      // last — may flush a final batch, blocks ≤5s
 ## Files
 
 - `engine.go` — `Engine` struct, `Start`/`Stop`/`OnNetworkChanged`/`OnNetEvent`/`doNetworkReconnect`, assembly pipeline, `buildOutboundMap`/`buildRouteEntries`
+- `hold.go` — failover network gate: `judgeNet` (`DIAG: netcheck`), `holdUntilOnline`, `setHold`, `wakeHold`, `directResolve` (netcheck DNS, A first); see State Machine → Hold
+- `failover_test.go` — replace loop gating/hold/failover tests (`TestReplaceLoop_*`), all fakes, no real sleeps
 - `netmon.go` — `NetEvent` (gomobile-compatible network event struct, 8 primitive fields) + `netCoordinator` (fuses sing-tun + platform signals: suppress reconnect when network down, full reconnect on recovery, 500ms debounce)
 - `netmon_test.go` — netCoordinator unit tests (6 scenarios)
 - `config.go` — `Config` struct (platform-unified tunnel parameters, uses `wire.DirectDialer` interface)
