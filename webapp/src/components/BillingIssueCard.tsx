@@ -58,7 +58,7 @@ export default function BillingIssueCard({ sub, compact }: BillingIssueCardProps
       data-testid="billing-issue-card"
       action={
         compact && action ? (
-          <Button color="inherit" size="small" data-testid="billing-issue-update" onClick={onClick}>
+          <Button color="inherit" size="small" sx={{ whiteSpace: 'nowrap' }} data-testid="billing-issue-update" onClick={onClick}>
             {t('purchase:purchase.billingIssue.update')}
           </Button>
         ) : undefined
@@ -66,7 +66,7 @@ export default function BillingIssueCard({ sub, compact }: BillingIssueCardProps
     >
       {!compact && <AlertTitle>{t('purchase:purchase.billingIssue.title')}</AlertTitle>}
       <Typography variant="body2">{body}</Typography>
-      {elsewhere && !compact && (
+      {elsewhere && (
         <Typography variant="body2" sx={{ mt: 0.5 }}>
           {t('purchase:purchase.billingIssue.appleElsewhere')}
         </Typography>

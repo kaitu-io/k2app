@@ -74,6 +74,21 @@ describe('BillingIssueCard', () => {
     expect(t).not.toContain('trialBody');
   });
 
+  it('compact + non-ios + apple_settings: shows elsewhere hint, no button', () => {
+    (window as any)._platform = { openExternal, os: 'windows' };
+    render(<BillingIssueCard sub={sub()} compact />);
+    expect(screen.queryByTestId('billing-issue-update')).toBeNull();
+    expect(screen.getByTestId('billing-issue-card').textContent).toContain('purchase:purchase.billingIssue.appleElsewhere');
+  });
+
+  it('compact + ios: no title, no elsewhere hint, button present', () => {
+    render(<BillingIssueCard sub={sub()} compact />);
+    const text = screen.getByTestId('billing-issue-card').textContent!;
+    expect(text).not.toContain('purchase:purchase.billingIssue.title');
+    expect(text).not.toContain('appleElsewhere');
+    expect(screen.getByTestId('billing-issue-update')).toBeTruthy();
+  });
+
   it('compact still renders card and button', () => {
     render(<BillingIssueCard sub={sub()} compact />);
     expect(screen.getByTestId('billing-issue-update')).toBeTruthy();

@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Box, Stack, Typography } from '@mui/material';
+import { Box, Button, Stack, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useLocation } from 'react-router-dom';
 import type { DataSubscription } from '../../services/api-types';
@@ -120,7 +120,19 @@ export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPan
 
         {/* 扣款失败：付款失败卡取代试用 / 续订卡；试用中：试用卡；否则续订状态 + 到期倒计时 */}
         {activeSub?.billingIssue ? (
-          <BillingIssueCard sub={activeSub} />
+          <>
+            <BillingIssueCard sub={activeSub} />
+            {/* 付款失败卡取代了试用 / 续订卡，保留一个次要入口，用户仍能管理 / 取消订阅 */}
+            <Button
+              variant="outlined"
+              size="small"
+              sx={{ alignSelf: 'flex-start' }}
+              data-testid="billing-issue-manage"
+              onClick={openManage}
+            >
+              {t('purchase:purchase.iap.openManage')}
+            </Button>
+          </>
         ) : isTrial ? (
           <TrialStatusCard
             trialEndsAtSec={activeSub?.trialEndsAt ?? 0}

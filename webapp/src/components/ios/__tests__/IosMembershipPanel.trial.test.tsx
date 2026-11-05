@@ -86,6 +86,14 @@ describe('IosMembershipPanel trial card', () => {
     expect(screen.queryByTestId('renewal-status-card')).toBeNull();
   });
 
+  it('billingIssue keeps a secondary manage button that opens the App Store subscriptions page', () => {
+    renderPanel(sub({ isTrial: true, trialEndsAt: endsIn5Days(), billingIssue: true }));
+    fireEvent.click(screen.getByTestId('billing-issue-manage'));
+    expect((window as any)._platform.openExternal).toHaveBeenCalledWith(
+      'itms-apps://apps.apple.com/account/subscriptions',
+    );
+  });
+
   it('isTrial with 5 days left shows tag, days left, total, renew note and loads products', () => {
     const ends = endsIn5Days();
     renderPanel(sub({ isTrial: true, trialEndsAt: ends }));
