@@ -17,6 +17,7 @@ import (
 	"github.com/kaitu-io/k2/core"
 	"github.com/kaitu-io/k2/wire"
 	"github.com/kaitu-io/k2/wire/k2cc"
+	smux "github.com/xtaci/smux/v2"
 )
 
 // TestHealthSnapshot_HasChannelScores verifies HealthSnapshot serializes the
@@ -778,6 +779,27 @@ func TestEchoStep_QUICStreamDeadlineCountsAsFailure(t *testing.T) {
 	if !res.ShouldRerace {
 		t.Fatalf("%d consecutive stream deadlines did not trigger re-race: %+v",
 			echoReraceThreshold, res)
+	}
+}
+
+// TestEchoStep_TCPWSSmuxTimeoutCountsAsFailure is the tcpws twin of the test
+// above: smux answers an expired read deadline with smux.ErrTimeout (a bare
+// errors.New), which used to read as "unsupported" and kept a dead tcpws
+// primary at zero strikes. wire.TestTCPWSEcho_RealSmuxReadTimeoutIsFailure is
+// the authority (real smux session); this guards the engine's half.
+func TestEchoStep_TCPWSSmuxTimeoutCountsAsFailure(t *testing.T) {
+	err := fmt.Errorf("echo: read response: %w", smux.ErrTimeout)
+
+	res := echoStep(4, 0, err)
+	if res.Classify != echoFail {
+		t.Fatalf("tcpws smux timeout classified as %v, want echoFail: %v", res.Classify, err)
+	}
+	if res.NewStrikes != 1 || res.NewTrust != 0 {
+		t.Fatalf("want strikes=1 trust=0 on a dead tcpws data path, got %+v", res)
+	}
+	res = echoStep(0, echoReraceThreshold-1, err)
+	if !res.ShouldRerace {
+		t.Fatalf("%d consecutive tcpws timeouts did not trigger re-race: %+v", echoReraceThreshold, res)
 	}
 }
 
