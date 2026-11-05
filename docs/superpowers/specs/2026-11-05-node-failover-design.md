@@ -58,7 +58,7 @@
 
 - **放在 ClientConfig 顶层，以首选 URL 为键**（我的决定）：形如 `fallbacks: { "<首选 k2v5 URL>": ["<备选1>", "<备选2>", "<备选3>"] }`。原因：`buildConnectConfig` 会把同一个 `serverUrl` 写进多条 route（分应用代理覆盖 + 最后的 `all`），引擎按 URL 去重出口，`NextURL(currentURL, …)` 也只带 URL，不带 route 身份。所以按 URL 挂备选和引擎的模型一致，放在 RouteConfig 上则会出现同一出口多份、可能互相矛盾的名单。精确字段名按现有惯例定（Go 发 snake_case，桥接层转 camelCase）。
 - 只允许 `k2v5://`；其他 scheme 在配置校验时丢弃并打 WARN。`k2p://home` 等非云出口不参与切换。
-- **连通性检查地址也走 ClientConfig**（我的决定）：新增顶层 `netcheck: [{url, status, body?}]`（计划阶段改为对象：Apple 与自有地址是"200 + 固定正文"，不是 204），由 webapp 从 `webapp/src/brands/<brand>/index.ts` 填入。k2 本身没有品牌概念，品牌字面量按根 CLAUDE.md 只能放在品牌文件里。字段缺失或为空时第 3 层视为"无结论"，按情况 2 处理（等网，不换节点、不断开），宁可少切换也不误切换。和 `fallbacks` 是同一次契约改动。
+- **连通性检查地址也走 ClientConfig**（我的决定）：新增顶层 `netcheck: [{url, status, body?}]`（计划阶段改为对象：Apple 与自有地址是"200 + 固定正文"，不是 204），由 webapp 从 `webapp/src/brands/<brand>/index.ts` 填入。k2 本身没有品牌概念，品牌字面量按根 CLAUDE.md 只能放在品牌文件里。字段缺失或为空时视为"未知"，行为与 F2 之前完全一致：不做判定门、不等网、不显示 106，照常换节点，耗尽报 503（401/402 保持）。网卡断开（101）仍会等网。（实施阶段改动，原设计是按情况 2 等网：终审发现没有检查地址的调用方实际只有 k2r 网关和 CLI，等网会让路由器空闲时卡在 106、不再轮换节点；webapp 总会下发检查地址。代价是没有检查地址的客户端在断网时仍会像以前一样把备选试完并报 503。）和 `fallbacks` 是同一次契约改动。
 - 检查地址的 DNS 用 ClientConfig 里配置的直连 DNS。实施者要确认 overleap 下这组 DNS 不是只有大陆地址（`core/dns/direct.go` 的默认值全是大陆解析器）；如果是，就在同一次改动里让 webapp 按品牌下发。
 - **凭证**：备选 URL 同样用 `authService.buildTunnelUrl` 生成，和首选带同一个 token，有效期相同，存储位置相同（iOS `providerConfiguration`），所以没有引入新的暴露面。切换到备选时如果 token 已失效，得到的是真实的 401，按原样报出，不属于误报。
 - 三处同步：Go `config.ClientConfig`、TS 类型、`contracts/` 下对应的金样（按 `webapp/CLAUDE.md` 契约门流程重新生成，不手改）。
@@ -184,7 +184,7 @@ i18n 至少覆盖 zh-CN / en；中文文案中不出现 "Kaitu"。
   5. 把检查地址 DNAT 到一个返回 302 的服务 → reconnecting(107)；
   6. 第 1 种场景跑到一半再切断外网 → 规则 2 生效，不报 503。
 - **真机**：iOS、Android 各一台，Wi-Fi 下拔掉路由器 WAN 再插回；开关飞行模式。期望：显示重新连接中加正确原因，恢复后自动连上，全程不断开。Windows / macOS 各跑一次"拔网线"和"首选节点黑洞"。
-- **日志**：每次判定一行 `DIAG: netcheck`，字段包括 result（1–4）、evidence（iface/passive/active）、各检查地址的结果和耗时、触发点（pre-phaseB / pre-exhaust / wait-tick / net-event）。每次切换一行 `DIAG: outbound-failover`，含 from/to（截断 URL）。上线后据此统计。
+- **日志**：每次判定一行 `DIAG: netcheck`，字段包括 result（1–4）、evidence（iface/passive/active）、各检查地址的结果和耗时、触发点（pre-phaseB / pre-exhaust / wait-tick / net-event）。pre-exhaust 那次判定总是执行主动检查、不采信被动证据（终审修正：被动证据可能来自断网之前）。每次切换一行 `DIAG: outbound-failover`，含 from/to（截断 URL）。上线后据此统计。
 
 ## 8. 留给实施者决定的
 
