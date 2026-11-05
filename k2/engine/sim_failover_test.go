@@ -75,6 +75,11 @@ const (
 	simSpecCap         = 10 * time.Minute
 	simSpecLongPending = 10 * time.Minute
 	simSpecLongTick    = 60 * time.Second
+	// simSpecCodeLessPhaseB: a tick whose Phase A answered code-less runs
+	// Phase B at most this often per target (8a57c0740 FB ruling), so a
+	// working candidate behind a code-less current node is reached within
+	// this plus one tick spacing plus one round.
+	simSpecCodeLessPhaseB = 2 * time.Minute
 )
 
 // Fake durations of the edge calls (fake clock).
@@ -573,6 +578,8 @@ type simResult struct {
 	failovers  int
 	caps       int
 	lpPairs    int // long-pending tick pairs the I4 cadence check judged
+	holdRecOK  int // recovered wakes a hold took (8a57c0740 D2)
+	holdRecDrp int // recovered wakes a hold dropped (gate closed)
 	steps      int
 	i2Lat      []time.Duration // P2 start → failover
 	hash       uint64
@@ -665,25 +672,31 @@ type simRun struct {
 	recTicks           []time.Time // netchecks with trigger=recovered (recoveredWake ticks)
 	lastReRaceReason   string
 	lastWakeAt         time.Time
-	netOnlineSince     time.Time // the network has been online since
-	offlineEpoch       int       // incremented on each transition into a non-online network
-	roundEpoch         int       // offlineEpoch of the last Phase-B round seen offline
-	roundsOff          int       // Phase-B rounds in the current offline episode
-	inRound            bool      // a setup was seen since the last idle point
-	constSince         time.Time
-	reconnSince        time.Time
-	maxBackoff         time.Duration
-	sameInstant        int
-	lastStepAt         time.Time
-	lastURL            string
-	logBuf             []string
-	violations         []simViolation
-	res                simResult
-	stalled            bool
-	pauseEnabled       bool
-	h                  *simHandler
-	resume             chan simResp
-	stallTimer         *time.Timer
+	// Mirror of holdUntilOnline's recovered-wake gate (holdTakesRecovered).
+	wasHeld        bool
+	hLastTry       time.Time
+	hMuted         bool
+	hCodeLessA     bool
+	hRecReleased   bool      // the last release of a hold was for a recovered wake
+	netOnlineSince time.Time // the network has been online since
+	offlineEpoch   int       // incremented on each transition into a non-online network
+	roundEpoch     int       // offlineEpoch of the last Phase-B round seen offline
+	roundsOff      int       // Phase-B rounds in the current offline episode
+	inRound        bool      // a setup was seen since the last idle point
+	constSince     time.Time
+	reconnSince    time.Time
+	maxBackoff     time.Duration
+	sameInstant    int
+	lastStepAt     time.Time
+	lastURL        string
+	logBuf         []string
+	violations     []simViolation
+	res            simResult
+	stalled        bool
+	pauseEnabled   bool
+	h              *simHandler
+	resume         chan simResp
+	stallTimer     *time.Timer
 }
 
 func (s *simRun) now() time.Time {
@@ -884,6 +897,9 @@ func (s *simRun) startCall(r *simReq) {
 			s.lastRaceCodeLessAt = time.Time{}
 			if a.what == "code-less" || a.what == "hang" {
 				s.lastRaceCodeLessAt = s.now()
+			}
+			if s.target.held.Load() {
+				s.hCodeLessA = a.what == "code-less" || a.what == "hang"
 			}
 		}
 		s.attempts = append(s.attempts, s.now())
@@ -1088,7 +1104,30 @@ func (s *simRun) pruneTimers() {
 func (s *simRun) readyNow(r *simReq) bool {
 	switch r.kind {
 	case bkHold:
-		return len(s.e.holdWake) > 0
+		wake := len(s.e.holdWake) > 0
+		rec := len(s.e.recoveredWake) > 0
+		if wake && rec {
+			s.stolenRec = <-s.e.recoveredWake
+			s.logf("recovered wake held back behind holdWake, re-queued at the next handshake")
+			rec = false
+		}
+		if rec && !s.holdTakesRecovered() {
+			// The hold would drop this token and select again without a
+			// handshake (8a57c0740 holdUntilOnline): the driver drops it
+			// itself so the loop stays parked in the handshake.
+			<-s.e.recoveredWake
+			s.res.holdRecDrp++
+			s.logf("hold drops a recovered wake (code-less=%v muted=%v since-last-try=%v)", s.hCodeLessA, s.hMuted, s.now().Sub(s.hLastTry))
+			rec = false
+		}
+		if wake {
+			s.hLastTry, s.hMuted = s.now(), false
+		} else if rec {
+			s.hLastTry, s.hMuted = s.now(), true
+			s.hRecReleased = true
+			s.res.holdRecOK++
+		}
+		return wake || rec
 	case bkIdle:
 		wake := len(s.e.holdWake) > 0 && s.hasActiveRetryTimer()
 		rec := len(s.e.recoveredWake) > 0
@@ -1108,6 +1147,16 @@ func (s *simRun) readyNow(r *simReq) bool {
 	return false
 }
 
+// holdTakesRecovered mirrors holdUntilOnline's recovered-wake gate
+// (8a57c0740): the held target's token is taken unless its latest Phase A
+// (lastErr at entry, then the hold's own) was code-less, the previous tick
+// was a recovered one that failed (muted), or the last attempt is younger
+// than holdBackoff[0]. A wrong mirror is not silent: a released token the
+// hold drops leaves the loop selecting without a handshake → I5 stall.
+func (s *simRun) holdTakesRecovered() bool {
+	return !s.hCodeLessA && !s.hMuted && s.now().Sub(s.hLastTry) >= holdBackoff[0]
+}
+
 func (s *simRun) waitBlock() *simReq {
 	if s.stallTimer == nil {
 		s.stallTimer = time.NewTimer(30 * time.Second)
@@ -1122,6 +1171,10 @@ func (s *simRun) waitBlock() *simReq {
 		return nil
 	case <-s.stallTimer.C:
 		s.stalled = true
+		if s.hRecReleased {
+			s.violate("I5", "replace loop stalled after the driver released a recovered wake to a hold: the hold dropped it — the driver's mirror of the hold's recovered gate (holdTakesRecovered) disagrees with the product")
+			return nil
+		}
 		s.violate("I5", "replace loop neither blocked at a known point nor exited for 30s wall (deadlock or unknown wait)")
 		return nil
 	}
@@ -1154,6 +1207,15 @@ func (s *simRun) passive() {
 func (s *simRun) onBlock(r *simReq) {
 	s.res.steps++
 	s.atIdle = r.kind == bkIdle || r.kind == bkHold
+	s.hRecReleased = false
+	// A new network hold (target.held turns on at its first timer arm):
+	// lastTry = entry, code-less = the escalating race's result.
+	if held := s.target.held.Load(); held && !s.wasHeld {
+		s.hLastTry, s.hMuted, s.hCodeLessA = s.now(), false, !s.lastRaceCodeLessAt.IsZero()
+		s.wasHeld = true
+	} else if !held {
+		s.wasHeld = false
+	}
 	if s.atIdle {
 		s.pauseMidTick = false
 	}
@@ -1623,6 +1685,11 @@ func (s *simRun) observe(idle bool) {
 			from = s.s503Since
 		}
 		b := 2*s.maxChain() + s.tickBound()
+		if !s.lastRaceCodeLessAt.IsZero() {
+			// The current node answers code-less: Phase B only every
+			// simSpecCodeLessPhaseB (FB ruling).
+			b = max(b, simSpecCodeLessPhaseB+s.tickBound()+s.maxChain())
+		}
 		if now.Sub(from) > b {
 			s.recFlagged = true
 			s.violate("I3", "stale 503: shown for %v while a working node is available (bound %v)", now.Sub(from).Round(time.Second), b)
@@ -2014,6 +2081,9 @@ func (s *simRun) drive() {
 				continue
 			}
 			if tmr != nil && !tmr.at.After(now) {
+				if req.kind == bkHold {
+					s.hLastTry, s.hMuted = now, false // a backoff tick
+				}
 				s.tmu.Lock()
 				tmr.fired = true
 				s.tmu.Unlock()
@@ -2143,6 +2213,7 @@ func TestSimFailover(t *testing.T) {
 		failovers int
 		caps      int
 		lpPairs   int
+		holdRec   [2]int
 		steps     int
 		lat       []time.Duration
 		modes     = map[string]int{}
@@ -2156,6 +2227,8 @@ func TestSimFailover(t *testing.T) {
 		failovers += r.failovers
 		caps += r.caps
 		lpPairs += r.lpPairs
+		holdRec[0] += r.holdRecOK
+		holdRec[1] += r.holdRecDrp
 		lat = append(lat, r.i2Lat...)
 		if r.failCode != 0 {
 			fails[r.failCode]++
@@ -2196,8 +2269,8 @@ func TestSimFailover(t *testing.T) {
 		}
 		return lat[int(p*float64(len(lat)-1))]
 	}
-	t.Logf("sim: %d seeds in %v (%.1f seeds/s), %d failing (%v), accepted findings %v; modes %v; steps %d; failovers %d; caps %d; long-pending tick pairs %d; session ends by code %v; I2 latency n=%d p50=%v p99=%v max=%v",
-		len(seeds), el.Round(time.Millisecond), float64(len(seeds))/el.Seconds(), failed, byInv, accepted, modes, steps, failovers, caps, lpPairs, fails,
+	t.Logf("sim: %d seeds in %v (%.1f seeds/s), %d failing (%v), accepted findings %v; modes %v; steps %d; failovers %d; caps %d; long-pending tick pairs %d; hold recovered wakes taken/dropped %d/%d; session ends by code %v; I2 latency n=%d p50=%v p99=%v max=%v",
+		len(seeds), el.Round(time.Millisecond), float64(len(seeds))/el.Seconds(), failed, byInv, accepted, modes, steps, failovers, caps, lpPairs, holdRec[0], holdRec[1], fails,
 		len(lat), pct(0.5).Round(time.Second), pct(0.99).Round(time.Second), pct(1).Round(time.Second))
 	if os.Getenv("K2_SIM_SEED") != "" {
 		r := simRunScenario(simGen(seeds[0], pause), pause)
