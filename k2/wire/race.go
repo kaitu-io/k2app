@@ -16,6 +16,11 @@ const (
 	raceTimeout     = 5 * time.Second
 	staggerTCPWS    = 800 * time.Millisecond
 	echoTimeoutRace = 1 * time.Second
+
+	// raceCollectorSlack: the collector re-arms its deadline this long past
+	// the latest pending candidate's, so the candidate's own expiry (and its
+	// error) lands first.
+	raceCollectorSlack = 100 * time.Millisecond
 )
 
 // RaceResult is the output of a successful transport race.
@@ -180,7 +185,7 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 			}
 		case <-deadline.C:
 			if until, ok := latestPending(cands); ok {
-				deadline.Reset(time.Until(until) + 100*time.Millisecond)
+				deadline.Reset(time.Until(until) + raceCollectorSlack)
 				continue
 			}
 			slog.Warn("DIAG: transport-race-fail",
@@ -212,10 +217,18 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 
 // metaPhaseBudget is how long a candidate may take after its transport
 // handshake completed: the metadata verdict (metaReadTimeout, which outlives
-// k2s's 5s remote-auth timeout) plus the race echo, plus slack. With the 5s
-// transport deadline the worst case stays inside the engine's 15s race ctx.
+// k2s's 5s remote-auth timeout) plus the race echo, plus slack.
 func metaPhaseBudget() time.Duration {
 	return metaReadTimeout + echoTimeoutRace + 500*time.Millisecond
+}
+
+// RaceWorstCase is the longest RaceTransport can run on its own deadlines: a
+// candidate whose transport handshake completes just before raceTimeout,
+// then the whole metaPhaseBudget, then the collector's slack. A caller ctx
+// shorter than this cuts a slow-but-alive node's verdict (PVE S15) and turns
+// it into a bare timeout; the engine derives its race ctx from this value.
+func RaceWorstCase() time.Duration {
+	return raceTimeout + metaPhaseBudget() + raceCollectorSlack
 }
 
 // candDeadline is one race candidate's deadline: transportUntil while its

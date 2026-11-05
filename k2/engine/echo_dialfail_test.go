@@ -859,7 +859,11 @@ func TestReplaceLoop_Coded403(t *testing.T) {
 		hs.servers.setupErrs["b.example"] = codedReject(ErrCodeForbidden)
 		hs.servers.mu.Unlock()
 		hs.escalate()
-		eventually(t, "engine failed", func() bool { s, _ := hs.engineState(); return s != StateConnected })
+		// R1: one candidate's 403 among dead ones is not an account verdict
+		// on its own — the target is scheduled; at the cap the 403 is what
+		// the engine fails with.
+		hs.waitStatus("reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
+		hs.startTicks().runUntilCapFails(0, 20*time.Minute)
 		_, le := hs.engineState()
 		if le == nil || le.Code != ErrCodeForbidden {
 			t.Fatalf("lastError = %+v, want the candidate's 403 over 503", le)

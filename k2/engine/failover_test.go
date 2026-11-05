@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -251,6 +252,8 @@ type foHarness struct {
 	clock    *foClock // behind e.holdNow
 	cancel   context.CancelFunc
 	done     chan struct{}
+
+	drainOnce sync.Once // exhaust_cap_test.go drainSetups
 }
 
 type foOpts struct {
@@ -486,18 +489,21 @@ func TestReplaceLoop_OnlineFailsOverToFallback(t *testing.T) {
 	}
 }
 
-func TestReplaceLoop_AllDeadOnlineFails503(t *testing.T) {
+// R1: an exhaustion on a healthy network is scheduled (reconnecting 503);
+// only exhaustFailAfter of it fails the engine with 503.
+func TestReplaceLoop_AllDeadOnlineFails503AtCap(t *testing.T) {
 	hs := newFoHarness(t, foOpts{
 		fallbacks: map[string][]string{foURLA: {foURLB, foURLC}},
 		net:       []checkResult{checkMatched},
 	})
 
 	hs.escalate()
-	select {
-	case <-hs.done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("loop did not exit after exhaustion on a healthy network")
+	hs.waitStatus("reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
+	if s, _ := hs.h.last(); s.Error == nil || !strings.Contains(s.Error.Message, "all replacement candidates failed; retrying") {
+		t.Fatalf("hold = %+v, want the exhaustion reason", s.Error)
 	}
+	hs.assertExhaustedScheduled("after escalate")
+	hs.startTicks().runUntilCapFails(0, 20*time.Minute)
 	st, le := hs.engineState()
 	if st != StateDisconnected || le == nil || le.Code != ErrCodeServerUnreachable {
 		t.Fatalf("engine = %s / %v, want disconnected / 503", st, le)
@@ -1367,14 +1373,12 @@ func TestReplaceLoop_NoNetcheckTargetsBehavesLikeBefore(t *testing.T) {
 // node without candidates goes on the non-blocking retry schedule showing
 // 503 (not 106).
 func TestReplaceLoop_NoNetcheckTargetsExhaustionAndRetryLikeBefore(t *testing.T) {
-	t.Run("exhausted fails 503", func(t *testing.T) {
+	t.Run("exhausted retries showing 503, fails 503 at the cap", func(t *testing.T) {
 		hs := noTargetsHarness(t, map[string][]string{foURLA: {foURLB, foURLC}})
 		hs.escalate()
-		select {
-		case <-hs.done:
-		case <-time.After(5 * time.Second):
-			t.Fatal("loop did not exit after exhaustion")
-		}
+		// R1: unknown verdict = no gating, so the cap clock runs as online.
+		hs.waitStatus("reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
+		hs.startTicks().runUntilCapFails(0, 20*time.Minute)
 		if st, le := hs.engineState(); st != StateDisconnected || le == nil || le.Code != ErrCodeServerUnreachable {
 			t.Fatalf("engine = %s / %v, want disconnected / 503", st, le)
 		}

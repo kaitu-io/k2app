@@ -30,6 +30,12 @@ import (
 // the user can always disconnect.
 var holdBackoff = []time.Duration{5 * time.Second, 10 * time.Second, 30 * time.Second}
 
+// exhaustFailAfter is how long a target may stay continuously exhausted on an
+// online network before the engine gives up on it: OnOutboundFatal +
+// fail(503) (failExhausted). Before that an exhaustion only puts the target
+// on the retry schedule (R1, spec §4.2 amendment 2026-11-05).
+const exhaustFailAfter = 10 * time.Minute
+
 // realHoldTimer is the production holdTimerFn.
 func realHoldTimer(d time.Duration) (<-chan time.Time, func()) {
 	t := time.NewTimer(d)
@@ -204,16 +210,35 @@ func (e *Engine) holdUntilOnline(ctx context.Context, target *outboundTransport,
 	}
 }
 
-// retryState schedules the next retry of an outbound that has no replacement
-// candidates (see retrySet).
+// exhaustedHoldError is the shown hold while a target is on the schedule
+// because every replacement candidate failed on a working network (R1).
+func exhaustedHoldError(name string) *EngineError {
+	return newEngineError(ErrCodeServerUnreachable,
+		"outbound "+name+" unreachable; all replacement candidates failed; retrying")
+}
+
+// retryState schedules the next retry of a scheduled outbound (see retrySet).
 type retryState struct {
 	nextAt time.Time
 	step   int // index into holdBackoff of the delay that produced nextAt
+
+	// Exhaustion (R1). exhausted: on the schedule because every candidate
+	// failed on a working network (else: no candidates — manual mode, no
+	// cap). enteredAt: when this exhaustion run began (DIAG elapsedS).
+	// since: start of the current stretch of online exhaustion — the cap
+	// clock; zero while not counting (a tick offline, or the current node
+	// answering code-less: alive, Center down). lastErr: the latest
+	// exhaustion, for failExhausted's verdict precedence.
+	exhausted bool
+	enteredAt time.Time
+	since     time.Time
+	lastErr   error
 }
 
-// retrySet is the replace loop's no-candidates retry schedule: outbounds
-// whose node is down with nothing to replace it (manual mode / no
-// fallbacks). Instead of blocking the loop on one of them (which would
+// retrySet is the replace loop's retry schedule: outbounds whose node is
+// down with nothing to replace it (manual mode / no fallbacks — retried
+// forever) or whose every candidate failed on a working network (exhausted —
+// retried until exhaustFailAfter of online exhaustion, R1). Instead of blocking the loop on one of them (which would
 // starve every other outbound's Phase A / Phase B), each gets a timed Phase-A
 // on the holdBackoff cadence, driven from the loop's own select. Owned by the
 // loop goroutine — no lock; it dies with the loop (Stop/fail).
@@ -250,10 +275,45 @@ func (r *retrySet) hold() *EngineError {
 	return r.reason
 }
 
-// schedule (re)arms target's retry at step (clamped to the last backoff).
+// schedule (re)arms target's retry at step (clamped to the last backoff),
+// keeping its exhaustion state.
 func (r *retrySet) schedule(target *outboundTransport, step int) {
 	step = min(step, len(holdBackoff)-1)
-	r.pending[target] = &retryState{nextAt: r.now().Add(holdBackoff[step]), step: step}
+	st, ok := r.pending[target]
+	if !ok {
+		st = &retryState{}
+		r.pending[target] = st
+	}
+	st.nextAt, st.step = r.now().Add(holdBackoff[step]), step
+}
+
+// enterExhausted marks a scheduled target exhausted with err (only lastErr
+// and the shown reason change when it already is): the run and its cap
+// clock start now. Logs DIAG: outbound-exhausted once per run.
+func (r *retrySet) enterExhausted(target *outboundTransport, name string, err error) {
+	st := r.pending[target]
+	if st == nil {
+		return
+	}
+	st.lastErr = err
+	r.reason = exhaustedHoldError(name)
+	if st.exhausted {
+		return
+	}
+	now := r.now()
+	st.exhausted, st.enteredAt, st.since = true, now, now
+	slog.Warn("DIAG: outbound-exhausted",
+		"outbound", name, "tried", exhaustedTried(err), "err", err)
+}
+
+// leave removes a recovered target (via: phaseA / failover). An exhausted
+// target logs DIAG: outbound-exhausted-recovered.
+func (r *retrySet) leave(target *outboundTransport, name, via string) {
+	if st := r.pending[target]; st != nil && st.exhausted {
+		slog.Info("DIAG: outbound-exhausted-recovered",
+			"outbound", name, "elapsedS", int64(r.now().Sub(st.enteredAt)/time.Second), "via", via)
+	}
+	delete(r.pending, target)
 }
 
 // arm keeps exactly one timer armed for the earliest pending retry. Re-arms
@@ -314,17 +374,18 @@ func (r *retrySet) all() []*outboundTransport {
 	return out
 }
 
-// retryOnce is one scheduled attempt for a no-candidates target: re-judge the
-// network (so the hold shows the network's reason when it is the network
-// that is down), then one Phase-A and — when that fails on a working
-// network with an error that is not a code-less reject (the node itself is
-// dead or refusing) — one Phase B with a Reset provider (retryPhaseB).
-// Success removes the target (streak reset by phaseA / the swap; a queued
-// echo signal for it is dropped; leaving via Phase-A also Resets the
-// provider); failure advances its backoff (5s→10s→30s→30s…). A 401/402/403
-// fails the engine. Echo signals never trigger it (outboundReplaceLoop
-// drops them for pending targets). Returns false when
-// the loop must exit. The caller syncs the shown hold afterwards.
+// retryOnce is one scheduled attempt for a scheduled target (no candidates,
+// or exhausted): re-judge the network (so the hold shows the network's
+// reason when it is the network that is down), then one Phase-A and — when
+// that fails on a working network with an error that is not a code-less
+// reject (the node itself is dead or refusing) — one Phase B with a Reset
+// provider (retryPhaseB). Success removes the target (streak reset by
+// phaseA / the swap; a queued echo signal for it is dropped; the provider is
+// Reset); failure advances its backoff (5s→10s→30s→30s…). A 401/402/403
+// fails the engine. An exhausted target whose online exhaustion has lasted
+// exhaustFailAfter fails it too (failAtExhaustCap). Echo signals never
+// trigger it (outboundReplaceLoop drops them for pending targets). Returns
+// false when the loop must exit. The caller syncs the shown hold afterwards.
 func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTransport, trigger, reason string) bool {
 	e.mu.Lock()
 	connected := e.state == StateConnected
@@ -338,6 +399,10 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 		// timer: a busy spin until Stop cancels ctx.
 		return false
 	}
+	st := r.pending[target]
+	if st != nil && st.exhausted {
+		reason = "exhausted-retry" // counted apart from no-candidates wait-ticks
+	}
 	v := e.judgeNet(ctx, trigger)
 	if ctx.Err() != nil {
 		return false
@@ -347,8 +412,8 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 		return false
 	}
 	if raceErr == nil {
-		slog.Info("engine: outbound without candidates answered again", "outbound", name)
-		delete(r.pending, target)
+		slog.Info("engine: scheduled outbound answered again", "outbound", name)
+		r.leave(target, name, "phaseA")
 		e.dropQueuedSignal(target)
 		// Exclusions gathered while it was scheduled (a Center outage's)
 		// must not outlive the schedule (review 3 I-2).
@@ -360,6 +425,8 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 	if e.failIfUserAction(target, raceErr) {
 		return false
 	}
+	phaseB := escHeld // no Phase B ran: nothing new learned about the candidates
+	var exhaustErr error
 	// Phase B only when the current node itself is dead or refusing. A
 	// code-less reject means the node is alive and Center is not: a
 	// candidate would answer the same, so a tick does Phase A only for the
@@ -376,11 +443,12 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 		if rs, ok := provider.(interface{ Reset() }); ok {
 			rs.Reset()
 		}
-		switch e.retryPhaseB(ctx, target, raceErr, dd, provider) {
+		phaseB, exhaustErr = e.retryPhaseB(ctx, target, raceErr, dd, provider)
+		switch phaseB {
 		case escExit:
 			return false
 		case escDone:
-			delete(r.pending, target)
+			r.leave(target, name, "failover")
 			e.dropQueuedSignal(target)
 			// Leaving the schedule through a swap: the round's code-less
 			// candidates stay excluded otherwise (review 4, I-2 residual).
@@ -390,54 +458,88 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 			return true
 		}
 	}
-	r.reason = v.holdError()
-	if r.reason == nil {
-		r.reason = noCandidatesError(name)
-	}
 	next := 0
-	if st, ok := r.pending[target]; ok {
+	if st != nil {
 		next = st.step + 1
 	}
 	if trigger == "net-event" {
 		next = 0 // a fresh network: start the cadence over
 	}
 	r.schedule(target, next)
+	st = r.pending[target]
+	switch phaseB {
+	case escExhausted:
+		r.enterExhausted(target, name, exhaustErr)
+	case escNoCandidates:
+		st.exhausted, st.since = false, time.Time{} // nothing to switch to: no cap
+	}
+	r.reason = v.holdError()
+	if r.reason == nil {
+		if st.exhausted {
+			r.reason = exhaustedHoldError(name)
+		} else {
+			r.reason = noCandidatesError(name)
+		}
+	}
+	if !st.exhausted {
+		return true
+	}
+	// The cap clock runs only while the network works and the current node
+	// is not answering (a code-less Phase A = node alive, Center down —
+	// review C1: a Center outage must never disconnect a live session).
+	if v.blocksFailover() || isCodeLessReject(raceErr) {
+		st.since = time.Time{}
+		return true
+	}
+	if st.since.IsZero() {
+		st.since = r.now()
+	}
+	return !e.failAtExhaustCap(r, target, name)
+}
+
+// failAtExhaustCap fails the engine (failExhausted) once target has been
+// exhausted on an online network for exhaustFailAfter, and reports whether
+// it did. The only caller of failExhausted (TestReplaceLoopFailSitesAllowList).
+func (e *Engine) failAtExhaustCap(r *retrySet, target *outboundTransport, name string) bool {
+	st := r.pending[target]
+	elapsed := r.now().Sub(st.since)
+	if elapsed < exhaustFailAfter {
+		return false
+	}
+	slog.Error("DIAG: outbound-exhausted-fatal",
+		"outbound", name, "elapsedS", int64(elapsed/time.Second))
+	e.failExhausted(target, st.lastErr)
 	return true
 }
 
-// retryPhaseB is retryOnce's Phase B: escDone after a swap, escNoCandidates
-// to stay on the schedule (manual mode, every candidate code-less, no
-// candidate tried at all, or the network died meanwhile), escExit when ctx
-// ended or the engine failed — a candidate exhaustion on a healthy network
-// fails like escalate's.
-func (e *Engine) retryPhaseB(ctx context.Context, target *outboundTransport, raceErr error, dd wire.DirectDialer, provider OutboundProvider) escResult {
+// retryPhaseB is retryOnce's Phase B: escDone after a swap; escNoCandidates
+// when there is nothing to switch to (manual mode — no cap); escExhausted
+// with the exhaustion error when every candidate failed (or none could be
+// tried) on a working network; escHeld when the network died meanwhile
+// (provider Reset, nothing learned); escExit when ctx ended or an account
+// verdict failed the engine.
+func (e *Engine) retryPhaseB(ctx context.Context, target *outboundTransport, raceErr error, dd wire.DirectDialer, provider OutboundProvider) (escResult, error) {
 	err := e.replaceOutboundServer(ctx, target, raceErr, dd, provider)
 	switch {
 	case err == nil:
-		return escDone
+		return escDone, nil
 	case ctx.Err() != nil:
-		return escExit
+		return escExit, nil
 	case errors.Is(err, ErrNoCandidates):
-		return escNoCandidates
-	}
-	var nt *noneTriedError
-	if errors.As(err, &nt) {
-		// Not one candidate was tried (all still excluded, e.g. a shell
-		// provider that cannot be Reset): nothing was learned, so the
-		// target stays on the schedule — never fail(503) from a tick that
-		// tried nothing (review 3 I-1).
-		return escNoCandidates
+		return escNoCandidates, nil
 	}
 	if v := e.judgeNet(ctx, "pre-exhaust"); ctx.Err() != nil {
-		return escExit
+		return escExit, nil
 	} else if v.blocksFailover() {
 		if rs, ok := provider.(interface{ Reset() }); ok {
 			rs.Reset()
 		}
-		return escNoCandidates
+		return escHeld, nil
 	}
-	e.failExhausted(target, err)
-	return escExit
+	if e.failIfExhaustedByAccount(target, err) {
+		return escExit, nil
+	}
+	return escExhausted, err
 }
 
 // drainHoldWake drops a pending holdWake token. A network event that

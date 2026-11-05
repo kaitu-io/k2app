@@ -428,11 +428,13 @@ func TestContract_ReplaceLoop_CarriesNewJar(t *testing.T) {
 	}
 }
 
-// TestOutboundReplaceLoop_ExhaustedFailsWith503 drives the real loop: two
-// failed same-server re-races (unreachable port) escalate to Phase B, the
-// provider is exhausted, and the engine must fail with 503 — not 402, even
-// though the provider error text contains "subscription".
-func TestOutboundReplaceLoop_ExhaustedFailsWith503(t *testing.T) {
+// TestOutboundReplaceLoop_ExhaustedShows503Not402 drives the real loop: two
+// failed same-server re-races (unreachable port) escalate to Phase B and the
+// provider is exhausted. R1: that goes on the retry schedule — engine stays
+// connected, status reconnecting with 503 — not 402, even though the
+// provider error text contains "subscription". (Failing at the cap is
+// exhaust_cap_test.go's.)
+func TestOutboundReplaceLoop_ExhaustedShows503Not402(t *testing.T) {
 	e := New()
 	target := &outboundTransport{
 		url:     "k2v5://127.0.0.1:1",
@@ -446,7 +448,7 @@ func TestOutboundReplaceLoop_ExhaustedFailsWith503(t *testing.T) {
 	e.outboundTMs = []*outboundTransport{target}
 	e.outboundProvider = provider
 	e.reRaceChan = make(chan *outboundTransport, 1)
-	e.netcheck = onlineNetcheck // exhaustion fails only on a healthy network
+	e.netcheck = onlineNetcheck // a healthy network: no hold
 	e.mu.Unlock()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -459,15 +461,16 @@ func TestOutboundReplaceLoop_ExhaustedFailsWith503(t *testing.T) {
 	for {
 		select {
 		case <-deadline:
-			t.Fatal("engine did not fail after outbound exhaustion")
+			t.Fatal("exhaustion never showed a hold")
 		case <-tick.C:
 		}
-		e.mu.Lock()
-		st, le := e.state, e.lastError
-		e.mu.Unlock()
-		if st == StateDisconnected && le != nil {
-			if le.Code != 503 || le.Category != CategoryServer {
-				t.Fatalf("lastError = %d/%s (%s), want 503/server", le.Code, le.Category, le.Message)
+		s := e.GetStatus()
+		if s.State == StateDisconnected {
+			t.Fatalf("engine disconnected (%+v): an exhaustion must go on the retry schedule", s.Error)
+		}
+		if s.State == StateReconnecting && s.Error != nil {
+			if s.Error.Code != 503 || s.Error.Category != CategoryServer {
+				t.Fatalf("hold = %d/%s (%s), want 503/server", s.Error.Code, s.Error.Category, s.Error.Message)
 			}
 			return
 		}

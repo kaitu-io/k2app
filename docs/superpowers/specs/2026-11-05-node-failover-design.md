@@ -63,6 +63,7 @@
 - **凭证**：备选 URL 同样用 `authService.buildTunnelUrl` 生成，和首选带同一个 token，有效期相同，存储位置相同（iOS `providerConfiguration`），所以没有引入新的暴露面。切换到备选时如果 token 已失效，得到的是真实的 401，按原样报出，不属于误报。
 - 三处同步：Go `config.ClientConfig`、TS 类型、`contracts/` 下对应的金样（按 `webapp/CLAUDE.md` 契约门流程重新生成，不手改）。
 - 老客户端不发这个字段，新引擎照旧（无备选）；新 webapp 配老引擎，字段被忽略。两个方向都兼容，不需要 bridge 版本门。
+- **修订 R1（2026-11-05，David 批准；覆盖本节"耗尽报 503"、§4.4 表最后一行、§5.1 情况 4"都失败则断开"、§5.3 规则 2"报 503 并 `e.fail()`"）**：用户网络正常时候选耗尽**不再立即断开**。五轮修复每轮都又找到一条"节点活着却 fail(503)"的路径，根因是任何一次"节点已死"的误判都会直接变成断开。现在耗尽（含一个都没试成、候选全部无码拒绝）一律进入现有的重试表：状态 connected，显示 reconnecting + 503「…all replacement candidates failed; retrying」，按 5s→10s→30s→30s 退避，每次先 Phase-A 再 Phase-B（Reset 排除集），任一成功即离开重试表。只有**同一出口在网络正常时连续耗尽满 10 分钟**（`exhaustFailAfter`）才走原来的 `OnOutboundFatal` + `fail(503)`（k2r / 桌面网关靠 `OnOutboundFatal` 重建会话）；离线期间、以及当前节点以无码拒绝作答（节点活着、Center 不通）的那几轮不计入，计时从下一次在线耗尽重新开始。账户结论仍然立即断开：Phase-A 的有码 401/402/403、粘住的 401/402 lastError、或本轮试过的候选**全部**是有码 401/402/403（部分有码、部分不可达则进重试表，到上限时报那个码）。手动模式 / 无备选（`ErrNoCandidates`）不变：永远重试，没有上限。代价：整个机群真死时用户看到 10 分钟"重新连接中"才断开，而不是立刻断开。日志：`DIAG: outbound-exhausted` / `transport-rerace reason=exhausted-retry` / `outbound-exhausted-recovered` / `outbound-exhausted-fatal`（`k2/docs/diag-events.md`）。
 
 ### 4.3 引擎内静态 provider
 

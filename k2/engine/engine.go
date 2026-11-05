@@ -1679,6 +1679,16 @@ var raceTransportFn = wire.RaceTransport
 // Performs: ParseURL → resolveDialAddr → RaceTransport → TM setup.
 // The caller must close the returned outboundTransport on error paths.
 // Returns the outboundTransport and the TCP-WS dialer (for DNS transport from primary outbound).
+// raceCtxTimeout bounds every engine-side wire.RaceTransport (initial setup,
+// Phase-B candidate setup, Phase-A re-race). Derived from the race's own
+// worst case plus raceCtxMargin: a ctx that ends first cuts a slow-but-alive
+// node's metadata verdict into a bare timeout, which the replace loop reads
+// as node death (PVE S15). TestRaceCtxOutlivesWireWorstCase pins it.
+var raceCtxTimeout = wire.RaceWorstCase() + raceCtxMargin
+
+// raceCtxMargin is raceCtxTimeout's slack over wire.RaceWorstCase (≥ 1s).
+const raceCtxMargin = time.Second
+
 func setupOutboundTransport(
 	ctx context.Context,
 	via string,
@@ -1706,7 +1716,7 @@ func setupOutboundTransport(
 	// switch or re-race must never trigger a redundant Center cold-auth.
 	jar := wire.NewCookieJar()
 
-	raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
+	raceCtx, raceCancel := context.WithTimeout(ctx, raceCtxTimeout)
 	raceResult, err := wire.RaceTransport(raceCtx, wireCfg, wireCfg.DialAddr, directDialer, jar)
 	raceCancel()
 	if err != nil {
@@ -2137,11 +2147,18 @@ func (e *Engine) ClearWireError() {
 //	    never passive evidence (it may predate the outage). Network broken →
 //	    it died mid-failover, so the nodes excluded on the way may be
 //	    innocent: Reset() the provider's exclusions and hold. Online/unknown
-//	    → OnOutboundFatal + e.fail: 503, unless a 401/402 is the true cause
-//	    (sticky lastError, or the last candidate setup rejected with one).
+//	    → an account verdict (sticky 401/402 lastError, or every candidate
+//	    rejected with a coded 401/402/403) fails at once; anything else goes
+//	    on the retrySet (reconnecting 503, DIAG: outbound-exhausted), whose
+//	    ticks re-run Phase A then Phase B. Only exhaustFailAfter (10 min) of
+//	    continuous online exhaustion fails the engine (failAtExhaustCap →
+//	    OnOutboundFatal + e.fail 503) — R1: a misread "node dead" can no
+//	    longer disconnect.
 //
-// A 401/402 re-race rejection skips all of this: it is Center's verdict on
-// the device, no node can fix it, so the loop fails with it.
+// A 401/402/403 re-race rejection skips all of this: it is Center's verdict
+// on the device, no node can fix it, so the loop fails with it. Those two
+// (failIfUserAction, failAtExhaustCap) are the loop's only ways to end the
+// session (TestReplaceLoopFailSitesAllowList).
 //
 // Known TOCTOU (P2, not fixed): If Stop() fires between the ctx.Err() check
 // and ReplacePrimary, and tm.Close() wins the tm.mu race, the new Dialer is
@@ -2237,7 +2254,8 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 			// always installs a compositeProvider.
 			continue
 		}
-		switch e.escalate(ctx, target, raceErr, dd, provider, retries.hold()) {
+		res, exhaustErr := e.escalate(ctx, target, raceErr, dd, provider, retries.hold())
+		switch res {
 		case escExit:
 			return
 		case escNoCandidates:
@@ -2247,6 +2265,12 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 			slog.Warn("engine: no replacement candidates, retrying current outbound on a schedule", "outbound", name)
 			retries.reason = noCandidatesError(name)
 			retries.schedule(target, 0)
+		case escExhausted:
+			// Every candidate failed on a working network. Not a disconnect
+			// (R1): retry on the schedule; only exhaustFailAfter of sustained
+			// online exhaustion fails the engine (retryOnce → failAtExhaustCap).
+			retries.schedule(target, 0)
+			retries.enterExhausted(target, e.targetName(target), exhaustErr)
 		}
 		// The loop owns the shown hold between events: the retry set's
 		// reason, or none. Also clears a leftover hold after a Phase-B swap.
@@ -2260,8 +2284,17 @@ type escResult int
 const (
 	escDone         escResult = iota // recovered (Phase-A or Phase B)
 	escExit                          // ctx cancelled or the engine failed
-	escNoCandidates                  // node down, nothing to replace it: schedule retries
+	escNoCandidates                  // node down, nothing to replace it: schedule retries (no cap)
+	escExhausted                     // every candidate failed on a working network: schedule retries (capped)
+	escHeld                          // the network died during the round: nothing learned, stay as scheduled
 )
+
+// targetName reads target.name under e.mu.
+func (e *Engine) targetName(target *outboundTransport) string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return target.name
+}
 
 // phaseA runs one same-server re-race on target. Returns the race error (nil
 // on success: result installed, streak reset; the caller owns the hold) and
@@ -2282,7 +2315,7 @@ func (e *Engine) phaseA(ctx context.Context, target *outboundTransport, dd wire.
 		"previousTransport", tm.PrimaryType(),
 	)
 
-	raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
+	raceCtx, raceCancel := context.WithTimeout(ctx, raceCtxTimeout)
 	result, raceErr := raceTransportFn(raceCtx, wireCfg, wireCfg.DialAddr, dd, jar)
 	raceCancel()
 
@@ -2347,11 +2380,18 @@ func closeRaceResult(r *wire.RaceResult) {
 	}
 }
 
-// failIfUserAction fails the engine with a 401/402 re-race rejection and
-// reports true. That is Center's verdict on this device, not on this node:
-// no replacement candidate can pass the same check, so don't spend them.
-// OnOutboundFatal still fires: the gateway relies on it to retry the saved
-// session later (e.g. after the user renews).
+// failIfUserAction fails the engine with an account verdict and reports
+// true: a 401/402/403 re-race rejection (replaceLoopUserAction), a sticky
+// 401/402 lastError passed in at exhaustion, or an exhaustion where every
+// candidate was rejected with a coded 401/402/403 (exhaustedError). That is
+// Center's verdict on this device, not on this node: no replacement
+// candidate can pass the same check, so don't spend them. OnOutboundFatal
+// still fires: the gateway relies on it to retry the saved session later
+// (e.g. after the user renews).
+//
+// One of the replace loop's only two ways to end the session; the other is
+// failExhausted, from the exhaustion cap. TestReplaceLoopFailSitesAllowList
+// pins both.
 func (e *Engine) failIfUserAction(target *outboundTransport, raceErr error) bool {
 	ce := replaceLoopUserAction(raceErr)
 	if ce == nil {
@@ -2370,76 +2410,90 @@ func (e *Engine) failIfUserAction(target *outboundTransport, raceErr error) bool
 	return true
 }
 
+// failIfExhaustedByAccount: a candidate exhaustion whose true cause is an
+// account verdict fails at once (failIfUserAction) instead of going on the
+// retry schedule — first a sticky lastError 401/402 (ReportWireError, e.g.
+// membership lapsed mid-session), then every candidate tried rejected with a
+// coded 401/402/403. A mix (some coded, some dead) is scheduled; at the cap
+// failExhausted still reports the coded verdict over 503.
+func (e *Engine) failIfExhaustedByAccount(target *outboundTransport, err error) bool {
+	e.mu.Lock()
+	sticky := e.lastError
+	e.mu.Unlock()
+	if sticky.RequiresUserAction() && e.failIfUserAction(target, sticky) {
+		return true
+	}
+	return e.failIfUserAction(target, err)
+}
+
 // escalate runs the network verdict / hold / Phase-B sequence for a target
 // whose Phase-A streak reached the threshold. restore is the hold the loop
 // shows outside this call (the no-candidates retry set's, or nil); a network
-// hold puts it back when it ends.
-func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceErr error, dd wire.DirectDialer, provider OutboundProvider, restore *EngineError) escResult {
+// hold puts it back when it ends. On escExhausted the error is the round's
+// exhaustion (an *exhaustedError chain).
+func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceErr error, dd wire.DirectDialer, provider OutboundProvider, restore *EngineError) (escResult, error) {
 	// A network event from before this verdict is already reflected in it.
 	e.drainHoldWake()
 	v := e.judgeNet(ctx, "pre-phaseB")
 	for {
 		if ctx.Err() != nil {
-			return escExit
+			return escExit, nil
 		}
 		if v.blocksFailover() {
 			switch e.holdUntilOnline(ctx, target, dd, v, restore) {
 			case holdExit:
-				return escExit
+				return escExit, nil
 			case holdRecovered:
 				e.dropQueuedSignal(target)
-				return escDone
+				return escDone, nil
 			}
 			// Back online: the current node first — it may only have looked
 			// dead because the network was.
 			var quit bool
 			raceErr, quit = e.phaseA(ctx, target, dd, "network-back")
 			if quit {
-				return escExit
+				return escExit, nil
 			}
 			if raceErr == nil {
 				e.dropQueuedSignal(target)
-				return escDone
+				return escDone, nil
 			}
 			e.mu.Lock()
 			target.reRaceFailStreak++
 			e.mu.Unlock()
 			if e.failIfUserAction(target, raceErr) {
-				return escExit
+				return escExit, nil
 			}
 		}
 
 		err := e.replaceOutboundServer(ctx, target, raceErr, dd, provider)
-		var nt *noneTriedError
-		if errors.As(err, &nt) && ctx.Err() == nil {
+		if triedNone(err) && !errors.Is(err, ErrNoCandidates) && ctx.Err() == nil {
 			// Not one candidate was tried: everything is still excluded from
 			// earlier rounds (a k2subs session's exclusions never expire —
 			// every past failover leaves its old node and failed candidates
 			// behind). A round that tried nothing learned nothing: forget the
-			// exclusions and run exactly one more round; only a second
-			// tried-nothing (or a real exhaustion) goes on to fail (review 4
-			// concern 4).
+			// exclusions and run exactly one more round (review 4 concern 4).
 			if r, ok := provider.(interface{ Reset() }); ok {
 				r.Reset()
 			}
 			err = e.replaceOutboundServer(ctx, target, raceErr, dd, provider)
 		}
 		if err == nil {
-			return escDone // reRaceFailStreak reset inside replaceOutboundServer
+			return escDone, nil // reRaceFailStreak reset inside replaceOutboundServer
 		}
 		if ctx.Err() != nil {
-			return escExit
+			return escExit, nil
 		}
 		if errors.Is(err, ErrNoCandidates) {
 			// Manual mode / no fallbacks: nothing to switch to. Never fail —
 			// the loop retries the current node on a schedule (retrySet)
 			// without blocking the other outbounds.
-			return escNoCandidates
+			return escNoCandidates, nil
 		}
 
 		v = e.judgeNet(ctx, "pre-exhaust")
 		if ctx.Err() != nil {
-			return escExit
+			return escExit, nil
 		}
 		if v.blocksFailover() {
 			// The network died during the failover: the candidates excluded
@@ -2449,18 +2503,23 @@ func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceEr
 			}
 			continue
 		}
-		e.failExhausted(target, err)
-		return escExit
+		if e.failIfExhaustedByAccount(target, err) {
+			return escExit, nil
+		}
+		return escExhausted, err
 	}
 }
 
-// failExhausted fails the engine after every candidate failed on a healthy
-// network: OnOutboundFatal, then e.fail(503) — unless a 401/402 is the true
-// cause, in which case no node could have fixed it and it is reported as-is
-// rather than "server unreachable" (spec §4.2). Precedence: a sticky
-// lastError 401/402 (ReportWireError, e.g. membership lapsed mid-session),
-// then the last 401/402 a candidate's setup was rejected with this round
-// (phaseBExhaustedError), then 503.
+// failExhausted fails the engine for a target that has been exhausted on an
+// online network for exhaustFailAfter: OnOutboundFatal (k2r / the desktop
+// gateway rebuild the session on it), then e.fail(503) — unless a 401/402 is
+// the true cause, in which case no node could have fixed it and it is
+// reported as-is rather than "server unreachable" (spec §4.2). Precedence: a
+// sticky lastError 401/402 (ReportWireError, e.g. membership lapsed
+// mid-session), then the last 401/402/403 a candidate's setup was rejected
+// with in the last round (exhaustedError.userAction), then 503.
+//
+// Called from failAtExhaustCap only (TestReplaceLoopFailSitesAllowList).
 func (e *Engine) failExhausted(target *outboundTransport, err error) {
 	e.mu.Lock()
 	handler := e.handler
@@ -2473,9 +2532,9 @@ func (e *Engine) failExhausted(target *outboundTransport, err error) {
 		handler.OnOutboundFatal(outboundName, err)
 	}
 	var failErr error = outboundExhaustedError(outboundName, err)
-	var pbe *phaseBExhaustedError
-	if errors.As(err, &pbe) && pbe.userAction != nil {
-		failErr = pbe.userAction
+	var x *exhaustedError
+	if errors.As(err, &x) && x.userAction != nil {
+		failErr = x.userAction
 	}
 	if sticky.RequiresUserAction() {
 		failErr = sticky
@@ -2483,27 +2542,37 @@ func (e *Engine) failExhausted(target *outboundTransport, err error) {
 	_ = e.fail(failErr)
 }
 
-// phaseBExhaustedError is replaceOutboundServer's provider-exhaustion error
-// when at least one candidate's setup was rejected with a 401/402 this round:
-// failExhausted reports that instead of 503. Unwrap keeps errors.Is on the
-// provider error working.
-type phaseBExhaustedError struct {
-	err        error
-	userAction *EngineError // last 401/402 seen from a candidate setup
+// exhaustedError is replaceOutboundServer's error when the provider ran out
+// of candidates (Unwrap keeps errors.Is on the provider error working, e.g.
+// ErrNoCandidates for manual mode). tried == 0: nothing was set up this
+// round (everything still excluded). userAction: the last coded 401/402/403
+// a candidate's setup was rejected with; allUserAction: every candidate
+// tried was (an account verdict: fail at once, replaceLoopUserAction).
+type exhaustedError struct {
+	err           error
+	tried         int
+	userAction    *EngineError
+	allUserAction bool
 }
 
-func (p *phaseBExhaustedError) Error() string { return p.err.Error() }
-func (p *phaseBExhaustedError) Unwrap() error { return p.err }
+func (x *exhaustedError) Error() string { return x.err.Error() }
+func (x *exhaustedError) Unwrap() error { return x.err }
 
-// noneTriedError is replaceOutboundServer's provider exhaustion when not a
-// single candidate was set up this round — everything was still excluded.
-// escalate treats it like any exhaustion; a retry tick stays on the schedule
-// (retryPhaseB): a round that tried nothing has learned nothing new about
-// the candidates. Same message as the wrapped error.
-type noneTriedError struct{ err error }
+// triedNone reports a provider exhaustion that set up no candidate at all.
+func triedNone(err error) bool {
+	var x *exhaustedError
+	return errors.As(err, &x) && x.tried == 0
+}
 
-func (n *noneTriedError) Error() string { return n.err.Error() }
-func (n *noneTriedError) Unwrap() error { return n.err }
+// exhaustedTried is the candidate count of a provider exhaustion (0 if err
+// is not one).
+func exhaustedTried(err error) int {
+	var x *exhaustedError
+	if errors.As(err, &x) {
+		return x.tried
+	}
+	return 0
+}
 
 // applyReRaceResult installs a successful Phase-A RaceTransport result into
 // the target's existing TransportManager. Returns false if the target is no
@@ -2577,13 +2646,13 @@ func (e *Engine) replaceOutboundServer(
 	// misconfigured node must not end the session), but if every candidate
 	// fails it is the true cause, not "server unreachable".
 	var userAction *EngineError
+	userActionCount := 0
 	// allCodeLess: every candidate tried answered the code-less legacy
 	// reject — the candidates are fine, Center is unreachable from them.
-	// The current node's own error does not matter (it may simply be dead).
-	// Exhausting the candidates then must not fail the engine: it goes on
-	// the retry schedule (reconnecting 503), whose ticks re-run Phase A and
-	// then Phase B, so it recovers on the current node or a candidate once
-	// auth works again (review N2 / B rulings).
+	// Their exclusions are then Reset at exhaustion (review 3 I-2). Like
+	// every exhaustion it goes on the retry schedule (R1), whose ticks re-run
+	// Phase A and then Phase B, so it recovers on the current node or a
+	// candidate once auth works again (review N2 / B rulings).
 	allCodeLess := true
 	tried := 0
 
@@ -2596,9 +2665,6 @@ func (e *Engine) replaceOutboundServer(
 		newURL, providerErr := provider.NextURL(currentURL, reason)
 		if providerErr != nil {
 			err := fmt.Errorf("provider: %w", providerErr)
-			if userAction != nil {
-				return &phaseBExhaustedError{err: err, userAction: userAction}
-			}
 			if allCodeLess && tried > 0 {
 				// The candidates were excluded for a Center outage, not for
 				// being dead: forget the exclusions now. Every path that
@@ -2610,12 +2676,10 @@ func (e *Engine) replaceOutboundServer(
 				if r, ok := provider.(interface{ Reset() }); ok {
 					r.Reset()
 				}
-				return fmt.Errorf("%w: every node rejected without an auth verdict (Center unreachable?): %w", ErrNoCandidates, err)
+				err = fmt.Errorf("every candidate rejected without an auth verdict (Center unreachable?): %w", err)
 			}
-			if tried == 0 {
-				return &noneTriedError{err: err}
-			}
-			return err
+			return &exhaustedError{err: err, tried: tried, userAction: userAction,
+				allUserAction: tried > 0 && userActionCount == tried}
 		}
 		if newURL == "" {
 			return fmt.Errorf("provider returned empty URL")
@@ -2634,6 +2698,7 @@ func (e *Engine) replaceOutboundServer(
 			tried++
 			if ce := replaceLoopUserAction(setupErr); ce != nil {
 				userAction = ce
+				userActionCount++
 			}
 			if !isCodeLessReject(setupErr) {
 				allCodeLess = false

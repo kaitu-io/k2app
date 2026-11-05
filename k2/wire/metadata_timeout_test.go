@@ -58,8 +58,16 @@ func TestMetaReadTimeoutOutlivesNodeAuthTimeout(t *testing.T) {
 	if metaReadTimeout < 8*time.Second || metaReadTimeout <= remoteAuthClient.Timeout {
 		t.Fatalf("metaReadTimeout %v must be ≥8s and outlive k2s remote auth %v", metaReadTimeout, remoteAuthClient.Timeout)
 	}
-	if raceTimeout+metaPhaseBudget() >= 15*time.Second {
-		t.Fatalf("worst-case race %v must fit the engine's 15s race ctx", raceTimeout+metaPhaseBudget())
+	// RaceWorstCase is what the engine sizes its race ctx from (engine
+	// TestRaceCtxOutlivesWireWorstCase): it must cover the latest moment the
+	// collector can still return on its own — a handshake completing at the
+	// transport deadline, its whole metadata budget, then the collector's
+	// slack.
+	if latest := raceTimeout + metaPhaseBudget() + raceCollectorSlack; RaceWorstCase() < latest {
+		t.Fatalf("RaceWorstCase %v < latest collector return %v", RaceWorstCase(), latest)
+	}
+	if metaPhaseBudget() <= metaReadTimeout {
+		t.Fatalf("metaPhaseBudget %v must outlive metaReadTimeout %v", metaPhaseBudget(), metaReadTimeout)
 	}
 }
 

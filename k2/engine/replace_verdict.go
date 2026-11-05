@@ -44,8 +44,20 @@ func isCodeLessReject(err error) bool {
 //     and brand mismatch — 403003 on the HTTP API arrives as 403 on the wire)
 //     → that code, CategoryClient;
 //   - anything else ClassifyError marks RequiresUserAction (e.g. a k2subs
-//     fetch 401/402) → as classified.
+//     fetch 401/402, or a sticky lastError passed in at exhaustion) → as
+//     classified;
+//   - a candidate exhaustion (exhaustedError) → its candidates' coded
+//     verdict when every candidate tried was rejected with one, else nil.
 func replaceLoopUserAction(err error) *EngineError {
+	var x *exhaustedError
+	if errors.As(err, &x) {
+		// A candidate exhaustion is an account verdict only when every
+		// candidate tried said so (R1); its chain is the provider's error.
+		if x.allUserAction {
+			return x.userAction
+		}
+		return nil
+	}
 	if err == nil || isCodeLessReject(err) {
 		return nil
 	}

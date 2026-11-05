@@ -475,13 +475,14 @@ func TestEscalate_K2subsAllExcludedByEarlierFailoversFailsOver(t *testing.T) {
 }
 
 // Review 4 concern 4: the retry is exactly one round — a second
-// tried-nothing still fails like any exhaustion (a provider that cannot be
-// Reset keeps everything excluded).
-func TestEscalate_TriedNothingTwiceStillFails(t *testing.T) {
+// tried-nothing is an exhaustion like any other (a provider that cannot be
+// Reset keeps everything excluded): since R1 it goes on the retry schedule.
+func TestEscalate_TriedNothingTwiceIsExhausted(t *testing.T) {
 	shell := &exclShell{urls: []string{foURLA, foURLB}, excluded: map[string]bool{foURLB: true}}
 	hs := newFoHarness(t, foOpts{shell: shell, net: []checkResult{checkMatched}})
 	hs.escalate()
-	eventually(t, "engine failed", func() bool { s, _ := hs.engineState(); return s == StateDisconnected })
+	hs.waitStatus("reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
+	hs.assertStillScheduled("after two tried-nothing rounds")
 	if n := hs.provider.count(); n != 2 {
 		t.Fatalf("NextURL calls = %d, want 2 (one round, one retry round)", n)
 	}
