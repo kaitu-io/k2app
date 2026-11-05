@@ -212,11 +212,12 @@ func TestBillingIssueCandidates_Filters(t *testing.T) {
 	revoked := mk("revoked", nil)
 	sandbox := mk("billing_retry", map[string]any{"environment": "Sandbox"})
 	stripe := mk("billing_retry", map[string]any{"provider": "stripe"})
+	autoRenewOff := mk("billing_retry", map[string]any{"auto_renew": false})
 
 	got := candidateIDs(t, 3, now)
 	assert.True(t, got[grace])
 	assert.True(t, got[retry])
-	for name, id := range map[string]uint64{"active": active, "expired": expired, "revoked": revoked, "sandbox": sandbox, "stripe": stripe} {
+	for name, id := range map[string]uint64{"active": active, "expired": expired, "revoked": revoked, "sandbox": sandbox, "stripe": stripe, "auto_renew_off": autoRenewOff} {
 		assert.False(t, got[id], name)
 	}
 }

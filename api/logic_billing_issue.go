@@ -43,6 +43,7 @@ func billingIssueCandidates(day int, now time.Time) ([]Subscription, error) {
 	err := db.Get().Model(&Subscription{}).
 		Where("provider = ? AND environment = ? AND status IN ?",
 			SubscriptionProviderApple, "Production", []string{"grace", "billing_retry"}).
+		Where("auto_renew = ?", true).
 		Where("billing_issue_since > ? AND billing_issue_since <= ?", lower, upper).
 		Order("id").Find(&subs).Error
 	return subs, err
