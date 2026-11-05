@@ -52,6 +52,8 @@ HTTP-aligned error codes for frontend consumption (ranges are load-bearing: 1xx 
 | Code | Category | Meaning | Pattern |
 |------|----------|---------|---------|
 | 101 | network | Network unavailable | network unreachable, no route to host |
+| 106 | network | No internet (interface up, nothing answers) | not pattern-matched — netcheck verdict `netNoInternet.holdError()` (`netcheck.go`); also the verdict when no netcheck targets are configured |
+| 107 | network | Captive portal / interception | not pattern-matched — netcheck verdict `netCaptive.holdError()`: a target answered with the wrong status/body (redirects are not followed) |
 | 108 | network | Timeout | net.Error.Timeout(), context.DeadlineExceeded |
 | 400 | client | Bad config | parse URL, missing auth |
 | 401 | client | Auth rejected | stream rejected |

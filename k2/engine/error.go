@@ -14,6 +14,8 @@ import (
 // Used by StatusJSON() and exposed to frontend via daemon API.
 const (
 	ErrCodeNetworkUnavailable     = 101 // Client network unreachable, no route to host
+	ErrCodeNoInternet             = 106 // Interface up but no netcheck target answers (netcheck verdict)
+	ErrCodeCaptivePortal          = 107 // Netcheck targets answer with the wrong response — captive portal / interception
 	ErrCodeTimeout                = 108 // Connection or handshake timeout
 	ErrCodeBadConfig              = 400 // Invalid wire URL, missing auth, bad scheme
 	ErrCodeAuthRejected           = 401 // Server rejected authentication (stream rejected)
@@ -58,7 +60,7 @@ func categoryForCode(code int) string {
 	switch code {
 	case ErrCodeBadConfig, ErrCodeAuthRejected, ErrCodePaymentRequired, ErrCodeForbidden, ErrCodeEnvironmentSetupFailed:
 		return CategoryClient
-	case ErrCodeNetworkUnavailable, ErrCodeTimeout:
+	case ErrCodeNetworkUnavailable, ErrCodeNoInternet, ErrCodeCaptivePortal, ErrCodeTimeout:
 		return CategoryNetwork
 	case ErrCodeProtocolError, ErrCodeServerUnreachable, ErrCodeRuleBundlesUnavailable, ErrCodeConnectionFatal:
 		return CategoryServer
