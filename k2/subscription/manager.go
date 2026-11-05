@@ -91,6 +91,15 @@ func (m *Manager) NextURL(currentURL string, reason error) (string, error) {
 	return tunnel.URL, nil
 }
 
+// OwnsURL implements engine.URLOwner: reports whether any active Session
+// lists url as one of its tunnels.
+func (m *Manager) OwnsURL(url string) bool {
+	m.mu.RLock()
+	sessions := m.sessions
+	m.mu.RUnlock()
+	return findSessionByURL(sessions, url) != nil
+}
+
 func findSessionByURL(sessions []*Session, url string) *Session {
 	for _, s := range sessions {
 		for _, t := range s.sub.Tunnels() {

@@ -115,6 +115,11 @@ type Config struct {
 // all outbounds owned by a given Engine. A provider that is shared between
 // multiple Engine instances (unusual — daemon owns at most one) must
 // synchronize internally.
+//
+// Optional capability: a provider may also implement URLOwner (OwnsURL).
+// The engine's compositeProvider only delegates a failing URL to the shell
+// provider when it implements URLOwner and claims that URL; otherwise the
+// URL gets ErrNoCandidates. subscription.Manager implements URLOwner.
 type OutboundProvider interface {
 	NextURL(currentURL string, reason error) (string, error)
 }

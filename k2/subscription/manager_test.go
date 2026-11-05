@@ -56,3 +56,18 @@ func TestManager_NextURL_Exhausted_ReturnsError(t *testing.T) {
 		t.Fatalf("unexpected err: %v", err)
 	}
 }
+
+func TestManager_OwnsURL(t *testing.T) {
+	urlA := "k2v5://udid:tok@a.example/?ech=x"
+	mgr := &Manager{}
+	if mgr.OwnsURL(urlA) {
+		t.Fatal("OwnsURL with no sessions = true, want false")
+	}
+	mgr.sessions = []*Session{newTestSession(t, []string{urlA})}
+	if !mgr.OwnsURL(urlA) {
+		t.Fatal("OwnsURL(session URL) = false, want true")
+	}
+	if mgr.OwnsURL("k2v5://udid:tok@unknown.example/?ech=x") {
+		t.Fatal("OwnsURL(unknown) = true, want false")
+	}
+}
