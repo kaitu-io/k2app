@@ -617,7 +617,13 @@ type simRun struct {
 	lastVerdict    netVerdict
 	haveVerdict    bool
 	okSinceVerd    bool
-	cOKSince       time.Time // I1 503 window
+	cOKSince       time.Time // I1 503 window (zero = closed)
+	cOKPaused      time.Duration
+	cOKSaved       time.Time // the window a short break interrupted
+	cOKSavedPaused time.Duration
+	cOKBreakAt     time.Time
+	cOKLateFlagged bool
+	lastObs        time.Time
 	p2Since        time.Time // I2
 	p2Flagged      bool
 	recSince       time.Time // I3c
@@ -627,26 +633,29 @@ type simRun struct {
 	downNet        simNet
 	s503Since      time.Time
 	lastCodeLessAt time.Time
-	attempts       []time.Time // races + setups
-	netchecks      []time.Time
-	offlineEpoch   int  // incremented on each transition into a non-online network
-	roundEpoch     int  // offlineEpoch of the last Phase-B round seen offline
-	roundsOff      int  // Phase-B rounds in the current offline episode
-	inRound        bool // a setup was seen since the last idle point
-	constSince     time.Time
-	reconnSince    time.Time
-	maxBackoff     time.Duration
-	sameInstant    int
-	lastStepAt     time.Time
-	lastURL        string
-	logBuf         []string
-	violations     []simViolation
-	res            simResult
-	stalled        bool
-	pauseEnabled   bool
-	h              *simHandler
-	resume         chan simResp
-	stallTimer     *time.Timer
+	// lastRaceCodeLessAt: the latest Phase-A race answered code-less (zero
+	// once a race answers otherwise) — FB's signature.
+	lastRaceCodeLessAt time.Time
+	attempts           []time.Time // races + setups
+	netchecks          []time.Time
+	offlineEpoch       int  // incremented on each transition into a non-online network
+	roundEpoch         int  // offlineEpoch of the last Phase-B round seen offline
+	roundsOff          int  // Phase-B rounds in the current offline episode
+	inRound            bool // a setup was seen since the last idle point
+	constSince         time.Time
+	reconnSince        time.Time
+	maxBackoff         time.Duration
+	sameInstant        int
+	lastStepAt         time.Time
+	lastURL            string
+	logBuf             []string
+	violations         []simViolation
+	res                simResult
+	stalled            bool
+	pauseEnabled       bool
+	h                  *simHandler
+	resume             chan simResp
+	stallTimer         *time.Timer
 }
 
 func (s *simRun) now() time.Time {
@@ -762,11 +771,11 @@ func (s *simRun) classify(v simViolation) string {
 		return "M3"
 	case v.inv == "I4" && strings.Contains(v.msg, "steady state") && s.net == snAcceptAll:
 		return "M3"
-	case v.inv == "I1" && strings.Contains(v.msg, "failed 503 before") &&
+	case v.inv == "I1" && (strings.Contains(v.msg, "failed 503 before") || strings.Contains(v.msg, "without that verdict")) &&
 		!s.lastCodeLessAt.IsZero() && s.now().Sub(s.lastCodeLessAt) < exhaustFailAfter:
 		return "FA"
 	case v.inv == "I3" && strings.Contains(v.msg, "stale 503") &&
-		s.nodes[s.curNode()].st.kind == skCodeLess:
+		(s.nodes[s.curNode()].st.kind == skCodeLess || !s.lastRaceCodeLessAt.IsZero()):
 		return "FB"
 	}
 	return ""
@@ -836,6 +845,10 @@ func (s *simRun) startCall(r *simReq) {
 			s.checkOfflineRound()
 		} else {
 			s.chainPhaseA = append(s.chainPhaseA, a)
+			s.lastRaceCodeLessAt = time.Time{}
+			if a.what == "code-less" || a.what == "hang" {
+				s.lastRaceCodeLessAt = s.now()
+			}
 		}
 		s.attempts = append(s.attempts, s.now())
 		if a.what == "code-less" || a.what == "hang" {
@@ -1209,7 +1222,7 @@ func (s *simRun) readDiags() {
 // node), and every node of the set is transport-dead or a coded reject.
 func (s *simRun) capWindowOK() bool {
 	netOK := s.net == snOnline || (s.sc.noTargets && s.net != snIfaceDown)
-	if !netOK || (s.paused && s.pauseEnabled) {
+	if !netOK {
 		return false
 	}
 	if s.net != snOnline {
@@ -1284,11 +1297,16 @@ func (s *simRun) tickBound() time.Duration {
 // tick / scheduled / holding — the in-flight tick, one retry interval and one
 // more tick.
 func (s *simRun) i2Bound() time.Duration {
+	sched := 2*s.maxChain() + s.tickBound()
+	return max(s.i2Detect(), sched)
+}
+
+// i2Detect: echo detection + the escalation round (see i2Bound).
+func (s *simRun) i2Detect() time.Duration {
 	ceil := echoIntervals[len(echoIntervals)-1]
 	detect := s.sc.dialEvery + 2*(time.Duration(echoReraceThreshold)*ceil+simDurTimeout)
 	escal := simDurNCNoResp + time.Duration(s.sc.nodes-1)*simDurTimeout + simDurOK
-	sched := 2*s.maxChain() + s.tickBound()
-	return max(detect+escal, sched)
+	return detect + escal
 }
 
 func (s *simRun) statusCode(st Status) int {
@@ -1352,8 +1370,78 @@ func (s *simRun) checkFail(code int) {
 	}
 }
 
+// capCounted: how long the I1 window has been open, paused time excluded.
+func (s *simRun) capCounted() time.Duration {
+	if s.cOKSince.IsZero() {
+		return 0
+	}
+	return s.now().Sub(s.cOKSince) - s.cOKPaused
+}
+
+// capDebounce: a window break shorter than one tick (the in-flight tick plus
+// one retry interval) may go unseen by the engine — a node that comes back
+// 1s after its race failed, a shell restore between two ticks — so it does
+// not reset the window.
+func (s *simRun) capDebounce() time.Duration { return s.tickBound() + s.maxChain() }
+
+// capHeld: the window has lasted exhaustFailAfter, or did until a break the
+// engine could not yet have observed.
 func (s *simRun) capHeld() bool {
-	return !s.cOKSince.IsZero() && s.now().Sub(s.cOKSince) >= exhaustFailAfter
+	if s.capCounted() >= exhaustFailAfter {
+		return true
+	}
+	return s.cOKSince.IsZero() && !s.cOKSaved.IsZero() &&
+		s.now().Sub(s.cOKBreakAt) <= s.capDebounce() &&
+		s.cOKBreakAt.Sub(s.cOKSaved)-s.cOKSavedPaused >= exhaustFailAfter
+}
+
+// updateCapWindow: the I1 window. Paused time is frozen (neither counts nor
+// breaks: the engine subtracts it and observes nothing while paused); a break
+// shorter than capDebounce is bridged.
+func (s *simRun) updateCapWindow(now time.Time) {
+	dt := time.Duration(0)
+	if !s.lastObs.IsZero() {
+		dt = now.Sub(s.lastObs)
+	}
+	s.lastObs = now
+	if s.paused && s.pauseEnabled {
+		if !s.cOKSince.IsZero() {
+			s.cOKPaused += dt
+		}
+		return
+	}
+	if s.capWindowOK() {
+		if s.cOKSince.IsZero() {
+			if !s.cOKSaved.IsZero() && now.Sub(s.cOKBreakAt) <= s.capDebounce() {
+				s.cOKSince, s.cOKPaused = s.cOKSaved, s.cOKSavedPaused+now.Sub(s.cOKBreakAt)
+			} else {
+				s.cOKSince, s.cOKPaused, s.cOKLateFlagged = now, 0, false
+			}
+			s.cOKSaved = time.Time{}
+		}
+		s.checkCapLate()
+		return
+	}
+	if !s.cOKSince.IsZero() {
+		s.cOKSaved, s.cOKSavedPaused, s.cOKBreakAt = s.cOKSince, s.cOKPaused, now
+		s.cOKSince = time.Time{}
+	}
+}
+
+// checkCapLate (I1 liveness): once the window is open the cap must fire
+// within exhaustFailAfter plus detection (the engine has to notice the dead
+// node and run its first counted round) plus one tick spacing and one tick.
+// Only where the engine can see the failure: user traffic, a real network
+// verdict, candidates mode.
+func (s *simRun) checkCapLate() {
+	if s.cOKLateFlagged || !s.sc.traffic || s.sc.noTargets || s.sc.mode == "manual" || s.net != snOnline {
+		return
+	}
+	b := exhaustFailAfter + s.i2Detect() + 2*(s.tickBound()+s.maxChain())
+	if c := s.capCounted(); c > b {
+		s.cOKLateFlagged = true
+		s.violate("I1", "cap late: online transport-dead exhaustion for %v and the session still not ended (bound %v)", c.Round(time.Second), b)
+	}
 }
 
 // observe updates the time-window oracles; idle=true at the loop's idle
@@ -1370,13 +1458,7 @@ func (s *simRun) observe(idle bool) {
 		s.lastURL = u
 	}
 	// I1 window.
-	if s.capWindowOK() {
-		if s.cOKSince.IsZero() {
-			s.cOKSince = now
-		}
-	} else {
-		s.cOKSince = time.Time{}
-	}
+	s.updateCapWindow(now)
 	// I2.
 	if s.p2() {
 		if s.p2Since.IsZero() {
