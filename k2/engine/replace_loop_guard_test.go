@@ -31,6 +31,7 @@ import (
 var failSiteAllowList = map[string]map[string]bool{
 	"fail":                     {"Engine.Start": true, "Engine.failIfUserAction": true, "Engine.failExhausted": true},
 	"failExhausted":            {"Engine.failAtExhaustCap": true},
+	"failAtExhaustCap":         {"Engine.retryOnce": true},
 	"OnOutboundFatal":          {"Engine.failIfUserAction": true, "Engine.failExhausted": true},
 	"failIfUserAction":         {"Engine.outboundReplaceLoop": true, "Engine.escalate": true, "Engine.holdUntilOnline": true, "Engine.retryOnce": true, "Engine.failIfExhaustedByAccount": true},
 	"failIfExhaustedByAccount": {"Engine.escalate": true, "Engine.retryPhaseB": true},
@@ -43,8 +44,8 @@ var failSiteAllowList = map[string]map[string]bool{
 // strictReceiver: of those, the ones where any other receiver is a
 // violation (an alias of e, or a look-alike method).
 var (
-	engineOnly     = map[string]bool{"fail": true, "failExhausted": true, "failIfUserAction": true, "failIfExhaustedByAccount": true, "Stop": true, "cancel": true, "reRaceCancel": true}
-	strictReceiver = map[string]bool{"fail": true, "failExhausted": true, "failIfUserAction": true, "failIfExhaustedByAccount": true}
+	engineOnly     = map[string]bool{"fail": true, "failExhausted": true, "failAtExhaustCap": true, "failIfUserAction": true, "failIfExhaustedByAccount": true, "Stop": true, "cancel": true, "reRaceCancel": true}
+	strictReceiver = map[string]bool{"fail": true, "failExhausted": true, "failAtExhaustCap": true, "failIfUserAction": true, "failIfExhaustedByAccount": true}
 )
 
 // failSites scans the engine package's non-test .go files under dir and
@@ -153,6 +154,11 @@ func TestReplaceLoopFailSitesAllowList(t *testing.T) {
 	if allowed["failExhausted"] != 1 {
 		t.Fatalf("failExhausted references = %d, want exactly 1 (failAtExhaustCap)", allowed["failExhausted"])
 	}
+	// failAtExhaustCap trusts its caller to have started the cap clock: a
+	// call with since still zero would fail at once (final-review-2 M1).
+	if allowed["failAtExhaustCap"] != 1 {
+		t.Fatalf("failAtExhaustCap references = %d, want exactly 1 (retryOnce)", allowed["failAtExhaustCap"])
+	}
 	if allowed["OnOutboundFatal"] != 2 {
 		t.Fatalf("OnOutboundFatal references = %d, want exactly 2 (failIfUserAction, failExhausted)", allowed["OnOutboundFatal"])
 	}
@@ -166,15 +172,16 @@ func TestReplaceLoopFailSitesAllowList(t *testing.T) {
 // package, must be flagged exactly once (so a broken scanner cannot pass).
 func TestReplaceLoopFailSitesGuardCatchesNewSite(t *testing.T) {
 	cases := map[string]string{
-		"new e.fail":                     "func (e *Engine) zzA() { _ = e.fail(nil) }",
-		"new failExhausted caller":       "func (e *Engine) zzA(t *outboundTransport) { e.failExhausted(t, nil) }",
-		"new OnOutboundFatal":            "func (e *Engine) zzA(h EventHandler) { h.OnOutboundFatal(\"x\", nil) }",
-		"new failIfUserAction caller":    "func (e *Engine) zzA(t *outboundTransport) { _ = e.failIfUserAction(t, nil) }",
-		"new failIfExhaustedByAccount":   "func (e *Engine) zzA(t *outboundTransport) { _ = e.failIfExhaustedByAccount(t, nil) }",
-		"e.Stop from loop code":          "func (e *Engine) retryOnceZZ() { _ = e.Stop() }",
-		"e.cancel from loop code":        "func (e *Engine) retryOnceZZ() { e.cancel() }",
-		"e.reRaceCancel from loop code":  "func (e *Engine) retryOnceZZ() { e.reRaceCancel() }",
-		"aliased receiver":               "func (e *Engine) zzA() { x := e; _ = x.fail(nil) }",
+		"new e.fail":                    "func (e *Engine) zzA() { _ = e.fail(nil) }",
+		"new failExhausted caller":      "func (e *Engine) zzA(t *outboundTransport) { e.failExhausted(t, nil) }",
+		"new failAtExhaustCap caller":   "func (e *Engine) zzA(t *outboundTransport) { _ = e.failAtExhaustCap(nil, t, \"x\") }",
+		"new OnOutboundFatal":           "func (e *Engine) zzA(h EventHandler) { h.OnOutboundFatal(\"x\", nil) }",
+		"new failIfUserAction caller":   "func (e *Engine) zzA(t *outboundTransport) { _ = e.failIfUserAction(t, nil) }",
+		"new failIfExhaustedByAccount":  "func (e *Engine) zzA(t *outboundTransport) { _ = e.failIfExhaustedByAccount(t, nil) }",
+		"e.Stop from loop code":         "func (e *Engine) retryOnceZZ() { _ = e.Stop() }",
+		"e.cancel from loop code":       "func (e *Engine) retryOnceZZ() { e.cancel() }",
+		"e.reRaceCancel from loop code": "func (e *Engine) retryOnceZZ() { e.reRaceCancel() }",
+		"aliased receiver":              "func (e *Engine) zzA() { x := e; _ = x.fail(nil) }",
 		"plain func with an *Engine":    "func zzB(e *Engine) { _ = e.fail(nil) }",
 	}
 	for name, body := range cases {

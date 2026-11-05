@@ -1062,9 +1062,11 @@ func TestDirectResolve_IPv4First(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []netip.Addr{netip.MustParseAddr("203.0.113.7"), netip.MustParseAddr("2001:db8::7")}
-	if len(addrs) != 2 || addrs[0] != want[0] || addrs[1] != want[1] {
-		t.Fatalf("addrs = %v, want %v (IPv4 first)", addrs, want)
+	// An A answer with addresses is returned alone (final-review-2 M5:
+	// AAAA only when A has none), through the CNAME chain.
+	want := []netip.Addr{netip.MustParseAddr("203.0.113.7")}
+	if len(addrs) != 1 || addrs[0] != want[0] {
+		t.Fatalf("addrs = %v, want %v (IPv4 only once A answered)", addrs, want)
 	}
 
 	// Both lookups failing surfaces an error; one failing does not.

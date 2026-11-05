@@ -37,6 +37,12 @@ type ClientConfig struct {
 	// Empty (k2r gateway, CLI, old webapp): the engine cannot judge the network
 	// and does not gate node failover on it (engine netUnknown).
 	Netcheck []NetcheckTarget `yaml:"netcheck,omitempty" json:"netcheck,omitempty"`
+	// NetcheckDNS lists the resolvers ("ip:port") the netcheck uses to
+	// resolve its targets. Empty: DNS.Direct (default mainland resolvers).
+	// Netcheck-only on purpose — DNS.Direct governs every direct-routed
+	// lookup, and an overseas brand needs overseas resolvers only for its
+	// netcheck targets (final-review-2 M6). Old engines ignore it.
+	NetcheckDNS []string `yaml:"netcheck_dns,omitempty" json:"netcheck_dns,omitempty"`
 
 	// Derived fields (not serialized to YAML/JSON).
 	Server string `yaml:"-" json:"-"` // first k2v5:// URL from routes

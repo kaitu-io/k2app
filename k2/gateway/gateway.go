@@ -596,9 +596,10 @@ func (g *Gateway) doUpLocked(cfg *GatewayConfig) error {
 //   - multi-slot: bindings are deterministic, hot replacement is off
 //     (fail-closed).
 //   - no subscription session (every route is a plain k2v5:// URL): the
-//     manager has nothing to rotate through. Asked anyway, it answers
-//     ErrNoSubscription and the engine shuts down for good after the second
-//     failed re-race — a node unreachable for 15 s.
+//     manager has nothing to rotate through. Asked anyway, it would answer
+//     ErrNoSubscription, which the engine reads as an exhaustion: reconnecting
+//     503 for 10 min (exhaustFailAfter), then OnOutboundFatal + fail — where
+//     re-racing the same server in place is what the router needs.
 func outboundProviderFor(mgr *subscription.Manager, sessions int, multiSlot bool) engine.OutboundProvider {
 	if multiSlot || sessions == 0 {
 		return nil

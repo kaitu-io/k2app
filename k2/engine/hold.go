@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/netip"
-	"sync"
 	"time"
 
 	mdns "github.com/miekg/dns"
@@ -36,6 +35,17 @@ var holdBackoff = []time.Duration{5 * time.Second, 10 * time.Second, 30 * time.S
 // on the retry schedule (R1, spec §4.2 amendment 2026-11-05).
 const exhaustFailAfter = 10 * time.Minute
 
+// A target on the retry schedule for longPendingAfter (wall time since it
+// joined, paused time included) ticks every longPendingInterval instead of
+// the last holdBackoff step: manual mode on a dead node and a Center outage
+// never leave the schedule on their own, and each tick costs an active
+// netcheck (up to 5 third-party HTTP probes) plus a race (final-review-2
+// M4). Wakes (network event, Wake, recovered) still tick at once.
+const (
+	longPendingAfter    = 10 * time.Minute
+	longPendingInterval = 60 * time.Second
+)
+
 // realHoldTimer is the production holdTimerFn.
 func realHoldTimer(d time.Duration) (<-chan time.Time, func()) {
 	t := time.NewTimer(d)
@@ -44,9 +54,17 @@ func realHoldTimer(d time.Duration) (<-chan time.Time, func()) {
 
 // judgeNet decides whether the user's network reaches the internet, from the
 // cheapest evidence first (netCoordinator interface state, passive direct
-// dials within passiveFreshness — skipped for pre-exhaust — then the active
+// dials within passiveFreshness — pre-phaseB only — then the active
 // netcheck), and logs one DIAG: netcheck line. trigger: pre-phaseB,
-// pre-exhaust, wait-tick, net-event, echo-signal.
+// pre-exhaust, wait-tick, net-event, wake (end of a Pause), recovered (the
+// health monitor saw a scheduled target answer).
+//
+// Passive evidence counts only for pre-phaseB, the first judgement of an
+// outage. pre-exhaust: it may predate the outage. Hold and schedule ticks
+// (wait-tick / net-event / wake / recovered): an accept-all captive portal
+// lets direct dials "succeed", so a hold entered on an active captive
+// verdict would leave on passive evidence every tick, run a candidate round
+// and hold again (final-review-2 M3).
 //
 // If ctx is cancelled mid-check the active probes all report no response and
 // the verdict reads no-internet — callers must check ctx.Err() first.
@@ -58,8 +76,7 @@ func (e *Engine) judgeNet(ctx context.Context, trigger string) netVerdict {
 	targets := e.netcheckTargets
 	e.mu.Unlock()
 
-	// pre-exhaust always probes: passive evidence may predate the outage.
-	ev := netEvidence{Now: time.Now(), SkipPassive: trigger == "pre-exhaust"}
+	ev := netEvidence{Now: time.Now(), SkipPassive: trigger != "pre-phaseB"}
 	if nc != nil {
 		ev.IfaceDown = !nc.isNetworkUp()
 	}
@@ -142,10 +159,14 @@ func noCandidatesError(name string) *EngineError {
 // holdUntilOnline holds on verdict v (v.blocksFailover()): the user's network is
 // broken, which affects every outbound alike, so the replace loop blocks here.
 // It re-checks on every wake — backoff timer (holdBackoff) or a network
-// event via holdWake. Each wake first re-judges the network:
+// event / the end of a Pause via holdWake. A wake while the engine is paused
+// does nothing (no netcheck, no race: Pause released the connections — Wake
+// pokes holdWake when it ends). Each other wake first re-judges the network
+// (active netcheck only, see judgeNet):
 //   - online / unknown (e.g. interface back up, no netcheck targets) → show
 //     restore (the hold the loop had before: nil, or the no-candidates 503
 //     while retries are pending), return holdOnline (the caller re-races).
+//   - iface down (101) → keep holding; no Phase-A, a dial cannot succeed.
 //   - otherwise → one Phase-A on the current node (reason=wait-tick),
 //     whatever the verdict says: the verdict can be wrong (netcheck targets
 //     blocked on this network while the node still answers) and a node that
@@ -179,10 +200,12 @@ func (e *Engine) holdUntilOnline(ctx context.Context, target *outboundTransport,
 			stop()
 			return holdExit
 		case <-ch:
-		case <-e.holdWake:
+		case trigger = <-e.holdWake:
 			stop()
-			trigger = "net-event"
 			step = 0
+		}
+		if paused, _ := e.pauseState(); paused {
+			continue // final-review-2 I1
 		}
 		v = e.judgeNet(ctx, trigger)
 		if ctx.Err() != nil {
@@ -192,6 +215,10 @@ func (e *Engine) holdUntilOnline(ctx context.Context, target *outboundTransport,
 			slog.Info("engine: network back, leaving hold", "outbound", name, "verdict", v.String())
 			e.setHold(ctx, restore)
 			return holdOnline
+		}
+		if v == netIfaceDown {
+			e.setHold(ctx, v.holdError()) // final-review-2 M9
+			continue
 		}
 		raceErr, quit := e.phaseA(ctx, target, dd, "wait-tick")
 		if quit || ctx.Err() != nil {
@@ -233,6 +260,14 @@ type retryState struct {
 	enteredAt time.Time
 	since     time.Time
 	lastErr   error
+
+	// sincePaused: the engine's pausedTotal when since was set — the cap
+	// subtracts paused time (counted). pendingSince: when the target joined
+	// the schedule (longPendingAfter). lastTry: the latest attempt (or the
+	// round that scheduled it) — recoveredDue's rate limit.
+	sincePaused  time.Duration
+	pendingSince time.Time
+	lastTry      time.Time
 }
 
 // retrySet is the replace loop's retry schedule: outbounds whose node is
@@ -248,6 +283,9 @@ type retrySet struct {
 
 	timerFn func(time.Duration) (<-chan time.Time, func())
 	now     func() time.Time
+	// paused reports the engine's pause state and pausedTotal (nil = never
+	// paused, for retrySets built without an engine).
+	paused func() (bool, time.Duration)
 
 	// The one armed timer, for the earliest nextAt (nil ch = none; a nil
 	// channel never fires in select).
@@ -276,15 +314,63 @@ func (r *retrySet) hold() *EngineError {
 }
 
 // schedule (re)arms target's retry at step (clamped to the last backoff),
-// keeping its exhaustion state.
+// keeping its exhaustion state. Called right after an attempt (or the round
+// that put the target on the schedule).
 func (r *retrySet) schedule(target *outboundTransport, step int) {
 	step = min(step, len(holdBackoff)-1)
+	now := r.now()
 	st, ok := r.pending[target]
 	if !ok {
-		st = &retryState{}
+		st = &retryState{pendingSince: now}
 		r.pending[target] = st
+		target.scheduled.Store(true)
 	}
-	st.nextAt, st.step = r.now().Add(holdBackoff[step]), step
+	st.step, st.lastTry = step, now
+	st.nextAt = now.Add(r.delay(st))
+}
+
+// delay is st's next interval: its backoff step, or longPendingInterval once
+// it has been on the schedule for longPendingAfter.
+func (r *retrySet) delay(st *retryState) time.Duration {
+	if r.now().Sub(st.pendingSince) >= longPendingAfter {
+		return longPendingInterval
+	}
+	return holdBackoff[st.step]
+}
+
+// deferDue pushes every due target's retry one interval on without an
+// attempt (the engine is paused). Step and cap state are untouched.
+func (r *retrySet) deferDue() {
+	for _, t := range r.due() {
+		st := r.pending[t]
+		st.nextAt = r.now().Add(r.delay(st))
+	}
+}
+
+// recoveredDue reports whether a recovered wake may tick target now: it is
+// on the schedule and its last attempt is at least holdBackoff[0] old.
+func (r *retrySet) recoveredDue(target *outboundTransport) bool {
+	st := r.pending[target]
+	return st != nil && r.now().Sub(st.lastTry) >= holdBackoff[0]
+}
+
+func (r *retrySet) pausedTotal() time.Duration {
+	if r.paused == nil {
+		return 0
+	}
+	_, total := r.paused()
+	return total
+}
+
+// startCap starts st's cap clock now.
+func (r *retrySet) startCap(st *retryState) {
+	st.since, st.sincePaused = r.now(), r.pausedTotal()
+}
+
+// counted is how long st's current stretch of online exhaustion has lasted,
+// paused time excluded (final-review-2 I1).
+func (r *retrySet) counted(st *retryState) time.Duration {
+	return r.now().Sub(st.since) - (r.pausedTotal() - st.sincePaused)
 }
 
 // enterExhausted marks a scheduled target exhausted with err (only lastErr
@@ -301,10 +387,9 @@ func (r *retrySet) enterExhausted(target *outboundTransport, name string, err er
 	if st.exhausted {
 		return
 	}
-	now := r.now()
-	st.exhausted, st.enteredAt, st.since = true, now, time.Time{}
+	st.exhausted, st.enteredAt, st.since = true, r.now(), time.Time{}
 	if counts {
-		st.since = now
+		r.startCap(st)
 	}
 	slog.Warn("DIAG: outbound-exhausted",
 		"outbound", name, "tried", exhaustedTried(err), "err", err)
@@ -318,6 +403,15 @@ func (r *retrySet) leave(target *outboundTransport, name, via string) {
 			"outbound", name, "elapsedS", int64(r.now().Sub(st.enteredAt)/time.Second), "via", via)
 	}
 	delete(r.pending, target)
+	target.scheduled.Store(false)
+}
+
+// clear empties the schedule (the loop is exiting).
+func (r *retrySet) clear() {
+	for t := range r.pending {
+		t.scheduled.Store(false)
+	}
+	clear(r.pending)
 }
 
 // arm keeps exactly one timer armed for the earliest pending retry. Re-arms
@@ -387,9 +481,11 @@ func (r *retrySet) all() []*outboundTransport {
 // phaseA / the swap; a queued echo signal for it is dropped; the provider is
 // Reset); failure advances its backoff (5s→10s→30s→30s…). A 401/402/403
 // fails the engine. An exhausted target whose online exhaustion has lasted
-// exhaustFailAfter fails it too (failAtExhaustCap). Echo signals never
-// trigger it (outboundReplaceLoop drops them for pending targets). Returns
-// false when the loop must exit. The caller syncs the shown hold afterwards.
+// exhaustFailAfter (paused time excluded) fails it too (failAtExhaustCap).
+// An iface-down verdict skips Phase A and B (M9). Echo signals never
+// trigger it (outboundReplaceLoop drops them for pending targets); the
+// caller never calls it while paused (I1). Returns false when the loop must
+// exit. The caller syncs the shown hold afterwards.
 func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTransport, trigger, reason string) bool {
 	e.mu.Lock()
 	connected := e.state == StateConnected
@@ -411,27 +507,30 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 	if ctx.Err() != nil {
 		return false
 	}
-	raceErr, quit := e.phaseA(ctx, target, dd, reason)
-	if quit || ctx.Err() != nil {
-		return false
-	}
-	if raceErr == nil {
-		slog.Info("engine: scheduled outbound answered again", "outbound", name)
-		r.leave(target, name, "phaseA")
-		e.dropQueuedSignal(target)
-		// Exclusions gathered while it was scheduled (a Center outage's)
-		// must not outlive the schedule (review 3 I-2).
-		if rs, ok := provider.(interface{ Reset() }); ok {
-			rs.Reset()
-		}
-		return true
-	}
-	if e.failIfUserAction(target, raceErr) {
-		return false
-	}
 	phaseB := escHeld // no Phase B ran: nothing new learned about the candidates
-	var exhaustErr error
-	verdict := v // the tick's latest verdict: Phase B's pre-exhaust one when that blocked
+	var raceErr, exhaustErr error
+	verdict := v           // the tick's latest verdict: Phase B's pre-exhaust one when that blocked
+	if v != netIfaceDown { // no usable interface: a dial cannot succeed (final-review-2 M9)
+		var quit bool
+		raceErr, quit = e.phaseA(ctx, target, dd, reason)
+		if quit || ctx.Err() != nil {
+			return false
+		}
+		if raceErr == nil {
+			slog.Info("engine: scheduled outbound answered again", "outbound", name)
+			r.leave(target, name, "phaseA")
+			e.dropQueuedSignal(target)
+			// Exclusions gathered while it was scheduled (a Center outage's)
+			// must not outlive the schedule (review 3 I-2).
+			if rs, ok := provider.(interface{ Reset() }); ok {
+				rs.Reset()
+			}
+			return true
+		}
+		if e.failIfUserAction(target, raceErr) {
+			return false
+		}
+	}
 	// Phase B only when the current node itself is dead or refusing. A
 	// code-less reject means the node is alive and Center is not: a
 	// candidate would answer the same, so a tick does Phase A only for the
@@ -467,8 +566,8 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 	if st != nil {
 		next = st.step + 1
 	}
-	if trigger == "net-event" {
-		next = 0 // a fresh network: start the cadence over
+	if trigger == "net-event" || trigger == "wake" {
+		next = 0 // a fresh network / the end of a pause: start the cadence over
 	}
 	r.schedule(target, next)
 	st = r.pending[target]
@@ -495,7 +594,7 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 		return true
 	}
 	if st.since.IsZero() {
-		st.since = r.now()
+		r.startCap(st)
 	}
 	return !e.failAtExhaustCap(r, target, name)
 }
@@ -520,7 +619,7 @@ func exhaustCounts(verdict netVerdict, raceErr, exhaustErr error) bool {
 // it did. The only caller of failExhausted (TestReplaceLoopFailSitesAllowList).
 func (e *Engine) failAtExhaustCap(r *retrySet, target *outboundTransport, name string) bool {
 	st := r.pending[target]
-	elapsed := r.now().Sub(st.since)
+	elapsed := r.counted(st)
 	if elapsed < exhaustFailAfter {
 		return false
 	}
@@ -592,38 +691,52 @@ func (e *Engine) dropQueuedSignal(target *outboundTransport) {
 	}
 }
 
-// wakeHold pokes a running hold to re-judge now. Non-blocking; a pending
-// wake is enough (cap 1).
-func (e *Engine) wakeHold() {
+// wakeHold pokes a running hold (and the retry schedule) to re-judge now
+// after a network event. Non-blocking; a pending wake is enough (cap 1).
+func (e *Engine) wakeHold() { e.wakeHoldFor("net-event") }
+
+// wakeHoldFor is wakeHold with the netcheck trigger to log ("net-event",
+// "wake").
+func (e *Engine) wakeHoldFor(trigger string) {
 	select {
-	case e.holdWake <- struct{}{}:
+	case e.holdWake <- trigger:
 	default:
 	}
 }
 
 // directResolve adapts a DNS query func (DirectDNSClient.Query) into the
-// netcheck resolver. A and AAAA are queried in parallel; IPv4 addresses are
-// returned first because netcheck dials addresses in order inside a single
-// 3s budget — on a network that blackholes IPv6, AAAA first would spend the
-// whole budget there and report a false no-internet.
+// netcheck resolver. A and AAAA are queried in parallel, but an A answer
+// with addresses is returned at once, alone: netcheck dials addresses in
+// order inside a single 3s budget, so IPv6 first would spend it all on a
+// network that blackholes IPv6, and waiting for an AAAA that never comes
+// (resolvers that drop AAAA queries) would spend it too — every target a
+// false no-internet (final-review-2 M5). AAAA is used only when A has none.
 func directResolve(query func(context.Context, *mdns.Msg) (*mdns.Msg, error)) func(context.Context, string) ([]netip.Addr, error) {
+	type answer struct {
+		addrs []netip.Addr
+		err   error
+	}
 	return func(ctx context.Context, host string) ([]netip.Addr, error) {
-		var v4, v6 []netip.Addr
-		var err4, err6 error
-		var wg sync.WaitGroup
-		wg.Add(2)
-		go func() { defer wg.Done(); v4, err4 = lookupType(ctx, query, host, mdns.TypeA) }()
-		go func() { defer wg.Done(); v6, err6 = lookupType(ctx, query, host, mdns.TypeAAAA) }()
-		wg.Wait()
-		addrs := append(v4, v6...)
-		if len(addrs) > 0 {
-			return addrs, nil
+		ctx6, cancel6 := context.WithCancel(ctx)
+		defer cancel6() // an abandoned AAAA lookup ends with it
+		ch6 := make(chan answer, 1)
+		go func() {
+			a, err := lookupType(ctx6, query, host, mdns.TypeAAAA)
+			ch6 <- answer{a, err}
+		}()
+		v4, err4 := lookupType(ctx, query, host, mdns.TypeA)
+		if len(v4) > 0 {
+			return v4, nil
+		}
+		r6 := <-ch6
+		if len(r6.addrs) > 0 {
+			return r6.addrs, nil
 		}
 		if err4 != nil {
 			return nil, err4
 		}
-		if err6 != nil {
-			return nil, err6
+		if r6.err != nil {
+			return nil, r6.err
 		}
 		return nil, errors.New("netcheck: no addresses for " + host)
 	}

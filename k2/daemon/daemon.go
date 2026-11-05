@@ -737,9 +737,10 @@ func (d *Daemon) OnStatus(status engine.Status) {
 // OnStats implements engine.EventHandler — currently a no-op for daemon.
 func (d *Daemon) OnStats(txBytes, rxBytes int64) {}
 
-// OnOutboundFatal implements engine.EventHandler. The engine has already
-// fired e.fail() with the underlying error before this callback fires, so
-// d.lastStatus is already updated via OnStatus. This hook is informational:
+// OnOutboundFatal implements engine.EventHandler. The engine calls it right
+// before e.fail() (an account verdict, or 10 min of online exhaustion); the
+// disconnected status follows via OnStatus. This hook is informational —
+// the desktop daemon does not rebuild the session:
 // we log which outbound finally exhausted replacements so operators can
 // distinguish "all subscribed tunnels failed" from other transport errors.
 func (d *Daemon) OnOutboundFatal(outbound string, err error) {

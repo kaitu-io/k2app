@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sasha-s/go-deadlock"
@@ -42,9 +43,15 @@ const (
 // (e.g. daemon.mu). See CLAUDE.md Lock Ordering Graph.
 // handler.OnStatus is called OUTSIDE engine.mu (read-copy-act pattern).
 type Engine struct {
-	mu          deadlock.Mutex
-	state       string
-	paused      bool
+	mu     deadlock.Mutex
+	state  string
+	paused bool
+	// pausedAt (on holdNow's clock) is when the current pause began;
+	// pausedTotal accumulates finished pauses. The exhaustion cap subtracts
+	// paused time (retrySet.counted): a paused engine does no retry work, so
+	// its time must not count toward exhaustFailAfter. Guarded by e.mu.
+	pausedAt    time.Time
+	pausedTotal time.Duration
 	client      *config.ClientConfig
 	connectedAt time.Time
 	lastError   *EngineError
@@ -86,10 +93,19 @@ type Engine struct {
 	netcheck        func(ctx context.Context) ([]checkResult, []time.Duration)
 	netcheckTargets []config.NetcheckTarget
 
-	// holdWake (cap 1) is poked by doNetworkReconnect so a hold re-judges the
-	// network as soon as the platform reports a change, instead of waiting
-	// out its backoff timer. Created in New, never replaced.
-	holdWake chan struct{}
+	// holdWake (cap 1) wakes a network hold and the retry schedule at once,
+	// instead of waiting out the backoff timer. The value is the netcheck
+	// trigger: "net-event" (doNetworkReconnect, after its pushes) or "wake"
+	// (Wake, the end of a Pause — paused ticks did nothing). A token already
+	// pending wins; both kinds act the same apart from the label. Created in
+	// New, never replaced.
+	holdWake chan string
+	// recoveredWake (cap 1) carries a target the health monitor saw answer
+	// again (targetRecovered). The replace loop ticks it at once when it is
+	// on the retry schedule (final-review-2 M8): status clears without
+	// waiting out a 30/60s step. Not a re-race signal (review C): at most
+	// one tick per holdBackoff[0] (retrySet.recoveredDue). Created in New.
+	recoveredWake chan *outboundTransport
 	// holdTimerFn arms one hold backoff timer, returning its channel and a
 	// stop func. Real timer in production (New); tests inject a fake.
 	holdTimerFn func(d time.Duration) (<-chan time.Time, func())
@@ -152,10 +168,17 @@ type outboundTransport struct {
 	// fromShell: url was handed out by the shell provider (k2subs
 	// subscription.Manager) — at Start or by a Phase-B swap. Such a target
 	// answered ErrNoCandidates only because a subscription refresh dropped or
-	// re-keyed its URL; that is an exhaustion (capped → OnOutboundFatal →
-	// k2r / desktop rebuild from a fresh subscription), not manual mode (R1
+	// re-keyed its URL; that is an exhaustion (capped → OnOutboundFatal → k2r
+	// rebuilds from a fresh subscription; the desktop daemon only logs it and
+	// ends disconnected 503), not manual mode (R1
 	// review M-4). Guarded by e.mu.
 	fromShell bool
+
+	// scheduled: on the replace loop's retry schedule (retrySet.schedule
+	// sets, leave and the loop's exit clear). Read by the health monitor's
+	// targetRecovered so an answering node wakes the loop only for a
+	// scheduled target — not on every echo success (final-review-2 M8).
+	scheduled atomic.Bool
 }
 
 // reRaceFailThresholdForReplace is the RaceTransport-failure count after
@@ -167,10 +190,11 @@ const reRaceFailThresholdForReplace = 2
 // New creates a new Engine in the disconnected state.
 func New() *Engine {
 	return &Engine{
-		state:       StateDisconnected,
-		holdWake:    make(chan struct{}, 1),
-		holdTimerFn: realHoldTimer,
-		holdNow:     time.Now,
+		state:         StateDisconnected,
+		holdWake:      make(chan string, 1),
+		recoveredWake: make(chan *outboundTransport, 1),
+		holdTimerFn:   realHoldTimer,
+		holdNow:       time.Now,
 	}
 }
 
@@ -568,14 +592,14 @@ func (e *Engine) Start(cfg Config) error {
 
 	// 8.5. Netcheck (failover network verdict, outboundReplaceLoop): probes go
 	// out through the raw DirectDialer (protected on Android, never the TUN)
-	// and resolve with a direct DNS client of their own on the configured
-	// direct servers — in proxy mode too, where no DNS middleware exists.
+	// and resolve with a direct DNS client of their own (netcheckDNSServers)
+	// — in proxy mode too, where no DNS middleware exists.
 	var netcheckDNSOpts []dns.DirectDNSOption
 	if dc, ok := cfg.DirectDialer.(wire.DialerController); ok {
 		netcheckDNSOpts = append(netcheckDNSOpts, dns.WithDialer(&net.Dialer{Control: dc.ControlFunc()}))
 	}
 	netChecker := newNetChecker(client.Netcheck, cfg.DirectDialer,
-		directResolve(dns.NewDirectDNSClient(client.DNS.Direct, netcheckDNSOpts...).Query))
+		directResolve(dns.NewDirectDNSClient(netcheckDNSServers(client), netcheckDNSOpts...).Query))
 
 	// The provider is built (and asked which URLs the shell owns) before
 	// e.mu: OwnsURL takes the shell's own locks.
@@ -932,6 +956,7 @@ func (e *Engine) Pause() {
 		return
 	}
 	e.paused = true
+	e.pausedAt = e.holdNow()
 	slog.Info("engine: paused")
 	handler := e.handler
 	outboundTMs := e.outboundTMs
@@ -951,6 +976,23 @@ func (e *Engine) Pause() {
 	}
 }
 
+// netcheckDNSServers is the netcheck's resolver list: ClientConfig.NetcheckDNS
+// when set, else the direct resolvers (DNS.Direct). final-review-2 M6.
+func netcheckDNSServers(client *config.ClientConfig) []string {
+	if len(client.NetcheckDNS) > 0 {
+		return client.NetcheckDNS
+	}
+	return client.DNS.Direct
+}
+
+// pauseState reports whether the engine is paused and the total length of
+// its finished pauses (see pausedTotal).
+func (e *Engine) pauseState() (bool, time.Duration) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.paused, e.pausedTotal
+}
+
 // Wake restores the engine after a Pause, forcing fresh transport connections.
 func (e *Engine) Wake() {
 	e.mu.Lock()
@@ -959,12 +1001,19 @@ func (e *Engine) Wake() {
 		return
 	}
 	e.paused = false
+	if d := e.holdNow().Sub(e.pausedAt); d > 0 {
+		e.pausedTotal += d
+	}
 	slog.Info("engine: woke")
 	handler := e.handler
 	outboundTMs := e.outboundTMs
 	pdns := e.proxyDNS
 	s := e.buildStatusLocked()
 	e.mu.Unlock()
+	// A hold / the retry schedule skipped every tick while paused
+	// (final-review-2 I1): attempt now. Deferred past the status push, like
+	// doNetworkReconnect's wake.
+	defer e.wakeHoldFor("wake")
 
 	// Scoreboard-preserving, same as Pause — see its doc comment.
 	for _, ot := range outboundTMs {
@@ -2185,16 +2234,18 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 	e.mu.Lock()
 	retries := newRetrySet(e.holdTimerFn, e.holdNow)
 	e.mu.Unlock()
+	retries.paused = e.pauseState
 	defer retries.disarm()
+	defer retries.clear()
 
 	for {
 		retries.arm()
 		if e.replaceLoopIdle != nil {
 			e.replaceLoopIdle() // test hook: the loop is about to block
 		}
-		var wake <-chan struct{}
+		var wake <-chan string
 		if len(retries.pending) > 0 {
-			wake = e.holdWake // a network event retries every pending outbound now
+			wake = e.holdWake // a network event / Wake retries every pending outbound now
 		}
 		var target *outboundTransport
 		select {
@@ -2202,6 +2253,14 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 			return
 		case <-retries.ch:
 			retries.fired()
+			if paused, _ := e.pauseState(); paused {
+				// Paused (iOS screen lock, Android memory trim): no netcheck,
+				// no race — a race would reinstall the connections Pause
+				// released. Targets keep their place; Wake ticks them
+				// (final-review-2 I1).
+				retries.deferDue()
+				continue
+			}
 			for _, t := range retries.due() {
 				if !e.retryOnce(ctx, retries, t, "wait-tick", "wait-tick") {
 					return
@@ -2209,11 +2268,28 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 			}
 			e.setHold(ctx, retries.hold())
 			continue
-		case <-wake:
+		case trigger := <-wake:
+			if paused, _ := e.pauseState(); paused {
+				continue // Wake pokes again when the pause ends
+			}
 			for _, t := range retries.all() {
-				if !e.retryOnce(ctx, retries, t, "net-event", "wait-tick") {
+				if !e.retryOnce(ctx, retries, t, trigger, "wait-tick") {
 					return
 				}
+			}
+			e.setHold(ctx, retries.hold())
+			continue
+		case t := <-e.recoveredWake:
+			// The health monitor saw t's node answer (final-review-2 M8):
+			// tick it now instead of after its 30/60s step. A tick, not a
+			// re-race signal — at most one per holdBackoff[0], so a node
+			// whose echo answers while its race still fails cannot spin the
+			// loop (review C).
+			if paused, _ := e.pauseState(); paused || !retries.recoveredDue(t) {
+				continue
+			}
+			if !e.retryOnce(ctx, retries, t, "recovered", "wait-tick") {
+				return
 			}
 			e.setHold(ctx, retries.hold())
 			continue
@@ -2344,9 +2420,17 @@ func (e *Engine) phaseA(ctx context.Context, target *outboundTransport, dd wire.
 		closeRaceResult(result)
 		return nil, true
 	}
-	installed := e.applyReRaceResult(target, result)
+	installed := false
+	if paused, _ := e.pauseState(); paused {
+		// Paused while the race ran: the node answered, but installing would
+		// undo the release Pause made (final-review-2 I1). Wake's
+		// ResetConnections redials it lazily.
+		slog.Info("engine: re-race answered while paused, not installed", "outbound", name)
+	} else {
+		installed = e.applyReRaceResult(target, result)
+	}
 	if !installed {
-		// target no longer live — dispose of new Dialer and move on
+		// target no longer live (or paused) — dispose of new Dialer and move on
 		closeRaceResult(result)
 	}
 	e.mu.Lock()
@@ -2367,12 +2451,21 @@ func (e *Engine) phaseA(ctx context.Context, target *outboundTransport, dd wire.
 // answers again (an answered user dial ends its failure run, or an echo
 // succeeds) its Phase-A failure streak is reset. Phase-A failures from an
 // earlier outage must not count toward the next one — otherwise two
-// separate 20s refusals in one session reach Phase B (review A ruling).
+// separate 20s refusals in one session reach Phase B (review A ruling). A
+// target on the retry schedule is also ticked at once (recoveredWake).
 func (e *Engine) wireHealthRecovered(hm *healthMonitor) {
 	hm.targetRecovered = func(ot *outboundTransport) {
 		e.mu.Lock()
 		ot.reRaceFailStreak = 0
 		e.mu.Unlock()
+		// A scheduled target ticks now (final-review-2 M8). Never blocks:
+		// a pending token is enough.
+		if ot.scheduled.Load() {
+			select {
+			case e.recoveredWake <- ot:
+			default:
+			}
+		}
 	}
 }
 

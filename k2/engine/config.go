@@ -107,8 +107,11 @@ type Config struct {
 //     same logical subscription session — i.e. it maintains its own
 //     "already-tried-and-failed" exclude set and filters accordingly.
 //   - When the provider exhausts its candidates, it returns (""/wrapped-err).
-//     The engine then fires EventHandler.OnOutboundFatal and calls
-//     e.fail to terminate the tunnel.
+//     The engine does not disconnect for that (R1): the outbound goes on the
+//     replace loop's retry schedule (reconnecting 503). Only after
+//     exhaustFailAfter (10 min) of continuous online exhaustion does it fire
+//     EventHandler.OnOutboundFatal and call e.fail — or at once when the
+//     cause is an account verdict (401/402/403).
 //
 // Concurrency: the engine invokes NextURL from a single
 // outboundReplaceLoop goroutine and calls are therefore serialized across

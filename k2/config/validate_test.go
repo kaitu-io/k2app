@@ -226,7 +226,7 @@ func TestIsOutboundURL_RespectsReservedSchemes(t *testing.T) {
 }
 
 func TestClientConfig_FallbacksAndNetcheckRoundTrip(t *testing.T) {
-	raw := `{"routes":[{"via":"k2v5://a"}],"fallbacks":{"k2v5://a":["k2v5://b","k2subs://x","direct"]},"netcheck":[{"url":"http://c/generate_204","status":204}]}`
+	raw := `{"routes":[{"via":"k2v5://a"}],"fallbacks":{"k2v5://a":["k2v5://b","k2subs://x","direct"]},"netcheck":[{"url":"http://c/generate_204","status":204}],"netcheck_dns":["1.1.1.1:53"]}`
 	var cfg ClientConfig
 	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
 		t.Fatal(err)
@@ -240,6 +240,12 @@ func TestClientConfig_FallbacksAndNetcheckRoundTrip(t *testing.T) {
 	}
 	if len(cfg.Netcheck) != 1 || cfg.Netcheck[0].Status != 204 {
 		t.Errorf("netcheck = %+v", cfg.Netcheck)
+	}
+	if len(cfg.NetcheckDNS) != 1 || cfg.NetcheckDNS[0] != "1.1.1.1:53" {
+		t.Errorf("netcheck_dns = %v, want [1.1.1.1:53]", cfg.NetcheckDNS)
+	}
+	if len(cfg.DNS.Direct) != 0 {
+		t.Errorf("dns.direct = %v: netcheck_dns must not change the direct resolvers", cfg.DNS.Direct)
 	}
 }
 
