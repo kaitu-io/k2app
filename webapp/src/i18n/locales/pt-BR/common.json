@@ -16,7 +16,13 @@
     "disabled": "Desabilitado",
     "clickToStop": "Clique para Desconectar",
     "reconnectingToServer": "Reconectando ao servidor...",
-    "waitingForNetwork": "Aguardando rede..."
+    "waitingForNetwork": "Aguardando rede...",
+    "reconnectReason": {
+      "networkUnavailable": "Rede desconectada. Reconectará automaticamente quando voltar.",
+      "noInternet": "Esta rede não tem acesso à internet. Reconectará automaticamente quando voltar.",
+      "captivePortal": "Este Wi-Fi exige login em uma página da web",
+      "serverUnreachable": "Linha temporariamente inacessível, tentando novamente"
+    }
   },
   "common": {
     "justNow": "Agora mesmo",
@@ -73,7 +79,9 @@
       "repairDNS": "Falha no reparo de DNS",
       "repairRoute": "Falha no reparo de rota",
       "repairPreFailed": "Falha na preparação do reparo de rede",
-      "unavailable": "Sem conexão de rede. Verifique a rede do seu dispositivo e tente novamente."
+      "unavailable": "Sem conexão de rede. Verifique a rede do seu dispositivo e tente novamente.",
+      "noInternet": "Esta rede não tem acesso à internet",
+      "captivePortal": "Este Wi-Fi exige login em uma página da web"
     },
     "server": {
       "unavailable": "Servidor indisponível, por favor tente novamente mais tarde",
@@ -124,7 +132,8 @@
       "startFailed": "Falha ao iniciar o serviço, por favor tente novamente",
       "reconnectFailed": "Falha ao reconectar, por favor tente novamente",
       "timeout": "Operação expirada, por favor tente novamente",
-      "allAddrsFailed": "Todos os endereços de servidor falharam, por favor mude de nó"
+      "allAddrsFailed": "Todos os endereços de servidor falharam, por favor mude de nó",
+      "serverUnreachable": "Nenhuma linha está acessível no momento. Tente novamente mais tarde."
     },
     "action": {
       "timeout": "Operação expirada, por favor tente novamente",

@@ -60,4 +60,24 @@ describe('brand registry', () => {
     // i18n/__tests__/locale-coverage.test.ts.
     expect(OVERLEAP_BRAND.locales.length).toBeGreaterThan(7);
   });
+  it('netcheck targets: plain-HTTP vendor endpoints with an expected status', () => {
+    // The engine compares status (and body, when given) exactly; an https URL or a
+    // redirecting one would read as a captive portal on a healthy network.
+    for (const b of [KAITU_BRAND, OVERLEAP_BRAND]) {
+      expect(b.netcheck.length).toBeGreaterThanOrEqual(3);
+      for (const t of b.netcheck) {
+        expect(t.url.startsWith('http://')).toBe(true);
+        expect([200, 204]).toContain(t.status);
+        if (t.status === 200) expect(t.body).toBeTruthy();
+      }
+    }
+  });
+
+  it('direct DNS: overleap overrides the engine default (mainland resolvers), kaitu keeps it', () => {
+    expect(KAITU_BRAND.directDns).toEqual([]);
+    expect(OVERLEAP_BRAND.directDns.length).toBeGreaterThan(0);
+    for (const mainland of ['114.114.114.114:53', '223.5.5.5:53', '119.29.29.29:53']) {
+      expect(OVERLEAP_BRAND.directDns).not.toContain(mainland);
+    }
+  });
 });

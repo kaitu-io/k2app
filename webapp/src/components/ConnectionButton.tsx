@@ -30,6 +30,7 @@ import {
 } from '../theme/colors';
 import { getFlagIcon } from '../utils/country';
 import type { ControlError } from '../services/vpn-types';
+import { getReconnectReasonKey } from '../utils/errorCatalog';
 
 type ServiceState =
   | 'disconnected'
@@ -177,6 +178,9 @@ export function ConnectionButton({
 
   const isTransitioning = isConnecting || isReconnecting || isDisconnecting;
 
+  // 重连中引擎给出的原因（断网 / 无互联网 / 需网页登录 / 线路不可达）；null = 只显示通用文案
+  const reconnectReasonKey = isReconnecting ? getReconnectReasonKey(error?.code) : null;
+
   // hover 时在可操作状态（connecting/connected/reconnecting）显示停止提示
   const showStopHint = isHovered && (isConnected || isConnecting || isReconnecting);
 
@@ -278,6 +282,14 @@ export function ConnectionButton({
               >
                 {statusText}
               </Typography>
+              {reconnectReasonKey && !showStopHint && (
+                <Typography
+                  variant="caption"
+                  sx={{ color: fg, opacity: 0.85, fontSize: '0.7rem', maxWidth: 160, textAlign: 'center' }}
+                >
+                  {t(reconnectReasonKey)}
+                </Typography>
+              )}
               {(!hasTunnelSelected && isDisconnected) ? (
                 <Typography
                   variant="caption"

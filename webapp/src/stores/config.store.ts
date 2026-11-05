@@ -61,6 +61,13 @@ export interface ConnectConfigParams {
    * Used by connection.store's one-shot retry after RuleBundlesUnavailable.
    */
   forceGlobalRoutes?: boolean;
+  /**
+   * Auto mode: k2v5:// URLs of fallback tunnels on other machines, in order.
+   * Emitted as `fallbacks: { [serverUrl]: fallbackUrls }` — keyed by the exact
+   * route `via` string, which is how the engine finds the group. Empty/absent
+   * = no `fallbacks` key.
+   */
+  fallbackUrls?: string[];
 }
 
 export interface DetectedProfileUpdate {
@@ -507,6 +514,16 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       routes,
     };
 
+    if (serverUrl && opts.fallbackUrls && opts.fallbackUrls.length > 0) {
+      result.fallbacks = { [serverUrl]: [...opts.fallbackUrls] };
+    }
+    // Brand connectivity-check targets: lets the engine tell the user's network
+    // being down / behind a captive portal apart from our servers being down.
+    result.netcheck = brandConfig.netcheck.map(t => ({ ...t }));
+    if (brandConfig.directDns.length > 0) {
+      result.dns = { direct: [...brandConfig.directDns] };
+    }
+
     // Forward the app version so the node can attribute this device's traffic
     // (engine → wire metadata stream → Center /slave/device-check-auth).
     const appVersion = window._platform?.version;
@@ -528,7 +545,8 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       + ', serverUrl=' + (serverUrl ?? 'none')
       + ', logLevel=' + result.log?.level
       + ', mode=' + result.mode
-      + ', ruleMissTelemetry=' + telemetry.ruleMissEnabled);
+      + ', ruleMissTelemetry=' + telemetry.ruleMissEnabled
+      + ', fallbacks=' + (opts.fallbackUrls?.length ?? 0));
     return result;
   },
 }));

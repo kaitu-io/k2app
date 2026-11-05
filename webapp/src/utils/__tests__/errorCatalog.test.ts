@@ -50,6 +50,7 @@ import {
   ENGINE_ERROR_CATALOG,
   LOG_ONLY_CODES,
   ENGINE_NETWORK_ERROR_CODES,
+  RECONNECT_REASON_CATALOG,
 } from '../errorCatalog';
 import { getErrorI18nKey, isNetworkError } from '../../services/vpn-types';
 import { brandConfig } from '../../brands';
@@ -110,6 +111,7 @@ export function resolveKey(bundle: Record<string, any>, fq: string): string | un
 const ALL_ENTRIES = [
   ...Object.entries(API_ERROR_CATALOG).map(([c, e]) => ['api', Number(c), e] as const),
   ...Object.entries(ENGINE_ERROR_CATALOG).map(([c, e]) => ['engine', Number(c), e] as const),
+  ...Object.entries(RECONNECT_REASON_CATALOG).map(([c, e]) => ['reconnect', Number(c), e] as const),
 ];
 
 describe('error catalog — i18n key coverage', () => {
@@ -201,5 +203,30 @@ describe('573 — auto-pick pool emptied by the country filter', () => {
   it('the zh-CN and en-US copy names the country filter as the fix', () => {
     expect(resolveKey(BUNDLES['zh-CN'], 'dashboard:auto.allExcluded')).toMatch(/过滤|排除/);
     expect(resolveKey(BUNDLES['en-US'], 'dashboard:auto.allExcluded')).toMatch(/filter/i);
+  });
+});
+
+describe('failover netcheck verdicts — 106 / 107 / 503', () => {
+  it('106 and 107 are engine network codes with their own copy', () => {
+    expect(ENGINE_ERROR_CODES.ErrCodeNoInternet).toBe(106);
+    expect(ENGINE_ERROR_CODES.ErrCodeCaptivePortal).toBe(107);
+    expect(getErrorI18nKey(106)).toBe('common:errors.network.noInternet');
+    expect(getErrorI18nKey(107)).toBe('common:errors.network.captivePortal');
+    expect(isNetworkError(106)).toBe(true);
+    expect(isNetworkError(107)).toBe(true);
+  });
+
+  it('engine 503 has its own "all lines" copy, not the cloud-API network-unreachable one', () => {
+    expect(getErrorI18nKey(503)).toBe('common:errors.vpn.serverUnreachable');
+    expect(getErrorI18nKey(503)).not.toBe(API_ERROR_CATALOG[ERROR_CODES.CLOUD_NETWORK_ERROR].key);
+  });
+
+  it('zh-CN copy matches the spec wording', () => {
+    const zh = BUNDLES['zh-CN'];
+    expect(resolveKey(zh, RECONNECT_REASON_CATALOG[101].key)).toBe('网络已断开，恢复后自动连接');
+    expect(resolveKey(zh, RECONNECT_REASON_CATALOG[106].key)).toBe('当前网络无法访问互联网，恢复后自动连接');
+    expect(resolveKey(zh, RECONNECT_REASON_CATALOG[107].key)).toBe('此 Wi-Fi 需要网页登录');
+    expect(resolveKey(zh, RECONNECT_REASON_CATALOG[503].key)).toBe('线路暂时无法连接，正在重试');
+    expect(resolveKey(zh, 'common:errors.vpn.serverUnreachable')).toBe('线路暂时都无法连接，请稍后重试');
   });
 });

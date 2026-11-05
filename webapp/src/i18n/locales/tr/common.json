@@ -16,7 +16,13 @@
     "disabled": "Devre Dışı",
     "clickToStop": "Bağlantıyı Kesmek İçin Tıkla",
     "reconnectingToServer": "Sunucuya yeniden bağlanıyor...",
-    "waitingForNetwork": "Ağ bekleniyor..."
+    "waitingForNetwork": "Ağ bekleniyor...",
+    "reconnectReason": {
+      "networkUnavailable": "Ağ bağlantısı kesildi. Geri geldiğinde otomatik olarak yeniden bağlanılacak.",
+      "noInternet": "Bu ağın internet erişimi yok. Geri geldiğinde otomatik olarak yeniden bağlanılacak.",
+      "captivePortal": "Bu Wi-Fi bir web sayfasında oturum açmayı gerektiriyor",
+      "serverUnreachable": "Hatta geçici olarak ulaşılamıyor, yeniden deneniyor"
+    }
   },
   "common": {
     "justNow": "Az önce",
@@ -73,7 +79,9 @@
       "repairDNS": "DNS onarımı başarısız",
       "repairRoute": "Rota onarımı başarısız",
       "repairPreFailed": "Ağ onarımı hazırlığı başarısız",
-      "unavailable": "Ağ bağlantısı yok. Cihazınızın ağını kontrol edin ve tekrar deneyin."
+      "unavailable": "Ağ bağlantısı yok. Cihazınızın ağını kontrol edin ve tekrar deneyin.",
+      "noInternet": "Bu ağın internet erişimi yok",
+      "captivePortal": "Bu Wi-Fi bir web sayfasında oturum açmayı gerektiriyor"
     },
     "server": {
       "unavailable": "Sunucu kullanılamaz, lütfen daha sonra tekrar deneyin",
@@ -124,7 +132,8 @@
       "startFailed": "Hizmet başlatılamadı, lütfen tekrar deneyin",
       "reconnectFailed": "Yeniden bağlanılamadı, lütfen tekrar deneyin",
       "timeout": "İşlem zaman aşımına uğradı, lütfen tekrar deneyin",
-      "allAddrsFailed": "Tüm sunucu adresleri başarısız, lütfen düğümü değiştirin"
+      "allAddrsFailed": "Tüm sunucu adresleri başarısız, lütfen düğümü değiştirin",
+      "serverUnreachable": "Şu anda hiçbir hatta ulaşılamıyor. Lütfen daha sonra tekrar deneyin."
     },
     "action": {
       "timeout": "İşlem zaman aşımına uğradı, lütfen tekrar deneyin",

@@ -16,7 +16,13 @@
     "disabled": "Disabled",
     "clickToStop": "Click to disconnect",
     "reconnectingToServer": "Reconnecting to server...",
-    "waitingForNetwork": "Waiting for network..."
+    "waitingForNetwork": "Waiting for network...",
+    "reconnectReason": {
+      "networkUnavailable": "Network disconnected. Will reconnect when it is back.",
+      "noInternet": "This network has no internet access. Will reconnect when it is back.",
+      "captivePortal": "This Wi-Fi requires signing in on a web page",
+      "serverUnreachable": "Line temporarily unreachable, retrying"
+    }
   },
   "common": {
     "justNow": "Just now",
@@ -73,7 +79,9 @@
       "repairDNS": "DNS repair failed",
       "repairRoute": "Route repair failed",
       "repairPreFailed": "Network repair preparation failed",
-      "unavailable": "No network connection. Check your device network and try again."
+      "unavailable": "No network connection. Check your device network and try again.",
+      "noInternet": "This network has no internet access",
+      "captivePortal": "This Wi-Fi requires signing in on a web page"
     },
     "server": {
       "unavailable": "Server unavailable, please try again later",
@@ -116,7 +124,8 @@
       "startFailed": "Failed to start service, please try again",
       "reconnectFailed": "Failed to reconnect, please try again",
       "timeout": "Operation timed out, please try again",
-      "allAddrsFailed": "All server addresses failed, please switch node"
+      "allAddrsFailed": "All server addresses failed, please switch node",
+      "serverUnreachable": "No line can be reached right now. Please try again later."
     },
     "auth": {
       "logoutFailed": "Logout failed, please try again",

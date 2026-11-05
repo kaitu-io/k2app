@@ -578,6 +578,50 @@ describe('Config Store', () => {
     });
   });
 
+  // ==================== buildConnectConfig failover fields ====================
+
+  describe('buildConnectConfig failover fields', () => {
+    it('buildConnectConfig writes fallbacks keyed by serverUrl', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const withFallbacks = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://a', fallbackUrls: ['k2v5://b'] });
+      expect(withFallbacks.fallbacks).toEqual({ 'k2v5://a': ['k2v5://b'] });
+      // The key must be a `via` the routes actually use — that is how the engine finds the group.
+      expect(withFallbacks.routes!.some((r) => r.via === 'k2v5://a')).toBe(true);
+
+      const without = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://a' });
+      expect('fallbacks' in without).toBe(false);
+      const empty = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://a', fallbackUrls: [] });
+      expect('fallbacks' in empty).toBe(false);
+    });
+
+    it('netcheck equals the brand list', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const cfg = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://a' });
+      expect(brandConfig.netcheck.length).toBeGreaterThan(0);
+      expect(cfg.netcheck).toEqual(brandConfig.netcheck);
+    });
+
+    it('buildConnectConfig uses brand direct DNS', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const cfg = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://a' });
+      if (brandConfig.directDns.length > 0) {
+        expect(cfg.dns?.direct).toEqual(brandConfig.directDns);
+      } else {
+        // Empty brand list = the engine's own defaults; nothing is sent.
+        expect(cfg.dns).toBeUndefined();
+      }
+    });
+  });
+
   // ==================== buildConnectConfig log level ====================
 
   describe('buildConnectConfig log level', () => {

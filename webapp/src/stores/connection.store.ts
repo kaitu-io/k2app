@@ -26,7 +26,7 @@ import { useConfigStore } from './config.store';
 import { useAppRoutesStore } from './app-routes.store';
 import { useVPNMachineStore, dispatch as vpnDispatch, type VPNState } from './vpn-machine.store';
 import { useAuthStore } from './auth.store';
-import { pickAutoTunnel } from '../utils/auto-tunnel-pick';
+import { pickAutoCandidates, pickAutoTunnel } from '../utils/auto-tunnel-pick';
 import { ERROR_CODES } from '../utils/errorCode';
 
 // Minimum connection duration to surface the post-disconnect feedback dialog.
@@ -114,7 +114,7 @@ export const AUTO_TUNNEL_DOMAIN = '__auto__';
  * Identity is by reference equality (use `isAutoSelection`). Field values
  * are inert and intentionally unusable: serverUrl is empty so the sentinel
  * can never be passed to `_k2.run('up')` by accident. The `connect()` path
- * resolves the sentinel into a concrete Tunnel via `pickAutoTunnel` before
+ * resolves the sentinel into a concrete Tunnel via `pickAutoCandidates` before
  * any call into the bridge.
  */
 export const AUTO_TUNNEL_SENTINEL: Readonly<Tunnel> = Object.freeze({
@@ -474,10 +474,15 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
 
     // Resolve Auto sentinel (manual mode + null selection) into a concrete Tunnel.
     let resolvedTunnel: Tunnel | null = selectedCloudTunnel;
+    // Auto only: tunnels on other machines the engine switches to when the
+    // primary fails (ClientConfig.fallbacks). Manual selection sends none.
+    let fallbackTunnels: Tunnel[] = [];
     if (serverMode === 'manual' && selectedCloudTunnel === null) {
       const cached = cacheStore.get<TunnelListResponse>('api:tunnels');
       const tunnelList = cached?.items ?? [];
-      resolvedTunnel = pickAutoTunnel(tunnelList, excludedCountries);
+      const [primary, ...rest] = pickAutoCandidates(tunnelList, excludedCountries);
+      resolvedTunnel = primary ?? null;
+      fallbackTunnels = rest;
       if (!resolvedTunnel) {
         // Distinguish "list genuinely empty" from "emptied by the user's
         // country filter" — the latter gets an actionable message (573).
@@ -493,7 +498,8 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
         return;
       }
       console.info('[Connection] auto-pick → ' + resolvedTunnel.domain
-        + ' (score=' + resolvedTunnel.recommendScore + ')');
+        + ' (score=' + resolvedTunnel.recommendScore + ')'
+        + ', fallbacks=[' + fallbackTunnels.map(t => t.domain).join(',') + ']');
       refreshTunnelsCacheAfterAutoPick();
     }
 
@@ -556,13 +562,27 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
 
     // Resolve server URL
     let serverUrl: string | undefined;
+    let fallbackUrls: string[] = [];
     if (serverMode === 'self_hosted') {
       serverUrl = useSelfHostedStore.getState().tunnel?.uri;
     } else if (serverMode === 'k2sub') {
       const { subsCountry } = get();
       serverUrl = await authService.buildSubsUrl(subsCountry);
     } else if (resolvedTunnel?.serverUrl) {
+      // Fallbacks start building before the primary is awaited (concurrent). A
+      // fallback that fails to build is dropped; it never fails the connect.
+      // Manual mode (no fallbacks) awaits only the primary, exactly as before.
+      const fallbackBuild = Promise.all(fallbackTunnels.map(t =>
+        authService.buildTunnelUrl(t.serverUrl as string).catch((err: unknown) => {
+          console.warn('[Connection] fallback ' + t.domain + ' URL build failed, dropped:', err);
+          return null;
+        })));
       serverUrl = await authService.buildTunnelUrl(resolvedTunnel.serverUrl);
+      if (fallbackTunnels.length > 0) {
+        // The engine accepts only k2v5:// fallbacks.
+        fallbackUrls = (await fallbackBuild)
+          .filter((u): u is string => typeof u === 'string' && u.startsWith('k2v5://'));
+      }
     }
     console.warn('[Connection] TRACE buildTunnelUrl done t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms)');
 
@@ -590,7 +610,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     // Build config with explicit params
     const { buildConnectConfig, resolvePreset, country: configCountry, alwaysOn } = useConfigStore.getState();
     const { forceDirect, forceProxy, forceDirectPaths, forceProxyPaths } = useAppRoutesStore.getState();
-    const config = buildConnectConfig({ serverUrl, forceDirect, forceProxy, forceDirectPaths, forceProxyPaths });
+    const config = buildConnectConfig({ serverUrl, forceDirect, forceProxy, forceDirectPaths, forceProxyPaths, fallbackUrls });
     const currentPreset = resolvePreset();
     console.debug('[Connection] connect: config built, preset=' + currentPreset
       + ', country=' + (configCountry ?? 'null')
@@ -644,7 +664,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
         if (resp.code === ERROR_CODES.RULE_BUNDLES_UNAVAILABLE && configCountry && configCountry !== 'cn') {
           console.warn('[Connection] connect: rule bundles unavailable for country='
             + configCountry + ' — retrying once with global routes');
-          const fallbackConfig = buildConnectConfig({ serverUrl, forceDirect, forceProxy, forceDirectPaths, forceProxyPaths, forceGlobalRoutes: true });
+          const fallbackConfig = buildConnectConfig({ serverUrl, forceDirect, forceProxy, forceDirectPaths, forceProxyPaths, fallbackUrls, forceGlobalRoutes: true });
           const retry = await window._k2.run('up', { config: fallbackConfig, alwaysOn });
           if (get().connectEpoch !== myEpoch) {
             console.warn('[Connection] connect: global-fallback up() returned after epoch change, discarding result code=' + retry.code);

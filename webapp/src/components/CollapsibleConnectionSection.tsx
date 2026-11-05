@@ -21,6 +21,7 @@ import { CompactConnectionButton } from './CompactConnectionButton';
 import { useLayout } from '../stores/layout.store';
 import type { ControlError } from '../services/vpn-types';
 import { getErrorDefaultText, getErrorI18nKey } from '../services/vpn-types';
+import { getReconnectReasonKey } from '../utils/errorCatalog';
 
 type ServiceState =
   | 'disconnected'
@@ -110,6 +111,8 @@ export function CollapsibleConnectionSection({
   const { connectionButtonCollapsed, toggleConnectionButtonCollapsed } = useLayout();
 
   const showError = error && connectionButtonCollapsed;
+  // While reconnecting, the engine's reason reads as "…reconnects when back", not as a failure.
+  const reconnectReasonKey = serviceState === 'reconnecting' ? getReconnectReasonKey(error?.code) : null;
 
   return (
     <Box
@@ -151,9 +154,11 @@ export function CollapsibleConnectionSection({
                 whiteSpace: 'nowrap',
               }}
             >
-              {error && t(getErrorI18nKey(error.code), {
-                defaultValue: getErrorDefaultText(error.code) ?? t('common:status.error'),
-              })}
+              {error && (reconnectReasonKey
+                ? t(reconnectReasonKey)
+                : t(getErrorI18nKey(error.code), {
+                  defaultValue: getErrorDefaultText(error.code) ?? t('common:status.error'),
+                }))}
             </Typography>
           </Stack>
         </InlineErrorBar>

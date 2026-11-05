@@ -50,6 +50,18 @@ export const KAITU_BRAND: WebappBrandConfig = {
     googleWebClientId: '125062807005-fqpjkq2pjjqdueen84q1kpp3rlkvq5sg.apps.googleusercontent.com',
     googleIosClientId: '125062807005-r08pi88vadprilgo5mr1oqndpinnkb0l.apps.googleusercontent.com',
   },
+  // Mainland-reachable vendor endpoints over plain HTTP. The two vendor targets at the
+  // end were verified from overseas on 2026-11-05 (200 "Microsoft Connect Test" / 204 0).
+  // Mirror sites are deliberately absent: over HTTP they 301 to https, which the engine
+  // reads as a captive portal. CN-egress verification of all five: pending.
+  netcheck: [
+    { url: 'http://connect.rom.miui.com/generate_204', status: 204 },
+    { url: 'http://connectivitycheck.platform.hicloud.com/generate_204', status: 204 },
+    { url: 'http://wifi.vivo.com.cn/generate_204', status: 204 },
+    { url: 'http://www.msftconnecttest.com/connecttest.txt', status: 200, body: 'Microsoft Connect Test' },
+    { url: 'http://www.qualcomm.cn/generate_204', status: 204 },
+  ],
+  directDns: [], // engine default (mainland resolvers) is right for this market
   theme: KAITU_THEME,
   features: {
     invite: true,

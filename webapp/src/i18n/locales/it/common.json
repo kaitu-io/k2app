@@ -16,7 +16,13 @@
     "disabled": "Disabilitato",
     "clickToStop": "Clicca per Disconnettere",
     "reconnectingToServer": "Riconnessione al server in corso...",
-    "waitingForNetwork": "In attesa di rete..."
+    "waitingForNetwork": "In attesa di rete...",
+    "reconnectReason": {
+      "networkUnavailable": "Rete disconnessa. La connessione riprenderà automaticamente al ritorno.",
+      "noInternet": "Questa rete non ha accesso a Internet. La connessione riprenderà automaticamente al ritorno.",
+      "captivePortal": "Questa rete Wi-Fi richiede l'accesso da una pagina web",
+      "serverUnreachable": "Linea temporaneamente irraggiungibile, nuovo tentativo in corso"
+    }
   },
   "common": {
     "justNow": "Proprio adesso",
@@ -73,7 +79,9 @@
       "repairDNS": "Riparazione DNS fallita",
       "repairRoute": "Riparazione percorso fallita",
       "repairPreFailed": "Preparazione riparazione rete fallita",
-      "unavailable": "Nessuna connessione di rete. Controlla la rete del tuo dispositivo e riprova."
+      "unavailable": "Nessuna connessione di rete. Controlla la rete del tuo dispositivo e riprova.",
+      "noInternet": "Questa rete non ha accesso a Internet",
+      "captivePortal": "Questa rete Wi-Fi richiede l'accesso da una pagina web"
     },
     "server": {
       "unavailable": "Server non disponibile, per favore riprova più tardi",
@@ -124,7 +132,8 @@
       "startFailed": "Impossibile avviare il servizio, per favore riprova",
       "reconnectFailed": "Impossibile riconnettersi, per favore riprova",
       "timeout": "Operazione scaduta, per favore riprova",
-      "allAddrsFailed": "Tutti gli indirizzi server falliti, per favore cambia nodo"
+      "allAddrsFailed": "Tutti gli indirizzi server falliti, per favore cambia nodo",
+      "serverUnreachable": "Al momento nessuna linea è raggiungibile. Riprova più tardi."
     },
     "action": {
       "timeout": "Operazione scaduta, per favore riprova",

@@ -16,7 +16,13 @@
     "disabled": "Désactivé",
     "clickToStop": "Cliquez pour déconnecter",
     "reconnectingToServer": "Reconnexion au serveur...",
-    "waitingForNetwork": "En attente du réseau..."
+    "waitingForNetwork": "En attente du réseau...",
+    "reconnectReason": {
+      "networkUnavailable": "Réseau déconnecté. Reconnexion automatique dès son retour.",
+      "noInternet": "Ce réseau n'a pas accès à Internet. Reconnexion automatique dès son retour.",
+      "captivePortal": "Ce Wi-Fi nécessite une connexion sur une page web",
+      "serverUnreachable": "Ligne temporairement injoignable, nouvelle tentative"
+    }
   },
   "common": {
     "justNow": "À l'instant",
@@ -73,7 +79,9 @@
       "repairDNS": "Échec de la réparation DNS",
       "repairRoute": "Échec de la réparation de l'itinéraire",
       "repairPreFailed": "Échec de la préparation de la réparation du réseau",
-      "unavailable": "Pas de connexion réseau. Vérifiez le réseau de votre appareil et réessayez."
+      "unavailable": "Pas de connexion réseau. Vérifiez le réseau de votre appareil et réessayez.",
+      "noInternet": "Ce réseau n'a pas accès à Internet",
+      "captivePortal": "Ce Wi-Fi nécessite une connexion sur une page web"
     },
     "server": {
       "unavailable": "Serveur indisponible, veuillez réessayer ultérieurement",
@@ -124,7 +132,8 @@
       "startFailed": "Échec du démarrage du service, veuillez réessayer",
       "reconnectFailed": "Échec de la reconnexion, veuillez réessayer",
       "timeout": "Délai d'attente de l'opération dépassé, veuillez réessayer",
-      "allAddrsFailed": "Toutes les adresses serveur ont échoué, veuillez changer de nœud"
+      "allAddrsFailed": "Toutes les adresses serveur ont échoué, veuillez changer de nœud",
+      "serverUnreachable": "Aucune ligne n'est joignable pour le moment. Réessayez plus tard."
     },
     "action": {
       "timeout": "Délai d'attente de l'opération dépassé, veuillez réessayer",

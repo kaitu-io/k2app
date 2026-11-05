@@ -16,7 +16,13 @@
     "disabled": "已停用",
     "clickToStop": "點擊斷開",
     "reconnectingToServer": "正在重連伺服器...",
-    "waitingForNetwork": "等待網絡連接..."
+    "waitingForNetwork": "等待網絡連接...",
+    "reconnectReason": {
+      "networkUnavailable": "網絡已中斷，恢復後自動連接",
+      "noInternet": "目前網絡無法連接互聯網，恢復後自動連接",
+      "captivePortal": "此 Wi-Fi 需要網頁登入",
+      "serverUnreachable": "線路暫時無法連接，正在重試"
+    }
   },
   "common": {
     "justNow": "啱啱",
@@ -73,7 +79,9 @@
       "repairDNS": "DNS 修復失敗",
       "repairRoute": "路由修復失敗",
       "repairPreFailed": "網絡修復準備失敗",
-      "unavailable": "網絡無法使用，請檢查裝置的網絡連線"
+      "unavailable": "網絡無法使用，請檢查裝置的網絡連線",
+      "noInternet": "目前網絡無法連接互聯網",
+      "captivePortal": "此 Wi-Fi 需要網頁登入"
     },
     "server": {
       "unavailable": "伺服器不可用，請稍後重試",
@@ -116,7 +124,8 @@
       "startFailed": "啟動服務失敗，請重試",
       "reconnectFailed": "重新連線失敗，請重試",
       "timeout": "操作逾時，請重試",
-      "allAddrsFailed": "所有伺服器位址均連線失敗，請更換節點"
+      "allAddrsFailed": "所有伺服器位址均連線失敗，請更換節點",
+      "serverUnreachable": "線路暫時都無法連接，請稍後再試"
     },
     "auth": {
       "logoutFailed": "登出失敗，請重試",

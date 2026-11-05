@@ -8,7 +8,26 @@ internal data class ParsedClientConfig(
     val dnsProxy: List<String>?
 )
 
+/** Why the engine is reconnecting, from the error on a `reconnecting` status. */
+internal enum class ReconnectReason { GENERIC, NETWORK_UNAVAILABLE, NO_INTERNET, CAPTIVE_PORTAL, SERVER_UNREACHABLE }
+
 internal object K2VpnServiceUtils {
+
+    /**
+     * Engine codes (k2/engine/error.go) carried on a reconnecting status while it
+     * holds the session: 101 offline, 106 no internet, 107 captive portal,
+     * 503 servers unreachable. No error / any other code → GENERIC.
+     */
+    fun reconnectReason(status: JSONObject): ReconnectReason {
+        val err = status.optJSONObject("error") ?: return ReconnectReason.GENERIC
+        return when (err.optInt("code", 0)) {
+            101 -> ReconnectReason.NETWORK_UNAVAILABLE
+            106 -> ReconnectReason.NO_INTERNET
+            107 -> ReconnectReason.CAPTIVE_PORTAL
+            503 -> ReconnectReason.SERVER_UNREACHABLE
+            else -> ReconnectReason.GENERIC
+        }
+    }
 
     /** Parse CIDR "10.0.0.2/24" → Pair("10.0.0.2", 24), null on failure. */
     fun parseCIDR(cidr: String): Pair<String, Int>? {
