@@ -153,6 +153,13 @@
     "manage": {
       "blockedHint": "Aktif bir otomatik yenileme aboneliğiniz var (aşağıda yönetin). Etkin olduğu sürece burada tekrar satın alamazsınız — bu çift faturalandırmayı önler.",
       "conflictAlert": "Zaten aktif bir aboneliğiniz var ve tekrar satın alamazsınız. Değişiklik yapmak için abonelik yönetim girişini kullanın."
+    },
+    "billingIssue": {
+      "title": "Ödeme başarısız oldu",
+      "body": "Apple ödeme yönteminizden tahsilat yapamadı. Ödeme yöntemini güncelleyin, üyeliğiniz otomatik olarak devam edecek.",
+      "trialBody": "Deneme süresi bitti ancak ilk tahsilat başarısız oldu. Üyeliği başlatmak için ödeme yöntemini güncelleyin.",
+      "update": "Ödeme yöntemini güncelle",
+      "appleElsewhere": "iPhone'unuzda Ayarlar → Apple Hesabı → Ödeme ve Gönderim bölümünden ödeme yönteminizi güncelleyin."
     }
   },
   "deviceInstall": {

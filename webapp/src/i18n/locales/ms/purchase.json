@@ -153,6 +153,13 @@
     "manage": {
       "blockedHint": "Anda mempunyai langganan pembaharuan automatik aktif (urus di bawah). Anda tidak boleh membeli lagi di sini semasa ia aktif — ini mencegah pengebilan berganda.",
       "conflictAlert": "Anda sudah mempunyai langganan aktif dan tidak boleh membeli lagi. Gunakan entri pengurusan langganan untuk membuat perubahan."
+    },
+    "billingIssue": {
+      "title": "Pembayaran gagal",
+      "body": "Apple tidak dapat mengenakan bayaran pada kaedah pembayaran anda. Kemas kini kaedah pembayaran dan keahlian akan disambung semula secara automatik.",
+      "trialBody": "Percubaan telah tamat, tetapi caj pertama gagal. Kemas kini kaedah pembayaran untuk mengaktifkan keahlian.",
+      "update": "Kemas kini kaedah pembayaran",
+      "appleElsewhere": "Pada iPhone anda, pergi ke Tetapan → Akaun Apple → Pembayaran & Penghantaran untuk mengemas kini kaedah pembayaran."
     }
   },
   "deviceInstall": {

@@ -40,6 +40,8 @@ import { useExclusionGuard, RouterExclusionDialog } from '../components/RouterEx
 import { RouterTakeoverBanner } from '../components/RouterTakeoverBanner';
 import HomeTrialCard from '../components/ios/HomeTrialCard';
 import { homeTrialState } from '../components/ios/home-trial-state';
+import BillingIssueCard from '../components/BillingIssueCard';
+import { billingIssueSub } from '../utils/billing-issue';
 import { getCurrentAppConfig } from '../config/apps';
 import { CollapsibleConnectionSection } from '../components/CollapsibleConnectionSection';
 import RoutingModeSelector, { useRoutingSummary } from '../components/RoutingModeSelector';
@@ -242,8 +244,11 @@ export default function Dashboard() {
   );
   const upsellLocked = isAuthenticated && serverMode === 'manual' && cloudAccessRevoked
     && !hasTunnelSelected && purchaseSurfaceAvailable();
+  const billingIssue = purchaseSurfaceAvailable() ? billingIssueSub(user?.subscriptions) : undefined;
   const upsellHint = upsellLocked
-    ? t(neverSubscribed ? 'dashboard:dashboard.tapToSubscribeHint' : 'dashboard:dashboard.tapToRenewHint')
+    ? billingIssue
+      ? t('dashboard:dashboard.billingIssueHint')
+      : t(neverSubscribed ? 'dashboard:dashboard.tapToSubscribeHint' : 'dashboard:dashboard.tapToRenewHint')
     : undefined;
 
   // Stable onSelect for CloudTunnelList — Auto row → clearCloudSelection, concrete → selectCloudTunnel
@@ -456,6 +461,13 @@ export default function Dashboard() {
 
       {/* 路由器接管横幅:本机未连接但流量已被 k2r 网关保护——消除「未保护」误读 */}
       <RouterTakeoverBanner />
+
+      {/* 订阅扣款失败：提示更新付款方式 */}
+      {billingIssue && (
+        <Box sx={{ px: 2, pt: 1 }}>
+          <BillingIssueCard sub={billingIssue} compact />
+        </Box>
+      )}
 
       {/* iOS 试用中且已关自动续订：到期前提醒，入口走内购页 */}
       {trialState.kind === 'renewOff' && (

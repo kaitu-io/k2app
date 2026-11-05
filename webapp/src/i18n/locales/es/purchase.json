@@ -153,6 +153,13 @@
     "manage": {
       "blockedHint": "Tienes una suscripción activa de renovación automática (géstionala de abajo). No puedes comprar de nuevo aquí mientras esté activa — esto evita doble facturación.",
       "conflictAlert": "Ya tienes una suscripción activa y no puedes comprar de nuevo. Usa la entrada de gestión de suscripción para hacer cambios."
+    },
+    "billingIssue": {
+      "title": "El pago no se completó",
+      "body": "Apple no pudo cobrar tu método de pago. Actualízalo y tu membresía se reanudará automáticamente.",
+      "trialBody": "La prueba ha terminado, pero el primer cobro no se completó. Actualiza tu método de pago para activar la membresía.",
+      "update": "Actualizar método de pago",
+      "appleElsewhere": "En tu iPhone, ve a Ajustes → Cuenta de Apple → Pago y envío para actualizar tu método de pago."
     }
   },
   "deviceInstall": {

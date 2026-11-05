@@ -28,6 +28,7 @@ export const PAYWALL_SOURCES = [
   'account_expired',
   'nav',
   'trial_card',
+  'billing_issue',
   'direct',
 ] as const;
 export type PaywallSource = typeof PAYWALL_SOURCES[number];

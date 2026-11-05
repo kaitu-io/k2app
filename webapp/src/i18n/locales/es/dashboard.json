@@ -160,7 +160,8 @@
       "viewPlans": "Ver Planes"
     },
     "trialRenewOff": "Días de prueba restantes: {{days}}. Tras el {{date}} el servicio se detendrá. Activa la renovación automática para seguir usándolo. Tras el cobro puedes desactivar la renovación automática en el App Store cuando quieras y seguir usando el periodo pagado.",
-    "trialContinue": "Seguir usando"
+    "trialContinue": "Seguir usando",
+    "billingIssueHint": "El pago no se completó. Actualiza tu método de pago para conectarte"
   },
   "appBypass": {
     "v2": {

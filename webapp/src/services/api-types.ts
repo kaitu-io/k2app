@@ -430,6 +430,7 @@ export interface DataSubscription {
   manage: ManageSurface;
   isTrial: boolean; // Apple 免费试用链且尚未转付费（Stripe / 非试用恒 false）
   trialEndsAt: number; // 试用结束 unix 秒；非试用为 0
+  billingIssue?: boolean; // 扣款失败（Apple grace / billing retry，Stripe past_due）；老服务端缺省 = false
 }
 
 export interface DataUser {

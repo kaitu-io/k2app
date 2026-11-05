@@ -160,7 +160,8 @@
       "viewPlans": "了解会员"
     },
     "trialRenewOff": "试用剩 {{days}} 天，{{date}} 结束后将停止服务，开启自动续订即可继续使用。扣费后也可随时在 App Store 关闭自动续订，已付期间照常使用。",
-    "trialContinue": "继续使用"
+    "trialContinue": "继续使用",
+    "billingIssueHint": "付款未成功，更新付款方式后即可连接"
   },
   "appBypass": {
     "v2": {

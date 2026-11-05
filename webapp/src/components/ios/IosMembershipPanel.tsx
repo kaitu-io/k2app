@@ -29,6 +29,7 @@ import { PAYWALL_SOURCES } from '../../services/funnel-events';
 import MembershipBenefits from '../MembershipBenefits';
 import RenewalStatusCard from './RenewalStatusCard';
 import TrialStatusCard from './TrialStatusCard';
+import BillingIssueCard from '../BillingIssueCard';
 import InviteRewardCard from './InviteRewardCard';
 import MembershipActions from './MembershipActions';
 import ConsumptionConsentSheet from './ConsumptionConsentSheet';
@@ -117,8 +118,10 @@ export default function IosMembershipPanel({ mode, activeSub }: IosMembershipPan
           {t('purchase:purchase.iap.membershipTitle')}
         </Typography>
 
-        {/* 试用中：试用卡；否则续订状态 + 到期倒计时 */}
-        {isTrial ? (
+        {/* 扣款失败：付款失败卡取代试用 / 续订卡；试用中：试用卡；否则续订状态 + 到期倒计时 */}
+        {activeSub?.billingIssue ? (
+          <BillingIssueCard sub={activeSub} />
+        ) : isTrial ? (
           <TrialStatusCard
             trialEndsAtSec={activeSub?.trialEndsAt ?? 0}
             product={trialProduct}

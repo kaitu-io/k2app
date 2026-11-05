@@ -153,6 +153,13 @@
     "manage": {
       "blockedHint": "Sie haben ein aktives Auto-Renew-Abonnement (verwalten Sie es unten). Sie können hier nicht erneut kaufen, während es aktiv ist - dies verhindert Doppelbelastung.",
       "conflictAlert": "Sie haben bereits ein aktives Abonnement und können nicht erneut kaufen. Verwenden Sie den Abonnementverwaltungseintrag, um Änderungen vorzunehmen."
+    },
+    "billingIssue": {
+      "title": "Zahlung fehlgeschlagen",
+      "body": "Apple konnte die Zahlung nicht abbuchen. Aktualisiere deine Zahlungsmethode, dann wird die Mitgliedschaft automatisch fortgesetzt.",
+      "trialBody": "Die Testphase ist beendet, aber die erste Abbuchung ist fehlgeschlagen. Aktualisiere deine Zahlungsmethode, um die Mitgliedschaft zu starten.",
+      "update": "Zahlungsmethode aktualisieren",
+      "appleElsewhere": "Aktualisiere deine Zahlungsmethode auf dem iPhone unter Einstellungen → Apple-Account → Zahlung & Versand."
     }
   },
   "deviceInstall": {

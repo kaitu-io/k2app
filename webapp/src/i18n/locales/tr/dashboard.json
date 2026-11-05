@@ -160,7 +160,8 @@
       "viewPlans": "Planları Görüntüle"
     },
     "trialRenewOff": "Kalan deneme günü: {{days}}. {{date}} tarihinden sonra hizmet duracak. Kullanmaya devam etmek için otomatik yenilemeyi açın. Ücret alındıktan sonra da App Store'da otomatik yenilemeyi istediğiniz zaman kapatabilir, ödediğiniz süre boyunca kullanmaya devam edebilirsiniz.",
-    "trialContinue": "Kullanmaya devam et"
+    "trialContinue": "Kullanmaya devam et",
+    "billingIssueHint": "Ödeme başarısız oldu. Bağlanmak için ödeme yöntemini güncelleyin"
   },
   "appBypass": {
     "v2": {

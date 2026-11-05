@@ -153,6 +153,13 @@
     "manage": {
       "blockedHint": "您已有生效中的自動續訂訂閱（見下方管理入口），訂閱期間不可重複購買，以免重複扣費。",
       "conflictAlert": "您已有生效中的訂閱，無法重複購買。請通過訂閱管理入口變更方案。"
+    },
+    "billingIssue": {
+      "title": "付款未成功",
+      "body": "Apple 未能扣款。更新付款方式後，會員資格會自動恢復。",
+      "trialBody": "試用已結束，但首期扣款未成功。更新付款方式後即可開通會員。",
+      "update": "更新付款方式",
+      "appleElsewhere": "請在 iPhone 的「設定」→「Apple 帳戶」→「付款與送貨」中更新付款方式。"
     }
   },
   "deviceInstall": {

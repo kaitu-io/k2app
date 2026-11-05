@@ -160,7 +160,8 @@
       "viewPlans": "Pläne anzeigen"
     },
     "trialRenewOff": "Verbleibende Testtage: {{days}}. Nach dem {{date}} wird der Dienst eingestellt. Aktiviere die automatische Verlängerung, um ihn weiter zu nutzen. Du kannst die automatische Verlängerung nach der Abbuchung jederzeit im App Store ausschalten und den bezahlten Zeitraum weiter nutzen.",
-    "trialContinue": "Weiter nutzen"
+    "trialContinue": "Weiter nutzen",
+    "billingIssueHint": "Zahlung fehlgeschlagen – aktualisiere deine Zahlungsmethode, um dich zu verbinden"
   },
   "appBypass": {
     "v2": {

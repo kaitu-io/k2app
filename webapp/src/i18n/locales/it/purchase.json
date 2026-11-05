@@ -153,6 +153,13 @@
     "manage": {
       "blockedHint": "Hai un abbonamento attivo con rinnovo automatico (gestiscilo sotto). Non puoi acquistare di nuovo qui mentre è attivo — questo previene la doppia fatturazione.",
       "conflictAlert": "Hai già un abbonamento attivo e non puoi acquistare di nuovo. Usa la voce di gestione dell'abbonamento per apportare modifiche."
+    },
+    "billingIssue": {
+      "title": "Pagamento non riuscito",
+      "body": "Apple non è riuscita ad addebitare il tuo metodo di pagamento. Aggiornalo e l'abbonamento riprenderà automaticamente.",
+      "trialBody": "La prova è terminata, ma il primo addebito non è andato a buon fine. Aggiorna il metodo di pagamento per attivare l'abbonamento.",
+      "update": "Aggiorna metodo di pagamento",
+      "appleElsewhere": "Sul tuo iPhone, vai in Impostazioni → Account Apple → Pagamento e spedizione per aggiornare il metodo di pagamento."
     }
   },
   "deviceInstall": {
