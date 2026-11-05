@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kaitu-io/kuic"
+	smux "github.com/xtaci/smux/v2"
 )
 
 const echoNonceLen = 8
@@ -140,6 +141,14 @@ func IsEchoUnsupported(err error) bool {
 	// deadline error reports Timeout() through the net.Error interface).
 	var ne net.Error
 	if errors.As(err, &ne) && ne.Timeout() {
+		return false
+	}
+	// smux (the TCP-WS leg) answers an expired stream read/write deadline
+	// with smux.ErrTimeout — a bare errors.New("timeout") carrying neither
+	// sentinel above nor a Timeout() method. Missing it made a dead tcpws data
+	// path read as "pre-echo server": no strike, no re-race, ~70s to notice
+	// (2026-11-05 field logs). TestTCPWSEcho_RealSmuxReadTimeoutIsFailure.
+	if errors.Is(err, smux.ErrTimeout) {
 		return false
 	}
 	// Stream reset or unexpected EOF from server = likely old server.
