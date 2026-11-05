@@ -600,8 +600,11 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
         }
     }
 
+    private val netSignalTracker = NetSignalTracker()
+
     private fun registerNetworkCallback(networkAtStart: Network?) {
         val cm = getSystemService(ConnectivityManager::class.java) ?: return
+        netSignalTracker.reset()
         val request = NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .build()
@@ -645,10 +648,13 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
                         val caps = cm.getNetworkCapabilities(network)
                         val lp = cm.getLinkProperties(network)
                         val event = NetEvent().apply {
-                            // Use "changed" not "available" — Android onAvailable means
-                            // "a network joined the set", not "network recovered from nothing".
-                            // WiFi→cellular handoff fires onAvailable(cellular) without onLost(WiFi).
-                            signal = "changed"
+                            // Android onAvailable means "a network joined the set", so it is
+                            // normally "changed" (WiFi→cellular handoff fires onAvailable(cellular)
+                            // without onLost(WiFi)). But after a full loss (onLost sent
+                            // "unavailable") the engine's netCoordinator ignores "changed" while
+                            // it considers the network down, and nothing else sends "available" —
+                            // so the first onAvailable after "unavailable" must be "available".
+                            signal = netSignalTracker.signalForAvailable()
                             interfaceName = lp?.interfaceName ?: ""
                             isWifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
                             isCellular = caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
@@ -675,6 +681,7 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector, app
                     // onLost fires per-network — if WiFi lost but cellular up, don't say unavailable.
                     val activeNet = cm.activeNetwork
                     val signal = if (activeNet == null) "unavailable" else "changed"
+                    netSignalTracker.onLostSignal(signal)
                     val event = NetEvent().apply {
                         this.signal = signal
                         source = "connectivity"
