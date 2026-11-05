@@ -76,6 +76,9 @@ type Engine struct {
 	directTrack  *trackingDialer
 	reRaceChan   chan *outboundTransport
 	reRaceCancel context.CancelFunc
+	// replaceLoopIdle (test-only, nil in production) is called each time
+	// outboundReplaceLoop is about to block waiting for its next event.
+	replaceLoopIdle func()
 
 	// netcheck actively probes cfg.Client.Netcheck targets outside the tunnel
 	// (netChecker.run); netcheckTargets labels its results in DIAG: netcheck.
@@ -604,6 +607,7 @@ func (e *Engine) Start(cfg Config) error {
 	hm := newHealthMonitor(primaryOT, allOTs, tunnel, cfg.HealthCallback, func() { e.onHealthCritical() }, time.Now())
 	hm.mobilePowerSaving = cfg.MobilePowerSaving
 	e.wireHealthNetUp(hm)
+	e.wireHealthRecovered(hm)
 	hm.start()
 	e.health = hm
 
@@ -2152,6 +2156,9 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 
 	for {
 		retries.arm()
+		if e.replaceLoopIdle != nil {
+			e.replaceLoopIdle() // test hook: the loop is about to block
+		}
 		var wake <-chan struct{}
 		if len(retries.pending) > 0 {
 			wake = e.holdWake // a network event retries every pending outbound now
@@ -2194,12 +2201,10 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 		}
 
 		if _, ok := retries.pending[target]; ok {
-			// Already on the no-candidates schedule: a fresh echo signal is
-			// one more reason to try now.
-			if !e.retryOnce(ctx, retries, target, "echo-signal", "echo-consecutive-fail") {
-				return
-			}
-			e.setHold(ctx, retries.hold())
+			// On the retry schedule: only its timer and network events
+			// (holdWake) attempt it, so the 5/10/30s backoff holds. An echo
+			// signal would bypass it — with failing traffic the probe can
+			// signal every ~16s of run age (review C).
 			continue
 		}
 
@@ -2306,6 +2311,19 @@ func (e *Engine) phaseA(ctx context.Context, target *outboundTransport, dd wire.
 		e.ClearWireError()
 	}
 	return nil, false
+}
+
+// wireHealthRecovered installs hm's recovery callback: when a target's node
+// answers again (an answered user dial ends its failure run, or an echo
+// succeeds) its Phase-A failure streak is reset. Phase-A failures from an
+// earlier outage must not count toward the next one — otherwise two
+// separate 20s refusals in one session reach Phase B (review A ruling).
+func (e *Engine) wireHealthRecovered(hm *healthMonitor) {
+	hm.targetRecovered = func(ot *outboundTransport) {
+		e.mu.Lock()
+		ot.reRaceFailStreak = 0
+		e.mu.Unlock()
+	}
 }
 
 // wireHealthNetUp installs hm's network-up gate (healthMonitor.netUp) on the
@@ -2535,12 +2553,14 @@ func (e *Engine) replaceOutboundServer(
 	// misconfigured node must not end the session), but if every candidate
 	// fails it is the true cause, not "server unreachable".
 	var userAction *EngineError
-	// allCodeLess: the current node AND every candidate tried so far
-	// answered the code-less legacy reject — the nodes are fine, Center is
-	// unreachable from them. Exhausting the candidates then must not fail
-	// the engine: it goes on the no-candidates retry schedule (reconnecting
-	// 503) and recovers when auth works again (review N2 ruling).
-	allCodeLess := isCodeLessReject(lastWireErr)
+	// allCodeLess: every candidate tried answered the code-less legacy
+	// reject — the candidates are fine, Center is unreachable from them.
+	// The current node's own error does not matter (it may simply be dead).
+	// Exhausting the candidates then must not fail the engine: it goes on
+	// the retry schedule (reconnecting 503), whose ticks re-run Phase A and
+	// then Phase B, so it recovers on the current node or a candidate once
+	// auth works again (review N2 / B rulings).
+	allCodeLess := true
 	tried := 0
 
 	for {
@@ -2557,10 +2577,8 @@ func (e *Engine) replaceOutboundServer(
 			}
 			if allCodeLess && tried > 0 {
 				// The candidates were excluded for a Center outage, not for
-				// being dead: forget the exclusions for the next round.
-				if r, ok := provider.(interface{ Reset() }); ok {
-					r.Reset()
-				}
+				// being dead; retryOnce Resets the provider before its next
+				// Phase B.
 				return fmt.Errorf("%w: every node rejected without an auth verdict (Center unreachable?): %w", ErrNoCandidates, err)
 			}
 			return err

@@ -933,3 +933,207 @@ func TestClearWireError_NotWhenDisconnected(t *testing.T) {
 		t.Fatalf("control: connected engine kept %v", le)
 	}
 }
+
+// --- fix round 3 ------------------------------------------------------------
+
+// N2 widened + B: the current node is dead (transport error, NOT code-less)
+// and every candidate answers code-less (Center outage). No fail, no
+// disconnect, reconnecting 503; the retry ticks re-run Phase B, and once
+// Center answers again the client fails over to a candidate.
+func TestRetry_DeadNodeCodeLessCandidatesThenCenterRecovers(t *testing.T) {
+	hs := newFoHarness(t, foOpts{
+		fallbacks: map[string][]string{foURLA: {foURLB, foURLC}},
+		net:       []checkResult{checkMatched},
+	})
+	// a: dead (connection refused). b, c: Center unreachable.
+	hs.servers.mu.Lock()
+	hs.servers.setupErrs["b.example"] = codeLessReject()
+	hs.servers.setupErrs["c.example"] = codeLessReject()
+	hs.servers.mu.Unlock()
+
+	hs.escalate()
+	hs.waitStatus("reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
+	tm := hs.nextTimer()
+	if s, le := hs.engineState(); s != StateConnected || le != nil {
+		t.Fatalf("engine = %s / %v, want connected (a Center outage must not end the session)", s, le)
+	}
+
+	// A wait tick while Center is still down: Phase A on a, then Phase B
+	// over the (Reset) candidates — still code-less → stays scheduled.
+	tm.fire()
+	tm = hs.nextTimer()
+	hs.servers.mu.Lock()
+	setupsB := hs.servers.setups["b.example"]
+	hs.servers.mu.Unlock()
+	if setupsB != 2 {
+		t.Fatalf("setups on b after one wait tick = %d, want 2 (escalate + the tick's Phase B)", setupsB)
+	}
+	if s, _ := hs.engineState(); s != StateConnected || hs.h.sawState(StateDisconnected) || hs.h.sawCode(ErrCodeAuthRejected) {
+		t.Fatalf("engine left connected / showed 401 during the outage")
+	}
+
+	// Center recovers: b admits. The next tick fails over (a stays dead).
+	hs.servers.mu.Lock()
+	delete(hs.servers.setupErrs, "b.example")
+	hs.servers.mu.Unlock()
+	hs.servers.setAlive("b.example", true)
+	tm.fire()
+	eventually(t, "failed over to b on a retry tick", func() bool { return hs.targetURL() == foURLB })
+	hs.waitStatus("connected, no hold", func(s Status) bool { return s.State == StateConnected && s.Error == nil })
+	if hs.h.fatalCount() != 0 {
+		t.Fatalf("OnOutboundFatal = %d", hs.h.fatalCount())
+	}
+}
+
+// B: the target entered the schedule for a Center outage while its node was
+// alive (everything code-less); then the node dies. Once Center is back the
+// retry tick must leave the dead node for a live candidate rather than race
+// it forever.
+func TestRetry_CodeLessScheduleNodeDiesThenFailsOver(t *testing.T) {
+	hs := newFoHarness(t, foOpts{
+		fallbacks: map[string][]string{foURLA: {foURLB}},
+		net:       []checkResult{checkMatched},
+	})
+	var aState atomic.Int32 // 0 code-less, 1 dead
+	raceTransportFn = func(ctx context.Context, cfg wire.Config, _ string, _ wire.DirectDialer, _ *wire.CookieJar) (*wire.RaceResult, error) {
+		hs.servers.mu.Lock()
+		hs.servers.races[cfg.Host]++
+		hs.servers.mu.Unlock()
+		if aState.Load() == 0 {
+			return nil, fmt.Errorf("transport race: %w", codeLessReject())
+		}
+		return nil, errors.New("transport race: dial a.example: connection refused")
+	}
+	hs.servers.mu.Lock()
+	hs.servers.setupErrs["b.example"] = codeLessReject()
+	hs.servers.mu.Unlock()
+
+	hs.escalate()
+	hs.waitStatus("reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
+	tm := hs.nextTimer()
+
+	aState.Store(1) // the node dies; Center still down
+	tm.fire()
+	tm = hs.nextTimer()
+	if hs.targetURL() != foURLA {
+		t.Fatalf("target moved to %s while every candidate is code-less", hs.targetURL())
+	}
+
+	hs.servers.mu.Lock()
+	delete(hs.servers.setupErrs, "b.example")
+	hs.servers.mu.Unlock()
+	hs.servers.setAlive("b.example", true) // Center back
+	tm.fire()
+	eventually(t, "left the dead node for b", func() bool { return hs.targetURL() == foURLB })
+	if s, le := hs.engineState(); s != StateConnected || le != nil {
+		t.Fatalf("engine = %s / %v after the failover", s, le)
+	}
+}
+
+// Review A: the target's Phase-A failure streak decays when its node is
+// seen answering again — an answered user dial ending the failure run, or a
+// successful echo — but not on a Reset.
+func TestEchoProbe_RecoveryResetsReRaceStreak(t *testing.T) {
+	ot, d := newDeadNodeTransport("t-recover")
+	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
+	e := New()
+	e.wireHealthRecovered(hm)
+	streak := func() int {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		return ot.reRaceFailStreak
+	}
+	set := func(n int) {
+		e.mu.Lock()
+		ot.reRaceFailStreak = n
+		e.mu.Unlock()
+	}
+	st := &echoLoopState{}
+
+	t.Run("answered dial ends the run", func(t *testing.T) {
+		userDial(ot)
+		hm.probeOnce(ot, st, time.Now()) // sees the run
+		set(1)
+		d.fail.Store(false)
+		userDial(ot) // the node answers
+		d.fail.Store(true)
+		hm.probeOnce(ot, st, time.Now())
+		if streak() != 0 {
+			t.Fatalf("streak = %d after the node answered, want 0", streak())
+		}
+	})
+	t.Run("Reset is not recovery", func(t *testing.T) {
+		userDial(ot)
+		hm.probeOnce(ot, st, time.Now())
+		set(1)
+		ot.tm.Reset()
+		hm.probeOnce(ot, st, time.Now())
+		if streak() != 1 {
+			t.Fatalf("streak = %d after a Reset, want 1 kept", streak())
+		}
+	})
+	t.Run("echo answered", func(t *testing.T) {
+		set(1)
+		eo := &echoStubDialer{} // nil probe fn → echo OK
+		ot.tm.SetPrimary(eo, "quic-443")
+		hm.probeOnce(ot, st, time.Now())
+		if streak() != 0 {
+			t.Fatalf("streak = %d after an answered echo, want 0", streak())
+		}
+	})
+}
+
+// Review D: strikes frozen through a failure run's quiet ticks are dropped
+// when the run ends, so one echo failure on the fresh connection that
+// follows cannot re-race on its own.
+func TestEchoProbe_FrozenStrikesDroppedWhenRunEnds(t *testing.T) {
+	ot, d := newDeadNodeTransport("t-frozen")
+	hm, ch := newHMForEcho(t, []*outboundTransport{ot})
+	clk := useFakeClock(hm, ot)
+	st := &echoLoopState{}
+	for i := 0; i < echoReraceThreshold-1; i++ {
+		userDial(ot)
+		clk.advance(time.Second)
+		hm.probeOnce(ot, st, time.Now())
+	}
+	if st.strikes != echoReraceThreshold-1 {
+		t.Fatalf("precondition: strikes=%d", st.strikes)
+	}
+	// The node answers (run over) and the next probe reaches a fresh
+	// connection whose echo fails once.
+	d.fail.Store(false)
+	userDial(ot)
+	eo := &echoStubDialer{}
+	eo.fn = func(context.Context) error { return context.DeadlineExceeded }
+	ot.tm.SetPrimary(eo, "quic-443")
+	hm.probeOnce(ot, st, time.Now())
+	if st.strikes != 1 || reraced(ch) {
+		t.Fatalf("strikes=%d rerace=%v: frozen strikes leaked into the echo path", st.strikes, reraced(ch))
+	}
+}
+
+// Review E: a Phase-B swap installs a TransportManager whose failure seq
+// restarts at 0; its first failure must be fresh to the probe even when the
+// old seq happened to be 1.
+func TestEchoProbe_SwapRestartsDialFailureBookkeeping(t *testing.T) {
+	ot, _ := newDeadNodeTransport("t-swap")
+	hm, _ := newHMForEcho(t, []*outboundTransport{ot})
+	clk := useFakeClock(hm, ot)
+	st := &echoLoopState{}
+	userDial(ot) // old TM: seq 1
+	clk.advance(time.Second)
+	hm.probeOnce(ot, st, time.Now())
+	if st.strikes != 1 {
+		t.Fatalf("precondition: strikes=%d", st.strikes)
+	}
+	// Phase B swaps in a new TM (dead too); its first failure is seq 1.
+	nt, _ := newDeadNodeTransport("t-swap-new")
+	nt.tm.SetConnFailClock(clk.now)
+	ot.tm = nt.tm
+	userDial(ot)
+	clk.advance(time.Second)
+	hm.probeOnce(ot, st, time.Now())
+	if st.connFailSeen != 1 || st.strikes != 2 {
+		t.Fatalf("after the swap: seen=%d strikes=%d, want the new TM's failure counted (seen 1, strikes 2)", st.connFailSeen, st.strikes)
+	}
+}

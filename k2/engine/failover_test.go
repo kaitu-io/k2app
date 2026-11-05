@@ -238,6 +238,7 @@ type foHarness struct {
 	provider *countingProvider
 	static   *staticProvider
 	timers   chan foTimer
+	clock    *foClock // behind e.holdNow
 	cancel   context.CancelFunc
 	done     chan struct{}
 }
@@ -246,6 +247,7 @@ type foOpts struct {
 	fallbacks map[string][]string
 	shell     OutboundProvider
 	net       []checkResult
+	idle      func() // e.replaceLoopIdle, installed before the loop starts
 }
 
 func hostOf(u string) string {
@@ -356,11 +358,12 @@ func newFoHarness(t *testing.T, o foOpts) *foHarness {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	e.reRaceCancel = cancel
+	e.replaceLoopIdle = o.idle
 	e.mu.Unlock()
 
 	hs := &foHarness{
 		t: t, e: e, target: target, h: h, net: fnet, servers: servers,
-		provider: provider, static: static, timers: timers,
+		provider: provider, static: static, timers: timers, clock: clock,
 		cancel: cancel, done: make(chan struct{}),
 	}
 	go func() {
@@ -1227,17 +1230,34 @@ func TestReplaceLoop_NoCandidatesDoesNotBlockOtherOutbounds(t *testing.T) {
 	})
 }
 
-// TestReplaceLoop_NoCandidatesEchoSignalRetriesNow: a fresh echo signal for a
-// pending outbound triggers an immediate attempt, no timer needed.
-func TestReplaceLoop_NoCandidatesEchoSignalRetriesNow(t *testing.T) {
+// TestReplaceLoop_NoCandidatesEchoSignalIgnored (review C ruling): an echo
+// signal for a pending outbound does NOT attempt it — only the retry timer
+// and network events do, so the 5/10/30s backoff holds even when failing
+// traffic keeps the probe signalling.
+func TestReplaceLoop_NoCandidatesEchoSignalIgnored(t *testing.T) {
 	hs := newFoHarness(t, foOpts{net: []checkResult{checkMatched}})
 	hs.escalate()
 	hs.waitStatus("reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
-	hs.nextTimer() // armed, never fired
+	tm := hs.nextTimer() // armed, not fired yet
 
 	hs.servers.setAlive("a.example", true)
-	hs.signal()
-	hs.waitStatus("connected via the echo-signal attempt", func(s Status) bool {
+	before := hs.servers.raceCount("a.example")
+	netBefore := hs.net.callCount()
+	for i := 0; i < 5; i++ {
+		hs.signal()
+	}
+	time.Sleep(50 * time.Millisecond)
+	if n := hs.servers.raceCount("a.example"); n != before {
+		t.Fatalf("echo signals ran %d Phase-A on a pending target, want 0", n-before)
+	}
+	if n := hs.net.callCount(); n != netBefore {
+		t.Fatalf("echo signals ran %d netchecks on a pending target, want 0", n-netBefore)
+	}
+	if gs := hs.e.GetStatus(); !isReconnectingCode(ErrCodeServerUnreachable)(gs) {
+		t.Fatalf("status = %+v, want still reconnecting/503", gs)
+	}
+	tm.fire()
+	hs.waitStatus("connected via the scheduled retry", func(s Status) bool {
 		return s.State == StateConnected && s.Error == nil
 	})
 }

@@ -316,15 +316,19 @@ func (r *retrySet) all() []*outboundTransport {
 
 // retryOnce is one scheduled attempt for a no-candidates target: re-judge the
 // network (so the hold shows the network's reason when it is the network
-// that is down), then one Phase-A. Success removes the target (streak reset
-// by phaseA; a queued echo signal for it is dropped); failure advances its
-// backoff (5s→10s→30s→30s…). A 401/402 fails the engine. Returns false when
+// that is down), then one Phase-A and — when that fails on a working
+// network — one Phase B with a Reset provider (retryPhaseB). Success removes
+// the target (streak reset by phaseA / the swap; a queued echo signal for it
+// is dropped); failure advances its backoff (5s→10s→30s→30s…). A 401/402/403
+// fails the engine. Echo signals never trigger it (outboundReplaceLoop
+// drops them for pending targets). Returns false when
 // the loop must exit. The caller syncs the shown hold afterwards.
 func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTransport, trigger, reason string) bool {
 	e.mu.Lock()
 	connected := e.state == StateConnected
 	dd := e.directDialer
 	name := target.name
+	provider := e.outboundProvider
 	e.mu.Unlock()
 	if !connected {
 		// engine.state leaves connected only via Stop/fail, which end the
@@ -349,6 +353,26 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 	if e.failIfUserAction(target, raceErr) {
 		return false
 	}
+	if !v.blocksFailover() && provider != nil {
+		// The current node still fails on a working network: try the
+		// candidates again (review B ruling) — a target that entered the
+		// schedule for a Center outage must not sit on a node that died
+		// since, and a manual-mode target gets ErrNoCandidates at once. The
+		// provider is Reset first: earlier exclusions may have been the
+		// outage's, not the nodes'. Offline never gets here (hold, no
+		// candidates burnt).
+		if rs, ok := provider.(interface{ Reset() }); ok {
+			rs.Reset()
+		}
+		switch e.retryPhaseB(ctx, target, raceErr, dd, provider) {
+		case escExit:
+			return false
+		case escDone:
+			delete(r.pending, target)
+			e.dropQueuedSignal(target)
+			return true
+		}
+	}
 	r.reason = v.holdError()
 	if r.reason == nil {
 		r.reason = noCandidatesError(name)
@@ -362,6 +386,32 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 	}
 	r.schedule(target, next)
 	return true
+}
+
+// retryPhaseB is retryOnce's Phase B: escDone after a swap, escNoCandidates
+// to stay on the schedule (manual mode, every candidate code-less, or the
+// network died meanwhile), escExit when ctx ended or the engine failed — a
+// candidate exhaustion on a healthy network fails like escalate's.
+func (e *Engine) retryPhaseB(ctx context.Context, target *outboundTransport, raceErr error, dd wire.DirectDialer, provider OutboundProvider) escResult {
+	err := e.replaceOutboundServer(ctx, target, raceErr, dd, provider)
+	switch {
+	case err == nil:
+		return escDone
+	case ctx.Err() != nil:
+		return escExit
+	case errors.Is(err, ErrNoCandidates):
+		return escNoCandidates
+	}
+	if v := e.judgeNet(ctx, "pre-exhaust"); ctx.Err() != nil {
+		return escExit
+	} else if v.blocksFailover() {
+		if rs, ok := provider.(interface{ Reset() }); ok {
+			rs.Reset()
+		}
+		return escNoCandidates
+	}
+	e.failExhausted(target, err)
+	return escExit
 }
 
 // drainHoldWake drops a pending holdWake token. A network event that
