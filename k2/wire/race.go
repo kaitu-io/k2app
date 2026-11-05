@@ -162,12 +162,13 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 			i++
 			if r.err == nil {
 				winner = &r
-				slog.Info("DIAG: transport-race-winner", "winner", r.transportType, "winnerMs", time.Since(raceStart).Milliseconds(), "tried", i+1)
+				slog.Info("DIAG: transport-race-winner", "winner", r.transportType, "winnerMs", time.Since(raceStart).Milliseconds(), "tried", i)
 				res := &RaceResult{Dialer: r.dialer, TransportType: r.transportType, TCPWS: r.tcpws}
 				// tcpws won — drain remaining results to find connected QUIC candidates.
 				// QUIC results may arrive nearly simultaneously (echo-probe completes ~same time).
 				if r.transportType == "tcpws" {
-					res = drainQUICBackup(res, results, spawned-i-1, &quicBackupMu, &quicBackup)
+					// i already counts this result (incremented above).
+					res = drainQUICBackup(res, results, spawned-i, &quicBackupMu, &quicBackup)
 				}
 				return res, nil
 			}

@@ -180,6 +180,15 @@ func ClassifyError(err error) *EngineError {
 				return newEngineError(se.Code, err.Error())
 			}
 		}
+		// Code-less reject at initial connect stays 401 (review 4 N-2, kept
+		// on purpose): k2s built from 476f01c49 (2026-03-25, QUIC metadata
+		// stream) up to 4f54ee50b (2026-07-31, verdict-driven codes) answers a
+		// GENUINELY bad credential with this same code-less "unauthorized"
+		// (boolean validator), and nodes may run such builds for months. A
+		// retryable 503 there would hide a real credential failure behind
+		// "server unreachable". Cost: during a Center outage/hang a fresh
+		// connect shows 401 (display only; the replace loop treats it as
+		// code-less, see replace_verdict.go).
 		return newEngineError(ErrCodeAuthRejected, err.Error())
 	}
 

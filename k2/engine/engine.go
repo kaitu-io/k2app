@@ -2410,6 +2410,20 @@ func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceEr
 		}
 
 		err := e.replaceOutboundServer(ctx, target, raceErr, dd, provider)
+		var nt *noneTriedError
+		if errors.As(err, &nt) && ctx.Err() == nil {
+			// Not one candidate was tried: everything is still excluded from
+			// earlier rounds (a k2subs session's exclusions never expire —
+			// every past failover leaves its old node and failed candidates
+			// behind). A round that tried nothing learned nothing: forget the
+			// exclusions and run exactly one more round; only a second
+			// tried-nothing (or a real exhaustion) goes on to fail (review 4
+			// concern 4).
+			if r, ok := provider.(interface{ Reset() }); ok {
+				r.Reset()
+			}
+			err = e.replaceOutboundServer(ctx, target, raceErr, dd, provider)
+		}
 		if err == nil {
 			return escDone // reRaceFailStreak reset inside replaceOutboundServer
 		}

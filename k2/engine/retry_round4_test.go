@@ -447,3 +447,73 @@ func TestMetadataTimeoutDoesNotMaskCodedReject(t *testing.T) {
 		t.Fatalf("replaceLoopUserAction = %v, want 402", ce)
 	}
 }
+
+// Review 4 concern 4: a k2subs session whose earlier failovers excluded
+// every other node (Manager exclusions never expire). The current node dies
+// while the others are alive: escalate's first round tries nothing, so it
+// Resets and runs one more round — a failover, never fail(503).
+func TestEscalate_K2subsAllExcludedByEarlierFailoversFailsOver(t *testing.T) {
+	mgr, urls := k2subsManager(t, "a.example", "b.example", "c.example")
+	// Earlier failovers in this session: b → c → a.
+	_, _ = mgr.NextURL(urls[1], errors.New("b died"))
+	_, _ = mgr.NextURL(urls[2], errors.New("c died"))
+	hs := newFoHarness(t, foOpts{shell: mgr, targetURL: urls[0], net: []checkResult{checkMatched}})
+	hs.servers.setAlive("b.example", true) // back for hours
+	hs.servers.setAlive("c.example", true)
+
+	hs.escalate() // a dies
+	eventually(t, "failed over off a", func() bool {
+		u := hs.targetURL()
+		return u == urls[1] || u == urls[2]
+	})
+	if s, le := hs.engineState(); s != StateConnected || le != nil {
+		t.Fatalf("engine = %s / %v, want connected", s, le)
+	}
+	if hs.h.fatalCount() != 0 || hs.h.sawState(StateDisconnected) {
+		t.Fatalf("OnOutboundFatal = %d / disconnected = %v, want neither", hs.h.fatalCount(), hs.h.sawState(StateDisconnected))
+	}
+}
+
+// Review 4 concern 4: the retry is exactly one round — a second
+// tried-nothing still fails like any exhaustion (a provider that cannot be
+// Reset keeps everything excluded).
+func TestEscalate_TriedNothingTwiceStillFails(t *testing.T) {
+	shell := &exclShell{urls: []string{foURLA, foURLB}, excluded: map[string]bool{foURLB: true}}
+	hs := newFoHarness(t, foOpts{shell: shell, net: []checkResult{checkMatched}})
+	hs.escalate()
+	eventually(t, "engine failed", func() bool { s, _ := hs.engineState(); return s == StateDisconnected })
+	if n := hs.provider.count(); n != 2 {
+		t.Fatalf("NextURL calls = %d, want 2 (one round, one retry round)", n)
+	}
+}
+
+// Review 4, I-2 residual: a target that leaves the schedule through a tick's
+// Phase-B swap forgets the round's exclusions too (b answered code-less
+// there and must not stay excluded for 10 min / the whole k2subs session).
+func TestRetry_SwapExitResetsProvider(t *testing.T) {
+	hs := newFoHarness(t, foOpts{
+		fallbacks: map[string][]string{foURLA: {foURLB, foURLC}},
+		net:       []checkResult{checkMatched},
+	})
+	hs.servers.mu.Lock()
+	hs.servers.setupErrs["b.example"] = codeLessReject()
+	hs.servers.setupErrs["c.example"] = codeLessReject()
+	hs.servers.mu.Unlock()
+	hs.escalate() // a dead, b and c code-less → scheduled
+	hs.waitStatus("reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
+	tm := hs.nextTimer()
+
+	// Center back for c only; b still answers code-less.
+	hs.servers.mu.Lock()
+	delete(hs.servers.setupErrs, "c.example")
+	hs.servers.mu.Unlock()
+	hs.servers.setAlive("c.example", true)
+	tm.fire()
+	eventually(t, "swapped to c on the tick", func() bool { return hs.targetURL() == foURLC })
+	hs.waitStatus("connected", func(s Status) bool { return s.State == StateConnected && s.Error == nil })
+	eventually(t, "exclusions forgotten on the swap exit", func() bool {
+		hs.static.mu.Lock()
+		defer hs.static.mu.Unlock()
+		return len(hs.static.excluded) == 0
+	})
+}

@@ -382,6 +382,11 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 		case escDone:
 			delete(r.pending, target)
 			e.dropQueuedSignal(target)
+			// Leaving the schedule through a swap: the round's code-less
+			// candidates stay excluded otherwise (review 4, I-2 residual).
+			if rs, ok := provider.(interface{ Reset() }); ok {
+				rs.Reset()
+			}
 			return true
 		}
 	}
