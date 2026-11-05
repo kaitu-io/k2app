@@ -213,19 +213,22 @@ func dialResolved(ctx context.Context, dd wire.DirectDialer,
 }
 
 // run probes every target concurrently, each bounded by netcheckTimeout and
-// all bounded by ctx. Results are in target order.
-func (c *netChecker) run(ctx context.Context) []checkResult {
+// all bounded by ctx. Results and per-target elapsed times are in target order.
+func (c *netChecker) run(ctx context.Context) ([]checkResult, []time.Duration) {
 	rs := make([]checkResult, len(c.targets))
+	ds := make([]time.Duration, len(c.targets))
 	var wg sync.WaitGroup
 	for i := range c.targets {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
+			start := time.Now()
 			rs[i] = c.checkOne(ctx, c.targets[i])
+			ds[i] = time.Since(start)
 		}(i)
 	}
 	wg.Wait()
-	return rs
+	return rs, ds
 }
 
 func (c *netChecker) checkOne(ctx context.Context, t config.NetcheckTarget) checkResult {
@@ -256,9 +259,9 @@ func (c *netChecker) checkOne(ctx context.Context, t config.NetcheckTarget) chec
 	return checkMatched
 }
 
-// formatCheckResults renders per-target results as "host=result" pairs for
-// the DIAG: netcheck log line.
-func formatCheckResults(targets []config.NetcheckTarget, rs []checkResult) string {
+// formatCheckResults renders per-target results as "host=result/<ms>ms" pairs
+// for the DIAG: netcheck log line (ds may be shorter than rs: no duration).
+func formatCheckResults(targets []config.NetcheckTarget, rs []checkResult, ds []time.Duration) string {
 	n := len(targets)
 	if len(rs) < n {
 		n = len(rs)
@@ -269,7 +272,11 @@ func formatCheckResults(targets []config.NetcheckTarget, rs []checkResult) strin
 		if u, err := url.Parse(targets[i].URL); err == nil && u.Hostname() != "" {
 			host = u.Hostname()
 		}
-		parts = append(parts, host+"="+rs[i].String())
+		part := host + "=" + rs[i].String()
+		if i < len(ds) {
+			part += "/" + strconv.FormatInt(ds[i].Milliseconds(), 10) + "ms"
+		}
+		parts = append(parts, part)
 	}
 	return strings.Join(parts, " ")
 }

@@ -80,7 +80,7 @@ type Engine struct {
 	// netcheck actively probes cfg.Client.Netcheck targets outside the tunnel
 	// (netChecker.run); netcheckTargets labels its results in DIAG: netcheck.
 	// Written once per Start (under e.mu at commit), read by judgeNet.
-	netcheck        func(ctx context.Context) []checkResult
+	netcheck        func(ctx context.Context) ([]checkResult, []time.Duration)
 	netcheckTargets []config.NetcheckTarget
 
 	// holdWake (cap 1) is poked by doNetworkReconnect so a hold re-judges the
@@ -2152,7 +2152,7 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 			continue
 		}
 
-		raceErr, quit := e.phaseA(ctx, target, dd)
+		raceErr, quit := e.phaseA(ctx, target, dd, "echo-consecutive-fail")
 		if quit {
 			return
 		}
@@ -2183,9 +2183,11 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 }
 
 // phaseA runs one same-server re-race on target. Returns the race error (nil
-// on success: result installed, streak reset, no-candidates hold cleared) and
+// on success: result installed, streak reset, any hold cleared) and
 // quit=true when ctx was cancelled with a result in hand (the loop must exit).
-func (e *Engine) phaseA(ctx context.Context, target *outboundTransport, dd wire.DirectDialer) (error, bool) {
+// reason is the DIAG: transport-rerace reason: echo-consecutive-fail (echo
+// signal), wait-tick (a wait's retry), network-back (first try after a hold).
+func (e *Engine) phaseA(ctx context.Context, target *outboundTransport, dd wire.DirectDialer, reason string) (error, bool) {
 	e.mu.Lock()
 	name := target.name
 	tm := target.tm
@@ -2194,7 +2196,7 @@ func (e *Engine) phaseA(ctx context.Context, target *outboundTransport, dd wire.
 	e.mu.Unlock()
 
 	slog.Warn("DIAG: transport-rerace",
-		"reason", "echo-consecutive-fail",
+		"reason", reason,
 		"outbound", name,
 		"previousTransport", tm.PrimaryType(),
 	)
@@ -2218,7 +2220,7 @@ func (e *Engine) phaseA(ctx context.Context, target *outboundTransport, dd wire.
 	e.mu.Lock()
 	target.reRaceFailStreak = 0
 	e.mu.Unlock()
-	// The current node answers again: a no-candidates hold (503 reason) is over.
+	// The current node answers again: any hold is over.
 	e.setHold(ctx, nil)
 	return nil, false
 }
@@ -2257,26 +2259,30 @@ func (e *Engine) failIfUserAction(target *outboundTransport, raceErr error) bool
 // whose Phase-A streak reached the threshold. Returns false when the loop
 // must exit (ctx cancelled or the engine failed).
 func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceErr error, dd wire.DirectDialer, provider OutboundProvider) bool {
+	// A network event from before this verdict is already reflected in it.
+	e.drainHoldWake()
 	v := e.judgeNet(ctx, "pre-phaseB")
 	for {
 		if ctx.Err() != nil {
 			return false
 		}
 		if v != netOnline {
-			switch e.holdUntilOnline(ctx, target, dd, v) {
+			switch e.holdUntilOnline(ctx, target, dd, waitNetwork, v.holdError()) {
 			case holdExit:
 				return false
 			case holdRecovered:
+				e.dropQueuedSignal(target)
 				return true
 			}
 			// Back online: the current node first — it may only have looked
 			// dead because the network was.
 			var quit bool
-			raceErr, quit = e.phaseA(ctx, target, dd)
+			raceErr, quit = e.phaseA(ctx, target, dd, "network-back")
 			if quit {
 				return false
 			}
 			if raceErr == nil {
+				e.dropQueuedSignal(target)
 				return true
 			}
 			e.mu.Lock()
@@ -2289,20 +2295,26 @@ func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceEr
 
 		err := e.replaceOutboundServer(ctx, target, raceErr, dd, provider)
 		if err == nil {
-			return true // reRaceFailStreak reset inside replaceOutboundServer
+			// reRaceFailStreak reset inside replaceOutboundServer; a hold
+			// left from an earlier no-candidates wait is over too.
+			e.setHold(ctx, nil)
+			return true
 		}
 		if ctx.Err() != nil {
 			return false
 		}
 		if errors.Is(err, ErrNoCandidates) {
 			// Manual mode / no fallbacks: nothing to switch to. Never fail —
-			// keep re-racing the current node, and say why it is not up.
+			// keep re-racing the current node on the wait backoff, and say
+			// why it is not up.
 			e.mu.Lock()
 			name := target.name
 			e.mu.Unlock()
 			slog.Warn("engine: no replacement candidates, re-racing current outbound", "outbound", name)
-			e.setHold(ctx, newEngineError(ErrCodeServerUnreachable,
-				"outbound "+name+" unreachable and has no replacement candidates; retrying"))
+			if e.holdUntilOnline(ctx, target, dd, waitNoCandidates, noCandidatesError(name)) == holdExit {
+				return false
+			}
+			e.dropQueuedSignal(target)
 			return true
 		}
 

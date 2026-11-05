@@ -168,9 +168,12 @@ func TestNetChecker_Classification(t *testing.T) {
 		{URL: closedURL, Status: 204},
 	}
 	c := newNetChecker(targets, &plainDialer{}, loopbackResolve)
-	rs := c.run(context.Background())
+	rs, ds := c.run(context.Background())
 
 	want := []checkResult{checkMatched, checkOtherResponse, checkMatched, checkNoResponse}
+	if len(ds) != len(rs) {
+		t.Fatalf("got %d durations for %d results", len(ds), len(rs))
+	}
 	if len(rs) != len(want) {
 		t.Fatalf("got %d results, want %d", len(rs), len(want))
 	}
@@ -190,14 +193,18 @@ func TestNetChecker_Classification(t *testing.T) {
 	c2 := newNetChecker([]config.NetcheckTarget{
 		{URL: asHostURL(srv.URL, "/success"), Status: 200, Body: "Nope"},
 	}, &plainDialer{}, loopbackResolve)
-	if rs := c2.run(context.Background()); rs[0] != checkOtherResponse {
+	if rs, _ := c2.run(context.Background()); rs[0] != checkOtherResponse {
 		t.Errorf("body mismatch: got %v, want other", rs[0])
 	}
 
-	s := formatCheckResults(targets, rs)
-	if !strings.Contains(s, "netcheck.test=matched") || !strings.Contains(s, "netcheck.test=noResp") ||
-		!strings.Contains(s, "netcheck.test=other") {
+	s := formatCheckResults(targets, rs, ds)
+	if !strings.Contains(s, "netcheck.test=matched/") || !strings.Contains(s, "netcheck.test=noResp/") ||
+		!strings.Contains(s, "netcheck.test=other/") {
 		t.Errorf("formatCheckResults = %q", s)
+	}
+	if got := formatCheckResults(targets[:2], []checkResult{checkMatched, checkNoResponse},
+		[]time.Duration{12 * time.Millisecond, 3000 * time.Millisecond}); got != "netcheck.test=matched/12ms netcheck.test=noResp/3000ms" {
+		t.Errorf("formatCheckResults with durations = %q", got)
 	}
 }
 
@@ -218,9 +225,12 @@ func TestNetChecker_RespectsTimeoutAndCtx(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	start := time.Now()
-	rs := c.run(ctx)
+	rs, ds := c.run(ctx)
 	if el := time.Since(start); el > 500*time.Millisecond {
 		t.Fatalf("run took %v, want < 500ms", el)
+	}
+	if len(ds) != 1 || ds[0] < 90*time.Millisecond || ds[0] > 500*time.Millisecond {
+		t.Fatalf("per-target elapsed = %v, want ~100ms (the ctx deadline)", ds)
 	}
 	if len(rs) != 1 || rs[0] != checkNoResponse {
 		t.Fatalf("got %v, want [noResp]", rs)

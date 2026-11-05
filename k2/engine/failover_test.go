@@ -91,11 +91,11 @@ func (n *foNet) set(rs ...checkResult) {
 	n.mu.Unlock()
 }
 
-func (n *foNet) run(context.Context) []checkResult {
+func (n *foNet) run(context.Context) ([]checkResult, []time.Duration) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.calls++
-	return append([]checkResult(nil), n.rs...)
+	return append([]checkResult(nil), n.rs...), make([]time.Duration, len(n.rs))
 }
 
 func (n *foNet) callCount() int {
@@ -593,14 +593,162 @@ func TestReplaceLoop_NoCandidatesKeepsReRacing(t *testing.T) {
 		t.Fatalf("OnOutboundFatal = %d, want 0", hs.h.fatalCount())
 	}
 
-	hs.servers.setAlive("a.example", true)
-	hs.signal()
-	hs.waitStatus("connected after Phase-A success", func(s Status) bool {
-		return s.State == StateConnected && s.Error == nil
-	})
+	// Each wait tick re-races the current node; a failure keeps 503.
+	tm := hs.nextTimer()
+	if tm.d != 5*time.Second {
+		t.Fatalf("first no-candidates timer = %v, want 5s", tm.d)
+	}
+	before := hs.servers.raceCount("a.example")
+	tm.fire()
+	if d := hs.nextTimer().d; d != 10*time.Second {
+		t.Fatalf("second no-candidates timer = %v, want 10s", d)
+	}
+	if n := hs.servers.raceCount("a.example"); n != before+1 {
+		t.Fatalf("races on a after a wait tick = %d, want %d", n, before+1)
+	}
+	if s, _ := hs.h.last(); !isReconnectingCode(ErrCodeServerUnreachable)(s) {
+		t.Fatalf("status after a failed tick = %+v, want reconnecting/503", s)
+	}
 	if hs.h.sawState(StateDisconnected) {
 		t.Fatal("went disconnected")
 	}
+}
+
+// TestReplaceLoop_NoCandidatesRecoversWithoutSignal: the node comes back on
+// its own and no further echo signal arrives (wire healed lazily, or no
+// cached connection to strike on) — the wait's own Phase-A must still bring
+// status back to connected.
+func TestReplaceLoop_NoCandidatesRecoversWithoutSignal(t *testing.T) {
+	hs := newFoHarness(t, foOpts{net: []checkResult{checkMatched}})
+	hs.escalate()
+	hs.waitStatus("reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
+	tm := hs.nextTimer()
+
+	hs.servers.setAlive("a.example", true)
+	tm.fire() // no hs.signal()
+	hs.waitStatus("connected without another echo signal", func(s Status) bool {
+		return s.State == StateConnected && s.Error == nil
+	})
+	if gs := hs.e.GetStatus(); gs.State != StateConnected || gs.Error != nil {
+		t.Fatalf("GetStatus = %+v, want connected", gs)
+	}
+	if n := ReRaceFailStreak(hs.e, hs.target); n != 0 {
+		t.Fatalf("reRaceFailStreak = %d, want 0", n)
+	}
+}
+
+// TestReplaceLoop_NoCandidatesShowsNetworkReason: while retrying a node with
+// no candidates, a network verdict that is not online is the reason shown.
+func TestReplaceLoop_NoCandidatesShowsNetworkReason(t *testing.T) {
+	hs := newFoHarness(t, foOpts{net: []checkResult{checkMatched}})
+	hs.escalate()
+	hs.waitStatus("reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
+	hs.net.set(checkNoResponse)
+	hs.nextTimer().fire()
+	hs.waitStatus("reconnecting 106", isReconnectingCode(ErrCodeNoInternet))
+	hs.net.set(checkMatched)
+	hs.nextTimer().fire()
+	hs.waitStatus("back to reconnecting 503", isReconnectingCode(ErrCodeServerUnreachable))
+}
+
+// TestReplaceLoop_PhaseBSuccessClearsHold: a hold left over (e.g. from a
+// no-candidates wait) must not outlive a successful node switch.
+func TestReplaceLoop_PhaseBSuccessClearsHold(t *testing.T) {
+	hs := newFoHarness(t, foOpts{
+		fallbacks: map[string][]string{foURLA: {foURLB}},
+		net:       []checkResult{checkMatched},
+	})
+	hs.servers.setAlive("b.example", true)
+	hs.e.SetHoldForTest(noCandidatesError("k2v5-a.example"))
+	hs.waitStatus("pre-existing 503 hold", isReconnectingCode(ErrCodeServerUnreachable))
+
+	hs.escalate()
+	eventually(t, "target switched to b", func() bool { return hs.targetURL() == foURLB })
+	hs.waitStatus("connected after Phase-B success", func(s Status) bool {
+		return s.State == StateConnected && s.Error == nil
+	})
+	if gs := hs.e.GetStatus(); gs.State != StateConnected || gs.Error != nil {
+		t.Fatalf("GetStatus = %+v, want connected", gs)
+	}
+}
+
+// TestReplaceLoop_StaleWakeDoesNotSkipFirstStep: a network event from before
+// the pre-phaseB verdict must not wake the hold at once — the first re-judge
+// waits for the 5s timer.
+func TestReplaceLoop_StaleWakeDoesNotSkipFirstStep(t *testing.T) {
+	hs := newFoHarness(t, foOpts{
+		fallbacks: map[string][]string{foURLA: {foURLB}},
+		net:       []checkResult{checkNoResponse},
+	})
+	hs.e.wakeHold() // e.g. a routine "changed" event earlier in the session
+
+	hs.escalate()
+	tm := hs.nextTimer()
+	if tm.d != 5*time.Second {
+		t.Fatalf("first timer = %v, want 5s", tm.d)
+	}
+	select {
+	case extra := <-hs.timers:
+		t.Fatalf("hold re-armed (%v) without its timer firing: a stale wake skipped the first step", extra.d)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if n := hs.net.callCount(); n != 1 {
+		t.Fatalf("netcheck ran %d times before the first 5s timer, want 1 (pre-phaseB only)", n)
+	}
+	// A wake sent after the verdict is genuine and still wakes the hold.
+	hs.e.wakeHold()
+	eventually(t, "post-verdict wake re-judges", func() bool { return hs.net.callCount() == 2 })
+}
+
+// TestReplaceLoop_QueuedSignalDroppedAfterRecovery: echo signals queued while
+// waiting must not trigger an extra Phase-A right after the wait recovers.
+func TestReplaceLoop_QueuedSignalDroppedAfterRecovery(t *testing.T) {
+	hs := newFoHarness(t, foOpts{
+		fallbacks: map[string][]string{foURLA: {foURLB}},
+		net:       []checkResult{checkNoResponse},
+	})
+	hs.escalate()
+	hs.waitStatus("reconnecting 106", isReconnectingCode(ErrCodeNoInternet))
+	tm := hs.nextTimer()
+
+	hs.signal() // echo strike during the hold; cap-1 chan, the loop is waiting
+	before := hs.servers.raceCount("a.example")
+	hs.servers.setAlive("a.example", true)
+	tm.fire()
+	hs.waitStatus("connected via wait-tick Phase-A", func(s Status) bool {
+		return s.State == StateConnected && s.Error == nil
+	})
+	time.Sleep(300 * time.Millisecond) // window for a stale signal to be consumed
+	if n := hs.servers.raceCount("a.example"); n != before+1 {
+		t.Fatalf("races on a = %d, want %d (queued signal must be dropped)", n, before+1)
+	}
+	if n := len(hs.e.reRaceChan); n != 0 {
+		t.Fatalf("reRaceChan len = %d, want 0", n)
+	}
+}
+
+// TestDropQueuedSignal_KeepsOtherOutbound: only the recovered target's signal
+// is dropped; another outbound's queued signal survives.
+func TestDropQueuedSignal_KeepsOtherOutbound(t *testing.T) {
+	e := New()
+	e.reRaceChan = make(chan *outboundTransport, 1)
+	a, b := &outboundTransport{name: "a"}, &outboundTransport{name: "b"}
+	e.reRaceChan <- b
+	e.dropQueuedSignal(a)
+	select {
+	case got := <-e.reRaceChan:
+		if got != b {
+			t.Fatalf("queued signal = %s, want b", got.name)
+		}
+	default:
+		t.Fatal("other outbound's signal lost")
+	}
+	e.reRaceChan <- a
+	e.dropQueuedSignal(a)
+	if len(e.reRaceChan) != 0 {
+		t.Fatal("recovered target's signal not dropped")
+	}
+	e.dropQueuedSignal(a) // empty: no block
 }
 
 func TestReplaceLoop_HoldSurvivesNetworkReconnectPush(t *testing.T) {
@@ -804,7 +952,7 @@ func TestStart_WiresFailoverProviderAndNetcheck(t *testing.T) {
 		t.Fatalf("netcheck not wired (run=%v, targets=%d)", run != nil, len(targets))
 	}
 	before := raw.n.Load()
-	if rs := run(context.Background()); len(rs) != 1 || rs[0] != checkMatched {
+	if rs, ds := run(context.Background()); len(rs) != 1 || rs[0] != checkMatched || len(ds) != 1 {
 		t.Fatalf("netcheck = %v, want [matched]", rs)
 	}
 	if raw.n.Load() == before {
@@ -904,7 +1052,7 @@ func TestReplaceLoop_HoldTickRetriesCurrentNode(t *testing.T) {
 
 	hs.servers.setAlive("a.example", true)
 	tm.fire()
-	hs.waitStatus("connected via hold-tick Phase-A", func(s Status) bool {
+	hs.waitStatus("connected via wait-tick Phase-A", func(s Status) bool {
 		return s.State == StateConnected && s.Error == nil
 	})
 	if gs := hs.e.GetStatus(); gs.State != StateConnected || gs.Error != nil {

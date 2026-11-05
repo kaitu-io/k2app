@@ -39,7 +39,7 @@ func realHoldTimer(d time.Duration) (<-chan time.Time, func()) {
 // judgeNet decides whether the user's network reaches the internet, from the
 // cheapest evidence first (netCoordinator interface state, passive direct
 // dials within passiveFreshness, then the active netcheck), and logs one
-// DIAG: netcheck line. trigger: pre-phaseB, pre-exhaust, hold-tick, net-event.
+// DIAG: netcheck line. trigger: pre-phaseB, pre-exhaust, wait-tick, net-event.
 //
 // If ctx is cancelled mid-check the active probes all report no response and
 // the verdict reads no-internet — callers must check ctx.Err() first.
@@ -59,10 +59,11 @@ func (e *Engine) judgeNet(ctx context.Context, trigger string) netVerdict {
 		ev.LastDirectOK = dt.LastOK()
 	}
 	var rs []checkResult
+	var ds []time.Duration
 	start := time.Now()
 	v, evidence := decideNet(ev, func() []checkResult {
 		if run != nil {
-			rs = run(ctx)
+			rs, ds = run(ctx)
 		}
 		return rs
 	})
@@ -71,7 +72,7 @@ func (e *Engine) judgeNet(ctx context.Context, trigger string) netVerdict {
 		"result", int(v),
 		"verdict", v.String(),
 		"evidence", evidence,
-		"checks", formatCheckResults(targets, rs),
+		"checks", formatCheckResults(targets, rs, ds),
 		"ms", time.Since(start).Milliseconds(),
 	}
 	if v == netOnline {
@@ -113,33 +114,56 @@ func sameHold(a, b *EngineError) bool {
 	return a.Code == b.Code
 }
 
-// holdOutcome is how a hold ended.
+// holdOutcome is how a wait ended.
 type holdOutcome int
 
 const (
-	holdOnline    holdOutcome = iota // judgeNet said online; caller re-races the current node
-	holdRecovered                    // a hold-tick Phase-A reconnected the current node; done
+	holdOnline    holdOutcome = iota // network wait: judgeNet said online; caller re-races the current node
+	holdRecovered                    // a wait-tick Phase-A reconnected the current node; done
 	holdExit                         // ctx cancelled or the engine failed; the loop must exit
 )
 
-// holdUntilOnline holds on verdict v (not netOnline) until the network or the
-// current node comes back, re-checking on every wake — backoff timer or a
-// network event via holdWake. Each wake first re-judges the network:
-//   - online → clear the hold, return holdOnline (the caller re-races).
-//   - otherwise → also try one Phase-A on the current node, whatever the
-//     verdict says. The verdict can be blind (no netcheck targets — old
-//     webapp, k2r gateway; global mode with no direct traffic), and a node
-//     that answers proves the network fine: phaseA clears the hold and
-//     resets the streak → holdRecovered. A 401/402 rejection fails the
-//     engine → holdExit. Any other failure keeps holding with the
-//     re-judged reason (pushed when it changes).
+// waitMode selects what ends a wait.
+type waitMode int
+
+const (
+	// waitNetwork: the user's network is not online. Ends when judgeNet says
+	// online (holdOnline) or the current node answers (holdRecovered).
+	waitNetwork waitMode = iota
+	// waitNoCandidates: the node is down and nothing can replace it (manual
+	// mode / no fallbacks). Only the current node answering ends it; an
+	// online verdict just shows 503 as the reason.
+	waitNoCandidates
+)
+
+// noCandidatesError is the wait reason when the network is fine but the
+// outbound has no replacement: the node itself is unreachable (503), and the
+// engine keeps retrying it rather than disconnecting.
+func noCandidatesError(name string) *EngineError {
+	return newEngineError(ErrCodeServerUnreachable,
+		"outbound "+name+" unreachable and has no replacement candidates; retrying")
+}
+
+// holdUntilOnline waits with first reason reason, re-checking on every wake —
+// backoff timer (holdBackoff) or a network event via holdWake. Each wake
+// first re-judges the network:
+//   - waitNetwork and online → clear the hold, return holdOnline (the caller
+//     re-races).
+//   - otherwise → one Phase-A on the current node (reason=wait-tick),
+//     whatever the verdict says: the verdict can be blind (no netcheck
+//     targets — old webapp, k2r gateway; global mode with no direct traffic)
+//     and a node that answers proves the session fine. Success: phaseA
+//     clears the hold and resets the streak → holdRecovered. A 401/402 fails
+//     the engine → holdExit. Any other failure keeps waiting with the
+//     verdict's reason, or 503 (noCandidatesError) when the network is online
+//     — pushed only when the code changes.
 //
 // ctx cancelled → holdExit; Stop/fail own clearing the hold then. The
-// Phase-A races under ctx, so Stop interrupts an in-flight dial too.
+// netcheck and the Phase-A run under ctx, so Stop interrupts them too.
 //
 // A network event restarts the backoff at its first step: a fresh network
 // often needs a few seconds (DHCP, portal redirect) before it answers.
-func (e *Engine) holdUntilOnline(ctx context.Context, target *outboundTransport, dd wire.DirectDialer, v netVerdict) holdOutcome {
+func (e *Engine) holdUntilOnline(ctx context.Context, target *outboundTransport, dd wire.DirectDialer, mode waitMode, reason *EngineError) holdOutcome {
 	e.mu.Lock()
 	name := target.name
 	timerFn := e.holdTimerFn
@@ -148,14 +172,14 @@ func (e *Engine) holdUntilOnline(ctx context.Context, target *outboundTransport,
 		timerFn = realHoldTimer
 	}
 
-	slog.Warn("engine: holding for the network", "outbound", name, "verdict", v.String())
-	e.setHold(ctx, v.holdError())
+	slog.Warn("engine: waiting before retrying outbound", "outbound", name, "code", reason.Code)
+	e.setHold(ctx, reason)
 	step := 0
 	for {
 		d := holdBackoff[min(step, len(holdBackoff)-1)]
 		step++
 		ch, stop := timerFn(d)
-		trigger := "hold-tick"
+		trigger := "wait-tick"
 		select {
 		case <-ctx.Done():
 			stop()
@@ -166,28 +190,60 @@ func (e *Engine) holdUntilOnline(ctx context.Context, target *outboundTransport,
 			trigger = "net-event"
 			step = 0
 		}
-		v = e.judgeNet(ctx, trigger)
+		v := e.judgeNet(ctx, trigger)
 		if ctx.Err() != nil {
 			return holdExit
 		}
-		if v == netOnline {
+		if v == netOnline && mode == waitNetwork {
 			slog.Info("engine: network back, leaving hold", "outbound", name)
 			e.setHold(ctx, nil)
 			return holdOnline
 		}
-		raceErr, quit := e.phaseA(ctx, target, dd)
+		raceErr, quit := e.phaseA(ctx, target, dd, "wait-tick")
 		if quit || ctx.Err() != nil {
 			return holdExit
 		}
 		if raceErr == nil {
-			slog.Info("engine: current outbound answered during hold, leaving hold",
+			slog.Info("engine: current outbound answered while waiting, leaving hold",
 				"outbound", name, "verdict", v.String())
 			return holdRecovered // phaseA cleared the hold and reset the streak
 		}
 		if e.failIfUserAction(target, raceErr) {
 			return holdExit
 		}
-		e.setHold(ctx, v.holdError())
+		next := v.holdError()
+		if next == nil { // online, no candidates
+			next = noCandidatesError(name)
+		}
+		e.setHold(ctx, next)
+	}
+}
+
+// drainHoldWake drops a pending holdWake token. A network event that
+// happened BEFORE a wait's first verdict is already reflected in it; left in
+// the cap-1 channel it would wake the wait at once and skip the 5s step.
+func (e *Engine) drainHoldWake() {
+	select {
+	case <-e.holdWake:
+	default:
+	}
+}
+
+// dropQueuedSignal discards an echo re-race signal for target queued while
+// the loop was waiting: the node was just re-raced successfully, and a stale
+// signal would re-race (and ReplacePrimary over) the fresh dialer. A queued
+// signal for another outbound is put back (best effort: if a newer signal
+// filled the cap-1 channel meanwhile, that one stands).
+func (e *Engine) dropQueuedSignal(target *outboundTransport) {
+	select {
+	case ot := <-e.reRaceChan:
+		if ot != target {
+			select {
+			case e.reRaceChan <- ot:
+			default:
+			}
+		}
+	default:
 	}
 }
 

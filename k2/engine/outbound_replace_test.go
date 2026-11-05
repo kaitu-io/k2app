@@ -479,7 +479,9 @@ func TestOutboundReplaceLoop_ExhaustedFailsWith503(t *testing.T) {
 }
 
 // onlineNetcheck is a netcheck whose every probe matches (network online).
-func onlineNetcheck(context.Context) []checkResult { return []checkResult{checkMatched} }
+func onlineNetcheck(context.Context) ([]checkResult, []time.Duration) {
+	return []checkResult{checkMatched}, []time.Duration{0}
+}
 
 type exhaustedSubsProvider struct{}
 
