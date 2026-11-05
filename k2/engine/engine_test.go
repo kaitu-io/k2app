@@ -2696,14 +2696,14 @@ func TestStop_ClearsHoldErr(t *testing.T) {
 	e.SetEventHandler(h)
 	e.ForceConnected()
 	e.SetHoldForTest(netNoInternet.holdError())
-	if js := e.StatusJSON(); !strings.Contains(js, "106") {
-		t.Fatalf("held status JSON lacks 106: %s", js)
+	if s := e.GetStatus(); s.Error == nil || s.Error.Code != ErrCodeNoInternet {
+		t.Fatalf("held status error = %+v, want code %d", s.Error, ErrCodeNoInternet)
 	}
 	if err := e.Stop(); err != nil {
 		t.Fatal(err)
 	}
-	if js := e.StatusJSON(); strings.Contains(js, "106") || strings.Contains(js, "reconnecting") {
-		t.Fatalf("status after Stop still carries the hold: %s", js)
+	if s := e.GetStatus(); s.State != StateDisconnected || s.Error != nil {
+		t.Fatalf("status after Stop = {%q, %+v}, want {disconnected, nil}", s.State, s.Error)
 	}
 	statuses := h.getStatuses()
 	last := statuses[len(statuses)-1]
@@ -2713,8 +2713,8 @@ func TestStop_ClearsHoldErr(t *testing.T) {
 	// The real consequence of a missed clear: the NEXT session would come up
 	// "connected" yet report reconnecting + 106 from a stale hold.
 	e.ForceConnected()
-	if js := e.StatusJSON(); strings.Contains(js, "106") || !strings.Contains(js, StateConnected) {
-		t.Fatalf("next session inherited the previous session's hold: %s", js)
+	if s := e.GetStatus(); s.State != StateConnected || s.Error != nil {
+		t.Fatalf("next session inherited the previous session's hold: {%q, %+v}", s.State, s.Error)
 	}
 }
 
@@ -2729,8 +2729,8 @@ func TestFail_ClearsHoldErr(t *testing.T) {
 	if hold != nil {
 		t.Fatalf("holdErr after fail = %+v, want nil", hold)
 	}
-	if js := e.StatusJSON(); strings.Contains(js, "107") {
-		t.Fatalf("status after fail still carries the hold: %s", js)
+	if s := e.GetStatus(); s.Error != nil && s.Error.Code == ErrCodeCaptivePortal {
+		t.Fatalf("status after fail still carries the hold: %+v", s.Error)
 	}
 }
 

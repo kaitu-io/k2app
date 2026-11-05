@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"net"
+	"net/netip"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -48,6 +49,7 @@ func TestTrackingDialer_RecordsSuccessOnly(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := newTrackingDialer(tc.inner)
+			d.isPublic = func(netip.Addr) bool { return true } // loopback listener stands in for a public host
 			if !d.LastOK().IsZero() {
 				t.Fatalf("fresh tracker LastOK = %v, want zero", d.LastOK())
 			}
@@ -189,6 +191,9 @@ func TestStart_DirectExitTracked(t *testing.T) {
 	if !track.LastOK().IsZero() {
 		t.Fatal("LastOK non-zero before any direct traffic")
 	}
+	// The listener is loopback; let it stand in for a public host. Written
+	// before HandleTCP's goroutine starts (go statement = happens-before).
+	track.isPublic = func(netip.Addr) bool { return true }
 
 	h := <-prov.h
 	client, server := net.Pipe()
@@ -209,5 +214,99 @@ func TestStart_DirectExitTracked(t *testing.T) {
 	}
 	if raw.n.Load() == 0 {
 		t.Fatal("direct dial bypassed cfg.DirectDialer — the tracker must wrap, not replace, the platform dialer")
+	}
+}
+
+// nilAddrConn is a conn whose RemoteAddr is nil.
+type nilAddrConn struct{ net.Conn }
+
+func (nilAddrConn) RemoteAddr() net.Addr { return nil }
+
+type nilAddrDialer struct{ trackInnerDialer }
+
+func (nilAddrDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	a, b := net.Pipe()
+	b.Close()
+	return nilAddrConn{a}, nil
+}
+
+// pipeDialer returns a net.Pipe conn, whose RemoteAddr ("pipe") is not an IP.
+type pipeDialer struct{ trackInnerDialer }
+
+func (pipeDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	a, b := net.Pipe()
+	b.Close()
+	return a, nil
+}
+
+// TestTrackingDialer_IgnoresPrivateDestinations: LAN traffic keeps working
+// when the internet is down, so only public destinations are evidence.
+func TestTrackingDialer_IgnoresPrivateDestinations(t *testing.T) {
+	// Real predicate: a successful loopback dial must not count.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	d := newTrackingDialer(trackInnerDialer{})
+	c, err := d.DialContext(context.Background(), "tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("dial loopback: %v", err)
+	}
+	c.Close()
+	if !d.LastOK().IsZero() {
+		t.Fatal("loopback dial counted as direct-internet evidence")
+	}
+
+	// Unparseable RemoteAddr: not counted even if the predicate says yes.
+	pd := newTrackingDialer(pipeDialer{})
+	pd.isPublic = func(netip.Addr) bool { return true }
+	pc, err := pd.DialContext(context.Background(), "tcp", "example.com:443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc.Close()
+	if !pd.LastOK().IsZero() {
+		t.Fatal("conn with non-IP RemoteAddr counted as evidence")
+	}
+
+	nd := newTrackingDialer(nilAddrDialer{})
+	nd.isPublic = func(netip.Addr) bool { return true }
+	nc, err := nd.DialContext(context.Background(), "tcp", "example.com:443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nc.Close()
+	if !nd.LastOK().IsZero() {
+		t.Fatal("conn with nil RemoteAddr counted as evidence")
+	}
+
+	for _, tc := range []struct {
+		addr   string
+		public bool
+	}{
+		{"127.0.0.1", false},
+		{"::1", false},
+		{"10.1.2.3", false},
+		{"172.16.0.1", false},
+		{"192.168.1.1", false},
+		{"169.254.10.1", false},
+		{"100.64.0.1", false},
+		{"100.127.255.254", false},
+		{"fe80::1", false},
+		{"fd00::1", false},
+		{"::ffff:192.168.1.1", false},
+		{"::ffff:100.64.0.1", false}, // mapped CGNAT: Prefix.Contains needs the Unmap
+		{"0.0.0.0", false},
+		{"224.0.0.1", false},
+		{"8.8.8.8", true},
+		{"100.128.0.1", true},
+		{"172.32.0.1", true},
+		{"2001:4860:4860::8888", true},
+		{"::ffff:1.1.1.1", true},
+	} {
+		if got := isPublicDest(netip.MustParseAddr(tc.addr)); got != tc.public {
+			t.Errorf("isPublicDest(%s) = %v, want %v", tc.addr, got, tc.public)
+		}
 	}
 }
