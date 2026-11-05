@@ -64,7 +64,7 @@ export const KAITU_BRAND: WebappBrandConfig = {
     { url: 'http://www.msftconnecttest.com/connecttest.txt', status: 200, body: 'Microsoft Connect Test' },
     { url: 'http://www.qualcomm.cn/generate_204', status: 204 },
   ],
-  directDns: [], // engine default (mainland resolvers) is right for this market
+  netcheckDns: [], // engine default (the direct resolvers, mainland) is right for this market
   theme: KAITU_THEME,
   features: {
     invite: true,

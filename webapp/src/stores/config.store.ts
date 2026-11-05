@@ -520,8 +520,10 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     // Brand connectivity-check targets: lets the engine tell the user's network
     // being down / behind a captive portal apart from our servers being down.
     result.netcheck = brandConfig.netcheck.map(t => ({ ...t }));
-    if (brandConfig.directDns.length > 0) {
-      result.dns = { direct: [...brandConfig.directDns] };
+    // Resolvers for those targets only; dns.direct (all direct-routed lookups)
+    // is left to the engine default.
+    if (brandConfig.netcheckDns.length > 0) {
+      result.netcheck_dns = [...brandConfig.netcheckDns];
     }
 
     // Forward the app version so the node can attribute this device's traffic

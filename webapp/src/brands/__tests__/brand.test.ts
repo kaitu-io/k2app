@@ -73,11 +73,11 @@ describe('brand registry', () => {
     }
   });
 
-  it('direct DNS: overleap overrides the engine default (mainland resolvers), kaitu keeps it', () => {
-    expect(KAITU_BRAND.directDns).toEqual([]);
-    expect(OVERLEAP_BRAND.directDns.length).toBeGreaterThan(0);
+  it('netcheck DNS: overleap overrides the engine default (mainland resolvers), kaitu keeps it', () => {
+    expect(KAITU_BRAND.netcheckDns).toEqual([]);
+    expect(OVERLEAP_BRAND.netcheckDns.length).toBeGreaterThan(0);
     for (const mainland of ['114.114.114.114:53', '223.5.5.5:53', '119.29.29.29:53']) {
-      expect(OVERLEAP_BRAND.directDns).not.toContain(mainland);
+      expect(OVERLEAP_BRAND.netcheckDns).not.toContain(mainland);
     }
   });
 });

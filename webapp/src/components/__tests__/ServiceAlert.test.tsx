@@ -30,6 +30,7 @@ vi.mock('react-router-dom', async () => {
 
 // Mock stores
 const mockVPNMachine = {
+  state: 'idle' as string,
   isServiceDown: false,
   error: null as { code: number; message: string } | null,
 };
@@ -54,6 +55,7 @@ vi.mock('../../stores/vpn-machine.store', () => ({
 describe('ServiceAlert', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockVPNMachine.state = 'idle';
     mockVPNMachine.isServiceDown = false;
     mockVPNMachine.error = null;
   });
@@ -96,6 +98,30 @@ describe('ServiceAlert', () => {
   describe('Network Error Detection', () => {
     it('should detect engine error code 108 (timeout) as network error', () => {
       mockVPNMachine.error = { code: 108, message: 'Connection timeout' };
+      renderAlert();
+      expect(screen.getByText('dashboard:dashboard.networkError.title')).toBeInTheDocument();
+    });
+
+    // Final-review-2 I2: reconnecting + 503 is the engine retrying an
+    // unreachable line on a network it just judged fine — the button already
+    // says 「线路暂时无法连接，正在重试」; a "check your network" banner contradicts it.
+    it('does not show the network banner for 503 while reconnecting', () => {
+      mockVPNMachine.state = 'reconnecting';
+      mockVPNMachine.error = { code: 503, message: 'outbound unreachable; retrying' };
+      renderAlert();
+      expect(screen.queryByText('dashboard:dashboard.networkError.title')).not.toBeInTheDocument();
+    });
+
+    it.each([101, 106, 107, 108])('keeps the network banner for %i while reconnecting', (code) => {
+      mockVPNMachine.state = 'reconnecting';
+      mockVPNMachine.error = { code, message: 'network hold' };
+      renderAlert();
+      expect(screen.getByText('dashboard:dashboard.networkError.title')).toBeInTheDocument();
+    });
+
+    it('keeps the network banner for 503 after a disconnect', () => {
+      mockVPNMachine.state = 'idle';
+      mockVPNMachine.error = { code: 503, message: 'Server unreachable' };
       renderAlert();
       expect(screen.getByText('dashboard:dashboard.networkError.title')).toBeInTheDocument();
     });

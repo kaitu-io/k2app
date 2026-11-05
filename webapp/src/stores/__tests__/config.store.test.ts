@@ -607,18 +607,21 @@ describe('Config Store', () => {
       expect(cfg.netcheck).toEqual(brandConfig.netcheck);
     });
 
-    it('buildConnectConfig uses brand direct DNS', async () => {
+    it('buildConnectConfig sends brand netcheck DNS and never dns.direct', async () => {
       mockStorage.get.mockResolvedValue(null);
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
       const cfg = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://a' });
-      if (brandConfig.directDns.length > 0) {
-        expect(cfg.dns?.direct).toEqual(brandConfig.directDns);
+      if (brandConfig.netcheckDns.length > 0) {
+        expect(cfg.netcheck_dns).toEqual(brandConfig.netcheckDns);
       } else {
         // Empty brand list = the engine's own defaults; nothing is sent.
-        expect(cfg.dns).toBeUndefined();
+        expect(cfg.netcheck_dns).toBeUndefined();
       }
+      // Direct-routed traffic keeps the engine default resolvers, as before F2
+      // (final-review-2 M6): an OTA must not change them for old engines.
+      expect(cfg.dns).toBeUndefined();
     });
   });
 

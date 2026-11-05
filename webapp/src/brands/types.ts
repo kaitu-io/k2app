@@ -182,10 +182,12 @@ export interface WebappBrandConfig {
    */
   netcheck: readonly { url: string; status: number; body?: string }[];
   /**
-   * Resolvers for direct-routed traffic (ClientConfig.dns.direct). `[]` = send
-   * nothing and keep the engine default, which is mainland-China resolvers.
+   * Resolvers the engine's netcheck uses for the `netcheck` hosts
+   * (ClientConfig.netcheck_dns). Netcheck only: direct-routed traffic keeps
+   * the engine's dns.direct default. `[]` = send nothing; the netcheck then
+   * uses dns.direct (mainland-China resolvers).
    */
-  directDns: readonly string[];
+  netcheckDns: readonly string[];
   theme: BrandThemeTokens;
   features: BrandFeatures;
 }

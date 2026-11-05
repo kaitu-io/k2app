@@ -61,8 +61,10 @@ export const OVERLEAP_BRAND: WebappBrandConfig = {
     { url: 'http://www.gstatic.com/generate_204', status: 204 },
     { url: 'http://captive.apple.com/hotspot-detect.html', status: 200, body: '<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>\n' },
   ],
-  // Overseas market: the engine's default direct resolvers are mainland ones.
-  directDns: ['1.1.1.1:53', '8.8.8.8:53', '1.0.0.1:53', '8.8.4.4:53'],
+  // Overseas market: the engine's default resolvers are mainland ones. Only the
+  // netcheck uses these — direct-routed traffic keeps the engine default, as
+  // before F2 (ClientConfig.netcheck_dns, not dns.direct).
+  netcheckDns: ['1.1.1.1:53', '8.8.8.8:53', '1.0.0.1:53', '8.8.4.4:53'],
   theme: OVERLEAP_THEME,
   features: {
     invite: false,

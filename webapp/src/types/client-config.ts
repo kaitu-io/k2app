@@ -126,6 +126,8 @@ export interface ClientConfig {
   fallbacks?: Record<string, string[]>;
   // Network-reachability probe targets (expected HTTP status, optional exact body).
   netcheck?: { url: string; status: number; body?: string }[];
+  // Resolvers ("ip:port") for the netcheck hosts only; absent = dns.direct.
+  netcheck_dns?: string[];
 }
 
 export const CLIENT_CONFIG_DEFAULTS: ClientConfig = {
