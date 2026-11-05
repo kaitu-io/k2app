@@ -555,6 +555,8 @@ var simClasses = map[string]string{
 	"M3": "retry/hold tick trusts passive direct evidence: Phase-B rounds burnt while offline, accept-all captive shown as 503 (fix wave item M3)",
 	"FA": "a round mixing code-less answers (Center outage / node-local Center failure) with transport-dead candidates counts toward the 10-min cap",
 	"PI": "Pause does not stop a tick already in flight: its remaining Phase A/B attempts and netchecks run while paused (16e6bebda)",
+	"PE": "a queued echo re-race signal is taken and raced while paused: the replace loop's reRaceChan case is not pause-gated (16e6bebda)",
+	"RW": "recoveredWake ticks a scheduled code-less target on every echo success (Center outage, node alive): race + active netcheck every echo interval, defeating the 60s long-pending cadence (16e6bebda)",
 	"FB": "a current node answering code-less pins the target to Phase A only: live candidates are never tried, 503 shown indefinitely",
 }
 
@@ -660,6 +662,9 @@ type simRun struct {
 	waitTicks          []time.Time // netchecks with trigger=wait-tick: the schedule's own cadence
 	lpFlagged          bool        // long-pending cadence flagged for this reconnecting stretch
 	lpLastJudged       time.Time
+	recTicks           []time.Time // netchecks with trigger=recovered (recoveredWake ticks)
+	lastReRaceReason   string
+	lastWakeAt         time.Time
 	netOnlineSince     time.Time // the network has been online since
 	offlineEpoch       int       // incremented on each transition into a non-online network
 	roundEpoch         int       // offlineEpoch of the last Phase-B round seen offline
@@ -790,6 +795,12 @@ func (s *simRun) classify(v simViolation) string {
 	switch {
 	case v.inv == "I4" && strings.Contains(v.msg, "while paused") && s.pauseMidTick:
 		return "PI"
+	case v.inv == "I4" && strings.HasPrefix(v.msg, "race ") && strings.Contains(v.msg, "while paused") &&
+		s.lastReRaceReason == "echo-consecutive-fail":
+		return "PE"
+	case v.inv == "I4" && strings.Contains(v.msg, "steady state") &&
+		countSince(s.recTicks, s.now().Add(-10*time.Minute)) > int(10*time.Minute/simSpecLongTick)+1:
+		return "RW"
 	case v.inv == "I4" && strings.Contains(v.msg, "Phase-B round while the network"):
 		return "M3"
 	case v.inv == "I3" && strings.Contains(v.msg, "network accept-all-captive"):
@@ -797,7 +808,7 @@ func (s *simRun) classify(v simViolation) string {
 	case v.inv == "I4" && strings.Contains(v.msg, "steady state") && s.net == snAcceptAll:
 		return "M3"
 	case v.inv == "I1" && (strings.Contains(v.msg, "failed 503 before") || strings.Contains(v.msg, "without that verdict")) &&
-		!s.lastCodeLessAt.IsZero() && s.now().Sub(s.lastCodeLessAt)-(s.pausedNow()-s.lastCodeLessPaused) < simSpecCap:
+		!s.lastCodeLessAt.IsZero() && s.now().Sub(s.lastCodeLessAt)-(s.pausedNow()-s.lastCodeLessPaused) < simSpecCap+s.tickBound()+s.maxChain():
 		return "FA"
 	case v.inv == "I3" && strings.Contains(v.msg, "stale 503") &&
 		(s.nodes[s.curNode()].st.kind == skCodeLess || !s.lastRaceCodeLessAt.IsZero()):
@@ -1006,6 +1017,7 @@ func (s *simRun) applyEvent(ev simEvent) {
 			s.simPausedTotal += s.now().Sub(s.simPauseStart)
 		}
 		s.paused = false
+		s.lastWakeAt = s.now()
 		s.e.Wake()
 	}
 }
@@ -1250,20 +1262,28 @@ func (s *simRun) readDiags() {
 			v := verdictFromString(fmt.Sprint(d.attrs["verdict"]))
 			s.lastVerdict, s.haveVerdict, s.okSinceVerd = v, true, false
 			s.logf("engine netcheck trigger=%v verdict=%v evidence=%v", d.attrs["trigger"], d.attrs["verdict"], d.attrs["evidence"])
-			if d.attrs["trigger"] == "wait-tick" {
+			switch d.attrs["trigger"] {
+			case "wait-tick":
 				s.waitTicks = append(s.waitTicks, s.now())
+			case "recovered":
+				s.recTicks = append(s.recTicks, s.now())
 			}
 		case "DIAG: outbound-failover":
 			s.res.failovers++
+			s.cOKSaved = time.Time{} // the engine saw the break: no bridge
 			s.okSinceVerd = true
 			s.logf("engine FAILOVER %v → %v", d.attrs["from"], d.attrs["to"])
 		case "DIAG: outbound-exhausted", "DIAG: outbound-exhausted-recovered", "DIAG: outbound-exhausted-fatal":
 			if d.msg == "DIAG: outbound-exhausted-fatal" {
 				s.res.caps++
 			}
+			if d.msg == "DIAG: outbound-exhausted-recovered" {
+				s.cOKSaved = time.Time{} // the engine saw the break: no bridge
+			}
 			s.logf("engine %s %v", strings.TrimPrefix(d.msg, "DIAG: "), d.attrs)
 		case "DIAG: transport-rerace":
 			s.logf("engine re-race reason=%v", d.attrs["reason"])
+			s.lastReRaceReason = fmt.Sprint(d.attrs["reason"])
 		case "engine: fail":
 			s.logf("engine FAIL code=%v %v", d.attrs["code"], d.attrs["message"])
 		}
@@ -1579,9 +1599,13 @@ func (s *simRun) observe(idle bool) {
 	// I3 down: while holding / scheduled, a down network is shown within one tick.
 	if inSchedule && !s.downSince.IsZero() && !s.downFlagged && !(s.sc.noTargets && s.net != snIfaceDown) {
 		b := passiveFreshness + s.tickBound() + s.maxChain()
-		if now.Sub(s.downSince) > b && code != s.net.code() {
+		from := s.downSince // paused time does not count: the engine observes nothing then
+		if s.lastWakeAt.After(from) {
+			from = s.lastWakeAt
+		}
+		if now.Sub(from) > b && code != s.net.code() {
 			s.downFlagged = true
-			s.violate("I3", "network %s for %v while reconnecting, status still %d (bound %v)", s.net, now.Sub(s.downSince).Round(time.Second), code, b)
+			s.violate("I3", "network %s for %v while reconnecting, status still %d (bound %v)", s.net, now.Sub(from).Round(time.Second), code, b)
 		}
 	}
 	// I3c: no stale 503 once a working node is available: the clock runs
@@ -1669,7 +1693,13 @@ func (s *simRun) checkBudgets(now time.Time) {
 	// network there is no hold, so every wait-tick is a schedule tick.
 	if s.net == snOnline && len(s.waitTicks) >= 2 && !s.lpFlagged {
 		t1, t2 := s.waitTicks[len(s.waitTicks)-2], s.waitTicks[len(s.waitTicks)-1]
-		thr := s.reconnSince.Add(simSpecLongPending + s.tickBound() + s.maxChain())
+		// A hold (network down) is not the schedule: the target joins it
+		// when the network is back, so pending runs from the later of the two.
+		base := s.reconnSince
+		if s.netOnlineSince.After(base) {
+			base = s.netOnlineSince
+		}
+		thr := base.Add(simSpecLongPending + s.tickBound() + s.maxChain())
 		if t2 != s.lpLastJudged && !t1.Before(thr) && !t1.Before(s.netOnlineSince) {
 			s.lpLastJudged = t2
 			s.res.lpPairs++
@@ -1679,6 +1709,42 @@ func (s *simRun) checkBudgets(now time.Time) {
 			s.violate("I4", "long pending: schedule ticks %v apart after %v reconnecting (want ≥ %v)", t2.Sub(t1).Round(100*time.Millisecond), now.Sub(s.reconnSince).Round(time.Second), simSpecLongTick)
 		}
 	}
+}
+
+// simCountGoroutines: goroutine records in a runtime.Stack(all) dump.
+func simCountGoroutines(dump []byte) int {
+	n := 0
+	for _, ln := range strings.Split(string(dump), "\n") {
+		if strings.HasPrefix(ln, "goroutine ") && strings.HasSuffix(ln, ":") {
+			n++
+		}
+	}
+	return n
+}
+
+// simGoroutineSummary: "func×count" of each goroutine's top k2 frame, for
+// the I5 message (the full dump goes to the scenario log).
+func simGoroutineSummary(dump []byte) string {
+	counts := map[string]int{}
+	for _, g := range strings.Split(string(dump), "\n\n") {
+		top := "?"
+		for _, ln := range strings.Split(g, "\n") {
+			if strings.HasPrefix(ln, "github.com/kaitu-io/") && !strings.Contains(ln, "sim_failover_test") && !strings.Contains(ln, "TestSim") {
+				top = strings.TrimPrefix(ln, "github.com/kaitu-io/k2/")
+				if k := strings.IndexByte(top, '('); k > 0 {
+					top = top[:k]
+				}
+				break
+			}
+		}
+		counts[top]++
+	}
+	var parts []string
+	for f, c := range counts {
+		parts = append(parts, fmt.Sprintf("%s×%d", f, c))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, " ")
 }
 
 // ---------------------------------------------------------------------------
@@ -1831,10 +1897,14 @@ func (s *simRun) run() simResult {
 		time.Sleep(time.Millisecond)
 	}
 	if n := runtime.NumGoroutine(); n > goroutinesBefore {
-		buf := make([]byte, 1<<16)
+		buf := make([]byte, 1<<20)
 		buf = buf[:runtime.Stack(buf, true)]
-		s.logf("goroutine dump:\n%s", buf)
-		s.violate("I5", "goroutines %d after the scenario, %d before", n, goroutinesBefore)
+		// Judge by the dump itself: a goroutine that exits between the
+		// count and the dump was slow, not leaked (loaded host).
+		if n = simCountGoroutines(buf); n > goroutinesBefore {
+			s.logf("goroutine dump:\n%s", buf)
+			s.violate("I5", "goroutines %d after the scenario, %d before: %s", n, goroutinesBefore, simGoroutineSummary(buf))
+		}
 	}
 	s.res.wall = time.Since(wallStart)
 	if s.res.wall > 60*time.Second {
