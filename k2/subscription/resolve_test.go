@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/kaitu-io/k2/config"
+	"github.com/kaitu-io/k2/engine"
 	"github.com/kaitu-io/k2/rule"
 )
 
@@ -111,5 +112,31 @@ func TestResolveWarnsStaleCacheAge(t *testing.T) {
 	}
 	if !strings.Contains(out, "cacheAgeS=") {
 		t.Fatalf("stale-cache DIAG must carry cacheAgeS field:\n%s", out)
+	}
+}
+
+// TestResolve_Center402ClassifiesAs402 drives the daemon's real path
+// (daemon.doUp → Manager.Resolve → engine.ClassifyError) against a Center that
+// answers 402 "membership expired" with no cache: the user must see 402
+// (renew), not 570 (server fault).
+func TestResolve_Center402ClassifiesAs402(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusPaymentRequired)
+		_, _ = w.Write([]byte("membership expired"))
+	}))
+	defer srv.Close()
+
+	host := strings.TrimPrefix(srv.URL, "https://")
+	m := NewManager(t.TempDir(), srv.Client(), nil)
+	t.Cleanup(m.CloseAll)
+	cfg := &config.ClientConfig{Routes: []config.RouteConfig{{Via: "k2subs://u:tok@" + host + "/api/subs"}}}
+
+	_, _, err := m.Resolve(cfg)
+	if err == nil {
+		t.Fatal("Resolve succeeded against a 402 Center, want error")
+	}
+	got := engine.ClassifyError(err)
+	if got.Code != engine.ErrCodePaymentRequired || got.Category != engine.CategoryClient {
+		t.Fatalf("ClassifyError(%v) = %d/%s, want 402/client", err, got.Code, got.Category)
 	}
 }

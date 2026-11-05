@@ -6,14 +6,15 @@ import (
 	"net"
 	"strings"
 
+	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/wire"
 )
 
 // Error codes: 10x client network, 40x client action, 50x server/node.
 // Used by StatusJSON() and exposed to frontend via daemon API.
 const (
-	ErrCodeNetworkUnavailable = 101 // Client network unreachable, no route to host
-	ErrCodeTimeout            = 108 // Connection or handshake timeout
+	ErrCodeNetworkUnavailable     = 101 // Client network unreachable, no route to host
+	ErrCodeTimeout                = 108 // Connection or handshake timeout
 	ErrCodeBadConfig              = 400 // Invalid wire URL, missing auth, bad scheme
 	ErrCodeAuthRejected           = 401 // Server rejected authentication (stream rejected)
 	ErrCodePaymentRequired        = 402 // Subscription expired or payment required
@@ -35,7 +36,8 @@ const (
 // network: k2's responsibility — transient local network issues (auto-retry subset of client).
 // server:  k2s's responsibility — unreachable, protocol error, connection fatal.
 // target:  destination's responsibility — blocked IP, target DNS fail, target connection refused.
-//          Per-request, does NOT affect tunnel health.
+//
+//	Per-request, does NOT affect tunnel health.
 const (
 	CategoryClient  = "client"  // User action needed (re-auth, reconfigure, renew)
 	CategoryNetwork = "network" // Transient, auto-retry or wait
@@ -120,6 +122,23 @@ func ClassifyError(err error) *EngineError {
 	var ee *EngineError
 	if errors.As(err, &ee) {
 		return ee
+	}
+
+	// Priority 0a': k2subs subscription fetch got a non-200 from Center.
+	// Producer-typed (config.FetchStatusError) so we map the HTTP status, not
+	// the text — Center answers 402 "membership expired" / "no private node
+	// entitlement", 401 bad credentials, 403 blocked / device class mismatch.
+	var fse *config.FetchStatusError
+	if errors.As(err, &fse) {
+		switch {
+		case fse.Status == ErrCodeBadConfig, fse.Status == ErrCodeAuthRejected,
+			fse.Status == ErrCodePaymentRequired, fse.Status == ErrCodeForbidden:
+			return newEngineError(fse.Status, err.Error())
+		case fse.Status >= 500:
+			return newEngineError(ErrCodeServerUnreachable, err.Error())
+		default:
+			return newEngineError(ErrCodeConnectionFatal, err.Error())
+		}
 	}
 
 	// Priority 0b: metadata (device-auth) rejection — the server rejected this
@@ -238,9 +257,11 @@ func outboundExhaustedError(outbound string, cause error) *EngineError {
 func classifyByPatterns(msg string) *EngineError {
 	// 402: Payment required. Do NOT match the bare word "subscription": the
 	// k2subs provider's own errors ("provider: subscription: no matching
-	// session for URL", "subscription: fetch ...") contain it and are not
-	// payment failures. Real 402s from the server arrive as StreamError{Code:402}
-	// and are classified by code before reaching this function.
+	// session for URL", "subscription pick: ...") contain it and are not
+	// payment failures. Real 402s are producer-typed and classified by code
+	// before reaching this function: wire.ErrMetadataRejected wrapping
+	// StreamError{Code:402} (node metadata auth), and config.FetchStatusError
+	// {Status:402} (Center subscription fetch).
 	if strings.Contains(msg, "payment required") {
 		return newEngineError(ErrCodePaymentRequired, msg)
 	}

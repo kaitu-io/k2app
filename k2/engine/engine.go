@@ -1581,6 +1581,11 @@ func reduceOutboundResults(urls []string, results []otResult) (tmMap map[string]
 // is test-injectable.
 var setupOutboundTransportFn = setupOutboundTransport
 
+// raceTransportFn is the Phase-A same-server re-race in outboundReplaceLoop.
+// It is wire.RaceTransport in production; tests override it to inject a
+// specific re-race failure (e.g. a Center 402 metadata rejection).
+var raceTransportFn = wire.RaceTransport
+
 // setupOutboundTransport creates a TransportManager for a single k2v5:// URL.
 // Performs: ParseURL → resolveDialAddr → RaceTransport → TM setup.
 // The caller must close the returned outboundTransport on error paths.
@@ -2063,7 +2068,7 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 		)
 
 		raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
-		result, raceErr := wire.RaceTransport(raceCtx, target.wireCfg, target.wireCfg.DialAddr, dd, target.jar)
+		result, raceErr := raceTransportFn(raceCtx, target.wireCfg, target.wireCfg.DialAddr, dd, target.jar)
 		raceCancel()
 
 		if raceErr == nil {
@@ -2106,6 +2111,25 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 			continue
 		}
 
+		// A 401/402 re-race rejection is Center's verdict on this device, not
+		// on this node: no replacement candidate can pass the same check, so
+		// don't spend them — fail with the error the user can act on.
+		// OnOutboundFatal still fires: the gateway relies on it to retry the
+		// saved session later (e.g. after the user renews).
+		if ce := ClassifyError(raceErr); ce.RequiresUserAction() {
+			e.mu.Lock()
+			handler := e.handler
+			outboundName := target.name
+			e.mu.Unlock()
+			slog.Error("engine: re-race rejected by account check, not replacing outbound",
+				"outbound", outboundName, "code", ce.Code, "err", raceErr)
+			_ = e.fail(ce)
+			if handler != nil {
+				handler.OnOutboundFatal(outboundName, ce)
+			}
+			return
+		}
+
 		// --- Phase B: ask provider for a replacement URL ----------------
 		if err := e.replaceOutboundServer(ctx, target, raceErr, dd, provider); err != nil {
 			// Exhausted or ctx cancelled. If it was ctx, just exit quietly.
@@ -2115,13 +2139,21 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 			e.mu.Lock()
 			handler := e.handler
 			outboundName := target.name
+			sticky := e.lastError
 			e.mu.Unlock()
 			slog.Error("engine: outbound replacement exhausted",
 				"outbound", outboundName, "err", err)
 			if handler != nil {
 				handler.OnOutboundFatal(outboundName, err)
 			}
-			_ = e.fail(outboundExhaustedError(outboundName, err))
+			// A sticky 401/402 (ReportWireError, e.g. membership lapsed
+			// mid-session) is still the true cause: no node could have
+			// fixed it, so don't replace it with "server unreachable".
+			var failErr error = outboundExhaustedError(outboundName, err)
+			if sticky.RequiresUserAction() {
+				failErr = sticky
+			}
+			_ = e.fail(failErr)
 			return
 		}
 		// Successful swap — reRaceFailStreak reset inside replaceOutboundServer.
