@@ -102,9 +102,11 @@ type Engine struct {
 	holdWake chan string
 	// recoveredWake (cap 1) carries a target the health monitor saw answer
 	// again (targetRecovered). The replace loop ticks it at once when it is
-	// on the retry schedule (final-review-2 M8): status clears without
+	// on the retry schedule (final-review-2 M8), and a network hold re-judges
+	// at once when it is the held target (device D2): status clears without
 	// waiting out a 30/60s step. Not a re-race signal (review C): at most
-	// one tick per holdBackoff[0] (retrySet.recoveredDue). Created in New.
+	// one tick per holdBackoff[0] since the last attempt
+	// (retrySet.recoveredDue / holdUntilOnline). Created in New.
 	recoveredWake chan *outboundTransport
 	// holdTimerFn arms one hold backoff timer, returning its channel and a
 	// stop func. Real timer in production (New); tests inject a fake.
@@ -179,6 +181,11 @@ type outboundTransport struct {
 	// targetRecovered so an answering node wakes the loop only for a
 	// scheduled target — not on every echo success (final-review-2 M8).
 	scheduled atomic.Bool
+	// held: blocked in a network hold (holdUntilOnline sets it for its
+	// target, clears it on return). targetRecovered wakes the hold the same
+	// way it wakes the schedule (device D2: the node carried traffic 2s after
+	// the network came back, the hold ended ~29s later at its backoff tick).
+	held atomic.Bool
 }
 
 // reRaceFailThresholdForReplace is the RaceTransport-failure count after
@@ -2308,6 +2315,12 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 		if target == nil || target.tm == nil {
 			continue
 		}
+		if paused, _ := e.pauseState(); paused {
+			// An echo signal while paused (sim PE): no race, no escalate — a
+			// race would reinstall what Pause released. Dropped; after Wake
+			// the probe signals again if the node is still failing.
+			continue
+		}
 
 		if _, ok := retries.pending[target]; ok {
 			// On the retry schedule: only its timer and network events
@@ -2357,6 +2370,14 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 			slog.Warn("engine: no replacement candidates, retrying current outbound on a schedule", "outbound", name)
 			retries.reason = noCandidatesError(name)
 			retries.schedule(target, 0)
+		case escPaused:
+			// Pause landed before or during the escalation (sim PI): nothing
+			// learned, no cap. The target joins the schedule so Wake's
+			// immediate tick resumes it (Phase A, then Phase B).
+			name := e.targetName(target)
+			slog.Info("engine: paused during escalation, retrying on Wake", "outbound", name)
+			retries.reason = retryingHoldError(name)
+			retries.schedule(target, 0)
 		case escExhausted:
 			// Every candidate failed on a working network. Not a disconnect
 			// (R1): retry on the schedule; only exhaustFailAfter of sustained
@@ -2365,6 +2386,7 @@ func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 			retries.enterExhausted(target, e.targetName(target), exhaustErr,
 				exhaustCounts(netOnline, lastRaceErr, exhaustErr))
 		}
+		retries.notePhaseA(target, lastRaceErr)
 		// The loop owns the shown hold between events: the retry set's
 		// reason, or none. Also clears a leftover hold after a Phase-B swap.
 		e.setHold(ctx, retries.hold())
@@ -2380,7 +2402,21 @@ const (
 	escNoCandidates                  // node down, nothing to replace it: schedule retries (no cap)
 	escExhausted                     // every candidate failed on a working network: schedule retries (capped)
 	escHeld                          // the network died during the round: nothing learned, stay as scheduled
+	escPaused                        // a Pause landed during the round: aborted, stay (or go) on the schedule unchanged
 )
+
+// errPausedRound is replaceOutboundServer's error when a Pause landed during
+// the round: before a candidate setup, or after one succeeded (the fresh
+// TransportManager is closed, not swapped in — a swap would reinstall the
+// connections Pause released). Untried candidates are not excluded.
+var errPausedRound = errors.New("engine: paused during the replacement round")
+
+// retryingHoldError is the shown hold of a target that went on the retry
+// schedule because a Pause aborted its escalation (escPaused): its next tick
+// (Wake's) sets the real reason.
+func retryingHoldError(name string) *EngineError {
+	return newEngineError(ErrCodeServerUnreachable, "outbound "+name+" unreachable; retrying")
+}
 
 // targetName reads target.name under e.mu.
 func (e *Engine) targetName(target *outboundTransport) string {
@@ -2458,9 +2494,10 @@ func (e *Engine) wireHealthRecovered(hm *healthMonitor) {
 		e.mu.Lock()
 		ot.reRaceFailStreak = 0
 		e.mu.Unlock()
-		// A scheduled target ticks now (final-review-2 M8). Never blocks:
-		// a pending token is enough.
-		if ot.scheduled.Load() {
+		// A scheduled target ticks now (final-review-2 M8), a held one
+		// re-judges its hold now (device D2). Never blocks: a pending token
+		// is enough.
+		if ot.scheduled.Load() || ot.held.Load() {
 			select {
 			case e.recoveredWake <- ot:
 			default:
@@ -2543,6 +2580,11 @@ func (e *Engine) failIfExhaustedByAccount(target *outboundTransport, err error) 
 // exhaustion (an *exhaustedError chain). The third result is the current
 // node's latest Phase-A error (for exhaustCounts).
 func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceErr error, dd wire.DirectDialer, provider OutboundProvider, restore *EngineError) (escResult, error, error) {
+	if paused, _ := e.pauseState(); paused {
+		// Pause landed during the Phase-A race that reached the threshold:
+		// no netcheck, no candidates (sim PI (d)). The caller schedules it.
+		return escPaused, nil, raceErr
+	}
 	// A network event from before this verdict is already reflected in it.
 	e.drainHoldWake()
 	v := e.judgeNet(ctx, "pre-phaseB")
@@ -2551,12 +2593,17 @@ func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceEr
 			return escExit, nil, raceErr
 		}
 		if v.blocksFailover() {
-			switch e.holdUntilOnline(ctx, target, dd, v, restore) {
+			switch e.holdUntilOnline(ctx, target, dd, v, restore, raceErr) {
 			case holdExit:
 				return escExit, nil, raceErr
 			case holdRecovered:
 				e.dropQueuedSignal(target)
 				return escDone, nil, raceErr
+			}
+			if paused, _ := e.pauseState(); paused {
+				// Pause landed during the hold's last netcheck (sim PI): no
+				// network-back race. The caller schedules it; Wake ticks it.
+				return escPaused, nil, raceErr
 			}
 			// Back online: the current node first — it may only have looked
 			// dead because the network was.
@@ -2595,11 +2642,17 @@ func (e *Engine) escalate(ctx context.Context, target *outboundTransport, raceEr
 		if ctx.Err() != nil {
 			return escExit, nil, raceErr
 		}
+		if errors.Is(err, errPausedRound) {
+			return escPaused, nil, raceErr
+		}
 		if e.noCandidates(target, err) {
 			// Manual mode / no fallbacks: nothing to switch to. Never fail —
 			// the loop retries the current node on a schedule (retrySet)
 			// without blocking the other outbounds.
 			return escNoCandidates, nil, raceErr
+		}
+		if paused, _ := e.pauseState(); paused {
+			return escPaused, nil, raceErr // sim PI (c)
 		}
 
 		v = e.judgeNet(ctx, "pre-exhaust")
@@ -2665,6 +2718,7 @@ type exhaustedError struct {
 	userAction    *EngineError
 	allUserAction bool
 	allCodeLess   bool // tried > 0 and every candidate answered code-less (Center down)
+	anyCodeLess   bool // at least one candidate answered code-less: the round does not count toward the cap (sim FA)
 }
 
 func (x *exhaustedError) Error() string { return x.err.Error() }
@@ -2780,6 +2834,7 @@ func (e *Engine) replaceOutboundServer(
 	// Phase A and then Phase B, so it recovers on the current node or a
 	// candidate once auth works again (review N2 / B rulings).
 	allCodeLess := true
+	anyCodeLess := false
 	tried := 0
 
 	for {
@@ -2806,12 +2861,17 @@ func (e *Engine) replaceOutboundServer(
 			}
 			return &exhaustedError{err: err, tried: tried, userAction: userAction,
 				allUserAction: tried > 0 && userActionCount == tried,
-				allCodeLess:   tried > 0 && allCodeLess}
+				allCodeLess:   tried > 0 && allCodeLess, anyCodeLess: anyCodeLess}
 		}
 		if newURL == "" {
 			return fmt.Errorf("provider returned empty URL")
 		}
 
+		if paused, _ := e.pauseState(); paused {
+			// Pause landed mid-round (sim PI (a)): no further setup. newURL
+			// was handed out, not excluded — it was never tried.
+			return errPausedRound
+		}
 		slog.Info("engine: attempting outbound replacement",
 			"outbound", target.name,
 			"newURL", config.TruncateVia(newURL))
@@ -2827,7 +2887,9 @@ func (e *Engine) replaceOutboundServer(
 				userAction = ce
 				userActionCount++
 			}
-			if !isCodeLessReject(setupErr) {
+			if isCodeLessReject(setupErr) {
+				anyCodeLess = true
+			} else {
 				allCodeLess = false
 			}
 			// Tell the provider this URL also failed so it excludes and
@@ -2841,9 +2903,11 @@ func (e *Engine) replaceOutboundServer(
 			return ctx.Err()
 		}
 
-		// Verify target still alive and owned.
+		// Verify target still alive and owned, and the engine not paused
+		// (sim PI (b): a swap would reinstall what Pause released).
 		e.mu.Lock()
 		stillConnected := e.state == StateConnected
+		paused := e.paused
 		found := false
 		for _, ot := range e.outboundTMs {
 			if ot == target {
@@ -2856,6 +2920,12 @@ func (e *Engine) replaceOutboundServer(
 		if !stillConnected || !found {
 			newOT.tm.Close()
 			return fmt.Errorf("target outbound no longer live")
+		}
+		if paused {
+			newOT.tm.Close()
+			slog.Info("engine: replacement answered while paused, not swapped in",
+				"outbound", fromName, "tryURL", config.TruncateVia(newURL))
+			return errPausedRound
 		}
 
 		// Asked before e.mu: OwnsURL takes the shell's own locks.

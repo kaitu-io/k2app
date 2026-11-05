@@ -33,7 +33,8 @@ type diagRec struct {
 
 func (d *diagRecorder) Enabled(context.Context, slog.Level) bool { return true }
 func (d *diagRecorder) Handle(_ context.Context, r slog.Record) error {
-	if !strings.HasPrefix(r.Message, "DIAG: outbound-exhausted") && r.Message != "DIAG: transport-rerace" {
+	if !strings.HasPrefix(r.Message, "DIAG: outbound-exhausted") && r.Message != "DIAG: transport-rerace" &&
+		r.Message != "DIAG: outbound-failover" {
 		return nil
 	}
 	rec := diagRec{msg: r.Message, level: r.Level, attrs: map[string]any{}}
@@ -661,7 +662,8 @@ func TestExhaust_AllExcludedShellNeverFailsBeforeCap(t *testing.T) {
 	}
 }
 
-// A Center outage on a live node (Phase A code-less, M-3: no Phase B): the
+// A Center outage on a live node (Phase A code-less; Phase B at most every
+// codeLessPhaseBEvery, its candidates code-less too): the
 // node answers, so it is not dead — those ticks never count toward the cap,
 // and a 30 min outage never disconnects (review C1).
 func TestExhaust_CenterOutageLiveNodeNeverCaps(t *testing.T) {

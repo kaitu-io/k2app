@@ -190,7 +190,9 @@ func TestRetry_TickTriedZeroStaysScheduled(t *testing.T) {
 }
 
 // M-3: while the current node answers code-less (alive, Center down) a retry
-// tick does Phase A only — no candidate setups for the length of the outage.
+// tick does Phase A only within codeLessPhaseBEvery of joining the schedule
+// (the 5/15/45s ticks here) — after that, one Phase B per 2 min (sim FB,
+// TestCodeLess_*).
 func TestRetry_CenterOutageLiveNodeTickNoPhaseB(t *testing.T) {
 	hs := newFoHarness(t, foOpts{
 		fallbacks: map[string][]string{foURLA: {foURLB, foURLC}},

@@ -35,6 +35,15 @@ var holdBackoff = []time.Duration{5 * time.Second, 10 * time.Second, 30 * time.S
 // on the retry schedule (R1, spec §4.2 amendment 2026-11-05).
 const exhaustFailAfter = 10 * time.Minute
 
+// codeLessPhaseBEvery throttles Phase B on a retry tick whose Phase A got a
+// code-less reject (the current node is alive, Center unreachable from it):
+// at most one such round per target per interval, measured from its last
+// Phase-B attempt (from joining the schedule when it has had none). A
+// node-local Center-path failure must not pin the target to a live-but-
+// useless node (sim FB), and a global Center outage costs at most one round
+// of N candidate handshakes per interval (review 3 M-3's load concern).
+const codeLessPhaseBEvery = 2 * time.Minute
+
 // A target on the retry schedule for longPendingAfter (wall time since it
 // joined, paused time included) ticks every longPendingInterval instead of
 // the last holdBackoff step: manual mode on a dead node and a Center outage
@@ -57,7 +66,7 @@ func realHoldTimer(d time.Duration) (<-chan time.Time, func()) {
 // dials within passiveFreshness — pre-phaseB only — then the active
 // netcheck), and logs one DIAG: netcheck line. trigger: pre-phaseB,
 // pre-exhaust, wait-tick, net-event, wake (end of a Pause), recovered (the
-// health monitor saw a scheduled target answer).
+// health monitor saw a scheduled or held target answer).
 //
 // Passive evidence counts only for pre-phaseB, the first judgement of an
 // outage. pre-exhaust: it may predate the outage. Hold and schedule ticks
@@ -158,8 +167,16 @@ func noCandidatesError(name string) *EngineError {
 
 // holdUntilOnline holds on verdict v (v.blocksFailover()): the user's network is
 // broken, which affects every outbound alike, so the replace loop blocks here.
-// It re-checks on every wake — backoff timer (holdBackoff) or a network
-// event / the end of a Pause via holdWake. A wake while the engine is paused
+// It re-checks on every wake — backoff timer (holdBackoff), a network
+// event / the end of a Pause via holdWake, or the health monitor seeing the
+// held target's node answer (recoveredWake, trigger "recovered": a user dial
+// answered — device D2; at most one per holdBackoff[0] since the last
+// attempt, and it keeps the backoff step: a tick, not a re-race signal;
+// ignored while the latest Phase A — lastErr at entry, then the hold's own —
+// was a code-less reject, and after a recovered tick that failed until the
+// next backoff / net-event tick has run: sim RW). A
+// recovered token for another outbound is dropped (that target's own
+// schedule ticks it after the hold). A wake while the engine is paused
 // does nothing (no netcheck, no race: Pause released the connections — Wake
 // pokes holdWake when it ends). Each other wake first re-judges the network
 // (active netcheck only, see judgeNet):
@@ -178,7 +195,7 @@ func noCandidatesError(name string) *EngineError {
 //
 // A network event restarts the backoff at its first step: a fresh network
 // often needs a few seconds (DHCP, portal redirect) before it answers.
-func (e *Engine) holdUntilOnline(ctx context.Context, target *outboundTransport, dd wire.DirectDialer, v netVerdict, restore *EngineError) holdOutcome {
+func (e *Engine) holdUntilOnline(ctx context.Context, target *outboundTransport, dd wire.DirectDialer, v netVerdict, restore *EngineError, lastErr error) holdOutcome {
 	e.mu.Lock()
 	name := target.name
 	timerFn := e.holdTimerFn
@@ -187,26 +204,52 @@ func (e *Engine) holdUntilOnline(ctx context.Context, target *outboundTransport,
 		timerFn = realHoldTimer
 	}
 
+	now := e.holdNow
+	if now == nil {
+		now = time.Now
+	}
+
 	slog.Warn("engine: holding for the network", "outbound", name, "verdict", v.String())
+	target.held.Store(true)
+	defer target.held.Store(false)
 	e.setHold(ctx, v.holdError())
+	lastTry := now() // the pre-phaseB verdict that started the hold
+	codeLessA := isCodeLessReject(lastErr)
+	muted := false // a recovered tick failed; cleared by the next other tick (sim RW (b))
 	step := 0
+	var ch <-chan time.Time
+	stop := func() {}
 	for {
-		d := holdBackoff[min(step, len(holdBackoff)-1)]
-		step++
-		ch, stop := timerFn(d)
+		if ch == nil {
+			d := holdBackoff[min(step, len(holdBackoff)-1)]
+			step++
+			ch, stop = timerFn(d)
+		}
 		trigger := "wait-tick"
 		select {
 		case <-ctx.Done():
 			stop()
 			return holdExit
 		case <-ch:
+			ch = nil
 		case trigger = <-e.holdWake:
 			stop()
+			ch = nil
 			step = 0
+		case t := <-e.recoveredWake:
+			if t != target || codeLessA || muted || now().Sub(lastTry) < holdBackoff[0] {
+				continue // keep the armed timer
+			}
+			trigger = "recovered"
+			stop()
+			ch = nil
+			step = max(step-1, 0) // re-arm the step that was pending
 		}
 		if paused, _ := e.pauseState(); paused {
 			continue // final-review-2 I1
 		}
+		lastTry = now()
+		muted = trigger == "recovered" // stays set only if this tick fails
 		v = e.judgeNet(ctx, trigger)
 		if ctx.Err() != nil {
 			return holdExit
@@ -220,10 +263,14 @@ func (e *Engine) holdUntilOnline(ctx context.Context, target *outboundTransport,
 			e.setHold(ctx, v.holdError()) // final-review-2 M9
 			continue
 		}
+		if paused, _ := e.pauseState(); paused {
+			continue // Pause landed during the netcheck (sim PI): no Phase A
+		}
 		raceErr, quit := e.phaseA(ctx, target, dd, "wait-tick")
 		if quit || ctx.Err() != nil {
 			return holdExit
 		}
+		codeLessA = isCodeLessReject(raceErr)
 		if raceErr == nil {
 			slog.Info("engine: current outbound answered during hold, leaving hold",
 				"outbound", name, "verdict", v.String())
@@ -264,10 +311,17 @@ type retryState struct {
 	// sincePaused: the engine's pausedTotal when since was set — the cap
 	// subtracts paused time (counted). pendingSince: when the target joined
 	// the schedule (longPendingAfter). lastTry: the latest attempt (or the
-	// round that scheduled it) — recoveredDue's rate limit.
-	sincePaused  time.Duration
-	pendingSince time.Time
-	lastTry      time.Time
+	// round that scheduled it) — recoveredDue's rate limit. lastPhaseB: when
+	// the latest tick Phase B started (zero: none yet) — codeLessPhaseBDue.
+	// phaseACodeLess: its latest Phase A was a code-less reject;
+	// recoveredMuted: its latest tick was a recovered wake that did not
+	// recover it — both mute recovered wakes (recoveredDue, sim RW).
+	sincePaused    time.Duration
+	pendingSince   time.Time
+	lastTry        time.Time
+	lastPhaseB     time.Time
+	phaseACodeLess bool
+	recoveredMuted bool
 }
 
 // retrySet is the replace loop's retry schedule: outbounds whose node is
@@ -348,10 +402,38 @@ func (r *retrySet) deferDue() {
 }
 
 // recoveredDue reports whether a recovered wake may tick target now: it is
-// on the schedule and its last attempt is at least holdBackoff[0] old.
+// on the schedule, its last attempt is at least holdBackoff[0] old, its last
+// Phase A was not a code-less reject (an echo OK only re-proves the node is
+// alive — with Center hanging it would tick every ~16s forever, sim RW (a)),
+// and its last tick was not a recovered wake that failed (muted until its
+// next scheduled tick: at most one extra tick per cadence interval, sim RW
+// (b)).
 func (r *retrySet) recoveredDue(target *outboundTransport) bool {
 	st := r.pending[target]
-	return st != nil && r.now().Sub(st.lastTry) >= holdBackoff[0]
+	return st != nil && !st.phaseACodeLess && !st.recoveredMuted &&
+		r.now().Sub(st.lastTry) >= holdBackoff[0]
+}
+
+// notePhaseA records a scheduled target's latest Phase-A error (recoveredDue).
+// No-op for a target not on the schedule.
+func (r *retrySet) notePhaseA(target *outboundTransport, raceErr error) {
+	if st := r.pending[target]; st != nil {
+		st.phaseACodeLess = isCodeLessReject(raceErr)
+	}
+}
+
+// codeLessPhaseBDue reports whether a tick whose Phase A was code-less may
+// run Phase B: codeLessPhaseBEvery since st's last Phase B, or since it
+// joined the schedule when it has had none.
+func (r *retrySet) codeLessPhaseBDue(st *retryState) bool {
+	if st == nil {
+		return false
+	}
+	from := st.lastPhaseB
+	if from.IsZero() {
+		from = st.pendingSince
+	}
+	return r.now().Sub(from) >= codeLessPhaseBEvery
 }
 
 func (r *retrySet) pausedTotal() time.Duration {
@@ -475,17 +557,24 @@ func (r *retrySet) all() []*outboundTransport {
 // retryOnce is one scheduled attempt for a scheduled target (no candidates,
 // or exhausted): re-judge the network (so the hold shows the network's
 // reason when it is the network that is down), then one Phase-A and — when
-// that fails on a working network with an error that is not a code-less
-// reject (the node itself is dead or refusing) — one Phase B with a Reset
-// provider (retryPhaseB). Success removes the target (streak reset by
-// phaseA / the swap; a queued echo signal for it is dropped; the provider is
-// Reset); failure advances its backoff (5s→10s→30s→30s…). A 401/402/403
-// fails the engine. An exhausted target whose online exhaustion has lasted
-// exhaustFailAfter (paused time excluded) fails it too (failAtExhaustCap).
-// An iface-down verdict skips Phase A and B (M9). Echo signals never
-// trigger it (outboundReplaceLoop drops them for pending targets); the
-// caller never calls it while paused (I1). Returns false when the loop must
-// exit. The caller syncs the shown hold afterwards.
+// that fails on a working network — one Phase B with a Reset provider
+// (retryPhaseB). If the Phase-A error is a code-less reject (node alive,
+// Center unreachable from it) that Phase B runs at most once per
+// codeLessPhaseBEvery (codeLessPhaseBDue): every tick would cost N candidate
+// handshakes for the length of a Center outage (review 3 M-3), never would
+// pin the target to a node whose own Center path is broken (sim FB).
+// Success removes the target (streak reset by phaseA / the swap; a queued
+// echo signal for it is dropped; the provider is Reset); failure advances
+// its backoff (5s→10s→30s→30s…). A 401/402/403 fails the engine. An
+// exhausted target whose online exhaustion has lasted exhaustFailAfter
+// (paused time excluded) fails it too (failAtExhaustCap). An iface-down
+// verdict skips Phase A and B (M9). Echo signals never trigger it
+// (outboundReplaceLoop drops them for pending targets). The caller does not
+// call it while paused (I1); a Pause landing during it aborts the tick at the
+// next check (sim PI: here, before each candidate setup, before the swap,
+// before the pre-exhaust netcheck) and leaves the target's schedule and cap
+// state as they were — Wake ticks it. Returns false when the loop must exit.
+// The caller syncs the shown hold afterwards.
 func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTransport, trigger, reason string) bool {
 	e.mu.Lock()
 	connected := e.state == StateConnected
@@ -499,6 +588,9 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 		// timer: a busy spin until Stop cancels ctx.
 		return false
 	}
+	if paused, _ := e.pauseState(); paused {
+		return true // Pause landed during an earlier target's tick (sim PI)
+	}
 	st := r.pending[target]
 	if st != nil && st.exhausted {
 		reason = "exhausted-retry" // counted apart from no-candidates wait-ticks
@@ -506,6 +598,9 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 	v := e.judgeNet(ctx, trigger)
 	if ctx.Err() != nil {
 		return false
+	}
+	if paused, _ := e.pauseState(); paused {
+		return true // Pause landed during the netcheck (sim PI): no Phase A, state untouched
 	}
 	phaseB := escHeld // no Phase B ran: nothing new learned about the candidates
 	var raceErr, exhaustErr error
@@ -531,12 +626,13 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 			return false
 		}
 	}
-	// Phase B only when the current node itself is dead or refusing. A
-	// code-less reject means the node is alive and Center is not: a
-	// candidate would answer the same, so a tick does Phase A only for the
-	// length of the outage (review 3 M-3). Once the node dies its error
-	// stops being code-less and Phase B runs again (review B).
-	if !v.blocksFailover() && provider != nil && !isCodeLessReject(raceErr) {
+	// Phase B on every tick when the current node itself is dead or
+	// refusing. A code-less reject means the node is alive and Center is not
+	// reachable from it: in a global Center outage every candidate answers
+	// the same, so such a tick runs Phase B only every codeLessPhaseBEvery
+	// (review 3 M-3's load bound) — but it does run it, because the broken
+	// Center path may be this node's alone (sim FB).
+	if !v.blocksFailover() && provider != nil && (!isCodeLessReject(raceErr) || r.codeLessPhaseBDue(st)) {
 		// The current node still fails on a working network: try the
 		// candidates again (review B ruling) — a target that entered the
 		// schedule for a Center outage must not sit on a node that died
@@ -547,8 +643,13 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 		if rs, ok := provider.(interface{ Reset() }); ok {
 			rs.Reset()
 		}
+		started := r.now()
 		phaseB, exhaustErr, verdict = e.retryPhaseB(ctx, target, raceErr, dd, provider)
 		switch phaseB {
+		case escPaused:
+			// Pause landed mid-round (sim PI): nothing learned, schedule and
+			// cap state untouched; Wake ticks the target at once.
+			return true
 		case escExit:
 			return false
 		case escDone:
@@ -561,6 +662,9 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 			}
 			return true
 		}
+		if st != nil {
+			st.lastPhaseB = started
+		}
 	}
 	next := 0
 	if st != nil {
@@ -571,6 +675,10 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 	}
 	r.schedule(target, next)
 	st = r.pending[target]
+	if v != netIfaceDown {
+		st.phaseACodeLess = isCodeLessReject(raceErr)
+	}
+	st.recoveredMuted = trigger == "recovered" // a failed recovered tick mutes until the next tick (sim RW)
 	counts := exhaustCounts(verdict, raceErr, exhaustErr)
 	switch phaseB {
 	case escExhausted:
@@ -602,16 +710,19 @@ func (e *Engine) retryOnce(ctx context.Context, r *retrySet, target *outboundTra
 // exhaustCounts reports whether a tick (or escalate's exhaustion) counts
 // toward the cap: the network works by the round's LATEST verdict (a
 // pre-exhaust verdict that blocked overrides the tick's first one — R1
-// review I-1), the current node is not answering code-less, and the round's
-// candidates were not all code-less. Code-less = node alive, Center down: a
-// Center outage of any length never disconnects, even with the current node
-// dead (R1 review M-2 ruling). A dead fleet (transport failures) counts.
+// review I-1), the current node is not answering code-less, and no
+// candidate of the round answered code-less (reject or metadata timeout).
+// Code-less = node alive, Center down: a Center outage of any length never
+// disconnects, even with the current node dead (R1 review M-2 ruling) and
+// even when the round mixes code-less with transport-dead answers (sim FA —
+// common since code-less ticks run Phase B every 2 min). A dead fleet
+// (transport failures only) counts.
 func exhaustCounts(verdict netVerdict, raceErr, exhaustErr error) bool {
 	if verdict.blocksFailover() || isCodeLessReject(raceErr) {
 		return false
 	}
 	var x *exhaustedError
-	return !(errors.As(exhaustErr, &x) && x.allCodeLess)
+	return !(errors.As(exhaustErr, &x) && x.anyCodeLess)
 }
 
 // failAtExhaustCap fails the engine (failExhausted) once target has been
@@ -633,10 +744,12 @@ func (e *Engine) failAtExhaustCap(r *retrySet, target *outboundTransport, name s
 // when there is nothing to switch to (manual mode — no cap); escExhausted
 // with the exhaustion error when every candidate failed (or none could be
 // tried) on a working network; escHeld when the network died meanwhile
-// (provider Reset, nothing learned); escExit when ctx ended or an account
-// verdict failed the engine. The verdict returned is the pre-exhaust one
-// when it was taken (escHeld / escExhausted), else online: the caller shows
-// and counts by it (R1 review I-1).
+// (provider Reset, nothing learned); escPaused when a Pause landed during
+// the round (no further setup, no swap, no pre-exhaust netcheck — sim PI);
+// escExit when ctx ended or an account verdict failed the engine. The
+// verdict returned is the pre-exhaust one when it was taken (escHeld /
+// escExhausted), else online: the caller shows and counts by it (R1 review
+// I-1).
 func (e *Engine) retryPhaseB(ctx context.Context, target *outboundTransport, raceErr error, dd wire.DirectDialer, provider OutboundProvider) (escResult, error, netVerdict) {
 	err := e.replaceOutboundServer(ctx, target, raceErr, dd, provider)
 	switch {
@@ -644,8 +757,13 @@ func (e *Engine) retryPhaseB(ctx context.Context, target *outboundTransport, rac
 		return escDone, nil, netOnline
 	case ctx.Err() != nil:
 		return escExit, nil, netOnline
+	case errors.Is(err, errPausedRound):
+		return escPaused, nil, netOnline
 	case e.noCandidates(target, err):
 		return escNoCandidates, nil, netOnline
+	}
+	if paused, _ := e.pauseState(); paused {
+		return escPaused, nil, netOnline // sim PI (c)
 	}
 	v := e.judgeNet(ctx, "pre-exhaust")
 	if ctx.Err() != nil {
