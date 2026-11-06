@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { useVPNMachine } from '../stores/vpn-machine.store';
 import { useVPNMachineStore } from '../stores/vpn-machine.store';
 import { isNetworkError } from '../services/vpn-types';
-import { ENGINE_ERROR_CODES } from '../utils/errorCatalog';
+import { ENGINE_ERROR_CODES, engineJudgesNetwork } from '../utils/errorCatalog';
 import { useServiceBlocker } from '../hooks/useServiceBlocker';
 import {
   canOpenServiceSettings,
@@ -187,8 +187,11 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
   // reason line already says so — the "check your network" banner would
   // contradict it for up to 10 minutes. 101/106/107/108 while reconnecting,
   // and 503 after a disconnect, keep the banner.
+  // Only engines that ran netcheck mean "network fine" by it (engineJudgesNetwork):
+  // an older engine's 503 can be the user's own dead network, so keep the banner.
   const reconnectingServerHold =
-    state === 'reconnecting' && error?.code === ENGINE_ERROR_CODES.ErrCodeServerUnreachable;
+    state === 'reconnecting' && error?.code === ENGINE_ERROR_CODES.ErrCodeServerUnreachable &&
+    engineJudgesNetwork();
   const hasNetworkError = error && isNetworkError(error.code) && !reconnectingServerHold;
 
   let alertType: AlertType | null = null;

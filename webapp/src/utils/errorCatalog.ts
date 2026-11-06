@@ -44,6 +44,8 @@
  * declared in both tables; the coverage test checks both.
  */
 
+import { compareVersions } from './versionCompare';
+
 /**
  * Error codes — backend API codes synced with api/response.go, plus
  * frontend-only codes for VPN/network/action errors.
@@ -439,8 +441,34 @@ export const RECONNECT_REASON_CATALOG: Readonly<Record<number, ErrorEntry>> = {
   [ENGINE_ERROR_CODES.ErrCodeServerUnreachable]: { key: 'common:status.reconnectReason.serverUnreachable', defaultValue: 'Line temporarily unreachable, retrying' },
 };
 
+/**
+ * First shell version whose engine runs netcheck before it reports a
+ * reconnecting 503 — from there on that 503 means "line unreachable, your
+ * network is fine". Older engines (0.4.15 and below, still served this webapp
+ * by web OTA) report EVERY TCP-dial failure as 503, the user's own dead Wi-Fi
+ * included, so for them a reconnecting 503 must keep the generic copy and the
+ * "check your network" banner.
+ *
+ * Version gate on purpose: the status payload carries no netcheck capability
+ * to detect, and the engine always ships inside the shell (desktop sidecar,
+ * mobile appext, Linux k2), so `_platform.version` is the engine's version.
+ * Base version only, so `0.4.16-beta.N` counts. Unknown version → old.
+ */
+export const NETCHECK_ENGINE_MIN_VERSION = '0.4.16';
+
+export function engineJudgesNetwork(
+  version: string | null | undefined = typeof window !== 'undefined' ? window._platform?.version : undefined,
+): boolean {
+  if (!version) return false;
+  const base = version.split('-')[0];
+  if (!/^\d+\.\d+\.\d+/.test(base)) return false;
+  return compareVersions(base, NETCHECK_ENGINE_MIN_VERSION) >= 0;
+}
+
 /** Fully-qualified reason key for a reconnecting status, or null = generic copy. */
 export function getReconnectReasonKey(code: number | null | undefined): string | null {
   if (code == null) return null;
+  // Old engines' reconnecting 503 may be the user's own network — see engineJudgesNetwork.
+  if (code === ENGINE_ERROR_CODES.ErrCodeServerUnreachable && !engineJudgesNetwork()) return null;
   return RECONNECT_REASON_CATALOG[code]?.key ?? null;
 }

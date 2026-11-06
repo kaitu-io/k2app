@@ -51,6 +51,8 @@ import {
   LOG_ONLY_CODES,
   ENGINE_NETWORK_ERROR_CODES,
   RECONNECT_REASON_CATALOG,
+  engineJudgesNetwork,
+  getReconnectReasonKey,
 } from '../errorCatalog';
 import { getErrorI18nKey, isNetworkError } from '../../services/vpn-types';
 import { brandConfig } from '../../brands';
@@ -228,5 +230,46 @@ describe('failover netcheck verdicts — 106 / 107 / 503', () => {
     expect(resolveKey(zh, RECONNECT_REASON_CATALOG[107].key)).toBe('此 Wi-Fi 需要网页登录');
     expect(resolveKey(zh, RECONNECT_REASON_CATALOG[503].key)).toBe('线路暂时无法连接，正在重试');
     expect(resolveKey(zh, 'common:errors.vpn.serverUnreachable')).toBe('线路暂时都无法连接，请稍后重试');
+  });
+});
+
+/**
+ * Web OTA serves this webapp to 0.4.10–0.4.15 shells whose engines report ANY
+ * TCP-dial failure as 503 — the user's own dead Wi-Fi included, because they
+ * have no netcheck. There a reconnecting 503 must keep the generic copy (and
+ * ServiceAlert its "check your network" banner); only a ≥0.4.16 engine's 503
+ * means "line unreachable, network fine".
+ */
+describe('reconnecting 503 copy is gated on a netcheck-capable engine', () => {
+  it('engineJudgesNetwork: ≥ 0.4.16 (incl. betas and OTA build suffixes) yes; older / unknown no', () => {
+    expect(engineJudgesNetwork('0.4.16')).toBe(true);
+    expect(engineJudgesNetwork('0.4.16-beta.2')).toBe(true);
+    expect(engineJudgesNetwork('0.5.0')).toBe(true);
+    expect(engineJudgesNetwork('0.4.15')).toBe(false);
+    expect(engineJudgesNetwork('0.4.10')).toBe(false);
+    expect(engineJudgesNetwork('')).toBe(false);
+    expect(engineJudgesNetwork(undefined)).toBe(false);
+    expect(engineJudgesNetwork('dev')).toBe(false);
+  });
+
+  it('old shell: reconnecting 503 → generic copy; new verdict codes unaffected', () => {
+    const saved = (window as any)._platform;
+    (window as any)._platform = { ...(saved ?? {}), version: '0.4.15' };
+    try {
+      expect(getReconnectReasonKey(503)).toBeNull();
+    } finally {
+      (window as any)._platform = saved;
+    }
+  });
+
+  it('new shell: reconnecting 503 → "line unreachable, retrying"', () => {
+    const saved = (window as any)._platform;
+    (window as any)._platform = { ...(saved ?? {}), version: '0.4.16' };
+    try {
+      expect(getReconnectReasonKey(503)).toBe(RECONNECT_REASON_CATALOG[503].key);
+      expect(getReconnectReasonKey(106)).toBe(RECONNECT_REASON_CATALOG[106].key);
+    } finally {
+      (window as any)._platform = saved;
+    }
   });
 });
