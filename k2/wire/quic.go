@@ -659,7 +659,7 @@ serialize:
 			// connect like a code-less reject, without its 401 meaning.
 			closeQUICConnSafe(conn, "metadata response timed out")
 			transport.Close()
-			return nil, &ProxyLayerError{Err: mdErr}
+			return nil, metadataTimeoutConnectError(mdErr)
 		}
 		slog.Warn("QUICClient: metadata stream failed (best-effort)", "mode", c.cfg.Mode, "err", mdErr)
 	}
