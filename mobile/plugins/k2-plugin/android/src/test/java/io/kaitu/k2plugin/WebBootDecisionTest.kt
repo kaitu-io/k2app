@@ -25,6 +25,7 @@ class WebBootDecisionTest {
             hasBootPending = true,
             hasIndex = true,
             diskVersion = "0.4.8.20000000",
+            appVersion = "0.4.8",
         )
         assertEquals(WebBootDecision.Rollback("0.4.8.20000000"), d)
     }
@@ -38,6 +39,7 @@ class WebBootDecisionTest {
             hasBootPending = true,
             hasIndex = true,
             diskVersion = null,
+            appVersion = "0.4.8",
         )
         assertEquals(WebBootDecision.Rollback(null), d)
     }
@@ -55,6 +57,7 @@ class WebBootDecisionTest {
             hasBootPending = true,
             hasIndex = false,
             diskVersion = "0.4.8.20000000",
+            appVersion = "0.4.8",
         )
         assertEquals(WebBootDecision.Rollback("0.4.8.20000000"), d)
     }
@@ -66,6 +69,7 @@ class WebBootDecisionTest {
             hasBootPending = false,
             hasIndex = true,
             diskVersion = "0.4.8.20000000",
+            appVersion = "0.4.8",
         )
         assertEquals(WebBootDecision.ServeDisk, d)
     }
@@ -77,6 +81,7 @@ class WebBootDecisionTest {
             hasBootPending = false,
             hasIndex = false,
             diskVersion = null,
+            appVersion = "0.4.8",
         )
         assertEquals(WebBootDecision.CleanCorrupt, d)
     }
@@ -88,6 +93,7 @@ class WebBootDecisionTest {
             hasBootPending = false,
             hasIndex = false,
             diskVersion = null,
+            appVersion = "0.4.8",
         )
         assertEquals(WebBootDecision.ServeBundled, d)
     }
@@ -101,7 +107,58 @@ class WebBootDecisionTest {
             hasBootPending = true,
             hasIndex = false,
             diskVersion = null,
+            appVersion = "0.4.8",
         )
         assertEquals(WebBootDecision.ServeBundled, d)
+    }
+
+    /**
+     * An APK upgrade must not keep serving an older cached OTA bundle: 0.4.16
+     * shell + 0.4.15.x disk bundle → discard and serve the bundled webapp
+     * (the bundled one carries the newer bridge/engine wiring, e.g. fallbacks).
+     */
+    @Test
+    fun shell_newer_than_disk_bundle_discards_it() {
+        val d = decideWebBoot(
+            hasWebUpdateDir = true,
+            hasBootPending = false,
+            hasIndex = true,
+            diskVersion = "0.4.15.26499202",
+            appVersion = "0.4.16",
+        )
+        assertEquals(WebBootDecision.DiscardStale("0.4.15.26499202"), d)
+    }
+
+    /** An OTA built from the same release (x.y.z.<build>) is newer than the shell — serve it. */
+    @Test
+    fun ota_of_the_same_release_is_served() {
+        val d = decideWebBoot(
+            hasWebUpdateDir = true,
+            hasBootPending = false,
+            hasIndex = true,
+            diskVersion = "0.4.16.26600000",
+            appVersion = "0.4.16",
+        )
+        assertEquals(WebBootDecision.ServeDisk, d)
+    }
+
+    /** Unconfirmed boot still wins: a stale bundle that failed must be quarantined. */
+    @Test
+    fun unconfirmed_boot_wins_over_stale_discard() {
+        val d = decideWebBoot(
+            hasWebUpdateDir = true,
+            hasBootPending = true,
+            hasIndex = true,
+            diskVersion = "0.4.15.26499202",
+            appVersion = "0.4.16",
+        )
+        assertEquals(WebBootDecision.Rollback("0.4.15.26499202"), d)
+    }
+
+    /** Never discard what we cannot date: unreadable version.txt or app version. */
+    @Test
+    fun undatable_bundle_or_unknown_app_version_is_not_discarded() {
+        assertEquals(WebBootDecision.ServeDisk, decideWebBoot(true, false, true, null, "0.4.16"))
+        assertEquals(WebBootDecision.ServeDisk, decideWebBoot(true, false, true, "0.4.15.1", null))
     }
 }
