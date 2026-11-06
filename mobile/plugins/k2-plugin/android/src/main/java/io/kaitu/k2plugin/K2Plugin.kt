@@ -134,6 +134,11 @@ class K2Plugin : Plugin() {
                 hasBootPending = bootPending.exists(),
                 hasIndex = indexFile.exists(),
                 diskVersion = readDiskWebVersion(),
+                appVersion = try {
+                    context.packageManager.getPackageInfo(context.packageName, 0).versionName
+                } catch (e: Exception) {
+                    null
+                },
             )
         ) {
             is WebBootDecision.Rollback -> {
@@ -156,6 +161,11 @@ class K2Plugin : Plugin() {
                         Log.e(TAG, "load: setServerBasePath failed — bundled webapp stays in place", e)
                     }
                 }
+            }
+            is WebBootDecision.DiscardStale -> {
+                Log.i(TAG, "load: shell is newer than disk web ${decision.version} — discarding stale OTA bundle")
+                webUpdateDir.deleteRecursively()
+                File(context.filesDir, "web-backup").deleteRecursively()
             }
             WebBootDecision.CleanCorrupt -> {
                 Log.w(TAG, "load: corrupt OTA web dir (no index.html) — removing")

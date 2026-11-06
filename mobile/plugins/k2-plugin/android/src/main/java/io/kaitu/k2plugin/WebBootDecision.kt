@@ -39,6 +39,15 @@ internal sealed class WebBootDecision {
      */
     data class Rollback(val version: String?) : WebBootDecision()
 
+    /**
+     * The bundle predates this shell (the APK's own webapp is newer): a store /
+     * APK upgrade must not keep serving an older OTA. Delete it and its backup
+     * and serve the bundled webapp; a later OTA newer than the shell
+     * re-populates the disk. Mirror of iOS `.discardStale` (9731ec563) and
+     * desktop `discard_stale_disk_ui`.
+     */
+    data class DiscardStale(val version: String) : WebBootDecision()
+
     /** Bundle directory present but has no index.html — remove it. */
     object CleanCorrupt : WebBootDecision()
 
@@ -52,18 +61,25 @@ internal sealed class WebBootDecision {
  *   previous boot and cleared only by `confirmWebBootOk()` after render.
  * @param hasIndex        whether `web-update/index.html` exists.
  * @param diskVersion     contents of `web-update/version.txt`, or null.
+ * @param appVersion      the APK's versionName (= the bundled webapp's version),
+ *   or null when it could not be read — then nothing is ever discarded as stale.
  */
 internal fun decideWebBoot(
     hasWebUpdateDir: Boolean,
     hasBootPending: Boolean,
     hasIndex: Boolean,
     diskVersion: String?,
+    appVersion: String?,
 ): WebBootDecision = when {
     !hasWebUpdateDir -> WebBootDecision.ServeBundled
     // Checked before the corrupt case on purpose: an unconfirmed boot is a
     // FAILURE and must be quarantined, whereas CleanCorrupt merely tidies up.
     // Reordering these silently drops the quarantine for half the failures.
     hasBootPending -> WebBootDecision.Rollback(diskVersion)
+    // Unreadable version.txt (or app version) counts as current — never
+    // discard a bundle we cannot date.
+    diskVersion != null && appVersion != null &&
+        K2PluginUtils.isNewerVersion(appVersion, diskVersion) -> WebBootDecision.DiscardStale(diskVersion)
     hasIndex -> WebBootDecision.ServeDisk
     else -> WebBootDecision.CleanCorrupt
 }
