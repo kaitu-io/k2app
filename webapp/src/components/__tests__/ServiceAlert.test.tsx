@@ -105,11 +105,30 @@ describe('ServiceAlert', () => {
     // Final-review-2 I2: reconnecting + 503 is the engine retrying an
     // unreachable line on a network it just judged fine — the button already
     // says 「线路暂时无法连接，正在重试」; a "check your network" banner contradicts it.
-    it('does not show the network banner for 503 while reconnecting', () => {
-      mockVPNMachine.state = 'reconnecting';
-      mockVPNMachine.error = { code: 503, message: 'outbound unreachable; retrying' };
-      renderAlert();
-      expect(screen.queryByText('dashboard:dashboard.networkError.title')).not.toBeInTheDocument();
+    function withShellVersion(version: string, fn: () => void) {
+      const saved = (window as any)._platform;
+      (window as any)._platform = { ...(saved ?? {}), version };
+      try { fn(); } finally { (window as any)._platform = saved; }
+    }
+
+    it('does not show the network banner for 503 while reconnecting (≥0.4.16 engine ran netcheck)', () => {
+      withShellVersion('0.4.16', () => {
+        mockVPNMachine.state = 'reconnecting';
+        mockVPNMachine.error = { code: 503, message: 'outbound unreachable; retrying' };
+        renderAlert();
+        expect(screen.queryByText('dashboard:dashboard.networkError.title')).not.toBeInTheDocument();
+      });
+    });
+
+    // Web OTA serves this webapp to ≤0.4.15 shells: their engines report the
+    // user's own dead network as 503 too (no netcheck), so keep the banner.
+    it('keeps the network banner for 503 while reconnecting on an old (≤0.4.15) engine', () => {
+      withShellVersion('0.4.15', () => {
+        mockVPNMachine.state = 'reconnecting';
+        mockVPNMachine.error = { code: 503, message: 'TCP dial failed' };
+        renderAlert();
+        expect(screen.getByText('dashboard:dashboard.networkError.title')).toBeInTheDocument();
+      });
     });
 
     it.each([101, 106, 107, 108])('keeps the network banner for %i while reconnecting', (code) => {
