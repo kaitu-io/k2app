@@ -336,7 +336,7 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 				// connect like a code-less reject, without its 401 meaning.
 				sess.Close()
 				conn.Close()
-				return nil, &ProxyLayerError{Err: mdErr}
+				return nil, metadataTimeoutConnectError(mdErr)
 			}
 			slog.Debug("TCPWSClient: metadata stream failed (best-effort)", "err", mdErr)
 		}

@@ -72,6 +72,21 @@ func transportUp(ctx context.Context) {
 // hitting its deadline (ErrMetadataTimeout).
 func isMetadataTimeout(err error) bool { return errors.Is(err, ErrMetadataTimeout) }
 
+// metadataTimeoutConnectError is the one shape both clients return when the
+// metadata reply never arrives. It is an unanswered-by-deadline proxy-layer
+// error, exactly like readResponseError's timeout: the request was on the
+// wire and nothing came back. ResponseTimeout is what makes
+// recordQUICDataPath count it as a data-path timeout — without it the dial
+// was counted as ANSWERED, so a QUIC path that passes handshakes but drops
+// 1-RTT data never reached distress / TCP-WS on a lazy connect (0.4.15
+// treated metadata as best-effort and the proxy-stream deadline raised the
+// distress instead). Race / replace-loop / recordUserDial keep classifying
+// by errors.Is(ErrMetadataTimeout) first, so a Center hang stays code-less
+// and never disconnects (PVE S15).
+func metadataTimeoutConnectError(mdErr error) error {
+	return &ProxyLayerError{Err: mdErr, ResponseTimeout: true, Unanswered: true}
+}
+
 // sendMetadata is the single metadata-stream orchestration shared by both
 // transports. It replaces two hand-copied implementations that had already
 // diverged (QUIC returned errors; TCP-WS returned void and dropped ok/errCode

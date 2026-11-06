@@ -132,6 +132,47 @@ func TestQUICClient_MetadataNeverAnsweredFailsConnect(t *testing.T) {
 	if !errors.Is(err, ErrMetadataTimeout) || !isProxyLayerError(err) {
 		t.Fatalf("err = %v, want ErrMetadataTimeout as a ProxyLayerError", err)
 	}
+	// Unanswered by deadline: the data path never round-tripped. Without it
+	// recordQUICDataPath counted the dial as ANSWERED — a QUIC path that
+	// passes handshakes but drops 1-RTT data then never reached data-path
+	// distress / TCP-WS (0c release review, 2026-11-06).
+	if !isResponseTimeout(err) || !isUnanswered(err) {
+		t.Fatalf("err = %v: responseTimeout=%v unanswered=%v, want true/true", err, isResponseTimeout(err), isUnanswered(err))
+	}
+}
+
+// End to end through a real TransportManager: lazy QUIC connects whose
+// metadata is never answered must raise data-path distress (→ selector moves
+// new dials to TCP-WS), exactly as an unanswered proxy request does, instead
+// of being counted as answered dials.
+func TestTransportManager_LazyMetadataTimeoutRaisesDataPathDistress(t *testing.T) {
+	old := metaReadTimeout
+	metaReadTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { metaReadTimeout = old })
+	release := make(chan struct{})
+	defer close(release)
+	_, addr, cleanup := startRawQUICServer(t, slowValidator(time.Hour, AuthVerdict{Code: -1}, release), true)
+	defer cleanup()
+	client := NewQUICClient(Config{Host: "127.0.0.1", Port: addr.Port, UDID: "d", Token: "t"}, nil)
+	client.tlsConfig = buildInsecureTLSConfig()
+	tm := NewTransportManager()
+	tm.SetPrimary(client, "quic-443")
+	tm.SetTCPWS(&mockTransport{available: true})
+	defer tm.Close()
+	for i := 1; i <= quicRespTimeoutThreshold; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_, err := tm.DialTCP(ctx, "example.com:80", nil)
+		cancel()
+		if !errors.Is(err, ErrMetadataTimeout) {
+			t.Fatalf("dial %d: err = %v, want ErrMetadataTimeout", i, err)
+		}
+	}
+	if !tm.DataPathDistressed(time.Now()) {
+		tm.mu.RLock()
+		to, tot := tm.dataPathCountsLocked(time.Now())
+		tm.mu.RUnlock()
+		t.Fatalf("after %d lazy metadata timeouts: not distressed (timeouts %d / events %d)", quicRespTimeoutThreshold, to, tot)
+	}
 }
 
 func TestSendMetadata_ReadTimeoutIsMetadataTimeout(t *testing.T) {
@@ -176,5 +217,8 @@ func TestTCPWSClient_MetadataNeverAnsweredFailsConnect(t *testing.T) {
 	_, err := client.DialTCP(ctx, "example.com:80", nil)
 	if !errors.Is(err, ErrMetadataTimeout) || !isProxyLayerError(err) {
 		t.Fatalf("err = %v, want ErrMetadataTimeout as a ProxyLayerError", err)
+	}
+	if !isResponseTimeout(err) || !isUnanswered(err) {
+		t.Fatalf("err = %v: responseTimeout=%v unanswered=%v, want true/true", err, isResponseTimeout(err), isUnanswered(err))
 	}
 }
