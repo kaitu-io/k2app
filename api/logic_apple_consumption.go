@@ -13,14 +13,18 @@ import (
 	"github.com/wordgate/qtoolkit/log"
 )
 
-// Apple 退款 Consumption 应答（spec 2026-10-08 §5；退款倾向 2026-10-26 David 定：两品牌一律
-// GRANT_PRORATED，与用户协议「按剩余比例退款」一致，不算用量、不分品牌）。
+// Apple 退款 Consumption 应答（spec 2026-10-08 §5）。退款倾向（2026-11-06 David 改定）：
+//   - 开途 + 这条链给过免费试用 → DECLINE：苹果渠道的 7 天评估期就是免费试用（试用期内取消不扣费），
+//     转正扣费后不支持退款（用户协议 7.5）；网站渠道没有试用，评估期是购买后 7 天退款（7.1）。
+//   - 其余（Overleap、开途无试用链）→ GRANT_PRORATED：Overleap 协议有 14 天按比例撤回条款。
+// 不算用量。Apple 有最终决定权，这里只是我们的倾向。
 //
 // 用户发起退款时 Apple 发 CONSUMPTION_REQUEST；只有用户明确同意过（users.apple_consumption_consent
 // = true）才调用 Send Consumption Information v2，否则按 Apple 要求不应答。
 
 const (
 	appleRefundPreferenceProrated = "GRANT_PRORATED"
+	appleRefundPreferenceDecline  = "DECLINE"
 	appleDeliveryStatusDelivered  = "DELIVERED"
 )
 
@@ -42,6 +46,14 @@ var appleConsumptionBaseURL = map[bool]string{
 
 var appleConsumptionHTTPClient = &http.Client{Timeout: 10 * time.Second}
 
+// appleRefundPreference 见文件头：开途试用链 DECLINE，其余 GRANT_PRORATED。
+func appleRefundPreference(brand Brand, hadTrial bool) string {
+	if brand == BrandKaitu && hadTrial {
+		return appleRefundPreferenceDecline
+	}
+	return appleRefundPreferenceProrated
+}
+
 // respondAppleConsumption 对一笔 CONSUMPTION_REQUEST 应答。没同意 → 不调用 Apple，返回 nil。
 // 返回 error 表示发送失败（网络 / 非 2xx），调用方应让 Apple 重投。
 func respondAppleConsumption(ctx context.Context, user *User, sub *Subscription, txnID, bundleID string, sandbox bool) error {
@@ -50,12 +62,13 @@ func respondAppleConsumption(ctx context.Context, user *User, sub *Subscription,
 		return nil
 	}
 
+	// 试用链转正后只清 is_trial，trial_ends_at 保留——它非 0 即这条链给过免费试用。
+	hadTrial := sub.TrialEndsAt != 0
 	body, err := json.Marshal(appleConsumptionRequest{
-		CustomerConsented: true,
-		DeliveryStatus:    appleDeliveryStatusDelivered,
-		RefundPreference:  appleRefundPreferenceProrated,
-		// 试用链转正后只清 is_trial，trial_ends_at 保留——它非 0 即这条链给过免费试用。
-		SampleContentProvided: sub.TrialEndsAt != 0,
+		CustomerConsented:     true,
+		DeliveryStatus:        appleDeliveryStatusDelivered,
+		RefundPreference:      appleRefundPreference(Brand(user.Brand), hadTrial),
+		SampleContentProvided: hadTrial,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal consumption request: %w", err)

@@ -100,7 +100,7 @@
 - (c) 账户因违规被暂停或终止；
 - (d) 促销套餐或已明确标注不可退款的产品。
 
-7.5 **App Store 购买**：通过 Apple App Store 购买的订阅由 Apple 收费，退款由 Apple 按其政策处理，请向 Apple 申请；本条 7.1–7.3 的钱包退款不适用于 App Store 购买。Apple 退款后，该笔购买对应的剩余会员时长将被收回，赠送时长不受影响；Apple 撤销退款后，收回的会员时长将恢复。
+7.5 **App Store 购买**：通过 Apple App Store 购买的订阅由 Apple 收费，退款由 Apple 按其政策处理，请向 Apple 申请；本条 7.1–7.3 的钱包退款不适用于 App Store 购买。App Store 订阅为新用户提供 7 天免费试用，试用期即为服务评估期：试用结束前至少 24 小时在 App Store 取消，不会产生任何费用。试用结束后自动续订产生的扣费，我们不支持退款，Apple 另有决定的除外。Apple 退款后，该笔购买对应的剩余会员时长将被收回，赠送时长不受影响；Apple 撤销退款后，收回的会员时长将恢复。
 
 7.6 **邀请奖励**：被邀请人首次购买时发放给邀请双方的奖励，以被邀请人保留一笔符合条件的购买为前提。该购买被退款（无论通过我们或 Apple）且被邀请人没有其他符合条件的购买时，双方的奖励将被收回；奖励已用完的，从当前会员时长中扣除，最多扣到当前时刻。每位被邀请人只能触发一次首次购买奖励。
 
@@ -279,7 +279,7 @@
 - (c) Accounts suspended or terminated for violations;
 - (d) Promotional packages or products explicitly marked as non-refundable.
 
-7.5 **App Store Purchases**: Subscriptions bought through the Apple App Store are billed by Apple, and refunds are handled by Apple under its own policy — please request them from Apple. The wallet refunds in Sections 7.1–7.3 do not apply to App Store purchases. If Apple refunds a purchase, the remaining membership time that purchase paid for is removed; gifted time is not affected. If Apple reverses the refund, the removed time is restored.
+7.5 **App Store Purchases**: Subscriptions bought through the Apple App Store are billed by Apple, and refunds are handled by Apple under its own policy — please request them from Apple. The wallet refunds in Sections 7.1–7.3 do not apply to App Store purchases. App Store subscriptions come with a 7-day free trial for new users, which serves as the evaluation period: cancel in the App Store at least 24 hours before the trial ends and you will not be charged. We do not support refunds for charges from the automatic renewal after the trial ends, unless Apple decides otherwise. If Apple refunds a purchase, the remaining membership time that purchase paid for is removed; gifted time is not affected. If Apple reverses the refund, the removed time is restored.
 
 7.6 **Invite Rewards**: The rewards given to both the inviter and the invitee on the invitee's first purchase require the invitee to keep a qualifying purchase. If that purchase is refunded (by us or by Apple) and the invitee has no other qualifying purchase, both rewards are taken back; rewards already used are deducted from the current membership time, never below the present moment. Each invitee can trigger the first-purchase reward only once.
 

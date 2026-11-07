@@ -104,9 +104,14 @@ func TestRespondAppleConsumption_SendsV2Body(t *testing.T) {
 		sandbox     bool
 		wantPath    string
 		wantSample  bool
+		wantPref    string
 	}{
-		{BrandKaitu, 0, false, "/inApps/v2/transactions/consumption/2000000001", false},
-		{BrandOverleap, time.Now().Unix(), true, "/sandbox/inApps/v2/transactions/consumption/2000000001", true},
+		// 开途无试用链 → 按比例
+		{BrandKaitu, 0, false, "/inApps/v2/transactions/consumption/2000000001", false, "GRANT_PRORATED"},
+		// Overleap 试用链 → 仍按比例（14 天撤回条款）
+		{BrandOverleap, time.Now().Unix(), true, "/sandbox/inApps/v2/transactions/consumption/2000000001", true, "GRANT_PRORATED"},
+		// 开途试用链 → DECLINE（试用期即评估期，转正后不退）
+		{BrandKaitu, time.Now().Unix(), false, "/inApps/v2/transactions/consumption/2000000001", true, "DECLINE"},
 	}
 	for i, tc := range cases {
 		u := &User{ID: uint64(i + 1), Brand: string(tc.brand), AppleConsumptionConsent: BoolPtr(true)}
@@ -121,10 +126,10 @@ func TestRespondAppleConsumption_SendsV2Body(t *testing.T) {
 		require.NotNil(t, body)
 		assert.Equal(t, true, body["customerConsented"])
 		assert.Equal(t, "DELIVERED", body["deliveryStatus"])
-		assert.Equal(t, "GRANT_PRORATED", body["refundPreference"], "brand=%s", tc.brand)
+		assert.Equal(t, tc.wantPref, body["refundPreference"], "brand=%s trial=%v", tc.brand, tc.trialEndsAt != 0)
 		assert.Equal(t, tc.wantSample, body["sampleContentProvided"])
 		_, has := body["consumptionPercentage"]
-		assert.False(t, has, "自动续订 + GRANT_PRORATED 不能带 consumptionPercentage（Apple 400）")
+		assert.False(t, has, "自动续订不能带 consumptionPercentage（Apple 400）")
 	}
 }
 
