@@ -121,3 +121,87 @@ func TestIsUDPTracker_WrongMagic(t *testing.T) {
 		t.Error("wrong magic should not be detected")
 	}
 }
+
+// utpSyn builds a uTP ST_SYN header (BEP 29): type 4, version 1, no extension,
+// no payload — the first packet an outgoing uTP connection sends.
+func utpSyn() []byte {
+	p := make([]byte, 20)
+	p[0] = 0x41 // type=ST_SYN(4)<<4 | version 1
+	p[2], p[3] = 0x12, 0x34
+	return p
+}
+
+func TestIsUTPSyn(t *testing.T) {
+	t.Parallel()
+	if !IsUTPSyn(utpSyn()) {
+		t.Fatal("bare uTP SYN not detected")
+	}
+	// SYN with one extension block (ext 2 = extension bits, 8 bytes).
+	withExt := utpSyn()
+	withExt[1] = 2
+	withExt = append(withExt, 0, 8, 1, 2, 3, 4, 5, 6, 7, 8)
+	if !IsUTPSyn(withExt) {
+		t.Fatal("uTP SYN with extension block not detected")
+	}
+}
+
+func TestIsUTPSyn_RejectsLookalikes(t *testing.T) {
+	t.Parallel()
+	cases := map[string][]byte{
+		// WireGuard handshake initiation: type 1 + 3 reserved zeros, 148 bytes.
+		// IsUTP accepts it (version 1, type 0, no extension) — IsUTPSyn must not.
+		"wireguard-init": append([]byte{0x01, 0, 0, 0}, make([]byte, 144)...),
+		// QUIC short header whose first byte happens to be 0x41, with payload.
+		"quic-short-0x41": append([]byte{0x41, 0x00}, bytes.Repeat([]byte{0xAB}, 60)...),
+		// uTP DATA packet (type 0) — not a connection opener.
+		"utp-data":  append([]byte{0x01, 0x00}, make([]byte, 30)...),
+		"too-short": {0x41, 0x00, 0x01},
+		// SYN header followed by trailing payload — a SYN carries none.
+		"syn-with-payload": append(utpSyn(), 0xFF),
+	}
+	for name, p := range cases {
+		if IsUTPSyn(p) {
+			t.Errorf("%s: misdetected as uTP SYN", name)
+		}
+	}
+}
+
+func TestIsDHT(t *testing.T) {
+	t.Parallel()
+	id := string(bytes.Repeat([]byte{'x'}, 20))
+	yes := map[string]string{
+		"get_peers query": "d1:ad2:id20:" + id + "9:info_hash20:" + id + "e1:q9:get_peers1:t2:aa1:y1:qe",
+		"ping response":   "d1:rd2:id20:" + id + "e1:t2:aa1:y1:re",
+		// BEP 42 responses put "ip" before "r" (bencode keys are sorted).
+		"response with ip": "d2:ip6:abcdef1:rd2:id20:" + id + "e1:t2:aa1:y1:re",
+	}
+	for name, p := range yes {
+		if !IsDHT([]byte(p)) {
+			t.Errorf("%s: not detected", name)
+		}
+	}
+	no := map[string][]byte{
+		"dns":      {0x12, 0x34, 0x01, 0x00, 0x00, 0x01},
+		"bencode":  []byte("d3:foo3:bare"),
+		"empty":    nil,
+		"plain-d":  []byte("d1:rd2:xx"),
+		"late-sig": append([]byte("d"), append(bytes.Repeat([]byte{'z'}, 80), []byte("1:rd2:id20:")...)...),
+	}
+	for name, p := range no {
+		if IsDHT(p) {
+			t.Errorf("%s: misdetected as DHT", name)
+		}
+	}
+}
+
+func TestIsBitTorrentUDP(t *testing.T) {
+	t.Parallel()
+	tracker, _ := hex.DecodeString("000004172710198000000000000000a1")
+	if !IsBitTorrentUDP(tracker) || !IsBitTorrentUDP(utpSyn()) ||
+		!IsBitTorrentUDP([]byte("d1:ad2:id20:"+string(make([]byte, 20)))) {
+		t.Fatal("BT UDP opener not detected")
+	}
+	if IsBitTorrentUDP(append([]byte{0x01, 0, 0, 0}, make([]byte, 144)...)) {
+		t.Fatal("WireGuard init misdetected")
+	}
+}

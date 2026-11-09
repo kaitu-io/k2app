@@ -88,6 +88,7 @@ Level column = the slog level at the call site(s). "Where" = file(s) relative to
 | `dns-upstream-ok` | INFO | server/handler.go | Upstream answered. domain, qtype, rcode, rttMs |
 | `dns-upstream-slow` | WARN | server/handler.go | Upstream answered in > 500ms. domain, qtype, rttMs |
 | `dns-upstream-fail` | WARN | server/handler.go | Upstream query failed (client will retry). domain, qtype, rttMs, err |
+| `bt-blocked` | INFO | server/bt_block.go | Node refused a BitTorrent flow (TCP handshake on the uplink, or a UDP session's first packet to a new dest is a uTP SYN / DHT / UDP-tracker connect — the session ends). At most one line per device per 10 min. udid, transport (tcp/udp), dest, remote, suppressed (blocks since the device's previous line). Find repeat offenders: `grep "DIAG: bt-blocked" k2s.log \| grep -o 'udid=[^ ]*' \| sort \| uniq -c` |
 | `dns-response-pack-fail` | WARN | server/handler.go | Upstream response could not be packed. domain, err |
 | `dns-stream-write-fail` | WARN | server/handler.go | Writing the DNS answer back onto the stream failed. err, len |
 | `dns-servers-override` | INFO | server/handler.go | `K2_DNS_SERVERS` env replaced the default resolver list. servers |

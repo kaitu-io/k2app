@@ -15,6 +15,15 @@ Server-side listener orchestration, auto-provisioning, and TCP/UDP proxy handler
 
 `HandleUDP` transparently caches DNS responses for port-53 traffic using `core/dns.DNSCache` (freelru, 10k entries, 5min–4hr TTL, 30min stale window). Cache hit: respond directly from cache, no upstream query. Cache miss: forward to system resolver (`h.dnsUpstream`, default `127.0.0.11:53` — Docker embedded DNS → host systemd-resolved → cloud provider internal DNS) instead of client-specified upstream. This avoids upstream reachability issues (e.g. `9.9.9.9` unreachable from certain cloud regions). Truncated (TC) responses forwarded but not cached. Non-DNS UDP (port != 53) unchanged. `writeToMu` serializes `conn.WriteTo` calls from cache-hit goroutine and upstream-response goroutine.
 
+## BitTorrent Is Refused (`bt_block.go`)
+
+A torrent client puts the node's egress IP into a swarm, copyright monitors log it, and the hosting provider suspends the server (2026-11-07: Vultr Tokyo, ticket SQF-50RJM). Clients already send BT direct in smart mode; global-mode and old clients don't, so the node refuses it:
+
+- **TCP**: `pipe()` reads the uplink through `btSniffReader`. A first byte ≠ `0x13` passes with no extra wait; a stream that starts like the BT header is held until 20 bytes decide it. A match closes the target before a byte is written to it.
+- **UDP**: the first packet a session sends to each **new** destination is checked with `sniff.IsBitTorrentUDP`; a match ends the whole session (the client multiplexes its swarm over one socket). Never use the looser `sniff.IsUTP` here — it matches WireGuard handshakes.
+- `DIAG: bt-blocked` is rate-limited to one line per device per 10 min; use it to find repeat offenders.
+- **Gap**: encrypted BT (MSE/PE) and anything that only sends after the first packet are not detected.
+
 ## Server UDP NAT Semantics
 
 `HandleUDP`'s egress socket is **unconnected** (`net.ListenUDP("udp4", nil)`, `handler.go`): one session gets one stable egress port, and a reply from *any* source address is accepted back on it — endpoint-independent mapping + filtering, i.e. full-cone NAT. This is what games and ICE/STUN need (Symmetric NAT fails connectivity checks on both). A session tracks the distinct destinations it has addressed in a map + LRU (`udpDestEntry`, `maxUDPDestsPerSession = 64`, evicts oldest on overflow) so it can multiplex a game server + matchmaker + STUN reflector through the one socket.
