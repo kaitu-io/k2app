@@ -1,6 +1,6 @@
 # 固定节点 / 最近使用设计
 
-日期：2026-11-10 · 状态：David 已认可方向，按此推进 · 范围：仅 webapp（web OTA 可发）
+日期：2026-11-10 · 状态：已实现（分支 `feat/pinned-tunnels`） · 范围：仅 webapp（web OTA 可发）
 
 ## 1. 为什么做
 
@@ -47,14 +47,17 @@
 ### 4.1 数据（本机，`window._platform.storage`）
 
 - `k2.connection.pinnedTunnels`：`[{ domain, name, country, pinnedAt }]`，按 `pinnedAt` 升序 = 固定先后。domain 小写。存 name/country 快照，供节点暂时不在列表时显示。上限 10 个（我的决定，防止列表失控）。
-- `k2.connection.recentTunnels`：`[{ domain, name, country, lastUsedAt }]`，最多 3 条，**不含已固定的**，最新在前。每次对**云节点**发起连接（含 Auto 解析出的节点）时记录；固定某节点时从 recent 移除。
+- `k2.connection.recentTunnels`：`[{ domain, name, country, lastUsedAt }]`，最多 3 条，**不含已固定的**，最新在前。连接**被引擎接受**（`up` 返回 0）后记录云节点（含 Auto 解析出的节点）；失败的尝试不记；固定某节点时从 recent 移除。
 - `k2.connection.selectedDomain`：手动选中的云节点 domain；选 Auto（`clearCloudSelection`）或切到 self_hosted 时清除。
 - 读写模式与 `excludedCountries` 一致（JSON 字符串、坏 JSON → 默认空、带 `*Loaded` 标志）。
 
 ### 4.2 选择恢复（G5）
 
 - 隧道列表加载后（Dashboard 现有 `onTunnelsLoaded` → `reconcileSelection` 路径），若 `selectedCloudTunnel === null` 且存有 `selectedDomain` 且列表里有该节点 → `selectCloudTunnel(该节点)`。
-- 只在启动后首次列表加载时恢复一次，不与用户之后点 Auto 抢。
+- 只恢复一次，不与用户抢：用户的任何选择（选节点 / 点 Auto / 切自部署）都结束恢复。
+- 列表里暂时没有该节点（可能是旧缓存或节点短暂下线）时**保持待恢复**，后续列表到来仍会恢复；启动在自部署 tab 时也保持待恢复，切回云端 tab 时恢复。
+- VPN 正在连接/已连接时不恢复（不在连接中途换选择）。
+- 恢复或列表刷新时，若选中节点的 URL / 地址与新列表不同，采用新列表的数据（防止旧缓存里的地址被拿去连接）。
 
 ### 4.3 选中节点消失时（`reconcileSelection`）
 
@@ -84,10 +87,12 @@
 ```
 
 - 固定区 / 最近区只在非空时出现，位于 Auto 行之上。全量列表照常显示所有节点（含已固定的，星标实心）。
+- 固定区 / 最近区存在时，Auto 行上方加「全部节点」标题，分清两块。
 - 星标是独立 `IconButton`（`stopPropagation`，不触发选中），`aria-label` 走 i18n。固定满 10 个时空心星禁用并 Tooltip 说明。
 - **说明行随数量变化（G3，规则在固定时就可见）**：
   - 1 个：「只固定了 1 个节点：它不可用时会等它恢复，不会换 IP。想断线时自动切换，可再固定一个同地区节点」
-  - ≥2 个：「断线或节点维护时，只在这 {{count}} 个节点之间切换，不会换到其他节点」
+  - ≥2 个：「断线或节点维护时，只在这 {{count}} 个节点之间切换，不会换到其他节点」——count 取**当前可用**的固定节点数
+  - 固定了多个但只有 1 个可用：「其他固定节点暂不可用：当前这个不可用时会等它恢复，不会换到其他节点」
 - 固定节点暂不在列表（下线/维护）：灰显、不可选，副标题「暂不可用」，星标仍可取消。
 - 固定池全不可用：说明行替换为警示色「你固定的节点暂时都不可用，当前为自动选择」。
 - 402 / 空列表状态：固定区和最近区不显示（与现有空状态一致）。
@@ -95,7 +100,7 @@
 
 ### 4.6 i18n
 
-新键放 `dashboard` 命名空间下新的 `pinned` 组（`title`、`recentTitle`、`pin`、`unpin`、`hintSingle`、`hintMulti`、`allUnavailable`、`unavailable`、`limitReached`）。先写 zh-CN，再补所有 23 个 locale。文案品牌中立，不出现品牌字面量。
+新键放 `dashboard` 命名空间下新的 `pinned` 组（`title`、`recentTitle`、`allTitle`、`pin`、`unpin`、`hintSingle`、`hintMulti`、`hintOneAvailable`、`allUnavailable`、`unavailable`、`limitReached`）。先写 zh-CN，再补所有 23 个 locale。文案品牌中立，不出现品牌字面量。
 
 ## 5. 与其他设计的关系
 
