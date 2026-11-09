@@ -89,7 +89,8 @@ const cachedResponse: TunnelListResponse = {
 };
 
 const entry = (t: { domain: string; name: string; node: { country: string } }) =>
-  ({ domain: t.domain, name: t.name, country: t.node.country, at: 1 });
+  ({ key: 'domain:' + t.domain, domain: t.domain, name: t.name, country: t.node.country, at: 1 });
+const gone = { key: '203.0.113.9', domain: 'gone.example.com', name: 'Gone-01', country: 'SG', at: 1 };
 
 const defaultProps = { selectedDomain: null, onSelect: vi.fn(), hideHeader: true };
 
@@ -150,8 +151,22 @@ describe('CloudTunnelList pinned / recent', () => {
     expect(defaultProps.onSelect).toHaveBeenCalledWith(expect.objectContaining({ domain: 'osaka-01.example.com' }), 'ech');
   });
 
+  it('tunnels sharing a node IP read as one pinned node', async () => {
+    const a = { ...makeTunnel(10, 'Seoul-01', 'KR'), node: { country: 'KR', ipv4: '198.51.100.7' } };
+    const b = { ...makeTunnel(11, 'Seoul-01b', 'KR'), node: { country: 'KR', ipv4: '198.51.100.7' } };
+    const resp = { items: [a, b], echConfigList: 'ech' } as any;
+    mockCacheGet.mockReturnValue(resp);
+    mockCloudApiGet.mockResolvedValue({ code: 0, data: resp });
+    render(<CloudTunnelList {...defaultProps} />);
+    await waitFor(() => expect(screen.getByText('Seoul-01b')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('pin-btn-seoul-01.example.com'));
+    expect(usePinnedTunnelsStore.getState().pinned.map(p => p.key)).toEqual(['198.51.100.7']);
+    const stars = screen.getAllByTestId('pin-btn-seoul-01b.example.com');
+    expect(stars.every(s => s.getAttribute('aria-pressed') === 'true')).toBe(true);
+  });
+
   it('a pin missing from the list renders unavailable and is not selectable', async () => {
-    usePinnedTunnelsStore.setState({ pinned: [entry(tokyo), { domain: 'gone.example.com', name: 'Gone-01', country: 'SG', at: 1 }] });
+    usePinnedTunnelsStore.setState({ pinned: [entry(tokyo), gone] });
     render(<CloudTunnelList {...defaultProps} />);
     const row = await screen.findByTestId('pinned-unavailable-gone.example.com');
     expect(row).toHaveTextContent('暂不可用');
@@ -160,7 +175,7 @@ describe('CloudTunnelList pinned / recent', () => {
   });
 
   it('two pins with one offline → hint says this one waits (no switch possible)', async () => {
-    usePinnedTunnelsStore.setState({ pinned: [entry(tokyo), { domain: 'gone.example.com', name: 'Gone-01', country: 'SG', at: 1 }] });
+    usePinnedTunnelsStore.setState({ pinned: [entry(tokyo), gone] });
     render(<CloudTunnelList {...defaultProps} />);
     expect(await screen.findByTestId('pinned-hint')).toHaveTextContent('其他固定节点暂不可用');
   });
@@ -172,13 +187,13 @@ describe('CloudTunnelList pinned / recent', () => {
   });
 
   it('all pins missing → allUnavailable warning replaces the hint', async () => {
-    usePinnedTunnelsStore.setState({ pinned: [{ domain: 'gone.example.com', name: 'Gone-01', country: 'SG', at: 1 }] });
+    usePinnedTunnelsStore.setState({ pinned: [gone] });
     render(<CloudTunnelList {...defaultProps} />);
     expect(await screen.findByTestId('pinned-hint')).toHaveTextContent('你固定的节点暂时都不可用');
   });
 
   it('recent shows only tunnels still in the list; its star pins', async () => {
-    usePinnedTunnelsStore.setState({ recent: [entry(hk), { domain: 'gone.example.com', name: 'Gone-01', country: 'SG', at: 1 }] });
+    usePinnedTunnelsStore.setState({ recent: [entry(hk), gone] });
     render(<CloudTunnelList {...defaultProps} />);
     const section = await screen.findByTestId('recent-section');
     expect(section).toHaveTextContent('HongKong-01');
@@ -189,7 +204,7 @@ describe('CloudTunnelList pinned / recent', () => {
 
   it('at the pin limit, unpinned stars are disabled', async () => {
     usePinnedTunnelsStore.setState({
-      pinned: Array.from({ length: PIN_LIMIT }, (_, i) => ({ domain: `p${i}.example.com`, name: `P${i}`, country: 'JP', at: i })),
+      pinned: Array.from({ length: PIN_LIMIT }, (_, i) => ({ key: `10.0.0.${i}`, domain: `p${i}.example.com`, name: `P${i}`, country: 'JP', at: i })),
     });
     render(<CloudTunnelList {...defaultProps} />);
     await waitFor(() => expect(screen.getByText('HongKong-01')).toBeInTheDocument());

@@ -117,38 +117,38 @@ export function pickAutoCandidates(
 }
 
 /**
- * Fallbacks for a pinned primary: the user's other pins, in pin order.
+ * Node identity used by pins / recent: the machine IP (ipv4, else ipv6) — the
+ * backend's unique node key — or `domain:<tunnel domain>` when a tunnel
+ * carries no address (never collides with an IP).
+ */
+export function nodeKey(t: Tunnel): string {
+  return machineKey(t) ?? 'domain:' + t.domain.toLowerCase();
+}
+
+/**
+ * Fallbacks for a pinned primary: the user's other pinned nodes, in pin order.
  *
  * The pinned pool is the user's own switch range — failover never leaves it,
- * so this draws only from `pinned`, never from the wider list. A pin counts
- * only if it is in the current `tunnels` list with a `serverUrl`; pins on the
- * primary's machine (or on a machine already chosen) are skipped because they
- * fail together. One pin → `[]`, i.e. today's manual behaviour (retry in place).
+ * so this draws only from `pinned`, never from the wider list. Each pin is
+ * resolved to a tunnel on that node (`resolve`, the last-used tunnel first);
+ * pins not in the current list are skipped, and so is the primary's own node.
+ * One pin → `[]`, i.e. today's manual behaviour (retry in place).
  *
  * @param max fallbacks to return (F2 accepts at most 3)
  */
-export function pickPinnedFallbacks(
+export function pickPinnedFallbacks<E extends { key: string }>(
   primary: Tunnel,
-  pinned: readonly { domain: string }[],
-  tunnels: Tunnel[],
+  pinned: readonly E[],
+  resolve: (entry: E) => Tunnel | undefined,
   max = 3,
 ): Tunnel[] {
-  const byDomain = new Map(tunnels.map(t => [t.domain.toLowerCase(), t]));
-  const usedMachines = new Set<string>();
-  const primaryKey = machineKey(primary);
-  if (primaryKey) usedMachines.add(primaryKey);
-  const primaryDomain = primary.domain.toLowerCase();
+  const primaryKey = nodeKey(primary);
   const out: Tunnel[] = [];
   for (const p of pinned) {
     if (out.length >= max) break;
-    const domain = p.domain.toLowerCase();
-    if (domain === primaryDomain) continue;
-    const t = byDomain.get(domain);
-    if (!t?.serverUrl) continue;
-    const key = machineKey(t);
-    if (key !== null && usedMachines.has(key)) continue;
-    if (key !== null) usedMachines.add(key);
-    out.push(t);
+    if (p.key === primaryKey) continue;
+    const t = resolve(p);
+    if (t?.serverUrl) out.push(t);
   }
   return out;
 }

@@ -2247,6 +2247,28 @@ describe('pinned tunnels', () => {
       expect(useConnectionStore.getState().activeTunnel?.domain).toBe('m3.example.com');
     });
 
+    it('pinned node changed IP (same domain) → moves to the next pinned node', async () => {
+      const { useConnectionStore, pinned } = await setup();
+      const t = machines(3);
+      pinned.getState().pin(t[0]);
+      pinned.getState().pin(t[1]);
+      useConnectionStore.getState().selectCloudTunnel(t[0]);
+      const moved = { ...t[0], node: { ...t[0].node, ipv4: '10.9.9.9' } };
+      useConnectionStore.getState().reconcileSelection([moved, t[1], t[2]]);
+      expect(useConnectionStore.getState().selectedCloudTunnel).toBe(t[1]);
+    });
+
+    it('pinned node changed IP and no other pin is up → stays on the domain at its new IP', async () => {
+      const { useConnectionStore, pinned } = await setup();
+      const t = machines(2);
+      pinned.getState().pin(t[0]);
+      useConnectionStore.getState().selectCloudTunnel(t[0]);
+      const moved = { ...t[0], node: { ...t[0].node, ipv4: '10.9.9.9' } };
+      useConnectionStore.getState().reconcileSelection([moved, t[1]]);
+      expect(useConnectionStore.getState().selectedCloudTunnel).toBe(moved);
+      expect(pinned.getState().isPinned(moved)).toBe(false);
+    });
+
     it('all pins gone → Auto (as before)', async () => {
       const { useConnectionStore, pinned } = await setup();
       const t = machines(3);

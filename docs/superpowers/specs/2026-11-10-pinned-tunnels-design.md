@@ -46,7 +46,9 @@
 
 ### 4.1 数据（本机，`window._platform.storage`）
 
-- `k2.connection.pinnedTunnels`：`[{ domain, name, country, pinnedAt }]`，按 `pinnedAt` 升序 = 固定先后。domain 小写。存 name/country 快照，供节点暂时不在列表时显示。上限 10 个（我的决定，防止列表失控）。
+**节点身份 = 节点 IP**（David 决定）：`nodeKey(t)` = `node.ipv4`，无则 `ipv6`，都无则 `domain:<隧道域名>` 兜底。后端 `SlaveNode.Ipv4` 是唯一索引。固定 / 最近使用 / 备用节点 / 池内回落全部按 IP 识别；运维换 IP 时域名不变，若按域名识别，固定会悄悄跟到新 IP——按 IP 则显示「暂不可用」。同一 IP 上多条隧道算一个节点，连接时优先上次用过的那条（`resolveEntry`）。选中的固定节点换了 IP → 视同下线，改选下一个可用的固定节点；没有可用的才留在原域名（新 IP），固定区同时显示该固定「暂不可用」。「重启后保留选择」仍按域名记（记的是选了哪条隧道）。
+
+- `k2.connection.pinnedTunnels`：`[{ key, domain, name, country, at }]`（key = 节点 IP，domain = 该节点上次用的隧道），按 `pinnedAt` 升序 = 固定先后。domain 小写。存 name/country 快照，供节点暂时不在列表时显示。上限 10 个（我的决定，防止列表失控）。
 - `k2.connection.recentTunnels`：`[{ domain, name, country, lastUsedAt }]`，最多 3 条，**不含已固定的**，最新在前。连接**被引擎接受**（`up` 返回 0）后记录云节点（含 Auto 解析出的节点）；失败的尝试不记；固定某节点时从 recent 移除。
 - `k2.connection.selectedDomain`：手动选中的云节点 domain；选 Auto（`clearCloudSelection`）或切到 self_hosted 时清除。
 - 读写模式与 `excludedCountries` 一致（JSON 字符串、坏 JSON → 默认空、带 `*Loaded` 标志）。

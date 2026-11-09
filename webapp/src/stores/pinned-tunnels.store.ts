@@ -1,5 +1,11 @@
 /**
- * Pinned and recently used cloud tunnels (local only, per device).
+ * Pinned and recently used cloud nodes (local only, per device).
+ *
+ * Identity is the node IP (`nodeKey`: node ipv4, else ipv6, else the tunnel
+ * domain as a last resort) — the backend's unique node key, and what users
+ * actually care about. A pin follows the IP, not the tunnel domain: when ops
+ * changes a node's IP the domain survives, so a domain-keyed pin would
+ * silently move the user to a new IP. Keyed by IP, it shows as unavailable.
  *
  * Pins are the user's own failover pool: connecting to a pinned tunnel sends
  * the other pins as `ClientConfig.fallbacks` (connection.store), so the engine
@@ -10,8 +16,12 @@
  */
 import { create } from 'zustand';
 import type { Tunnel } from '../services/api-types';
+import { nodeKey } from '../utils/auto-tunnel-pick';
 
 export interface PinnedEntry {
+  /** Node identity — see nodeKey(). */
+  key: string;
+  /** Tunnel last used on this node; preferred when the node has several. */
   domain: string;
   name: string;
   country: string;
@@ -31,13 +41,14 @@ interface PinnedTunnelsState {
   loaded: boolean;
   load: () => Promise<void>;
   pin: (t: Tunnel) => void;
-  unpin: (domain: string) => void;
-  isPinned: (domain: string) => boolean;
+  unpin: (key: string) => void;
+  isPinned: (t: Tunnel) => boolean;
   recordRecent: (t: Tunnel) => void;
 }
 
 function toEntry(t: Tunnel): PinnedEntry {
   return {
+    key: nodeKey(t),
     domain: t.domain.toLowerCase(),
     name: t.name || t.domain,
     country: t.node?.country ?? '',
@@ -52,8 +63,11 @@ function parseEntries(raw: unknown): PinnedEntry[] {
     if (!Array.isArray(arr)) return [];
     return arr
       .filter((x): x is PinnedEntry =>
-        !!x && typeof x === 'object' && typeof (x as PinnedEntry).domain === 'string' && !!(x as PinnedEntry).domain)
+        !!x && typeof x === 'object'
+        && typeof (x as PinnedEntry).key === 'string' && !!(x as PinnedEntry).key
+        && typeof (x as PinnedEntry).domain === 'string')
       .map(x => ({
+        key: x.key,
         domain: x.domain.toLowerCase(),
         name: typeof x.name === 'string' ? x.name : x.domain,
         country: typeof x.country === 'string' ? x.country : '',
@@ -92,34 +106,48 @@ export const usePinnedTunnelsStore = create<PinnedTunnelsState>()((set, get) => 
   pin: (t) => {
     const entry = toEntry(t);
     const { pinned, recent } = get();
-    if (pinned.some(p => p.domain === entry.domain) || pinned.length >= PIN_LIMIT) return;
+    if (pinned.some(p => p.key === entry.key) || pinned.length >= PIN_LIMIT) return;
     const nextPinned = [...pinned, entry];
-    const nextRecent = recent.filter(r => r.domain !== entry.domain);
-    console.info('[Pinned] pin ' + entry.domain + ' (' + nextPinned.length + ' pinned)');
+    const nextRecent = recent.filter(r => r.key !== entry.key);
+    console.info('[Pinned] pin ' + entry.key + ' via ' + entry.domain + ' (' + nextPinned.length + ' pinned)');
     set({ pinned: nextPinned, recent: nextRecent });
     persist(PINNED_KEY, nextPinned);
     if (nextRecent.length !== recent.length) persist(RECENT_KEY, nextRecent);
   },
 
-  unpin: (domain) => {
-    const d = domain.toLowerCase();
-    const next = get().pinned.filter(p => p.domain !== d);
+  unpin: (key) => {
+    const next = get().pinned.filter(p => p.key !== key);
     if (next.length === get().pinned.length) return;
-    console.info('[Pinned] unpin ' + d + ' (' + next.length + ' pinned)');
+    console.info('[Pinned] unpin ' + key + ' (' + next.length + ' pinned)');
     set({ pinned: next });
     persist(PINNED_KEY, next);
   },
 
-  isPinned: (domain) => {
-    const d = domain.toLowerCase();
-    return get().pinned.some(p => p.domain === d);
+  isPinned: (t) => {
+    const k = nodeKey(t);
+    return get().pinned.some(p => p.key === k);
   },
 
   recordRecent: (t) => {
     const entry = toEntry(t);
-    if (get().isPinned(entry.domain)) return;
-    const next = [entry, ...get().recent.filter(r => r.domain !== entry.domain)].slice(0, RECENT_LIMIT);
+    if (get().isPinned(t)) return;
+    const next = [entry, ...get().recent.filter(r => r.key !== entry.key)].slice(0, RECENT_LIMIT);
     set({ recent: next });
     persist(RECENT_KEY, next);
   },
 }));
+
+/**
+ * The tunnel to use for a pinned/recent node: one on the same node (IP) with a
+ * `serverUrl`, preferring the tunnel last used there. `undefined` = the node is
+ * not in the list (offline, removed, or its IP changed).
+ */
+export function resolveEntry(entry: Pick<PinnedEntry, 'key' | 'domain'>, tunnels: readonly Tunnel[]): Tunnel | undefined {
+  let any: Tunnel | undefined;
+  for (const t of tunnels) {
+    if (!t.serverUrl || nodeKey(t) !== entry.key) continue;
+    if (t.domain.toLowerCase() === entry.domain) return t;
+    any ??= t;
+  }
+  return any;
+}
