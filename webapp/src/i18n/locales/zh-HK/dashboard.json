@@ -356,5 +356,18 @@
     "filterClear": "清除",
     "filterDone": "完成",
     "allExcluded": "可用節點已全部被排除，請調整國家/地區過濾"
+  },
+  "pinned": {
+    "title": "我的固定",
+    "recentTitle": "最近使用",
+    "pin": "固定節點",
+    "unpin": "取消固定",
+    "hintSingle": "只固定了 1 個節點：它無法使用時會等它恢復，不會換到其他節點。想在斷線時自動切換，可再固定一個同地區的節點",
+    "hintMulti": "斷線或節點維護時，只在這 {{count}} 個節點之間切換，不會換到其他節點",
+    "allUnavailable": "你固定的節點暫時都無法使用，目前為自動選擇",
+    "unavailable": "暫時無法使用",
+    "limitReached": "最多固定 {{count}} 個節點",
+    "allTitle": "全部節點",
+    "hintOneAvailable": "其他固定節點暫時無法使用：目前這個無法使用時會等它恢復，不會換到其他節點"
   }
 }

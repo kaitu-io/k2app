@@ -356,5 +356,18 @@
     "filterClear": "Xóa",
     "filterDone": "Xong",
     "allExcluded": "Tất cả các máy chủ có sẵn đều bị loại trừ bởi bộ lọc của bạn. Điều chỉnh bộ lọc quốc gia/khu vực."
+  },
+  "pinned": {
+    "title": "Đã ghim",
+    "recentTitle": "Dùng gần đây",
+    "pin": "Ghim máy chủ",
+    "unpin": "Bỏ ghim",
+    "hintSingle": "Chỉ ghim 1 máy chủ: khi máy chủ này không dùng được, ứng dụng sẽ chờ nó hoạt động lại và không chuyển sang máy chủ khác. Muốn tự chuyển khi mất kết nối, hãy ghim thêm một máy chủ cùng khu vực.",
+    "hintMulti": "Khi mất kết nối hoặc bảo trì, ứng dụng chỉ chuyển giữa {{count}} máy chủ này, không chuyển sang máy chủ khác.",
+    "allUnavailable": "Hiện không máy chủ đã ghim nào dùng được. Đang dùng chế độ tự chọn.",
+    "unavailable": "Không khả dụng",
+    "limitReached": "Bạn có thể ghim tối đa {{count}} máy chủ",
+    "allTitle": "Tất cả máy chủ",
+    "hintOneAvailable": "Các máy chủ đã ghim khác hiện không dùng được: nếu máy chủ này mất kết nối, ứng dụng sẽ chờ nó hoạt động lại và không chuyển sang máy chủ khác."
   }
 }

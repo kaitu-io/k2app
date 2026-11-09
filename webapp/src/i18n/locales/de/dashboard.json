@@ -356,5 +356,18 @@
     "filterClear": "Löschen",
     "filterDone": "Fertig",
     "allExcluded": "Alle verfügbaren Server werden durch Ihren Filter ausgeschlossen. Passen Sie den Länder-/Regionsfilter an."
+  },
+  "pinned": {
+    "title": "Angeheftet",
+    "recentTitle": "Zuletzt verwendet",
+    "pin": "Server anheften",
+    "unpin": "Lösen",
+    "hintSingle": "Nur 1 Server angeheftet: Fällt er aus, wartet die App, bis er zurück ist, und wechselt nicht zu einem anderen Server. Für automatisches Umschalten bei Abbrüchen einen weiteren Server in derselben Region anheften.",
+    "hintMulti": "Bei Abbruch oder Wartung wechselt die App nur zwischen diesen {{count}} Servern, nie zu anderen.",
+    "allUnavailable": "Keiner deiner angehefteten Server ist gerade verfügbar. Automatische Auswahl aktiv.",
+    "unavailable": "Nicht verfügbar",
+    "limitReached": "Du kannst bis zu {{count}} Server anheften",
+    "allTitle": "Alle Server",
+    "hintOneAvailable": "Deine anderen angehefteten Server sind nicht verfügbar: Fällt dieser aus, wartet die App, bis er zurück ist, und wechselt nicht zu einem anderen Server."
   }
 }

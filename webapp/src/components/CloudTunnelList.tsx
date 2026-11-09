@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useState, useMemo, useRef } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useState, useMemo, useRef, type ReactNode } from 'react';
 import {
   Box,
   Badge,
@@ -17,7 +17,7 @@ import {
   useTheme,
   Skeleton,
 } from '@mui/material';
-import { Refresh as RefreshIcon, CloudOff as CloudOffIcon, FlashOn as FlashOnIcon, FilterList as FilterListIcon } from '@mui/icons-material';
+import { Refresh as RefreshIcon, CloudOff as CloudOffIcon, FlashOn as FlashOnIcon, FilterList as FilterListIcon, Star as StarIcon, StarBorder as StarBorderIcon, History as HistoryIcon, InfoOutlined as InfoOutlinedIcon, CloudQueue as CloudQueueIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getCountryName, getFlagIcon } from '../utils/country';
@@ -32,6 +32,7 @@ import { useAuthStore } from '../stores/auth.store';
 import { useVPNMachineStore } from '../stores/vpn-machine.store';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
 import { AUTO_TUNNEL_SENTINEL, AUTO_TUNNEL_DOMAIN, useConnectionStore } from '../stores/connection.store';
+import { usePinnedTunnelsStore, PIN_LIMIT } from '../stores/pinned-tunnels.store';
 import { ERROR_CODES } from '../utils/errorCode';
 import { purchaseSurfaceAvailable } from '../utils/purchase-surface';
 import { brandConfig } from '../brands';
@@ -129,6 +130,34 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
       a.node.country.localeCompare(b.node.country) || b.recommendScore - a.recommendScore),
     [tunnels]
   );
+
+  // Pinned / recent sections (local, per device). Pinned rows use live tunnel
+  // data when the tunnel is in the list; otherwise a greyed snapshot row.
+  const pinned = usePinnedTunnelsStore((s) => s.pinned);
+  const recent = usePinnedTunnelsStore((s) => s.recent);
+  const tunnelByDomain = useMemo(
+    () => new Map(tunnels.map(t => [t.domain.toLowerCase(), t])),
+    [tunnels],
+  );
+  const pinnedSet = useMemo(() => new Set(pinned.map(p => p.domain)), [pinned]);
+  const pinnedAvailableCount = useMemo(
+    () => pinned.filter(p => tunnelByDomain.has(p.domain)).length,
+    [pinned, tunnelByDomain],
+  );
+  const recentTunnels = useMemo(
+    () => recent
+      .filter(r => !pinnedSet.has(r.domain))
+      .map(r => tunnelByDomain.get(r.domain))
+      .filter((t): t is Tunnel => !!t),
+    [recent, pinnedSet, tunnelByDomain],
+  );
+  const pinLimitReached = pinned.length >= PIN_LIMIT;
+
+  const togglePin = useCallback((tunnel: Tunnel) => {
+    const store = usePinnedTunnelsStore.getState();
+    if (store.isPinned(tunnel.domain)) store.unpin(tunnel.domain);
+    else store.pin(tunnel);
+  }, []);
 
   // Retry state for automatic retry on error
   const retryCountRef = useRef(0);
@@ -457,6 +486,119 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
     );
   }
 
+  // Star toggle — its own hit target: stopPropagation keeps a tap from also
+  // selecting the row.
+  const renderPinButton = (tunnel: Tunnel) => {
+    const isPinned = pinnedSet.has(tunnel.domain.toLowerCase());
+    const blocked = !isPinned && pinLimitReached;
+    const button = (
+      <IconButton
+        data-testid={'pin-btn-' + tunnel.domain.toLowerCase()}
+        size="small"
+        disabled={blocked}
+        onClick={(e) => { e.stopPropagation(); togglePin(tunnel); }}
+        aria-label={t(isPinned ? 'dashboard:pinned.unpin' : 'dashboard:pinned.pin')}
+        aria-pressed={isPinned}
+        sx={{ mr: 0.5 }}
+      >
+        {isPinned
+          ? <StarIcon sx={{ fontSize: 20, color: 'warning.main' }} />
+          : <StarBorderIcon sx={{ fontSize: 20, color: 'text.secondary' }} />}
+      </IconButton>
+    );
+    return blocked
+      // A disabled button has pointer-events: none, so the tap lands on this
+      // span — stop it here too or it selects the row.
+      ? (
+        <Tooltip title={t('dashboard:pinned.limitReached', { count: PIN_LIMIT })}>
+          <span onClick={(e) => e.stopPropagation()}>{button}</span>
+        </Tooltip>
+      )
+      : button;
+  };
+
+  const renderTunnelRow = (tunnel: Tunnel, scope: 'pinned' | 'recent' | 'all') => {
+    const domain = tunnel.domain.toLowerCase();
+    const isSelected = selectedDomain === domain;
+    return (
+      <ListItem
+        key={scope + '-' + tunnel.id}
+        disableGutters
+        onClick={() => {
+          console.debug('[CloudTunnelList] tunnelClick: domain=' + tunnel.domain + ', disabled=' + disabled);
+          !disabled && onSelect(tunnel, echConfigList);
+        }}
+        sx={{
+          borderRadius: 2,
+          mb: 0.5,
+          minHeight: 64,
+          bgcolor: isSelected ? colors.selectedBg : undefined,
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          opacity: disabled ? '0.6 !important' : 1,
+          transition: 'all 0.2s ease',
+          '&:hover': {
+            bgcolor: disabled ? undefined : 'action.hover',
+            transform: disabled ? 'none' : 'scale(1.01)',
+          },
+        }}
+      >
+        <ListItemIcon sx={{ minWidth: 40, fontSize: 24 }}>
+          {getFlagIcon(tunnel.node.country)}
+        </ListItemIcon>
+        <ListItemText
+          primary={
+            <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {tunnel.name || tunnel.domain}
+              {tunnel.ipType === 'residential' && (
+                <Chip
+                  label={t('dashboard:tunnels.residentialIp')}
+                  size="small"
+                  color="success"
+                  variant="outlined"
+                  sx={{ height: 18, fontSize: '0.65rem', fontWeight: 600 }}
+                />
+              )}
+              {excludedSet.has(tunnel.node.country.toLowerCase()) && (
+                <Chip
+                  data-testid="auto-excluded-chip"
+                  label={t('dashboard:auto.excludedChip')}
+                  size="small"
+                  variant="outlined"
+                  sx={{ height: 18, fontSize: '0.65rem', color: 'text.secondary' }}
+                />
+              )}
+            </Box>
+          }
+          secondary={getCountryName(tunnel.node.country)}
+          primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
+          secondaryTypographyProps={{ fontSize: '0.75rem' }}
+        />
+
+        <Box sx={{ mr: 2, display: 'flex', alignItems: 'center' }}>
+          <RecommendBar score={tunnel.recommendScore} />
+        </Box>
+
+        {renderPinButton(tunnel)}
+
+        <Radio
+          checked={isSelected}
+          color="primary"
+          value={domain}
+          sx={{ '& .MuiSvgIcon-root': { fontSize: 24 } }}
+        />
+      </ListItem>
+    );
+  };
+
+  const sectionHeader = (icon: ReactNode, label: string) => (
+    <Stack direction="row" spacing={0.75} alignItems="center" sx={{ pt: 1, pb: 0.5 }}>
+      {icon}
+      <Typography variant="overline" fontWeight={600} color="text.secondary" sx={{ fontSize: '0.7rem', lineHeight: 1.5 }}>
+        {label}
+      </Typography>
+    </Stack>
+  );
+
   return (
     <Box>
       {/* Sticky Header */}
@@ -500,6 +642,78 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
 
       {/* List */}
       <List disablePadding sx={{ px: 2 }}>
+        {pinned.length > 0 && (
+          <Box data-testid="pinned-section" sx={{ mb: 1 }}>
+            {sectionHeader(<StarIcon sx={{ fontSize: 16, color: 'warning.main' }} />,
+              t('dashboard:pinned.title') + ' (' + pinned.length + ')')}
+            {pinned.map((p) => {
+              const live = tunnelByDomain.get(p.domain);
+              if (live) return renderTunnelRow(live, 'pinned');
+              return (
+                <ListItem
+                  key={'pinned-gone-' + p.domain}
+                  data-testid={'pinned-unavailable-' + p.domain}
+                  disableGutters
+                  sx={{ borderRadius: 2, mb: 0.5, minHeight: 64, opacity: 0.5, cursor: 'default' }}
+                >
+                  <ListItemIcon sx={{ minWidth: 40, fontSize: 24 }}>
+                    {getFlagIcon(p.country)}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={p.name}
+                    secondary={t('dashboard:pinned.unavailable')}
+                    primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
+                    secondaryTypographyProps={{ fontSize: '0.75rem' }}
+                  />
+                  <IconButton
+                    data-testid={'pin-btn-' + p.domain}
+                    size="small"
+                    onClick={(e) => { e.stopPropagation(); usePinnedTunnelsStore.getState().unpin(p.domain); }}
+                    aria-label={t('dashboard:pinned.unpin')}
+                    aria-pressed
+                    sx={{ mr: 0.5 }}
+                  >
+                    <StarIcon sx={{ fontSize: 20, color: 'warning.main' }} />
+                  </IconButton>
+                  <Box sx={{ width: 42 }} />
+                </ListItem>
+              );
+            })}
+            <Stack
+              data-testid="pinned-hint"
+              direction="row"
+              spacing={0.75}
+              alignItems="flex-start"
+              sx={{ px: 1, pb: 0.5, color: pinnedAvailableCount === 0 ? 'warning.main' : 'text.secondary' }}
+            >
+              <InfoOutlinedIcon sx={{ fontSize: 14, mt: '2px' }} />
+              <Typography variant="caption" sx={{ lineHeight: 1.5 }}>
+                {/* Count only pins in the list: an offline pin cannot take over. */}
+                {pinnedAvailableCount === 0
+                  ? t('dashboard:pinned.allUnavailable')
+                  : pinned.length === 1
+                    ? t('dashboard:pinned.hintSingle')
+                    : pinnedAvailableCount === 1
+                      ? t('dashboard:pinned.hintOneAvailable')
+                      : t('dashboard:pinned.hintMulti', { count: pinnedAvailableCount })}
+              </Typography>
+            </Stack>
+          </Box>
+        )}
+
+        {recentTunnels.length > 0 && (
+          <Box data-testid="recent-section" sx={{ mb: 1 }}>
+            {sectionHeader(<HistoryIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, t('dashboard:pinned.recentTitle'))}
+            {recentTunnels.map((tunnel) => renderTunnelRow(tunnel, 'recent'))}
+          </Box>
+        )}
+
+        {(pinned.length > 0 || recentTunnels.length > 0) && (
+          <Box data-testid="all-section-header">
+            {sectionHeader(<CloudQueueIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, t('dashboard:pinned.allTitle'))}
+          </Box>
+        )}
+
         {/* Auto virtual row — first item, ahead of country-sorted tunnels */}
         <ListItem
           key="auto"
@@ -561,76 +775,7 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
           />
         </ListItem>
 
-        {sortedTunnels.map((tunnel) => {
-          const domain = tunnel.domain.toLowerCase();
-          const isSelected = selectedDomain === domain;
-          return (
-            <ListItem
-              key={tunnel.id}
-              disableGutters
-              onClick={() => {
-                console.debug('[CloudTunnelList] tunnelClick: domain=' + tunnel.domain + ', disabled=' + disabled);
-                !disabled && onSelect(tunnel, echConfigList);
-              }}
-              sx={{
-                borderRadius: 2,
-                mb: 0.5,
-                minHeight: 64,
-                bgcolor: isSelected ? colors.selectedBg : undefined,
-                cursor: disabled ? 'not-allowed' : 'pointer',
-                opacity: disabled ? '0.6 !important' : 1,
-                transition: 'all 0.2s ease',
-                '&:hover': {
-                  bgcolor: disabled ? undefined : 'action.hover',
-                  transform: disabled ? 'none' : 'scale(1.01)',
-                },
-              }}
-            >
-              <ListItemIcon sx={{ minWidth: 40, fontSize: 24 }}>
-                {getFlagIcon(tunnel.node.country)}
-              </ListItemIcon>
-              <ListItemText
-                primary={
-                  <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    {tunnel.name || tunnel.domain}
-                    {tunnel.ipType === 'residential' && (
-                      <Chip
-                        label={t('dashboard:tunnels.residentialIp')}
-                        size="small"
-                        color="success"
-                        variant="outlined"
-                        sx={{ height: 18, fontSize: '0.65rem', fontWeight: 600 }}
-                      />
-                    )}
-                    {excludedSet.has(tunnel.node.country.toLowerCase()) && (
-                      <Chip
-                        data-testid="auto-excluded-chip"
-                        label={t('dashboard:auto.excludedChip')}
-                        size="small"
-                        variant="outlined"
-                        sx={{ height: 18, fontSize: '0.65rem', color: 'text.secondary' }}
-                      />
-                    )}
-                  </Box>
-                }
-                secondary={getCountryName(tunnel.node.country)}
-                primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
-                secondaryTypographyProps={{ fontSize: '0.75rem' }}
-              />
-
-              <Box sx={{ mr: 2, display: 'flex', alignItems: 'center' }}>
-                <RecommendBar score={tunnel.recommendScore} />
-              </Box>
-
-              <Radio
-                checked={isSelected}
-                color="primary"
-                value={domain}
-                sx={{ '& .MuiSvgIcon-root': { fontSize: 24 } }}
-              />
-            </ListItem>
-          );
-        })}
+        {sortedTunnels.map((tunnel) => renderTunnelRow(tunnel, 'all'))}
       </List>
 
       <CountryFilterDialog

@@ -83,7 +83,7 @@ export function pickAutoTunnel(
  * Several tunnels can live on one machine; a fallback on the same machine
  * fails together with the primary, so it buys nothing.
  */
-function machineKey(t: Tunnel): string | null {
+export function machineKey(t: Tunnel): string | null {
   return t.node?.ipv4 || t.node?.ipv6 || null;
 }
 
@@ -114,4 +114,41 @@ export function pickAutoCandidates(
     pool = pool.filter(x => x !== t && (key === null || machineKey(x) !== key));
   }
   return picked;
+}
+
+/**
+ * Fallbacks for a pinned primary: the user's other pins, in pin order.
+ *
+ * The pinned pool is the user's own switch range — failover never leaves it,
+ * so this draws only from `pinned`, never from the wider list. A pin counts
+ * only if it is in the current `tunnels` list with a `serverUrl`; pins on the
+ * primary's machine (or on a machine already chosen) are skipped because they
+ * fail together. One pin → `[]`, i.e. today's manual behaviour (retry in place).
+ *
+ * @param max fallbacks to return (F2 accepts at most 3)
+ */
+export function pickPinnedFallbacks(
+  primary: Tunnel,
+  pinned: readonly { domain: string }[],
+  tunnels: Tunnel[],
+  max = 3,
+): Tunnel[] {
+  const byDomain = new Map(tunnels.map(t => [t.domain.toLowerCase(), t]));
+  const usedMachines = new Set<string>();
+  const primaryKey = machineKey(primary);
+  if (primaryKey) usedMachines.add(primaryKey);
+  const primaryDomain = primary.domain.toLowerCase();
+  const out: Tunnel[] = [];
+  for (const p of pinned) {
+    if (out.length >= max) break;
+    const domain = p.domain.toLowerCase();
+    if (domain === primaryDomain) continue;
+    const t = byDomain.get(domain);
+    if (!t?.serverUrl) continue;
+    const key = machineKey(t);
+    if (key !== null && usedMachines.has(key)) continue;
+    if (key !== null) usedMachines.add(key);
+    out.push(t);
+  }
+  return out;
 }

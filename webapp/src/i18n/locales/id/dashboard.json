@@ -356,5 +356,18 @@
     "filterClear": "Hapus",
     "filterDone": "Selesai",
     "allExcluded": "Semua server tersedia dikecualikan oleh filter Anda. Sesuaikan filter negara/wilayah."
+  },
+  "pinned": {
+    "title": "Disematkan",
+    "recentTitle": "Baru digunakan",
+    "pin": "Sematkan server",
+    "unpin": "Lepas sematan",
+    "hintSingle": "Hanya 1 server disematkan: jika tidak tersedia, aplikasi menunggu sampai pulih dan tidak beralih ke server lain. Agar beralih otomatis saat terputus, sematkan satu server lagi di wilayah yang sama.",
+    "hintMulti": "Saat terputus atau pemeliharaan, aplikasi hanya beralih di antara {{count}} server ini, tidak ke server lain.",
+    "allUnavailable": "Semua server yang disematkan sedang tidak tersedia. Pilihan otomatis sedang digunakan.",
+    "unavailable": "Tidak tersedia",
+    "limitReached": "Anda dapat menyematkan hingga {{count}} server",
+    "allTitle": "Semua server",
+    "hintOneAvailable": "Server tersemat lainnya tidak tersedia: jika server ini terputus, aplikasi menunggu sampai pulih dan tidak beralih ke server lain."
   }
 }

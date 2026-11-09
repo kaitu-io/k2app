@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickAutoTunnel, pickAutoCandidates } from '../auto-tunnel-pick';
+import { pickAutoTunnel, pickAutoCandidates, pickPinnedFallbacks } from '../auto-tunnel-pick';
 import type { Tunnel } from '../../services/api-types';
 
 function tunnel(id: number, domain: string, recommendScore: number, serverUrl?: string, country = ''): Tunnel {
@@ -351,5 +351,46 @@ describe('pickAutoCandidates', () => {
   it('pickAutoCandidates empty pool returns []', () => {
     expect(pickAutoCandidates([])).toEqual([]);
     expect(pickAutoCandidates([tunnel(1, 'dead', 0)])).toEqual([]);
+  });
+});
+
+// ==================== pickPinnedFallbacks ====================
+
+
+describe('pickPinnedFallbacks', () => {
+  const onMachine = (t: Tunnel, ip: string): Tunnel => ({ ...t, node: { ...t.node, ipv4: ip } });
+  const a = onMachine(tunnel(1, 'a.x', 0.5), '1.1.1.1');
+  const b = onMachine(tunnel(2, 'b.x', 0.5), '2.2.2.2');
+  const c = onMachine(tunnel(3, 'c.x', 0.5), '3.3.3.3');
+  const d = onMachine(tunnel(4, 'd.x', 0.5), '4.4.4.4');
+  const e = onMachine(tunnel(5, 'e.x', 0.5), '5.5.5.5');
+  const pins = (...ds: string[]) => ds.map(domain => ({ domain }));
+
+  it('returns other pins in pin order, excluding the primary', () => {
+    expect(pickPinnedFallbacks(b, pins('c.x', 'b.x', 'a.x'), [a, b, c]).map(t => t.domain))
+      .toEqual(['c.x', 'a.x']);
+  });
+
+  it('single pin → no fallbacks', () => {
+    expect(pickPinnedFallbacks(a, pins('a.x'), [a, b])).toEqual([]);
+  });
+
+  it('skips pins absent from the list or without serverUrl', () => {
+    const noUrl = { ...c, serverUrl: undefined };
+    expect(pickPinnedFallbacks(a, pins('a.x', 'gone.x', 'c.x', 'b.x'), [a, b, noUrl]).map(t => t.domain))
+      .toEqual(['b.x']);
+  });
+
+  it('skips pins on the primary machine or an already-chosen machine', () => {
+    const a2 = onMachine(tunnel(6, 'a2.x', 0.5), '1.1.1.1');
+    const b2 = onMachine(tunnel(7, 'b2.x', 0.5), '2.2.2.2');
+    expect(pickPinnedFallbacks(a, pins('a.x', 'a2.x', 'b.x', 'b2.x', 'c.x'), [a, a2, b, b2, c]).map(t => t.domain))
+      .toEqual(['b.x', 'c.x']);
+  });
+
+  it('caps at 3 and matches domains case-insensitively', () => {
+    const upper = { ...b, domain: 'B.X' };
+    expect(pickPinnedFallbacks(a, pins('a.x', 'b.x', 'c.x', 'd.x', 'e.x'), [a, upper, c, d, e]).map(t => t.domain))
+      .toEqual(['B.X', 'c.x', 'd.x']);
   });
 });
