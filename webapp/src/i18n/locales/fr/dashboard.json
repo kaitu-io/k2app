@@ -356,5 +356,16 @@
     "filterClear": "Effacer",
     "filterDone": "Fait",
     "allExcluded": "Tous les serveurs disponibles sont exclus par votre filtre. Ajustez le filtre des pays/régions."
+  },
+  "pinned": {
+    "title": "Épinglés",
+    "recentTitle": "Utilisés récemment",
+    "pin": "Épingler le serveur",
+    "unpin": "Désépingler",
+    "hintSingle": "Un seul serveur épinglé : s'il tombe, l'app attend son retour et ne bascule pas vers un autre serveur. Pour basculer automatiquement en cas de coupure, épinglez un autre serveur de la même région.",
+    "hintMulti": "En cas de coupure ou de maintenance, l'app ne bascule qu'entre ces {{count}} serveurs, jamais vers d'autres.",
+    "allUnavailable": "Aucun de vos serveurs épinglés n'est disponible pour le moment. Sélection automatique en cours.",
+    "unavailable": "Indisponible",
+    "limitReached": "Vous pouvez épingler jusqu'à {{count}} serveurs"
   }
 }

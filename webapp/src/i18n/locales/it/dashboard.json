@@ -356,5 +356,16 @@
     "filterClear": "Cancella",
     "filterDone": "Fine",
     "allExcluded": "Tutti i server disponibili sono esclusi dal tuo filtro. Regola il filtro paesi/regioni."
+  },
+  "pinned": {
+    "title": "Fissati",
+    "recentTitle": "Usati di recente",
+    "pin": "Fissa server",
+    "unpin": "Rimuovi",
+    "hintSingle": "Solo 1 server fissato: se non è disponibile, l'app attende che torni e non passa a un altro server. Per cambiare automaticamente in caso di disconnessione, fissa un altro server nella stessa regione.",
+    "hintMulti": "In caso di disconnessione o manutenzione, l'app passa solo tra questi {{count}} server, mai ad altri.",
+    "allUnavailable": "Nessuno dei server fissati è disponibile ora. È in uso la selezione automatica.",
+    "unavailable": "Non disponibile",
+    "limitReached": "Puoi fissare fino a {{count}} server"
   }
 }

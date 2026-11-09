@@ -356,5 +356,16 @@
     "filterClear": "Clear",
     "filterDone": "Done",
     "allExcluded": "All available servers are excluded by your filter. Adjust the country/region filter."
+  },
+  "pinned": {
+    "title": "Pinned",
+    "recentTitle": "Recently used",
+    "pin": "Pin server",
+    "unpin": "Unpin",
+    "hintSingle": "Only 1 server pinned: if it goes down, the app waits for it to come back and won't switch to another server. To switch automatically when it drops, pin another server in the same region.",
+    "hintMulti": "If a server drops or goes into maintenance, the app only switches among these {{count}} servers, never to others.",
+    "allUnavailable": "None of your pinned servers are available right now. Auto pick is in use.",
+    "unavailable": "Unavailable",
+    "limitReached": "You can pin up to {{count}} servers"
   }
 }
