@@ -69,7 +69,9 @@ export const KAITU: Brand = {
   // deployments sign "Wordgate LLC" (also the Stripe merchant). It is a company
   // name, not a brand, so kaitu.io carries no cross-brand mention at all.
   legalName: 'Wordgate LLC',
-  baseUrl: 'https://kaitu.io',
+  // www 是线上真实主机：Amplify 把 kaitu.io 301 到 www（与 api/webapp BaseURL 一致）。
+  // canonical / sitemap / hreflang 必须指向不跳转的地址，否则搜索引擎拒收。
+  baseUrl: 'https://www.kaitu.io',
   defaultLocale: 'zh-CN',
   allowedLocales: ['zh-CN', 'zh-TW', 'zh-HK'],
   logoPath: '/kaitu-icon.png',

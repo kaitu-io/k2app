@@ -158,7 +158,7 @@ function renderInstallClient() {
 describe('install page Linux command', () => {
   it('Linux install command present with kaitu.io URL', async () => {
     const { container } = renderInstallClient();
-    expect(container.textContent).toContain('curl -fsSL https://kaitu.io/i/k2 | sudo bash');
+    expect(container.textContent).toContain('curl -fsSL https://www.kaitu.io/i/k2 | sudo bash');
   });
 });
 

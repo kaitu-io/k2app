@@ -92,17 +92,17 @@ describe('test_sitemap_includes_content', () => {
 
     // Must include the zh-CN guides post, in every kaitu locale (zh-HK reads
     // the zh-CN copy via brand-default-locale fallback)
-    expect(urls).toContain('https://kaitu.io/zh-CN/guides/getting-started');
+    expect(urls).toContain('https://www.kaitu.io/zh-CN/guides/getting-started');
     // zh-CN only: zh-HK would render the zh-CN text as a fallback (noindex), so
     // it is not advertised.
-    expect(urls).not.toContain('https://kaitu.io/zh-HK/guides/getting-started');
+    expect(urls).not.toContain('https://www.kaitu.io/zh-HK/guides/getting-started');
 
     // blog/ is NOT a registered category in content-posts.ts — no route serves
     // it, so the sitemap must not advertise it (it would 404).
-    expect(urls).not.toContain('https://kaitu.io/zh-CN/blog/hello-world');
+    expect(urls).not.toContain('https://www.kaitu.io/zh-CN/blog/hello-world');
 
     // Must NOT include draft post
-    expect(urls).not.toContain('https://kaitu.io/zh-CN/blog/draft-post');
+    expect(urls).not.toContain('https://www.kaitu.io/zh-CN/blog/draft-post');
 
     // Only the served zh locales are advertised.
     expect(urls.every((u: string) => !/\/(en-US|en-GB|en-AU|ja)\//.test(u))).toBe(true);
@@ -113,7 +113,7 @@ describe('test_sitemap_includes_content', () => {
     const entries = await sitemap();
 
     const contentEntry = entries.find(
-      (entry: { url: string }) => entry.url === 'https://kaitu.io/zh-CN/guides/getting-started'
+      (entry: { url: string }) => entry.url === 'https://www.kaitu.io/zh-CN/guides/getting-started'
     );
 
     expect(contentEntry).toBeDefined();
