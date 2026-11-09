@@ -1,5 +1,6 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
+import { generateMetadata as generateBaseMetadata } from '../metadata';
 import { routing } from '@/i18n/routing';
 import { Link } from '@/i18n/routing';
 import { Card } from '@/components/ui/card';
@@ -380,10 +381,10 @@ export async function generateMetadata({
   const locale = rawLocale as Locale;
   const t = await getTranslations({ locale, namespace: 'discovery' });
 
-  return {
+  return generateBaseMetadata(locale, '/discovery', {
     title: t('discovery.title'),
     description: t('discovery.subtitle'),
-  };
+  });
 }
 
 /**

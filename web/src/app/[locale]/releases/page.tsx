@@ -1,5 +1,6 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
+import { generateMetadata as generateBaseMetadata } from '../metadata';
 import { routing } from '@/i18n/routing';
 import { siteBrand } from '@/lib/brands';
 import ReleasesClient from './ReleasesClient';
@@ -22,10 +23,10 @@ export async function generateMetadata({
   const locale = rawLocale as Locale;
   const t = await getTranslations({ locale, namespace: 'releases' });
 
-  return {
+  return generateBaseMetadata(locale, '/releases', {
     title: t('title'),
     description: t('subtitle'),
-  };
+  });
 }
 
 export default async function ReleasesPage({

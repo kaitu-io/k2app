@@ -1,5 +1,6 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
+import { generateMetadata as generateBaseMetadata } from '../metadata';
 import { routing, Link } from '@/i18n/routing';
 import path from 'path';
 import { Button } from '@/components/ui/button';
@@ -21,10 +22,10 @@ export async function generateMetadata({
   const { locale: rawLocale } = await params;
   const locale = rawLocale as Locale;
   const t = await getTranslations({ locale, namespace: 'discovery' });
-  return {
+  return generateBaseMetadata(locale, '/delete-account', {
     title: t('deleteAccount.title'),
     description: t('deleteAccount.subtitle'),
-  };
+  });
 }
 
 /**

@@ -37,19 +37,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     });
   });
 
-  // Add root redirect page
-  sitemapEntries.push({
-    url: baseUrl,
-    lastModified: new Date(),
-    changeFrequency: 'daily',
-    priority: 1,
-    alternates: {
-      languages: locales.reduce((acc, locale) => {
-        acc[locale] = `${baseUrl}/${locale}`;
-        return acc;
-      }, {} as Record<string, string>),
-    },
-  });
+  // The bare root (`/`) is not listed: it 307-redirects to the default
+  // locale, and a redirecting URL in a sitemap is reported as an error.
 
   // Add content pages from velite (published posts only).
   //
