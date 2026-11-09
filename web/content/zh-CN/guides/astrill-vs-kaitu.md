@@ -1,69 +1,81 @@
 ---
-title: "Astrill 和开途对比：价格、协议和在国内的使用方式（2026）"
-date: 2026-11-09
-summary: "Astrill 1 年 $180、按月 $30；开途 App 版 1 年 $49 起。本文从价格、设备数、协议、iPhone 下载和退款五个维度对比两者，并说明各自更适合什么人。"
-tags: ["astrill", "astrill vpn", "astrill 替代", "astrill 价格", "开途对比"]
+title: "Astrill VPN 多少钱、国内好用吗？和开途对比（2026）"
+date: 2026-11-10
+summary: "Astrill 按月 $30、1 年 $180，买了不退款；开途 App 版 1 年 $49，首购 7 天内流量不超过 1GB 可退。本文按 Astrill 官网原文整理价格、设备数、协议、iPhone 下载和退款，并说明两者各自适合什么人。"
+tags: ["astrill", "astrill vpn", "astrill 价格", "astrill 替代", "astrill 退款"]
 brand: kaitu
 draft: true
 section: kaitu
 ---
 
-<strong>只看价格和 iPhone 安装：开途 App 版 1 年 $49 起，可以直接在中国区 App Store 下载；Astrill 1 年 $180。</strong>Astrill 的优势在于可以按月付费、家庭设备数不限，还提供多种协议。如果你需要按月付，或者要连很多台设备，Astrill 更合适；如果你在意年费，或者要在 iPhone 上直接安装，开途更合适。
+<strong>Astrill 1 年 $180（约合人民币 1,290 元），按月付 $30，官网写明“网站购买一律不退款”。</strong>开途 App 版 1 年 $49（约 350 元），首次购买 7 天内、用了不超过 1GB 流量可以退款。如果你看重按月付、想手动挑协议，或者公司给报销，Astrill 仍然是成熟的选择；如果你自己掏钱、一年预算三四百元，或者 iPhone 只想在中国区 App Store 下载，开途更合适。至于在国内能不能连上，两家都不做承诺：Astrill 靠多种协议手动切换，开途靠单一协议自动切换。
 
-<em>价格和功能查自 Astrill 官网（[pricing](https://www.astrill.com/pricing)、[features](https://www.astrill.com/features)，查看日期 2026-11-09）和开途[定价页](/pricing)。价格可能变动，以官网为准。</em>
+<em>Astrill 的信息全部来自其官网 [pricing](https://www.astrill.com/pricing)、[features](https://www.astrill.com/features)、[refund policy](https://www.astrill.com/refund-policy)、[multiple devices](https://www.astrill.com/vpn-for/multiple-devices)，2026 年 11 月 10 日查看；人民币按 1 美元约 7.15 元估算。价格以官网为准。</em>
 
-## 对比总览
+## 一张表看差别
 
-| 维度 | Astrill | 开途 |
+| | Astrill | 开途 |
 |---|---|---|
-| 价格 | 按月 <strong>$30</strong>；1 年 <strong>$180</strong>；2 年 $300 | App 版 1 年 <strong>$49</strong>；2 年 $94.90；3 年 $139；5 年 $199 |
-| 按月付费 | 有 | 没有，最短 1 年 |
-| 设备数 | 官网写明“家庭设备不限” | 一个账号 5 台同时在线；路由器版连接的设备不限 |
-| 协议 | OpenWeb、StealthVPN、改进版 WireGuard、OpenVPN、IPSec 等 | 自研 k2 协议（ECH + QUIC/TCP-WebSocket + k2cc 拥塞控制） |
-| iPhone 下载 | 2017 年被移出中国区 App Store（据当时报道） | 中国区 App Store 可以直接下载 |
-| 退款 | 官网定价页没有写明 | 首次购买 7 天内、流量不超过 1GB 可以退款 |
-| 加购 | 独立 IP 每月 $5；VIP 每月 $10 起 | 专属线路另售 |
+| 价格 | 月付 $30；1 年 $180；2 年 $300 | 1 年 $49；2 年 $94.90；3 年 $139；5 年 $199 |
+| 最短能买多久 | 1 个月 | 1 年 |
+| 退款 | 网站购买一律不退，官方建议想试就买最短的套餐 | 首购 7 天内、流量 ≤1GB 可退，退到账户钱包，可提现到加密货币钱包 |
+| 设备 | 家庭内安装台数不限；features 页写个人套餐最多 5 台同时在线，可加购 | 一个账号 5 台同时在线 |
+| 协议 | OpenWeb、StealthVPN、WireGuard、OpenVPN、Cisco IPSec、IKEv2、L2TP、SSTP、OpenConnect，可手动切换 | 只有自研的 k2，自动在 QUIC 和 TCP 之间切换，不用选 |
+| 路由器 | 有路由器方案，可让局域网内全部或部分设备走 Astrill（[features](https://www.astrill.com/features)） | 有路由器版，连上的设备不限数量 |
+| iPhone 下载 | 不在中国区 App Store，需要其他地区的 Apple ID | 中国区 App Store 直接下载 |
+| 额外付费项 | 独立 IP 每月 $5；VIP 每月 $10 起 | App 版无附加收费；路由器版另售 |
 
-## 价格：开途每年便宜，Astrill 可以按月付
+## 价格：$30 就是 Astrill 的试用成本
 
-- <strong>Astrill</strong>：1 年 $180，折合每月 $15；按月付 $30。可以先付一个月试试，不合适就停。
-- <strong>开途</strong>：App 版 1 年 $49，折合每月约 $4.1。没有月付，首次购买 7 天内、流量不超过 1GB 可以退款，作为试用的替代。
+Astrill 不退款，所以第一次买最稳妥的做法正是它官网建议的：先付一个月 $30 试试，好用再换年付。年付 $180 折合每月 $15。公司报销时这不是问题；自己掏钱续费，一年一千多元就值得比一比了。
 
-## 协议：两边都为强干扰网络做了专门设计
+开途没有月付，最短 1 年 $49。它用退款规则代替试用：7 天内、流量不超过 1GB 可以退。只要头 7 天别下大文件，买错了能退回钱包；在 Astrill 上，试错成本就是那 $30。
 
-- <strong>Astrill</strong>：OpenWeb 和 StealthVPN 是它的私有协议，官网说明是为了“隐藏你在使用 VPN 这一事实”。同时提供 OpenVPN、WireGuard 等通用协议，可以手动切换。
-- <strong>开途</strong>：只用一种自研的 k2 协议，不需要选。握手用 ECH 加密 SNI；优先走 QUIC，被干扰时自动降级到 TCP-WebSocket；拥塞控制 k2cc 用来应对审查造成的丢包。按 USENIX Security 2023 的测量，这类丢包约为 <strong>26%</strong>。设计和测试数据都有公开文档：[k2cc](/k2/k2cc)、[k2cc 与 BBR 的对比](/k2/vs-bbr)。
+## 在国内好不好用：两边的思路不一样
 
-两种方式的取舍：多协议适合愿意自己调的人；单一协议、自动降级适合不想折腾的人。
+Astrill 把协议选择交给你：私有的 OpenWeb、StealthVPN（官网说设计目的是隐藏使用 VPN 这件事），加上 WireGuard、OpenVPN 等通用协议，哪个能连上就用哪个。适合愿意自己折腾、出了问题会挨个试的人。
 
-## iPhone：下载方式不同
+开途只有一个协议 k2，切换在后台自动完成：握手时加密 SNI（ECH），优先走 QUIC，被干扰时自动退到 TCP-WebSocket，两者共用一个端口；拥塞控制 k2cc 专门针对跨境线路的高丢包设计。用户这边没有协议可选，点连接就行。设计和测试方法公开在 [k2 协议文档](/k2/protocol) 和 [k2cc 与 BBR 的对比](/k2/vs-bbr)。
 
-- <strong>Astrill</strong>：2017 年 7 月 Apple 从中国区 App Store 下架了一批 VPN 应用，当时的报道把 Astrill 列在其中（[WeLiveSecurity 报道](https://welivesecurity.com/2017/07/30/ios-vpn-apps-removed-apples-chinese-app-store)）。现在用 Astrill 的 iPhone 用户，通常要用其他地区的 Apple ID 下载。具体以 Astrill 官网说明为准。
-- <strong>开途</strong>：可以在中国区 App Store 直接下载，不需要换 Apple ID。
+两边都不会承诺“永远连得上”。Astrill 的退款条款里还专门写了一句：如果服务因为运营商封锁而用不了，它不负责。
+
+## Astrill 连不上怎么办
+
+Astrill 官网是 astrill.com，电脑和安卓客户端从官网获取，iPhone 版见下一节。
+
+先在客户端里换协议：官网说 OpenWeb、StealthVPN 和它改过的 WireGuard 在 Astrill 自家客户端里都能隐藏 VPN 流量，OpenVPN、IPSec 这类通用协议没有这层处理。再换几个不同地区的服务器试。都不行时，可以考虑换工具。换之前记得在电脑上关掉 Astrill，两个工具同时开会互相改路由。
+
+## iPhone：在哪个 App Store 下载
+
+2017 年 7 月，Apple 从中国区 App Store 下架了一批 VPN 应用，当时的报道把 Astrill 列在其中（[WeLiveSecurity](https://welivesecurity.com/2017/07/30/ios-vpn-apps-removed-apples-chinese-app-store)）。现在 Astrill 的 iOS 客户端在其他地区的 App Store 仍然可以搜到（[App Store 页面](https://apps.apple.com/app/astrill-vpn-client/id572953702)），所以国内 iPhone 用户需要一个海外 Apple ID。开途可以在中国区 App Store 直接下载，不用换 ID。
 
 ## 怎么选
 
-- <strong>选 Astrill</strong>：需要按月付费；家里设备很多；想手动切换协议，或者需要独立 IP。
-- <strong>选开途</strong>：主要在电脑和手机上用，5 台设备够用；在意年费；iPhone 要在中国区 App Store 直接安装；希望退款规则写清楚。
-
-想试开途，可以从[下载页](/install)安装，再照着[快速入门](/guides/getting-started)完成第一次连接。
+- 公司报销、要按月付、喜欢自己切协议，或者需要独立 IP：继续用 Astrill。
+- 自己付钱、同时在线 5 台够用、iPhone 不想换 Apple ID、希望买错了能退：试试开途。先看[定价](/pricing)，再从[下载页](/install)安装，照着[快速入门](/guides/getting-started)连上；7 天内不满意可以申请退款。
 
 ## 常见问题
 
 <strong>Astrill 一年多少钱？</strong>
 
-按 Astrill 官网 2026-11-09 的定价：1 年 $180（折合每月 $15），按月付 $30，2 年 $300。独立 IP 和 VIP 要另外加钱。
+按 2026 年 11 月 10 日的官网价格：1 年 $180（约 1,290 元），月付 $30，2 年 $300。独立 IP 和 VIP 另外收费。
 
-<strong>有没有比 Astrill 便宜的替代？</strong>
+<strong>Astrill 可以退款吗？</strong>
 
-开途 App 版 1 年 $49 起，一个账号 5 台设备同时在线。代价是没有月付，设备数也有上限。
+不可以。官网退款政策写明网站购买一律不退，并建议想试用的人先买最短的套餐。
+
+<strong>Astrill 能同时连几台设备？</strong>
+
+官网说一个家庭内安装台数不限，但个人套餐最多 5 台同时在线，需要更多可以加购。
 
 <strong>Astrill 在中国区 App Store 能下载吗？</strong>
 
-据 2017 年的报道，Astrill 当年被移出了中国区 App Store。当前状态请以 Astrill 官网为准。开途可以在中国区 App Store 直接下载。
+不能。2017 年中国区下架 VPN 应用时，报道将它列在其中；2026 年 11 月 10 日在中国区搜不到，要用其他地区的 Apple ID 下载。
 
-<strong>开途和 Astrill 能不能同时用？</strong>
+<strong>Astrill 连不上了怎么办？</strong>
 
-可以同时安装，但同一时间只能连接其中一个，两个 VPN 同时开会互相冲突。
+先在客户端里切换到 OpenWeb、StealthVPN 或 WireGuard，再换几个服务器。都不行的话，可以考虑换工具。
 
-延伸阅读：[快连停服后怎么选工具](/guides/kuailian-mainland-shutdown) · [k2 协议文档](/k2/protocol)
+<strong>有没有比 Astrill 便宜的替代？</strong>
+
+开途 App 版 1 年 $49，5 台设备同时在线，首购 7 天内、流量不超过 1GB 可以退款。代价是没有月付。
