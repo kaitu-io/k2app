@@ -37,7 +37,7 @@ describe('brand configs', () => {
   });
 
   it('brand base URLs are distinct HTTPS origins', () => {
-    expect(KAITU.baseUrl).toBe('https://kaitu.io');
+    expect(KAITU.baseUrl).toBe('https://www.kaitu.io');
     expect(OVERLEAP.baseUrl).toBe('https://overleap.io');
   });
 

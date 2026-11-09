@@ -561,12 +561,12 @@ describe('test_k2_techarticle_is_brand_aware', () => {
 
     expect(jsonLd['@type']).toBe('TechArticle');
     expect(jsonLd.author.name).toBe('Kaitu');
-    expect(jsonLd.author.url).toBe('https://kaitu.io');
+    expect(jsonLd.author.url).toBe('https://www.kaitu.io');
     expect(jsonLd.publisher.name).toBe('Kaitu');
-    expect(jsonLd.publisher.url).toBe('https://kaitu.io');
+    expect(jsonLd.publisher.url).toBe('https://www.kaitu.io');
     expect(jsonLd.isPartOf.name).toBe('Kaitu');
-    expect(jsonLd.isPartOf.url).toBe('https://kaitu.io');
-    expect(jsonLd.url.startsWith('https://kaitu.io/')).toBe(true);
-    expect(jsonLd.mainEntityOfPage['@id'].startsWith('https://kaitu.io/')).toBe(true);
+    expect(jsonLd.isPartOf.url).toBe('https://www.kaitu.io');
+    expect(jsonLd.url.startsWith('https://www.kaitu.io/')).toBe(true);
+    expect(jsonLd.mainEntityOfPage['@id'].startsWith('https://www.kaitu.io/')).toBe(true);
   });
 });

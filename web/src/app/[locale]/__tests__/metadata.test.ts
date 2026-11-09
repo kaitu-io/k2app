@@ -38,8 +38,8 @@ describe('generateMetadata', () => {
     const meta = generateMetadata('zh-CN', '/install', {}, KAITU);
     const langs = meta.alternates!.languages as Record<string, string>;
     expect(Object.keys(langs).sort()).toEqual(['x-default', 'zh-cn', 'zh-hk', 'zh-tw']);
-    expect(langs['zh-tw']).toBe('https://kaitu.io/zh-TW/install');
-    expect(langs['x-default']).toBe('https://kaitu.io/zh-CN/install');
+    expect(langs['zh-tw']).toBe('https://www.kaitu.io/zh-TW/install');
+    expect(langs['x-default']).toBe('https://www.kaitu.io/zh-CN/install');
     expect(JSON.stringify(meta)).not.toContain('overleap');
   });
 
@@ -63,7 +63,7 @@ describe('generateMetadata', () => {
     const generateMetadata = await loadMetadata();
     const meta = generateMetadata('zh-CN', '', {}, KAITU);
     const langs = meta.alternates!.languages as Record<string, string>;
-    expect(langs['zh-cn']).toBe('https://kaitu.io/zh-CN');
+    expect(langs['zh-cn']).toBe('https://www.kaitu.io/zh-CN');
   });
 
   it('omitted brand yields kaitu metadata', async () => {
@@ -71,7 +71,7 @@ describe('generateMetadata', () => {
 
     const meta = generateMetadata('zh-CN', '/support');
 
-    expect(meta.alternates!.canonical).toBe('https://kaitu.io/zh-CN/support');
+    expect(meta.alternates!.canonical).toBe('https://www.kaitu.io/zh-CN/support');
     expect(JSON.stringify(meta)).not.toContain('overleap');
   });
 
@@ -82,6 +82,6 @@ describe('generateMetadata', () => {
     const meta = generateMetadata('zh-CN', '/install', {}, KAITU);
     const langs = meta.alternates!.languages as Record<string, string>;
     // hreflang must use the brand's own host so preview envs can't poison SEO.
-    expect(langs['zh-cn']).toBe('https://kaitu.io/zh-CN/install');
+    expect(langs['zh-cn']).toBe('https://www.kaitu.io/zh-CN/install');
   });
 });

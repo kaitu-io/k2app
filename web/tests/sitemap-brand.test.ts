@@ -27,7 +27,7 @@ describe('sitemap', () => {
     const entries = await sitemap();
     expect(entries.length).toBeGreaterThan(0);
     for (const e of entries) {
-      expect(e.url).toMatch(/^https:\/\/kaitu\.io/);
+      expect(e.url).toMatch(/^https:\/\/www\.kaitu\.io/);
       expect(e.url).not.toMatch(/\/(en-US|en-GB|en-AU|ja)(\/|$)/);
     }
   });
@@ -61,7 +61,7 @@ describe('sitemap', () => {
 
     it('a zh-CN-only post is listed once, with only its own hreflang', async () => {
       const entries = await sitemap();
-      expect(urlsFor(entries, '/guides/cn-guide')).toEqual(['https://kaitu.io/zh-CN/guides/cn-guide']);
+      expect(urlsFor(entries, '/guides/cn-guide')).toEqual(['https://www.kaitu.io/zh-CN/guides/cn-guide']);
       const entry = entries.find((e) => e.url.endsWith('/zh-CN/guides/cn-guide'))!;
       expect(Object.keys(entry.alternates?.languages ?? {})).toEqual(['zh-CN']);
     });
@@ -69,8 +69,8 @@ describe('sitemap', () => {
     it('a post translated into zh-TW lists zh-CN + zh-TW but not zh-HK', async () => {
       const entries = await sitemap();
       expect(urlsFor(entries, '/guides/tw-too').sort()).toEqual([
-        'https://kaitu.io/zh-CN/guides/tw-too',
-        'https://kaitu.io/zh-TW/guides/tw-too',
+        'https://www.kaitu.io/zh-CN/guides/tw-too',
+        'https://www.kaitu.io/zh-TW/guides/tw-too',
       ]);
       const entry = entries.find((e) => e.url.endsWith('/zh-TW/guides/tw-too'))!;
       expect(Object.keys(entry.alternates?.languages ?? {}).sort()).toEqual(['zh-CN', 'zh-TW']);
@@ -79,8 +79,8 @@ describe('sitemap', () => {
     it('a category listing appears only in locales with posts of their own', async () => {
       const entries = await sitemap();
       expect(urlsFor(entries, '/guides').sort()).toEqual([
-        'https://kaitu.io/zh-CN/guides',
-        'https://kaitu.io/zh-TW/guides',
+        'https://www.kaitu.io/zh-CN/guides',
+        'https://www.kaitu.io/zh-TW/guides',
       ]);
     });
   });
