@@ -21,13 +21,13 @@ import { authService } from '../services/auth-service';
 import { cacheStore } from '../services/cache-store';
 import { adoptTunnelToken } from '../services/tunnel-token';
 import { cloudApi } from '../services/cloud-api';
-import { usePinnedTunnelsStore } from './pinned-tunnels.store';
+import { usePinnedTunnelsStore, resolveEntry } from './pinned-tunnels.store';
 import { useSelfHostedStore } from './self-hosted.store';
 import { useConfigStore } from './config.store';
 import { useAppRoutesStore } from './app-routes.store';
 import { useVPNMachineStore, dispatch as vpnDispatch, type VPNState } from './vpn-machine.store';
 import { useAuthStore } from './auth.store';
-import { pickAutoCandidates, pickAutoTunnel, pickPinnedFallbacks } from '../utils/auto-tunnel-pick';
+import { pickAutoCandidates, pickAutoTunnel, pickPinnedFallbacks, nodeKey } from '../utils/auto-tunnel-pick';
 import { ERROR_CODES } from '../utils/errorCode';
 
 // Minimum connection duration to surface the post-disconnect feedback dialog.
@@ -356,41 +356,46 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       restoreSelectionOnce(tunnels);
       return;
     }
+    const select = (t: Tunnel) => set(get().serverMode === 'self_hosted'
+      ? { selectedCloudTunnel: t }
+      : { selectedCloudTunnel: t, activeTunnel: computeCloudActiveTunnel(t) });
     const fresh = tunnels.find(t => t.domain === selectedCloudTunnel.domain);
-    if (fresh && fresh !== selectedCloudTunnel
-      && (fresh.serverUrl !== selectedCloudTunnel.serverUrl || fresh.node?.ipv4 !== selectedCloudTunnel.node?.ipv4)) {
+
+    // A pinned pick stays inside the pinned pool, and a pin means the node IP:
+    // when the pinned node is gone from the list OR its tunnel now sits on a
+    // different IP, move to the first pin (pin order) still in the list.
+    // Persisted selectedDomain is left as is.
+    const { pinned, isPinned } = usePinnedTunnelsStore.getState();
+    if (isPinned(selectedCloudTunnel) && (!fresh || nodeKey(fresh) !== nodeKey(selectedCloudTunnel))) {
+      const next = pinned.map(p => resolveEntry(p, tunnels)).find(t => !!t);
+      if (next) {
+        console.info('[Connection] pinned node ' + nodeKey(selectedCloudTunnel) + ' ('
+          + selectedCloudTunnel.domain + ') ' + (fresh ? 'changed IP' : 'offline')
+          + ', moving to pinned ' + next.domain);
+        select(next);
+        return;
+      }
+    }
+
+    if (fresh) {
       // A restored pick may come from an old cache; adopt the list's current
-      // URL / address so connect() does not dial a stale one.
-      set(get().serverMode === 'self_hosted'
-        ? { selectedCloudTunnel: fresh }
-        : { selectedCloudTunnel: fresh, activeTunnel: computeCloudActiveTunnel(fresh) });
+      // URL / address so connect() does not dial a stale one. (For a pinned
+      // node whose IP changed this only happens when no other pin is up; the
+      // pinned section then shows the pin as unavailable.)
+      if (fresh !== selectedCloudTunnel
+        && (fresh.serverUrl !== selectedCloudTunnel.serverUrl || fresh.node?.ipv4 !== selectedCloudTunnel.node?.ipv4)) {
+        select(fresh);
+      }
       return;
     }
-    if (!fresh) {
-      // A pinned pick stays inside the pinned pool: move to the first pin
-      // (pin order) still in the list. Persisted selectedDomain is left as is
-      // so the original pin is restored on the next launch if it returns.
-      const { pinned, isPinned } = usePinnedTunnelsStore.getState();
-      if (isPinned(selectedCloudTunnel.domain)) {
-        const byDomain = new Map(tunnels.map(t => [t.domain.toLowerCase(), t]));
-        const next = pinned.map(p => byDomain.get(p.domain)).find(t => !!t?.serverUrl);
-        if (next) {
-          console.info('[Connection] pinned tunnel ' + selectedCloudTunnel.domain
-            + ' offline, moving to pinned ' + next.domain);
-          set(get().serverMode === 'self_hosted'
-            ? { selectedCloudTunnel: next }
-            : { selectedCloudTunnel: next, activeTunnel: computeCloudActiveTunnel(next) });
-          return;
-        }
-      }
-      console.info('[Connection] selected tunnel ' + selectedCloudTunnel.domain
-        + ' offline, falling back to Auto');
-      // A cloud pick left over from before switching to self_hosted: drop it,
-      // but activeTunnel is the self-hosted one there and stays.
-      set(get().serverMode === 'self_hosted'
-        ? { selectedCloudTunnel: null }
-        : { selectedCloudTunnel: null, activeTunnel: null });
-    }
+
+    console.info('[Connection] selected tunnel ' + selectedCloudTunnel.domain
+      + ' offline, falling back to Auto');
+    // A cloud pick left over from before switching to self_hosted: drop it,
+    // but activeTunnel is the self-hosted one there and stays.
+    set(get().serverMode === 'self_hosted'
+      ? { selectedCloudTunnel: null }
+      : { selectedCloudTunnel: null, activeTunnel: null });
   },
 
   setCloudAccess: (available) => {
@@ -584,9 +589,10 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
         + ', fallbacks=[' + fallbackTunnels.map(t => t.domain).join(',') + ']');
       refreshTunnelsCacheAfterAutoPick();
     } else if (serverMode === 'manual' && selectedCloudTunnel
-      && usePinnedTunnelsStore.getState().isPinned(selectedCloudTunnel.domain)) {
+      && usePinnedTunnelsStore.getState().isPinned(selectedCloudTunnel)) {
       const items = cacheStore.get<TunnelListResponse>('api:tunnels')?.items ?? [];
-      fallbackTunnels = pickPinnedFallbacks(selectedCloudTunnel, usePinnedTunnelsStore.getState().pinned, items);
+      fallbackTunnels = pickPinnedFallbacks(selectedCloudTunnel, usePinnedTunnelsStore.getState().pinned,
+        (p) => resolveEntry(p, items));
       console.info('[Connection] pinned pick → ' + selectedCloudTunnel.domain
         + ', fallbacks=[' + fallbackTunnels.map(t => t.domain).join(',') + ']');
     }

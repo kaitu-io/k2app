@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickAutoTunnel, pickAutoCandidates, pickPinnedFallbacks } from '../auto-tunnel-pick';
+import { pickAutoTunnel, pickAutoCandidates, pickPinnedFallbacks, nodeKey } from '../auto-tunnel-pick';
 import type { Tunnel } from '../../services/api-types';
 
 function tunnel(id: number, domain: string, recommendScore: number, serverUrl?: string, country = ''): Tunnel {
@@ -354,8 +354,16 @@ describe('pickAutoCandidates', () => {
   });
 });
 
-// ==================== pickPinnedFallbacks ====================
+// ==================== pickPinnedFallbacks / nodeKey ====================
 
+describe('nodeKey', () => {
+  it('ipv4, else ipv6, else domain-prefixed', () => {
+    const t = tunnel(1, 'A.x', 0.5);
+    expect(nodeKey({ ...t, node: { ...t.node, ipv4: '1.1.1.1', ipv6: '::1' } })).toBe('1.1.1.1');
+    expect(nodeKey({ ...t, node: { ...t.node, ipv6: '::1' } })).toBe('::1');
+    expect(nodeKey(t)).toBe('domain:a.x');
+  });
+});
 
 describe('pickPinnedFallbacks', () => {
   const onMachine = (t: Tunnel, ip: string): Tunnel => ({ ...t, node: { ...t.node, ipv4: ip } });
@@ -364,33 +372,31 @@ describe('pickPinnedFallbacks', () => {
   const c = onMachine(tunnel(3, 'c.x', 0.5), '3.3.3.3');
   const d = onMachine(tunnel(4, 'd.x', 0.5), '4.4.4.4');
   const e = onMachine(tunnel(5, 'e.x', 0.5), '5.5.5.5');
-  const pins = (...ds: string[]) => ds.map(domain => ({ domain }));
+  const byKey = new Map([a, b, c, d, e].map(t => [nodeKey(t), t]));
+  const resolve = (p: { key: string }) => byKey.get(p.key);
+  const pins = (...ips: string[]) => ips.map(key => ({ key }));
 
-  it('returns other pins in pin order, excluding the primary', () => {
-    expect(pickPinnedFallbacks(b, pins('c.x', 'b.x', 'a.x'), [a, b, c]).map(t => t.domain))
+  it('returns other pinned nodes in pin order, excluding the primary node', () => {
+    expect(pickPinnedFallbacks(b, pins('3.3.3.3', '2.2.2.2', '1.1.1.1'), resolve).map(t => t.domain))
       .toEqual(['c.x', 'a.x']);
   });
 
-  it('single pin → no fallbacks', () => {
-    expect(pickPinnedFallbacks(a, pins('a.x'), [a, b])).toEqual([]);
-  });
-
-  it('skips pins absent from the list or without serverUrl', () => {
-    const noUrl = { ...c, serverUrl: undefined };
-    expect(pickPinnedFallbacks(a, pins('a.x', 'gone.x', 'c.x', 'b.x'), [a, b, noUrl]).map(t => t.domain))
-      .toEqual(['b.x']);
-  });
-
-  it('skips pins on the primary machine or an already-chosen machine', () => {
+  it('a different tunnel on the primary node is not a fallback', () => {
     const a2 = onMachine(tunnel(6, 'a2.x', 0.5), '1.1.1.1');
-    const b2 = onMachine(tunnel(7, 'b2.x', 0.5), '2.2.2.2');
-    expect(pickPinnedFallbacks(a, pins('a.x', 'a2.x', 'b.x', 'b2.x', 'c.x'), [a, a2, b, b2, c]).map(t => t.domain))
-      .toEqual(['b.x', 'c.x']);
+    expect(pickPinnedFallbacks(a2, pins('1.1.1.1', '2.2.2.2'), resolve).map(t => t.domain)).toEqual(['b.x']);
   });
 
-  it('caps at 3 and matches domains case-insensitively', () => {
-    const upper = { ...b, domain: 'B.X' };
-    expect(pickPinnedFallbacks(a, pins('a.x', 'b.x', 'c.x', 'd.x', 'e.x'), [a, upper, c, d, e]).map(t => t.domain))
-      .toEqual(['B.X', 'c.x', 'd.x']);
+  it('single pin → no fallbacks', () => {
+    expect(pickPinnedFallbacks(a, pins('1.1.1.1'), resolve)).toEqual([]);
+  });
+
+  it('skips unresolved pins and tunnels without serverUrl', () => {
+    const r = (p: { key: string }) => (p.key === '3.3.3.3' ? { ...c, serverUrl: undefined } : resolve(p));
+    expect(pickPinnedFallbacks(a, pins('9.9.9.9', '3.3.3.3', '2.2.2.2'), r).map(t => t.domain)).toEqual(['b.x']);
+  });
+
+  it('caps at 3', () => {
+    expect(pickPinnedFallbacks(a, pins('1.1.1.1', '2.2.2.2', '3.3.3.3', '4.4.4.4', '5.5.5.5'), resolve).map(t => t.domain))
+      .toEqual(['b.x', 'c.x', 'd.x']);
   });
 });

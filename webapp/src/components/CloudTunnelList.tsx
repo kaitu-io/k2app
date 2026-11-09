@@ -32,7 +32,8 @@ import { useAuthStore } from '../stores/auth.store';
 import { useVPNMachineStore } from '../stores/vpn-machine.store';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
 import { AUTO_TUNNEL_SENTINEL, AUTO_TUNNEL_DOMAIN, useConnectionStore } from '../stores/connection.store';
-import { usePinnedTunnelsStore, PIN_LIMIT } from '../stores/pinned-tunnels.store';
+import { usePinnedTunnelsStore, PIN_LIMIT, resolveEntry } from '../stores/pinned-tunnels.store';
+import { nodeKey } from '../utils/auto-tunnel-pick';
 import { ERROR_CODES } from '../utils/errorCode';
 import { purchaseSurfaceAvailable } from '../utils/purchase-surface';
 import { brandConfig } from '../brands';
@@ -135,27 +136,26 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
   // data when the tunnel is in the list; otherwise a greyed snapshot row.
   const pinned = usePinnedTunnelsStore((s) => s.pinned);
   const recent = usePinnedTunnelsStore((s) => s.recent);
-  const tunnelByDomain = useMemo(
-    () => new Map(tunnels.map(t => [t.domain.toLowerCase(), t])),
-    [tunnels],
+  // Pins and recent are keyed by node IP (nodeKey); each resolves to a tunnel
+  // on that node, or to nothing when the node is offline or its IP changed.
+  const pinnedResolved = useMemo(
+    () => pinned.map(p => ({ entry: p, tunnel: resolveEntry(p, tunnels) })),
+    [pinned, tunnels],
   );
-  const pinnedSet = useMemo(() => new Set(pinned.map(p => p.domain)), [pinned]);
-  const pinnedAvailableCount = useMemo(
-    () => pinned.filter(p => tunnelByDomain.has(p.domain)).length,
-    [pinned, tunnelByDomain],
-  );
+  const pinnedSet = useMemo(() => new Set(pinned.map(p => p.key)), [pinned]);
+  const pinnedAvailableCount = pinnedResolved.filter(r => !!r.tunnel).length;
   const recentTunnels = useMemo(
     () => recent
-      .filter(r => !pinnedSet.has(r.domain))
-      .map(r => tunnelByDomain.get(r.domain))
+      .filter(r => !pinnedSet.has(r.key))
+      .map(r => resolveEntry(r, tunnels))
       .filter((t): t is Tunnel => !!t),
-    [recent, pinnedSet, tunnelByDomain],
+    [recent, pinnedSet, tunnels],
   );
   const pinLimitReached = pinned.length >= PIN_LIMIT;
 
   const togglePin = useCallback((tunnel: Tunnel) => {
     const store = usePinnedTunnelsStore.getState();
-    if (store.isPinned(tunnel.domain)) store.unpin(tunnel.domain);
+    if (store.isPinned(tunnel)) store.unpin(nodeKey(tunnel));
     else store.pin(tunnel);
   }, []);
 
@@ -489,7 +489,7 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
   // Star toggle — its own hit target: stopPropagation keeps a tap from also
   // selecting the row.
   const renderPinButton = (tunnel: Tunnel) => {
-    const isPinned = pinnedSet.has(tunnel.domain.toLowerCase());
+    const isPinned = pinnedSet.has(nodeKey(tunnel));
     const blocked = !isPinned && pinLimitReached;
     const button = (
       <IconButton
@@ -646,8 +646,7 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
           <Box data-testid="pinned-section" sx={{ mb: 1 }}>
             {sectionHeader(<StarIcon sx={{ fontSize: 16, color: 'warning.main' }} />,
               t('dashboard:pinned.title') + ' (' + pinned.length + ')')}
-            {pinned.map((p) => {
-              const live = tunnelByDomain.get(p.domain);
+            {pinnedResolved.map(({ entry: p, tunnel: live }) => {
               if (live) return renderTunnelRow(live, 'pinned');
               return (
                 <ListItem
@@ -668,7 +667,7 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
                   <IconButton
                     data-testid={'pin-btn-' + p.domain}
                     size="small"
-                    onClick={(e) => { e.stopPropagation(); usePinnedTunnelsStore.getState().unpin(p.domain); }}
+                    onClick={(e) => { e.stopPropagation(); usePinnedTunnelsStore.getState().unpin(p.key); }}
                     aria-label={t('dashboard:pinned.unpin')}
                     aria-pressed
                     sx={{ mr: 0.5 }}
