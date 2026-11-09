@@ -76,6 +76,8 @@ App 内可以直接提交工单，官网有[在线客服](/support)，会员过�
 
 想试一试的话，可以从[下载页](/install)安装，按[快速入门指南](/guides/getting-started)完成第一次连接。
 
+用的是快连电脑版？卸载后要清理哪些网络设置、Windows 和 Mac 上怎么换，见[快连电脑版还能用吗](/guides/kuailian-desktop-alternative)。
+
 ## 常见问题
 
 <strong>快连现在在中国大陆还能用吗？</strong>
