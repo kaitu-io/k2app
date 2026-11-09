@@ -17,7 +17,7 @@ import {
   useTheme,
   Skeleton,
 } from '@mui/material';
-import { Refresh as RefreshIcon, CloudOff as CloudOffIcon, FlashOn as FlashOnIcon, FilterList as FilterListIcon, Star as StarIcon, StarBorder as StarBorderIcon, History as HistoryIcon, InfoOutlined as InfoOutlinedIcon, CloudQueue as CloudQueueIcon } from '@mui/icons-material';
+import { Refresh as RefreshIcon, CloudOff as CloudOffIcon, FlashOn as FlashOnIcon, FilterList as FilterListIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon, History as HistoryIcon, InfoOutlined as InfoOutlinedIcon, CloudQueue as CloudQueueIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getCountryName, getFlagIcon } from '../utils/country';
@@ -44,6 +44,10 @@ import { cloudNodesUnavailableHintKey, membershipExpiredHintKey } from '../utils
  *  Tunnels.tsx/Dashboard.tsx — the empty-state copy below must not offer it
  *  when this build has no such tab. */
 const SELF_HOSTED_ENABLED = brandConfig.features.selfHostedTunnels === true;
+
+/** Left slot for the favourite heart: 44×44 hit area (mobile touch minimum),
+ *  pulled into the row's left padding so the flag barely moves. */
+const PIN_SLOT_SX = { width: 44, height: 44, ml: -1, mr: 0.5 } as const;
 
 interface CloudTunnelListProps {
   selectedDomain: string | null;
@@ -495,8 +499,10 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
     );
   }
 
-  // Star toggle — its own hit target: stopPropagation keeps a tap from also
-  // selecting the row.
+  // Favourite (heart) toggle — on the LEFT, before the flag, far from the
+  // select radio on the right so the two targets are never confused. 44×44
+  // hit area (mobile minimum). stopPropagation keeps a tap from also selecting
+  // the row.
   const renderPinButton = (tunnel: Tunnel) => {
     const isPinned = pinnedSet.has(nodeKey(tunnel));
     const blocked = !isPinned && pinLimitReached;
@@ -508,11 +514,11 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
         onClick={(e) => { e.stopPropagation(); togglePin(tunnel); }}
         aria-label={t(isPinned ? 'dashboard:pinned.unpin' : 'dashboard:pinned.pin')}
         aria-pressed={isPinned}
-        sx={{ mr: 0.5 }}
+        sx={PIN_SLOT_SX}
       >
         {isPinned
-          ? <StarIcon sx={{ fontSize: 20, color: 'warning.main' }} />
-          : <StarBorderIcon sx={{ fontSize: 20, color: 'text.secondary' }} />}
+          ? <FavoriteIcon sx={{ fontSize: 22, color: 'error.main' }} />
+          : <FavoriteBorderIcon sx={{ fontSize: 22, color: 'text.secondary' }} />}
       </IconButton>
     );
     return blocked
@@ -551,6 +557,7 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
           },
         }}
       >
+        {renderPinButton(tunnel)}
         <ListItemIcon sx={{ minWidth: 40, fontSize: 24 }}>
           {getFlagIcon(tunnel.node.country)}
         </ListItemIcon>
@@ -586,8 +593,6 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
         <Box sx={{ mr: 2, display: 'flex', alignItems: 'center' }}>
           <RecommendBar score={tunnel.recommendScore} />
         </Box>
-
-        {renderPinButton(tunnel)}
 
         <Radio
           checked={isSelected}
@@ -653,7 +658,7 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
       <List disablePadding sx={{ px: 2 }}>
         {pinned.length > 0 && (
           <Box data-testid="pinned-section" sx={{ mb: 1 }}>
-            {sectionHeader(<StarIcon sx={{ fontSize: 16, color: 'warning.main' }} />,
+            {sectionHeader(<FavoriteIcon sx={{ fontSize: 16, color: 'error.main' }} />,
               t('dashboard:pinned.title') + ' (' + pinned.length + ')')}
             {pinnedResolved.map(({ entry: p, tunnel: live }) => {
               if (live) return renderTunnelRow(live, 'pinned');
@@ -662,28 +667,29 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
                   key={'pinned-gone-' + p.domain}
                   data-testid={'pinned-unavailable-' + p.domain}
                   disableGutters
-                  sx={{ borderRadius: 2, mb: 0.5, minHeight: 64, opacity: 0.5, cursor: 'default' }}
+                  sx={{ borderRadius: 2, mb: 0.5, minHeight: 64, cursor: 'default' }}
                 >
-                  <ListItemIcon sx={{ minWidth: 40, fontSize: 24 }}>
-                    {getFlagIcon(p.country)}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={p.name}
-                    secondary={t('dashboard:pinned.unavailable')}
-                    primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
-                    secondaryTypographyProps={{ fontSize: '0.75rem' }}
-                  />
                   <IconButton
                     data-testid={'pin-btn-' + p.domain}
                     size="small"
                     onClick={(e) => { e.stopPropagation(); usePinnedTunnelsStore.getState().unpin(p.key); }}
                     aria-label={t('dashboard:pinned.unpin')}
                     aria-pressed
-                    sx={{ mr: 0.5 }}
+                    sx={PIN_SLOT_SX}
                   >
-                    <StarIcon sx={{ fontSize: 20, color: 'warning.main' }} />
+                    <FavoriteIcon sx={{ fontSize: 22, color: 'error.main' }} />
                   </IconButton>
-                  <Box sx={{ width: 42 }} />
+                  {/* Dim the node, not the heart: un-favouriting stays obvious. */}
+                  <ListItemIcon sx={{ minWidth: 40, fontSize: 24, opacity: 0.5 }}>
+                    {getFlagIcon(p.country)}
+                  </ListItemIcon>
+                  <ListItemText
+                    sx={{ opacity: 0.5 }}
+                    primary={p.name}
+                    secondary={t('dashboard:pinned.unavailable')}
+                    primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
+                    secondaryTypographyProps={{ fontSize: '0.75rem' }}
+                  />
                 </ListItem>
               );
             })}
@@ -744,6 +750,8 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
             },
           }}
         >
+          {/* Same left slot as the heart on node rows, so flags and names align. */}
+          <Box aria-hidden sx={{ ...PIN_SLOT_SX, flexShrink: 0 }} />
           <ListItemIcon sx={{ minWidth: 40, fontSize: 24 }}>
             <FlashOnIcon sx={{ fontSize: 24, color: 'primary.main' }} />
           </ListItemIcon>

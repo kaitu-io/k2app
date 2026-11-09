@@ -358,16 +358,16 @@
     "allExcluded": "Tüm kullanılabilir sunucular filtreniz tarafından hariç tutulmuştur. Ülke/bölge filtresini ayarlayın."
   },
   "pinned": {
-    "title": "Sabitlenenler",
+    "title": "Favoriler",
     "recentTitle": "Son kullanılanlar",
-    "pin": "Sunucuyu sabitle",
-    "unpin": "Sabitlemeyi kaldır",
-    "hintSingle": "Yalnızca 1 sunucu sabitli: kullanılamazsa uygulama geri gelmesini bekler, başka sunucuya geçmez. Bağlantı koptuğunda otomatik geçiş için aynı bölgeden bir sunucu daha sabitleyin.",
-    "hintMulti": "Bağlantı koptuğunda veya bakımda uygulama yalnızca bu {{count}} sunucu arasında geçiş yapar, başkalarına geçmez.",
-    "allUnavailable": "Sabitlediğiniz sunucuların hiçbiri şu an kullanılamıyor. Otomatik seçim kullanılıyor.",
+    "pin": "Favorilere ekle",
+    "unpin": "Favorilerden çıkar",
+    "hintSingle": "Yalnızca 1 favori: kullanılamazsa uygulama geri gelmesini bekler, başka sunucuya geçmez. Bağlantı koptuğunda otomatik geçiş için aynı bölgeden bir sunucu daha ekleyin.",
+    "hintMulti": "Bağlantı koptuğunda veya bakımda uygulama yalnızca bu {{count}} favori arasında geçiş yapar, başkalarına geçmez.",
+    "allUnavailable": "Favorilerinizin hiçbiri şu an kullanılamıyor. Otomatik seçim kullanılıyor.",
     "unavailable": "Kullanılamıyor",
-    "limitReached": "En fazla {{count}} sunucu sabitleyebilirsiniz",
+    "limitReached": "En fazla {{count}} favoriniz olabilir",
     "allTitle": "Tüm sunucular",
-    "hintOneAvailable": "Diğer sabitli sunucularınız kullanılamıyor: bu sunucu koparsa uygulama geri gelmesini bekler, başka sunucuya geçmez."
+    "hintOneAvailable": "Diğer favorileriniz kullanılamıyor: bu sunucu koparsa uygulama geri gelmesini bekler, başka sunucuya geçmez."
   }
 }

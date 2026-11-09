@@ -358,16 +358,16 @@
     "allExcluded": "Tous les serveurs disponibles sont exclus par votre filtre. Ajustez le filtre des pays/régions."
   },
   "pinned": {
-    "title": "Épinglés",
+    "title": "Favoris",
     "recentTitle": "Utilisés récemment",
-    "pin": "Épingler le serveur",
-    "unpin": "Désépingler",
-    "hintSingle": "Un seul serveur épinglé : s'il tombe, l'app attend son retour et ne bascule pas vers un autre serveur. Pour basculer automatiquement en cas de coupure, épinglez un autre serveur de la même région.",
-    "hintMulti": "En cas de coupure ou de maintenance, l'app ne bascule qu'entre ces {{count}} serveurs, jamais vers d'autres.",
-    "allUnavailable": "Aucun de vos serveurs épinglés n'est disponible pour le moment. Sélection automatique en cours.",
+    "pin": "Ajouter aux favoris",
+    "unpin": "Retirer des favoris",
+    "hintSingle": "Un seul favori : s'il tombe, l'app attend son retour et ne bascule pas vers un autre serveur. Pour basculer automatiquement en cas de coupure, ajoutez un autre serveur de la même région.",
+    "hintMulti": "En cas de coupure ou de maintenance, l'app ne bascule qu'entre ces {{count}} favoris, jamais vers d'autres.",
+    "allUnavailable": "Aucun de vos favoris n'est disponible pour le moment. Sélection automatique en cours.",
     "unavailable": "Indisponible",
-    "limitReached": "Vous pouvez épingler jusqu'à {{count}} serveurs",
+    "limitReached": "Vous pouvez avoir jusqu'à {{count}} favoris",
     "allTitle": "Tous les serveurs",
-    "hintOneAvailable": "Vos autres serveurs épinglés sont indisponibles : si celui-ci tombe, l'app attend son retour et ne bascule pas vers un autre serveur."
+    "hintOneAvailable": "Vos autres favoris sont indisponibles : si celui-ci tombe, l'app attend son retour et ne bascule pas vers un autre serveur."
   }
 }
