@@ -104,6 +104,19 @@ describe('CloudTunnelList pinned / recent', () => {
     defaultProps.onSelect.mockReset();
   });
 
+  it('each tunnel renders once: pinned / recent rows are not repeated in the full list', async () => {
+    usePinnedTunnelsStore.setState({ pinned: [entry(tokyo)], recent: [entry(hk)] });
+    render(<CloudTunnelList {...defaultProps} selectedDomain="tokyo-01.example.com" />);
+    await screen.findByTestId('pinned-section');
+    expect(screen.getAllByText('Tokyo-01')).toHaveLength(1);
+    expect(screen.getAllByText('HongKong-01')).toHaveLength(1);
+    expect(screen.getAllByText('Osaka-01')).toHaveLength(1);
+    // exactly one checked radio for the selected tunnel
+    const checked = screen.getAllByRole('radio').filter(r => (r as HTMLInputElement).checked);
+    expect(checked).toHaveLength(1);
+    expect((checked[0] as HTMLInputElement).value).toBe('tokyo-01.example.com');
+  });
+
   it('no pins and no recent → no sections', async () => {
     render(<CloudTunnelList {...defaultProps} />);
     await waitFor(() => expect(screen.getByText('HongKong-01')).toBeInTheDocument());

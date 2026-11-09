@@ -151,6 +151,15 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
       .filter((t): t is Tunnel => !!t),
     [recent, pinnedSet, tunnels],
   );
+  // A tunnel shown in the pinned or recent section is not repeated in the full
+  // list: each row is compared against selectedDomain on its own, so a
+  // duplicate would show the one selection as two selected rows.
+  const fullListTunnels = useMemo(() => {
+    const shown = new Set<string>();
+    for (const r of pinnedResolved) if (r.tunnel) shown.add(r.tunnel.domain.toLowerCase());
+    for (const t of recentTunnels) shown.add(t.domain.toLowerCase());
+    return shown.size === 0 ? sortedTunnels : sortedTunnels.filter(t => !shown.has(t.domain.toLowerCase()));
+  }, [sortedTunnels, pinnedResolved, recentTunnels]);
   const pinLimitReached = pinned.length >= PIN_LIMIT;
 
   const togglePin = useCallback((tunnel: Tunnel) => {
@@ -774,7 +783,7 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
           />
         </ListItem>
 
-        {sortedTunnels.map((tunnel) => renderTunnelRow(tunnel, 'all'))}
+        {fullListTunnels.map((tunnel) => renderTunnelRow(tunnel, 'all'))}
       </List>
 
       <CountryFilterDialog
