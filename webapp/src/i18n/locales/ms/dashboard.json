@@ -358,16 +358,16 @@
     "allExcluded": "Semua pelayan yang tersedia dikecualikan oleh penapis anda. Sesuaikan penapis negara/wilayah."
   },
   "pinned": {
-    "title": "Disemat",
+    "title": "Kegemaran",
     "recentTitle": "Digunakan baru-baru ini",
-    "pin": "Semat pelayan",
-    "unpin": "Nyahsemat",
-    "hintSingle": "Hanya 1 pelayan disemat: jika tidak tersedia, aplikasi menunggu sehingga ia pulih dan tidak bertukar ke pelayan lain. Untuk bertukar secara automatik apabila terputus, semat satu lagi pelayan di rantau yang sama.",
-    "hintMulti": "Apabila terputus atau penyelenggaraan, aplikasi hanya bertukar antara {{count}} pelayan ini, tidak ke pelayan lain.",
-    "allUnavailable": "Semua pelayan yang disemat tidak tersedia buat masa ini. Pilihan automatik sedang digunakan.",
+    "pin": "Tambah ke kegemaran",
+    "unpin": "Buang daripada kegemaran",
+    "hintSingle": "Hanya 1 kegemaran: jika tidak tersedia, aplikasi menunggu sehingga ia pulih dan tidak bertukar ke pelayan lain. Untuk bertukar secara automatik apabila terputus, tambah satu lagi pelayan di rantau yang sama.",
+    "hintMulti": "Apabila terputus atau penyelenggaraan, aplikasi hanya bertukar antara {{count}} kegemaran ini, tidak ke pelayan lain.",
+    "allUnavailable": "Semua kegemaran anda tidak tersedia buat masa ini. Pilihan automatik sedang digunakan.",
     "unavailable": "Tidak tersedia",
-    "limitReached": "Anda boleh semat sehingga {{count}} pelayan",
+    "limitReached": "Anda boleh mempunyai sehingga {{count}} kegemaran",
     "allTitle": "Semua pelayan",
-    "hintOneAvailable": "Pelayan disemat yang lain tidak tersedia: jika pelayan ini terputus, aplikasi menunggu sehingga ia pulih dan tidak bertukar ke pelayan lain."
+    "hintOneAvailable": "Kegemaran lain tidak tersedia: jika pelayan ini terputus, aplikasi menunggu sehingga ia pulih dan tidak bertukar ke pelayan lain."
   }
 }

@@ -358,16 +358,16 @@
     "allExcluded": "All available servers are excluded by your filter. Adjust the country/region filter."
   },
   "pinned": {
-    "title": "Pinned",
+    "title": "Favorites",
     "recentTitle": "Recently used",
-    "pin": "Pin server",
-    "unpin": "Unpin",
-    "hintSingle": "Only 1 server pinned: if it goes down, the app waits for it to come back and won't switch to another server. To switch automatically when it drops, pin another server in the same region.",
-    "hintMulti": "If a server drops or goes into maintenance, the app only switches among these {{count}} servers, never to others.",
-    "allUnavailable": "None of your pinned servers are available right now. Auto pick is in use.",
+    "pin": "Add to favorites",
+    "unpin": "Remove from favorites",
+    "hintSingle": "Only 1 favorite: if it goes down, the app waits for it to come back and won't switch to another server. To switch automatically when it drops, add another server in the same region.",
+    "hintMulti": "If a server drops or goes into maintenance, the app only switches among these {{count}} favorites, never to others.",
+    "allUnavailable": "None of your favorites are available right now. Auto pick is in use.",
     "unavailable": "Unavailable",
-    "limitReached": "You can pin up to {{count}} servers",
+    "limitReached": "You can have up to {{count}} favorites",
     "allTitle": "All servers",
-    "hintOneAvailable": "Your other pinned servers are unavailable: if this one drops, the app waits for it to come back and won't switch to another server."
+    "hintOneAvailable": "Your other favorites are unavailable: if this one drops, the app waits for it to come back and won't switch to another server."
   }
 }

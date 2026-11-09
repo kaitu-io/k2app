@@ -129,14 +129,27 @@ describe('CloudTunnelList pinned / recent', () => {
     usePinnedTunnelsStore.setState({ pinned: [entry(tokyo)] });
     render(<CloudTunnelList {...defaultProps} />);
     const hint = await screen.findByTestId('pinned-hint');
-    expect(hint).toHaveTextContent('只固定了 1 个节点');
+    expect(hint).toHaveTextContent('只收藏了 1 个节点');
     expect(screen.getByTestId('pinned-section')).toHaveTextContent('Tokyo-01');
   });
 
   it('two pins → multi hint with the count', async () => {
     usePinnedTunnelsStore.setState({ pinned: [entry(tokyo), entry(osaka)] });
     render(<CloudTunnelList {...defaultProps} />);
-    expect(await screen.findByTestId('pinned-hint')).toHaveTextContent('只在这 2 个节点之间切换');
+    expect(await screen.findByTestId('pinned-hint')).toHaveTextContent('只在这 2 个收藏节点之间切换');
+  });
+
+  it('heart sits on the left, before the flag, away from the select radio', async () => {
+    render(<CloudTunnelList {...defaultProps} />);
+    await waitFor(() => expect(screen.getByText('HongKong-01')).toBeInTheDocument());
+    const heart = screen.getByTestId('pin-btn-hongkong-01.example.com');
+    const row = heart.closest('li')!;
+    const flag = within(row).getByText('flag-HK');
+    const radio = within(row).getByRole('radio');
+    // DOCUMENT_POSITION_FOLLOWING (4): the second node comes after the first
+    expect(heart.compareDocumentPosition(flag) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(flag.compareDocumentPosition(radio) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(heart.getAttribute('aria-label')).toBe('收藏节点');
   });
 
   it('star click pins without selecting the row', async () => {
@@ -190,7 +203,7 @@ describe('CloudTunnelList pinned / recent', () => {
   it('two pins with one offline → hint says this one waits (no switch possible)', async () => {
     usePinnedTunnelsStore.setState({ pinned: [entry(tokyo), gone] });
     render(<CloudTunnelList {...defaultProps} />);
-    expect(await screen.findByTestId('pinned-hint')).toHaveTextContent('其他固定节点暂不可用');
+    expect(await screen.findByTestId('pinned-hint')).toHaveTextContent('其他收藏节点暂不可用');
   });
 
   it('sections present → "all servers" header above Auto; absent otherwise', async () => {
@@ -202,7 +215,7 @@ describe('CloudTunnelList pinned / recent', () => {
   it('all pins missing → allUnavailable warning replaces the hint', async () => {
     usePinnedTunnelsStore.setState({ pinned: [gone] });
     render(<CloudTunnelList {...defaultProps} />);
-    expect(await screen.findByTestId('pinned-hint')).toHaveTextContent('你固定的节点暂时都不可用');
+    expect(await screen.findByTestId('pinned-hint')).toHaveTextContent('你收藏的节点暂时都不可用');
   });
 
   it('recent shows only tunnels still in the list; its star pins', async () => {

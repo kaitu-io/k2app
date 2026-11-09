@@ -358,16 +358,16 @@
     "allExcluded": "Todos os servidores disponíveis são excluídos por seu filtro. Ajuste o filtro de país/região."
   },
   "pinned": {
-    "title": "Fixados",
+    "title": "Favoritos",
     "recentTitle": "Usados recentemente",
-    "pin": "Fixar servidor",
-    "unpin": "Desafixar",
-    "hintSingle": "Só 1 servidor fixado: se ele cair, o app espera ele voltar e não troca para outro servidor. Para trocar automaticamente quando cair, fixe outro servidor da mesma região.",
-    "hintMulti": "Se um servidor cair ou entrar em manutenção, o app só troca entre estes {{count}} servidores, nunca para outros.",
-    "allUnavailable": "Nenhum dos seus servidores fixados está disponível agora. Usando a seleção automática.",
+    "pin": "Adicionar aos favoritos",
+    "unpin": "Remover dos favoritos",
+    "hintSingle": "Só 1 favorito: se ele cair, o app espera ele voltar e não troca para outro servidor. Para trocar automaticamente quando cair, adicione outro servidor da mesma região.",
+    "hintMulti": "Se um servidor cair ou entrar em manutenção, o app só troca entre estes {{count}} favoritos, nunca para outros.",
+    "allUnavailable": "Nenhum dos seus favoritos está disponível agora. Usando a seleção automática.",
     "unavailable": "Indisponível",
-    "limitReached": "Você pode fixar até {{count}} servidores",
+    "limitReached": "Você pode ter até {{count}} favoritos",
     "allTitle": "Todos os servidores",
-    "hintOneAvailable": "Seus outros servidores fixados estão indisponíveis: se este cair, o app espera ele voltar e não troca para outro servidor."
+    "hintOneAvailable": "Seus outros favoritos estão indisponíveis: se este cair, o app espera ele voltar e não troca para outro servidor."
   }
 }
