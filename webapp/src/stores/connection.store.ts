@@ -356,8 +356,17 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       restoreSelectionOnce(tunnels);
       return;
     }
-    const stillExists = tunnels.some(t => t.domain === selectedCloudTunnel.domain);
-    if (!stillExists) {
+    const fresh = tunnels.find(t => t.domain === selectedCloudTunnel.domain);
+    if (fresh && fresh !== selectedCloudTunnel
+      && (fresh.serverUrl !== selectedCloudTunnel.serverUrl || fresh.node?.ipv4 !== selectedCloudTunnel.node?.ipv4)) {
+      // A restored pick may come from an old cache; adopt the list's current
+      // URL / address so connect() does not dial a stale one.
+      set(get().serverMode === 'self_hosted'
+        ? { selectedCloudTunnel: fresh }
+        : { selectedCloudTunnel: fresh, activeTunnel: computeCloudActiveTunnel(fresh) });
+      return;
+    }
+    if (!fresh) {
       // A pinned pick stays inside the pinned pool: move to the first pin
       // (pin order) still in the list. Persisted selectedDomain is left as is
       // so the original pin is restored on the next launch if it returns.
@@ -423,6 +432,9 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       set({ serverMode: mode, activeTunnel: tunnel });
     } else {
       set({ serverMode: mode });
+      if (mode === 'manual') {
+        restoreSelectionOnce(cacheStore.get<TunnelListResponse>('api:tunnels')?.items ?? []);
+      }
     }
     await persistServerMode(mode);
   },
@@ -578,9 +590,11 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       console.info('[Connection] pinned pick → ' + selectedCloudTunnel.domain
         + ', fallbacks=[' + fallbackTunnels.map(t => t.domain).join(',') + ']');
     }
-    if (serverMode === 'manual' && resolvedTunnel?.serverUrl) {
-      usePinnedTunnelsStore.getState().recordRecent(resolvedTunnel);
-    }
+    // "Recent" = tunnels the engine accepted, not every attempt.
+    const recentTunnel = serverMode === 'manual' && resolvedTunnel?.serverUrl ? resolvedTunnel : null;
+    const recordRecent = () => {
+      if (recentTunnel) usePinnedTunnelsStore.getState().recordRecent(recentTunnel);
+    };
 
     // Pre-flight mode/selection validity. Tightened to reject empty-string uri/serverUrl
     // (stale tunnel list, externally wiped self-hosted config), not just null, so we never
@@ -727,6 +741,8 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
         return;
       }
 
+      if (resp.code === 0) recordRecent();
+
       // If the connect call itself failed (e.g. VPN permission denied),
       // dispatch BACKEND_ERROR so the state machine exits 'connecting'.
       if (resp.code !== 0) {
@@ -749,7 +765,10 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
             console.warn('[Connection] connect: global-fallback up() returned after epoch change, discarding result code=' + retry.code);
             return;
           }
-          if (retry.code === 0) return;
+          if (retry.code === 0) {
+            recordRecent();
+            return;
+          }
           console.warn('[Connection] connect: global fallback also failed code=' + retry.code);
           vpnDispatch('BACKEND_ERROR', {
             error: { code: retry.code > 0 ? retry.code : 570, message: retry.message || 'Connect failed' },
@@ -871,7 +890,12 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
 function restoreSelectionOnce(tunnels: Tunnel[]): void {
   const s = useConnectionStore.getState();
   if (s.selectionRestored || !s.selectedDomainLoaded || !s.serverModeLoaded || tunnels.length === 0) return;
-  if (s.serverMode !== 'manual' || s.selectedCloudTunnel !== null) {
+  // Not in the cloud tab yet: stay armed; setServerMode('manual') retries.
+  if (s.serverMode !== 'manual') return;
+  // Never swap the selection under a live or starting connection.
+  const vpnState = useVPNMachineStore.getState().state;
+  if (vpnState !== 'idle' && vpnState !== 'serviceDown') return;
+  if (s.selectedCloudTunnel !== null) {
     useConnectionStore.setState({ selectionRestored: true });
     return;
   }
@@ -884,9 +908,13 @@ function restoreSelectionOnce(tunnels: Tunnel[]): void {
       activeTunnel: computeCloudActiveTunnel(match),
       selectionRestored: true,
     });
-  } else {
-    if (domain) console.info('[Connection] stored selection ' + domain + ' not in list, staying Auto');
+  } else if (!domain) {
     useConnectionStore.setState({ selectionRestored: true });
+  } else {
+    // Stay armed: the list may be an old cache, or the node briefly offline;
+    // a later list (fresh fetch, refresh) can still restore it. Any user
+    // pick ends the restore.
+    console.info('[Connection] stored selection ' + domain + ' not in list yet, Auto for now');
   }
 }
 

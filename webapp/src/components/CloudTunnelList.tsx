@@ -507,7 +507,13 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
       </IconButton>
     );
     return blocked
-      ? <Tooltip title={t('dashboard:pinned.limitReached', { count: PIN_LIMIT })}><span>{button}</span></Tooltip>
+      // A disabled button has pointer-events: none, so the tap lands on this
+      // span — stop it here too or it selects the row.
+      ? (
+        <Tooltip title={t('dashboard:pinned.limitReached', { count: PIN_LIMIT })}>
+          <span onClick={(e) => e.stopPropagation()}>{button}</span>
+        </Tooltip>
+      )
       : button;
   };
 

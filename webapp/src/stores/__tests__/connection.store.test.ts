@@ -2185,12 +2185,45 @@ describe('pinned tunnels', () => {
       expect(useConnectionStore.getState().selectedCloudTunnel).toBeNull();
     });
 
-    it('stored domain missing from the list → stays Auto, restore done', async () => {
+    it('stored domain missing from a (possibly stale) list → Auto for now, restored by a later list', async () => {
       const { useConnectionStore } = await setup();
-      useConnectionStore.setState({ selectedDomain: 'gone.example.com', selectedDomainLoaded: true, selectionRestored: false });
+      const tunnels = machines(3);
+      useConnectionStore.setState({ selectedDomain: 'm2.example.com', selectedDomainLoaded: true, selectionRestored: false });
+      useConnectionStore.getState().reconcileSelection(tunnels.slice(0, 2));
+      expect(useConnectionStore.getState().selectedCloudTunnel).toBeNull();
+      expect(useConnectionStore.getState().selectionRestored).toBe(false);
+      useConnectionStore.getState().reconcileSelection(tunnels);
+      expect(useConnectionStore.getState().selectedCloudTunnel).toBe(tunnels[2]);
+    });
+
+    it('started on self_hosted → restore stays armed and runs on switching to the cloud tab', async () => {
+      const { useConnectionStore, cacheStore } = await setup();
+      const tunnels = machines(3);
+      cacheStore.set('api:tunnels', { items: tunnels });
+      useConnectionStore.setState({ serverMode: 'self_hosted', selectedDomain: 'm1.example.com', selectedDomainLoaded: true, selectionRestored: false });
+      useConnectionStore.getState().reconcileSelection(tunnels);
+      expect(useConnectionStore.getState().selectedCloudTunnel).toBeNull();
+      await useConnectionStore.getState().setServerMode('manual');
+      expect(useConnectionStore.getState().selectedCloudTunnel).toBe(tunnels[1]);
+    });
+
+    it('never restores under a live connection', async () => {
+      const { useConnectionStore, vpn } = await setup();
+      vpn.useVPNMachineStore.setState({ state: 'connected' } as any);
+      useConnectionStore.setState({ selectedDomain: 'm1.example.com', selectedDomainLoaded: true, selectionRestored: false });
       useConnectionStore.getState().reconcileSelection(machines(2));
       expect(useConnectionStore.getState().selectedCloudTunnel).toBeNull();
-      expect(useConnectionStore.getState().selectionRestored).toBe(true);
+      expect(useConnectionStore.getState().selectionRestored).toBe(false);
+    });
+
+    it('adopts the fresh list object when the selected tunnel URL/address changed', async () => {
+      const { useConnectionStore } = await setup();
+      const old = machines(1)[0];
+      useConnectionStore.getState().selectCloudTunnel(old);
+      const fresh = { ...old, node: { ...old.node, ipv4: '10.9.9.9' } };
+      useConnectionStore.getState().reconcileSelection([fresh]);
+      expect(useConnectionStore.getState().selectedCloudTunnel).toBe(fresh);
+      expect(useConnectionStore.getState().activeTunnel?.ipv4).toBe('10.9.9.9');
     });
 
     it('does not restore over self_hosted mode', async () => {
@@ -2268,6 +2301,15 @@ describe('pinned tunnels', () => {
       useConnectionStore.getState().selectCloudTunnel(t[0]);
       await useConnectionStore.getState().connect();
       expect('fallbacks' in upConfig()).toBe(false);
+    });
+
+    it('a rejected up() does not record recent', async () => {
+      const { useConnectionStore, pinned, cacheStore } = await setup();
+      const t = machines(1);
+      cacheStore.set('api:tunnels', { items: t });
+      mockRun.mockResolvedValue({ code: 403, message: 'no' });
+      await useConnectionStore.getState().connect();
+      expect(pinned.getState().recent).toEqual([]);
     });
 
     it('records the connected cloud tunnel as recent (manual and Auto)', async () => {

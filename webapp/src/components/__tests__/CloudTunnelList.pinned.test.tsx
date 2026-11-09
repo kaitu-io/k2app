@@ -180,6 +180,11 @@ describe('CloudTunnelList pinned / recent', () => {
     });
     render(<CloudTunnelList {...defaultProps} />);
     await waitFor(() => expect(screen.getByText('HongKong-01')).toBeInTheDocument());
-    expect(screen.getByTestId('pin-btn-hongkong-01.example.com')).toBeDisabled();
+    const star = screen.getByTestId('pin-btn-hongkong-01.example.com');
+    expect(star).toBeDisabled();
+    // pointer-events:none on the disabled button → the tap hits its wrapper span
+    fireEvent.click(star.parentElement!);
+    expect(defaultProps.onSelect).not.toHaveBeenCalled();
+    expect(usePinnedTunnelsStore.getState().pinned).toHaveLength(PIN_LIMIT);
   });
 });
