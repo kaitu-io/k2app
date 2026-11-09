@@ -150,6 +150,19 @@ func deviceAccountRestore(c *gin.Context, brand Brand, udid, remark string, info
 		if err != nil {
 			return err
 		}
+		if ownerHasIdentity {
+			// 凭 JWS 进入有身份账号 = 一种登录方式，两条硬边界（安全审查 2026-11-10）：
+			// 带管理 / 员工角色的账号绝不经此路径签发 token（凭购买凭证拿到后台权限）；
+			// 被退款撤销的交易不再能用来登录。
+			if (owner.IsAdmin != nil && *owner.IsAdmin) || owner.Roles&^RoleUser != 0 {
+				log.Warnf(c, "device-account restore: owner %d holds staff roles (%d) — refusing JWS login", owner.ID, owner.Roles)
+				return e(ErrorAppleSubscriptionOwnedElsewhere, "owner account cannot be entered by purchase proof")
+			}
+			if info.RevocationDate > 0 {
+				log.Warnf(c, "device-account restore: txn %s was revoked at %d — refusing JWS login to owner %d", info.TransactionId, info.RevocationDate, owner.ID)
+				return e(ErrorAppleSubscriptionOwnedElsewhere, "revoked transaction")
+			}
+		}
 
 		var device Device
 		findErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("udid = ?", udid).First(&device).Error
