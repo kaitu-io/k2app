@@ -2110,3 +2110,172 @@ describe('connect() Auto sends fallbacks', () => {
     expect(Object.values(ups[1][1].config.fallbacks as Record<string, string[]>)[0]).toHaveLength(3);
   });
 });
+
+// ==================== Pinned tunnels: persisted selection, pinned reconcile, pinned fallbacks ====================
+
+describe('pinned tunnels', () => {
+  afterEach(async () => {
+    const { cacheStore } = await import('../../services/cache-store');
+    cacheStore.clear();
+  });
+
+  const machines = (n: number) => Array.from({ length: n }, (_, i) => ({
+    id: i + 1, domain: `m${i}.example.com`, name: `m${i}`, protocol: 'k2v5', port: 443,
+    serverUrl: `k2v5://m${i}.example.com:443`, recommendScore: 0.9 - i * 0.05,
+    node: { country: 'JP', ipv4: `10.9.0.${i}`, ipv6: '' },
+  })) as any[];
+
+  async function setup() {
+    const stores = await getStores();
+    const pinnedMod = await import('../pinned-tunnels.store');
+    pinnedMod.usePinnedTunnelsStore.setState({ pinned: [], recent: [], loaded: true });
+    const { cacheStore } = await import('../../services/cache-store');
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildTunnelUrl).mockImplementation(async (u: string) => u.replace('k2v5://', 'k2v5://u:t@'));
+    mockRun.mockResolvedValue({ code: 0 });
+    mockStorage.set.mockResolvedValue(undefined);
+    mockStorage.remove.mockResolvedValue(undefined);
+    return { ...stores, pinned: pinnedMod.usePinnedTunnelsStore, cacheStore, authService };
+  }
+
+  const upConfig = () => mockRun.mock.calls.find((c: any[]) => c[0] === 'up')![1].config;
+  const auth = (u: string) => u.replace('k2v5://', 'k2v5://u:t@');
+
+  describe('selection persistence', () => {
+    it('selectCloudTunnel persists the domain; Auto and self_hosted clear it', async () => {
+      const { useConnectionStore } = await setup();
+      const t = machines(1)[0];
+      useConnectionStore.getState().selectCloudTunnel({ ...t, domain: 'M0.Example.com' });
+      expect(mockStorage.set).toHaveBeenCalledWith('k2.connection.selectedDomain', 'm0.example.com');
+      useConnectionStore.getState().clearCloudSelection();
+      expect(mockStorage.remove).toHaveBeenCalledWith('k2.connection.selectedDomain');
+      mockStorage.remove.mockClear();
+      useConnectionStore.getState().selectSelfHosted();
+      expect(mockStorage.remove).toHaveBeenCalledWith('k2.connection.selectedDomain');
+    });
+
+    it('restores the stored selection on the first tunnel list', async () => {
+      const { useConnectionStore } = await setup();
+      const tunnels = machines(3);
+      useConnectionStore.setState({ selectedDomain: 'm2.example.com', selectedDomainLoaded: true, selectionRestored: false });
+      useConnectionStore.getState().reconcileSelection(tunnels);
+      expect(useConnectionStore.getState().selectedCloudTunnel).toBe(tunnels[2]);
+      expect(useConnectionStore.getState().selectionRestored).toBe(true);
+    });
+
+    it('storage loading after the list arrived still restores (race)', async () => {
+      const { useConnectionStore, cacheStore } = await setup();
+      const tunnels = machines(3);
+      cacheStore.set('api:tunnels', { items: tunnels });
+      useConnectionStore.setState({ selectedDomainLoaded: false, selectionRestored: false });
+      useConnectionStore.getState().reconcileSelection(tunnels); // list first: nothing to restore yet
+      expect(useConnectionStore.getState().selectedCloudTunnel).toBeNull();
+      expect(useConnectionStore.getState().selectionRestored).toBe(false);
+      mockStorage.get.mockImplementation(async (k: string) => (k === 'k2.connection.selectedDomain' ? 'm1.example.com' : null));
+      await useConnectionStore.getState().loadSelectedDomain();
+      expect(useConnectionStore.getState().selectedCloudTunnel).toBe(tunnels[1]);
+    });
+
+    it('a user Auto tap before restore wins over the stored selection', async () => {
+      const { useConnectionStore } = await setup();
+      const tunnels = machines(3);
+      useConnectionStore.setState({ selectedDomain: 'm2.example.com', selectedDomainLoaded: true, selectionRestored: false });
+      useConnectionStore.getState().clearCloudSelection();
+      useConnectionStore.getState().reconcileSelection(tunnels);
+      expect(useConnectionStore.getState().selectedCloudTunnel).toBeNull();
+    });
+
+    it('stored domain missing from the list → stays Auto, restore done', async () => {
+      const { useConnectionStore } = await setup();
+      useConnectionStore.setState({ selectedDomain: 'gone.example.com', selectedDomainLoaded: true, selectionRestored: false });
+      useConnectionStore.getState().reconcileSelection(machines(2));
+      expect(useConnectionStore.getState().selectedCloudTunnel).toBeNull();
+      expect(useConnectionStore.getState().selectionRestored).toBe(true);
+    });
+
+    it('does not restore over self_hosted mode', async () => {
+      const { useConnectionStore } = await setup();
+      useConnectionStore.setState({ serverMode: 'self_hosted', selectedDomain: 'm1.example.com', selectedDomainLoaded: true, selectionRestored: false });
+      useConnectionStore.getState().reconcileSelection(machines(2));
+      expect(useConnectionStore.getState().selectedCloudTunnel).toBeNull();
+    });
+  });
+
+  describe('reconcile inside the pinned pool', () => {
+    it('vanished pinned selection → next pin still in the list, in pin order', async () => {
+      const { useConnectionStore, pinned } = await setup();
+      const t = machines(4);
+      pinned.getState().pin(t[0]);
+      pinned.getState().pin(t[3]);
+      pinned.getState().pin(t[2]);
+      useConnectionStore.getState().selectCloudTunnel(t[0]);
+      useConnectionStore.getState().reconcileSelection([t[1], t[2], t[3]]);
+      expect(useConnectionStore.getState().selectedCloudTunnel).toBe(t[3]);
+      expect(useConnectionStore.getState().activeTunnel?.domain).toBe('m3.example.com');
+    });
+
+    it('all pins gone → Auto (as before)', async () => {
+      const { useConnectionStore, pinned } = await setup();
+      const t = machines(3);
+      pinned.getState().pin(t[0]);
+      pinned.getState().pin(t[1]);
+      useConnectionStore.getState().selectCloudTunnel(t[0]);
+      useConnectionStore.getState().reconcileSelection([t[2]]);
+      expect(useConnectionStore.getState().selectedCloudTunnel).toBeNull();
+    });
+
+    it('vanished unpinned selection → Auto even when pins exist', async () => {
+      const { useConnectionStore, pinned } = await setup();
+      const t = machines(3);
+      pinned.getState().pin(t[1]);
+      useConnectionStore.getState().selectCloudTunnel(t[0]);
+      useConnectionStore.getState().reconcileSelection([t[1], t[2]]);
+      expect(useConnectionStore.getState().selectedCloudTunnel).toBeNull();
+    });
+  });
+
+  describe('connect()', () => {
+    it('pinned primary sends the other pins as fallbacks, in pin order', async () => {
+      const { useConnectionStore, pinned, cacheStore } = await setup();
+      const t = machines(5);
+      cacheStore.set('api:tunnels', { items: t });
+      pinned.getState().pin(t[3]);
+      pinned.getState().pin(t[1]);
+      pinned.getState().pin(t[4]);
+      useConnectionStore.getState().selectCloudTunnel(t[1]);
+      await useConnectionStore.getState().connect();
+      expect(upConfig().fallbacks).toEqual({
+        [auth(t[1].serverUrl)]: [auth(t[3].serverUrl), auth(t[4].serverUrl)],
+      });
+    });
+
+    it('single pin → no fallbacks (retry in place)', async () => {
+      const { useConnectionStore, pinned, cacheStore } = await setup();
+      const t = machines(3);
+      cacheStore.set('api:tunnels', { items: t });
+      pinned.getState().pin(t[0]);
+      useConnectionStore.getState().selectCloudTunnel(t[0]);
+      await useConnectionStore.getState().connect();
+      expect('fallbacks' in upConfig()).toBe(false);
+    });
+
+    it('unpinned manual pick sends no fallbacks even when pins exist', async () => {
+      const { useConnectionStore, pinned, cacheStore } = await setup();
+      const t = machines(3);
+      cacheStore.set('api:tunnels', { items: t });
+      pinned.getState().pin(t[1]);
+      pinned.getState().pin(t[2]);
+      useConnectionStore.getState().selectCloudTunnel(t[0]);
+      await useConnectionStore.getState().connect();
+      expect('fallbacks' in upConfig()).toBe(false);
+    });
+
+    it('records the connected cloud tunnel as recent (manual and Auto)', async () => {
+      const { useConnectionStore, pinned, cacheStore } = await setup();
+      const t = machines(1);
+      cacheStore.set('api:tunnels', { items: t });
+      await useConnectionStore.getState().connect(); // Auto resolves m0
+      expect(pinned.getState().recent.map(r => r.domain)).toEqual(['m0.example.com']);
+    });
+  });
+});

@@ -21,12 +21,13 @@ import { authService } from '../services/auth-service';
 import { cacheStore } from '../services/cache-store';
 import { adoptTunnelToken } from '../services/tunnel-token';
 import { cloudApi } from '../services/cloud-api';
+import { usePinnedTunnelsStore } from './pinned-tunnels.store';
 import { useSelfHostedStore } from './self-hosted.store';
 import { useConfigStore } from './config.store';
 import { useAppRoutesStore } from './app-routes.store';
 import { useVPNMachineStore, dispatch as vpnDispatch, type VPNState } from './vpn-machine.store';
 import { useAuthStore } from './auth.store';
-import { pickAutoCandidates, pickAutoTunnel } from '../utils/auto-tunnel-pick';
+import { pickAutoCandidates, pickAutoTunnel, pickPinnedFallbacks } from '../utils/auto-tunnel-pick';
 import { ERROR_CODES } from '../utils/errorCode';
 
 // Minimum connection duration to surface the post-disconnect feedback dialog.
@@ -90,6 +91,12 @@ interface ConnectionState {
    * tunnel load (membership renewed). Set via `setCloudAccess()`.
    */
   cloudAccessRevoked: boolean;
+  /** Manually picked cloud tunnel domain (persisted) — restored once after restart. */
+  selectedDomain: string | null;
+  /** True once persisted selectedDomain has been loaded from storage. */
+  selectedDomainLoaded: boolean;
+  /** True once the persisted selection was restored, found missing, or overridden by the user. */
+  selectionRestored: boolean;
 }
 
 // Persisted last-used server URL. Kept separate from config.store because
@@ -98,6 +105,7 @@ const LAST_SERVER_URL_STORAGE_KEY = 'k2.vpn.last_server_url';
 const SERVER_MODE_STORAGE_KEY = 'k2.vpn.server_mode';
 const SUBS_COUNTRY_STORAGE_KEY = 'k2.connection.subsCountry';
 const EXCLUDED_COUNTRIES_STORAGE_KEY = 'k2.connection.excludedCountries';
+const SELECTED_DOMAIN_STORAGE_KEY = 'k2.connection.selectedDomain';
 
 /**
  * Canonical "Auto pick" sentinel domain.
@@ -207,6 +215,18 @@ async function persistServerMode(mode: 'manual' | 'self_hosted' | 'k2sub'): Prom
   }
 }
 
+async function persistSelectedDomain(domain: string | null): Promise<void> {
+  try {
+    if (domain) {
+      await window._platform.storage.set(SELECTED_DOMAIN_STORAGE_KEY, domain);
+    } else {
+      await window._platform.storage.remove(SELECTED_DOMAIN_STORAGE_KEY);
+    }
+  } catch (err) {
+    console.warn('[Connection] Failed to persist selectedDomain:', err);
+  }
+}
+
 interface ConnectionActions {
   selectCloudTunnel: (tunnel: Tunnel) => void;
   clearCloudSelection: () => void;
@@ -230,6 +250,7 @@ interface ConnectionActions {
   loadSubsCountry: () => Promise<void>;
   setExcludedCountries: (countries: string[]) => Promise<void>;
   loadExcludedCountries: () => Promise<void>;
+  loadSelectedDomain: () => Promise<void>;
 }
 
 // ============ Helpers ============
@@ -296,17 +317,24 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   excludedCountries: [],
   excludedCountriesLoaded: false,
   cloudAccessRevoked: false,
+  selectedDomain: null,
+  selectedDomainLoaded: false,
+  selectionRestored: false,
 
   // Actions
   selectCloudTunnel: (tunnel) => {
     console.info('[Connection] selectCloudTunnel: domain=' + tunnel.domain + ', name=' + (tunnel.name || tunnel.domain));
     // Picking a specific cloud tunnel implies manual mode — symmetric with selectSelfHosted.
+    const domain = tunnel.domain.toLowerCase();
     set({
       selectedCloudTunnel: tunnel,
       activeTunnel: computeCloudActiveTunnel(tunnel),
       serverMode: 'manual',
+      selectedDomain: domain,
+      selectionRestored: true,
     });
     void persistServerMode('manual');
+    void persistSelectedDomain(domain);
   },
 
   clearCloudSelection: () => {
@@ -315,15 +343,37 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       selectedCloudTunnel: null,
       activeTunnel: null,
       serverMode: 'manual',
+      selectedDomain: null,
+      selectionRestored: true,
     });
     void persistServerMode('manual');
+    void persistSelectedDomain(null);
   },
 
   reconcileSelection: (tunnels) => {
     const { selectedCloudTunnel } = get();
-    if (!selectedCloudTunnel || isAutoSelection(selectedCloudTunnel)) return;
+    if (!selectedCloudTunnel || isAutoSelection(selectedCloudTunnel)) {
+      restoreSelectionOnce(tunnels);
+      return;
+    }
     const stillExists = tunnels.some(t => t.domain === selectedCloudTunnel.domain);
     if (!stillExists) {
+      // A pinned pick stays inside the pinned pool: move to the first pin
+      // (pin order) still in the list. Persisted selectedDomain is left as is
+      // so the original pin is restored on the next launch if it returns.
+      const { pinned, isPinned } = usePinnedTunnelsStore.getState();
+      if (isPinned(selectedCloudTunnel.domain)) {
+        const byDomain = new Map(tunnels.map(t => [t.domain.toLowerCase(), t]));
+        const next = pinned.map(p => byDomain.get(p.domain)).find(t => !!t?.serverUrl);
+        if (next) {
+          console.info('[Connection] pinned tunnel ' + selectedCloudTunnel.domain
+            + ' offline, moving to pinned ' + next.domain);
+          set(get().serverMode === 'self_hosted'
+            ? { selectedCloudTunnel: next }
+            : { selectedCloudTunnel: next, activeTunnel: computeCloudActiveTunnel(next) });
+          return;
+        }
+      }
       console.info('[Connection] selected tunnel ' + selectedCloudTunnel.domain
         + ' offline, falling back to Auto');
       // A cloud pick left over from before switching to self_hosted: drop it,
@@ -360,8 +410,11 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     set({
       serverMode: 'self_hosted',
       activeTunnel: tunnel,
+      selectedDomain: null,
+      selectionRestored: true,
     });
     void persistServerMode('self_hosted');
+    void persistSelectedDomain(null);
   },
 
   setServerMode: async (mode: 'manual' | 'self_hosted' | 'k2sub') => {
@@ -458,6 +511,22 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     }
   },
 
+  loadSelectedDomain: async () => {
+    try {
+      const v = await window._platform.storage.get<string>(SELECTED_DOMAIN_STORAGE_KEY);
+      // A user pick made while loading wins: keep its domain.
+      if (!get().selectionRestored) {
+        set({ selectedDomain: typeof v === 'string' && v ? v.toLowerCase() : null });
+      }
+    } catch (err) {
+      console.warn('[Connection] Failed to load selectedDomain:', err);
+    }
+    set({ selectedDomainLoaded: true });
+    // The tunnel list may have arrived before storage did.
+    const items = cacheStore.get<TunnelListResponse>('api:tunnels')?.items;
+    if (items && items.length > 0) get().reconcileSelection(items);
+  },
+
   connect: async () => {
     const t0 = Date.now();
     // State guard: reject if already connecting/connected/reconnecting/disconnecting.
@@ -474,8 +543,9 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
 
     // Resolve Auto sentinel (manual mode + null selection) into a concrete Tunnel.
     let resolvedTunnel: Tunnel | null = selectedCloudTunnel;
-    // Auto only: tunnels on other machines the engine switches to when the
-    // primary fails (ClientConfig.fallbacks). Manual selection sends none.
+    // Tunnels the engine switches to when the primary fails
+    // (ClientConfig.fallbacks). Auto: other machines by score. Pinned manual
+    // pick: the user's other pins only. Unpinned manual pick: none.
     let fallbackTunnels: Tunnel[] = [];
     if (serverMode === 'manual' && selectedCloudTunnel === null) {
       const cached = cacheStore.get<TunnelListResponse>('api:tunnels');
@@ -501,6 +571,15 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
         + ' (score=' + resolvedTunnel.recommendScore + ')'
         + ', fallbacks=[' + fallbackTunnels.map(t => t.domain).join(',') + ']');
       refreshTunnelsCacheAfterAutoPick();
+    } else if (serverMode === 'manual' && selectedCloudTunnel
+      && usePinnedTunnelsStore.getState().isPinned(selectedCloudTunnel.domain)) {
+      const items = cacheStore.get<TunnelListResponse>('api:tunnels')?.items ?? [];
+      fallbackTunnels = pickPinnedFallbacks(selectedCloudTunnel, usePinnedTunnelsStore.getState().pinned, items);
+      console.info('[Connection] pinned pick → ' + selectedCloudTunnel.domain
+        + ', fallbacks=[' + fallbackTunnels.map(t => t.domain).join(',') + ']');
+    }
+    if (serverMode === 'manual' && resolvedTunnel?.serverUrl) {
+      usePinnedTunnelsStore.getState().recordRecent(resolvedTunnel);
     }
 
     // Pre-flight mode/selection validity. Tightened to reject empty-string uri/serverUrl
@@ -782,6 +861,35 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   },
 }));
 
+// ============ Selection Restore ============
+
+/**
+ * Restore the persisted manual pick once, on the first tunnel list after
+ * storage loaded. A user selection made earlier marks it done (never
+ * overridden); a stored domain missing from the list also ends it (stays Auto).
+ */
+function restoreSelectionOnce(tunnels: Tunnel[]): void {
+  const s = useConnectionStore.getState();
+  if (s.selectionRestored || !s.selectedDomainLoaded || !s.serverModeLoaded || tunnels.length === 0) return;
+  if (s.serverMode !== 'manual' || s.selectedCloudTunnel !== null) {
+    useConnectionStore.setState({ selectionRestored: true });
+    return;
+  }
+  const domain = s.selectedDomain;
+  const match = domain ? tunnels.find(t => t.domain.toLowerCase() === domain && !!t.serverUrl) : undefined;
+  if (match) {
+    console.info('[Connection] restored selection ' + match.domain);
+    useConnectionStore.setState({
+      selectedCloudTunnel: match,
+      activeTunnel: computeCloudActiveTunnel(match),
+      selectionRestored: true,
+    });
+  } else {
+    if (domain) console.info('[Connection] stored selection ' + domain + ' not in list, staying Auto');
+    useConnectionStore.setState({ selectionRestored: true });
+  }
+}
+
 // ============ Cold Start Recovery ============
 
 /**
@@ -885,13 +993,20 @@ export function initializeConnectionStore(): () => void {
 
   // Load persisted serverMode (fire-and-forget).
   // When done, triggers tryRestoreConnectedTunnel via Trigger 2.
-  useConnectionStore.getState().loadServerMode();
+  const serverModeLoad = useConnectionStore.getState().loadServerMode();
 
   // Load persisted subsCountry (fire-and-forget). Independent of cold-start restore.
   useConnectionStore.getState().loadSubsCountry();
 
   // Load persisted excludedCountries (fire-and-forget). Independent of cold-start restore.
   useConnectionStore.getState().loadExcludedCountries();
+
+  // Pinned / recent tunnels and the persisted manual pick (fire-and-forget).
+  // selectedDomain loads after serverMode: restore needs the mode to know it is
+  // not overriding a self_hosted choice, and loadSelectedDomain re-runs the
+  // restore against the cached list when it lands.
+  void usePinnedTunnelsStore.getState().load();
+  void serverModeLoad.then(() => useConnectionStore.getState().loadSelectedDomain());
 
   // Trigger 1: VPN state changes (vpn-machine.store uses subscribeWithSelector middleware)
   const unsubVPN = useVPNMachineStore.subscribe(
