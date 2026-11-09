@@ -65,7 +65,7 @@ func SetupRouter() *gin.Engine {
 			auth.POST("/login", api_login)
 			// 设备账号（零登录身份，按 udid 建号 / 重装找回；品牌开关 DeviceAccount）
 			auth.POST("/device-account", api_device_account)
-			auth.POST("/device-account/restore", AuthOptional(), api_device_account_restore)
+			// POST /device-account/restore 挂在下方 restoreSensitive 组：请求体含 Apple 签名交易，响应体含 token
 			// POST /social/login、/social/web-login 挂在下方 socialSensitive 组：请求体含 idToken
 			// Password login (with device binding)
 			auth.POST("/login/password", api_password_login)
@@ -341,6 +341,12 @@ func SetupRouter() *gin.Engine {
 	socialSensitive.POST("/auth/social/login", api_social_login)
 	socialSensitive.POST("/auth/social/web-login", api_social_web_login)
 	socialSensitive.POST("/user/social/bind", AuthRequired(), EnforceDeviceClass(), api_user_social_bind)
+
+	// Apple 恢复：请求体含 StoreKit 签名交易（凭它即可进入订阅主人的账号——订阅随 Apple ID），响应体含
+	// access/refresh token。AuthOptional：设备当前属于有身份账号时，只有以该账号登录的请求能把它切走。
+	restoreSensitive := r.Group("/api")
+	restoreSensitive.Use(requestLogWithoutBodies(), MiddleRecovery(), BrandResolver(), ApiCORSMiddleware())
+	restoreSensitive.POST("/auth/device-account/restore", AuthOptional(), api_device_account_restore)
 
 	adminSensitive := r.Group("/app")
 	adminSensitive.Use(requestLogWithoutBodies(), MiddleRecovery(), BrandResolver(), CORSMiddleware(), AdminRequired())

@@ -15,6 +15,8 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -543,4 +545,52 @@ func TestDeviceAccountRestore_SignedInHolderSwitchesToOwner(t *testing.T) {
 	_, _, err = validateToken(context.Background(), ownerRefresh, TokenTypeRefresh)
 	require.NoError(t, err, "主人原设备照常可用")
 	require.Equal(t, f.owner.ID, devAcctDevice(t, ownerUDID).UserID)
+}
+
+// 安全审查（2026-11-10）：凭 JWS 进入有身份账号的两条硬边界——员工 / 管理员账号与被撤销的交易。
+func TestDeviceAccountRestore_IdentityOwnerHardLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, f *restoreFixture)
+	}{
+		{"主人带员工角色", func(t *testing.T, f *restoreFixture) {
+			require.NoError(t, db.Get().Model(&User{}).Where("id = ?", f.owner.ID).Update("roles", RoleUser|RoleSupport).Error)
+		}},
+		{"主人是超级管理员", func(t *testing.T, f *restoreFixture) {
+			require.NoError(t, db.Get().Model(&User{}).Where("id = ?", f.owner.ID).Update("is_admin", true).Error)
+		}},
+		{"交易已被退款撤销", func(t *testing.T, f *restoreFixture) {
+			f.apple.RevocationDate = time.Now().UnixMilli()
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newRestoreFixture(t)
+			ownerUDID, ownerRefresh := f.ownerDevice(t)
+			require.NoError(t, db.Get().Create(&LoginIdentify{UserID: f.owner.ID, Type: "email",
+				IndexID: "restore-hard-" + f.otx, EncryptedValue: "x", Brand: string(BrandKaitu)}).Error)
+			tc.setup(t, f)
+			newUDID := devAcctUDID(t)
+			resp := postRestore(t, f.r, "www.kaitu.io", newUDID, f.jws(t))
+			require.Equal(t, int(ErrorAppleSubscriptionOwnedElsewhere), resp.Code)
+			require.Empty(t, resp.Data.AccessToken)
+			require.Equal(t, int64(1), devAcctCount(t, f.owner.ID))
+			require.Equal(t, f.owner.ID, devAcctDevice(t, ownerUDID).UserID)
+			_, _, err := validateToken(context.Background(), ownerRefresh, TokenTypeRefresh)
+			require.NoError(t, err)
+		})
+	}
+}
+
+// 接线守卫：恢复接口请求体含 Apple 签名交易（凭它即可进入主人账号）、响应体含 token，
+// 只能挂在不记 body 的组上（log.MiddlewareRequestLog(true) 会把两者原样写进 app.log）。
+func TestDeviceAccountRestoreRoute_NotBodyLogged(t *testing.T) {
+	src, err := os.ReadFile("route.go")
+	require.NoError(t, err)
+	s := string(src)
+	require.Contains(t, s, `restoreSensitive.POST("/auth/device-account/restore", AuthOptional(), api_device_account_restore)`)
+	require.Equal(t, 1, strings.Count(s, "api_device_account_restore)"), "不得在别的组重复注册")
+	use := regexp.MustCompile(`restoreSensitive\.Use\(([^\n]*)\)`).FindStringSubmatch(s)
+	require.NotNil(t, use)
+	require.Contains(t, use[1], "requestLogWithoutBodies()")
+	require.NotContains(t, use[1], "MiddlewareRequestLog")
 }
