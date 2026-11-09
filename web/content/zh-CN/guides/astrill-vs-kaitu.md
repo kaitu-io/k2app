@@ -4,7 +4,7 @@ date: 2026-11-10
 summary: "Astrill 按月 $30、1 年 $180，买了不退款；开途 App 版 1 年 $49，首购 7 天内流量不超过 1GB 可退。本文按 Astrill 官网原文整理价格、设备数、协议、iPhone 下载和退款，并说明两者各自适合什么人。"
 tags: ["astrill", "astrill vpn", "astrill 价格", "astrill 替代", "astrill 退款"]
 brand: kaitu
-draft: true
+draft: false
 section: kaitu
 ---
 

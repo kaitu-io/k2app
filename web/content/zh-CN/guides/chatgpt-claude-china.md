@@ -4,7 +4,7 @@ date: 2026-11-10
 summary: "OpenAI 和 Anthropic 的支持地区都不含中国大陆、香港和澳门，台湾在列。本文按官方原文说明 ChatGPT 和 Claude 的注册要求与手机验证规则，列出常见报错的原文和含义，分清哪些是网络问题、哪些是地区政策，并给出国内可用的替代选择。"
 tags: ["国内怎么用chatgpt", "国内怎么用claude", "chatgpt 打不开", "chatgpt 注册", "claude 注册"]
 brand: kaitu
-draft: true
+draft: false
 section: kaitu
 ---
 

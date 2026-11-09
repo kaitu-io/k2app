@@ -4,7 +4,7 @@ date: 2026-11-10
 summary: "快连官网 letsvpn.world 仍提供 Windows 和 Mac 安装包，但官方已表示无法保证中国大陆服务。本文说明快连电脑版在哪下载、装上为什么连不上、卸载后怎么清理系统代理和虚拟网卡，以及换用其他电脑工具前要核对的签名、退款和价格。"
 tags: ["快连电脑版", "快连官网", "快连下载", "快连客户端", "快连替代"]
 brand: kaitu
-draft: true
+draft: false
 section: kaitu
 ---
 
