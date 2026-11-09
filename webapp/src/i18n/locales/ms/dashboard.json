@@ -366,6 +366,8 @@
     "hintMulti": "Apabila terputus atau penyelenggaraan, aplikasi hanya bertukar antara {{count}} pelayan ini, tidak ke pelayan lain.",
     "allUnavailable": "Semua pelayan yang disemat tidak tersedia buat masa ini. Pilihan automatik sedang digunakan.",
     "unavailable": "Tidak tersedia",
-    "limitReached": "Anda boleh semat sehingga {{count}} pelayan"
+    "limitReached": "Anda boleh semat sehingga {{count}} pelayan",
+    "allTitle": "Semua pelayan",
+    "hintOneAvailable": "Pelayan disemat yang lain tidak tersedia: jika pelayan ini terputus, aplikasi menunggu sehingga ia pulih dan tidak bertukar ke pelayan lain."
   }
 }

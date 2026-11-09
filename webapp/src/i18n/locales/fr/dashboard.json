@@ -366,6 +366,8 @@
     "hintMulti": "En cas de coupure ou de maintenance, l'app ne bascule qu'entre ces {{count}} serveurs, jamais vers d'autres.",
     "allUnavailable": "Aucun de vos serveurs épinglés n'est disponible pour le moment. Sélection automatique en cours.",
     "unavailable": "Indisponible",
-    "limitReached": "Vous pouvez épingler jusqu'à {{count}} serveurs"
+    "limitReached": "Vous pouvez épingler jusqu'à {{count}} serveurs",
+    "allTitle": "Tous les serveurs",
+    "hintOneAvailable": "Vos autres serveurs épinglés sont indisponibles : si celui-ci tombe, l'app attend son retour et ne bascule pas vers un autre serveur."
   }
 }

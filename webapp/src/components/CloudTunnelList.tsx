@@ -17,7 +17,7 @@ import {
   useTheme,
   Skeleton,
 } from '@mui/material';
-import { Refresh as RefreshIcon, CloudOff as CloudOffIcon, FlashOn as FlashOnIcon, FilterList as FilterListIcon, Star as StarIcon, StarBorder as StarBorderIcon, History as HistoryIcon, InfoOutlined as InfoOutlinedIcon } from '@mui/icons-material';
+import { Refresh as RefreshIcon, CloudOff as CloudOffIcon, FlashOn as FlashOnIcon, FilterList as FilterListIcon, Star as StarIcon, StarBorder as StarBorderIcon, History as HistoryIcon, InfoOutlined as InfoOutlinedIcon, CloudQueue as CloudQueueIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getCountryName, getFlagIcon } from '../utils/country';
@@ -688,11 +688,14 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
             >
               <InfoOutlinedIcon sx={{ fontSize: 14, mt: '2px' }} />
               <Typography variant="caption" sx={{ lineHeight: 1.5 }}>
+                {/* Count only pins in the list: an offline pin cannot take over. */}
                 {pinnedAvailableCount === 0
                   ? t('dashboard:pinned.allUnavailable')
                   : pinned.length === 1
                     ? t('dashboard:pinned.hintSingle')
-                    : t('dashboard:pinned.hintMulti', { count: pinned.length })}
+                    : pinnedAvailableCount === 1
+                      ? t('dashboard:pinned.hintOneAvailable')
+                      : t('dashboard:pinned.hintMulti', { count: pinnedAvailableCount })}
               </Typography>
             </Stack>
           </Box>
@@ -702,6 +705,12 @@ function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, 
           <Box data-testid="recent-section" sx={{ mb: 1 }}>
             {sectionHeader(<HistoryIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, t('dashboard:pinned.recentTitle'))}
             {recentTunnels.map((tunnel) => renderTunnelRow(tunnel, 'recent'))}
+          </Box>
+        )}
+
+        {(pinned.length > 0 || recentTunnels.length > 0) && (
+          <Box data-testid="all-section-header">
+            {sectionHeader(<CloudQueueIcon sx={{ fontSize: 16, color: 'text.secondary' }} />, t('dashboard:pinned.allTitle'))}
           </Box>
         )}
 

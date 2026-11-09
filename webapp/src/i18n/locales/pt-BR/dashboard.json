@@ -366,6 +366,8 @@
     "hintMulti": "Se um servidor cair ou entrar em manutenção, o app só troca entre estes {{count}} servidores, nunca para outros.",
     "allUnavailable": "Nenhum dos seus servidores fixados está disponível agora. Usando a seleção automática.",
     "unavailable": "Indisponível",
-    "limitReached": "Você pode fixar até {{count}} servidores"
+    "limitReached": "Você pode fixar até {{count}} servidores",
+    "allTitle": "Todos os servidores",
+    "hintOneAvailable": "Seus outros servidores fixados estão indisponíveis: se este cair, o app espera ele voltar e não troca para outro servidor."
   }
 }

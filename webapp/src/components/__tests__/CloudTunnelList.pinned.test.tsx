@@ -108,6 +108,7 @@ describe('CloudTunnelList pinned / recent', () => {
     await waitFor(() => expect(screen.getByText('HongKong-01')).toBeInTheDocument());
     expect(screen.queryByTestId('pinned-section')).not.toBeInTheDocument();
     expect(screen.queryByTestId('recent-section')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('all-section-header')).not.toBeInTheDocument();
   });
 
   it('one pin → section with the single-pin hint', async () => {
@@ -156,6 +157,18 @@ describe('CloudTunnelList pinned / recent', () => {
     expect(row).toHaveTextContent('暂不可用');
     fireEvent.click(within(row).getByText('Gone-01'));
     expect(defaultProps.onSelect).not.toHaveBeenCalled();
+  });
+
+  it('two pins with one offline → hint says this one waits (no switch possible)', async () => {
+    usePinnedTunnelsStore.setState({ pinned: [entry(tokyo), { domain: 'gone.example.com', name: 'Gone-01', country: 'SG', at: 1 }] });
+    render(<CloudTunnelList {...defaultProps} />);
+    expect(await screen.findByTestId('pinned-hint')).toHaveTextContent('其他固定节点暂不可用');
+  });
+
+  it('sections present → "all servers" header above Auto; absent otherwise', async () => {
+    usePinnedTunnelsStore.setState({ pinned: [entry(tokyo)] });
+    render(<CloudTunnelList {...defaultProps} />);
+    expect(await screen.findByTestId('all-section-header')).toHaveTextContent('全部节点');
   });
 
   it('all pins missing → allUnavailable warning replaces the hint', async () => {

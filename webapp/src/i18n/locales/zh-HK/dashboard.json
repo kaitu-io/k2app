@@ -366,6 +366,8 @@
     "hintMulti": "斷線或節點維護時，只在這 {{count}} 個節點之間切換，不會換到其他節點",
     "allUnavailable": "你固定的節點暫時都無法使用，目前為自動選擇",
     "unavailable": "暫時無法使用",
-    "limitReached": "最多固定 {{count}} 個節點"
+    "limitReached": "最多固定 {{count}} 個節點",
+    "allTitle": "全部節點",
+    "hintOneAvailable": "其他固定節點暫時無法使用：目前這個無法使用時會等它恢復，不會換到其他節點"
   }
 }

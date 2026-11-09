@@ -366,6 +366,8 @@
     "hintMulti": "If a server drops or goes into maintenance, the app only switches among these {{count}} servers, never to others.",
     "allUnavailable": "None of your pinned servers are available right now. Auto pick is in use.",
     "unavailable": "Unavailable",
-    "limitReached": "You can pin up to {{count}} servers"
+    "limitReached": "You can pin up to {{count}} servers",
+    "allTitle": "All servers",
+    "hintOneAvailable": "Your other pinned servers are unavailable: if this one drops, the app waits for it to come back and won't switch to another server."
   }
 }

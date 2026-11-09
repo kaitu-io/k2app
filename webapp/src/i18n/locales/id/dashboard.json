@@ -366,6 +366,8 @@
     "hintMulti": "Saat terputus atau pemeliharaan, aplikasi hanya beralih di antara {{count}} server ini, tidak ke server lain.",
     "allUnavailable": "Semua server yang disematkan sedang tidak tersedia. Pilihan otomatis sedang digunakan.",
     "unavailable": "Tidak tersedia",
-    "limitReached": "Anda dapat menyematkan hingga {{count}} server"
+    "limitReached": "Anda dapat menyematkan hingga {{count}} server",
+    "allTitle": "Semua server",
+    "hintOneAvailable": "Server tersemat lainnya tidak tersedia: jika server ini terputus, aplikasi menunggu sampai pulih dan tidak beralih ke server lain."
   }
 }

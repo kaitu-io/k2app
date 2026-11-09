@@ -366,6 +366,8 @@
     "hintMulti": "Bei Abbruch oder Wartung wechselt die App nur zwischen diesen {{count}} Servern, nie zu anderen.",
     "allUnavailable": "Keiner deiner angehefteten Server ist gerade verfügbar. Automatische Auswahl aktiv.",
     "unavailable": "Nicht verfügbar",
-    "limitReached": "Du kannst bis zu {{count}} Server anheften"
+    "limitReached": "Du kannst bis zu {{count}} Server anheften",
+    "allTitle": "Alle Server",
+    "hintOneAvailable": "Deine anderen angehefteten Server sind nicht verfügbar: Fällt dieser aus, wartet die App, bis er zurück ist, und wechselt nicht zu einem anderen Server."
   }
 }

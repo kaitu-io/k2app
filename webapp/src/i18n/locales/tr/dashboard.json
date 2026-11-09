@@ -366,6 +366,8 @@
     "hintMulti": "Bağlantı koptuğunda veya bakımda uygulama yalnızca bu {{count}} sunucu arasında geçiş yapar, başkalarına geçmez.",
     "allUnavailable": "Sabitlediğiniz sunucuların hiçbiri şu an kullanılamıyor. Otomatik seçim kullanılıyor.",
     "unavailable": "Kullanılamıyor",
-    "limitReached": "En fazla {{count}} sunucu sabitleyebilirsiniz"
+    "limitReached": "En fazla {{count}} sunucu sabitleyebilirsiniz",
+    "allTitle": "Tüm sunucular",
+    "hintOneAvailable": "Diğer sabitli sunucularınız kullanılamıyor: bu sunucu koparsa uygulama geri gelmesini bekler, başka sunucuya geçmez."
   }
 }
