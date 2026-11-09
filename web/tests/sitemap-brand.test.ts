@@ -85,3 +85,36 @@ describe('sitemap', () => {
     });
   });
 });
+
+describe('sitemap static pages declare their own canonical path', () => {
+  // [locale]/layout.tsx derives canonical/hreflang from the x-pathname request
+  // header, which is absent when a page is statically generated: the pathname
+  // falls back to '' and canonical points at the locale homepage (33 live
+  // pages shipped that way until 2026-11-10). Every non-root static route must
+  // therefore call generateBaseMetadata with its own path literal, in its
+  // page.tsx or (for client pages) a sibling layout.tsx.
+  it('each static route passes its path to generateBaseMetadata', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const { siteConfig } = await import('../src/lib/site');
+    const appDir = path.resolve(__dirname, '../src/app/[locale]');
+    const missing: string[] = [];
+    for (const route of siteConfig().staticRoutes) {
+      if (route === '') continue;
+      const dir = path.join(appDir, route);
+      const src = ['page.tsx', 'layout.tsx']
+        .map((f) => path.join(dir, f))
+        .filter((f) => fs.existsSync(f))
+        .map((f) => fs.readFileSync(f, 'utf8'))
+        .join('\n');
+      const re = new RegExp(`generateBaseMetadata\\(\\s*\\w+,\\s*'${route.replace(/\//g, '\\/')}'`);
+      if (!re.test(src)) missing.push(route);
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it('does not list the redirecting bare root', async () => {
+    const entries = await sitemap();
+    expect(entries.some((e) => e.url === 'https://www.kaitu.io')).toBe(false);
+  });
+});

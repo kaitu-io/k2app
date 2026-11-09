@@ -1,5 +1,6 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
+import { generateMetadata as generateBaseMetadata } from '../metadata';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { routing } from '@/i18n/routing';
@@ -23,12 +24,12 @@ export async function generateMetadata({
   const { locale: rawLocale } = await params;
   const locale = rawLocale as Locale;
   const t = await getTranslations({ locale, namespace: 'routers' });
-  return {
+  return generateBaseMetadata(locale, '/routers', {
     title: t('edition.product.metaTitle'),
     description: t('edition.product.metaDescription', {
       price: formatUsd(routerOffer().firstYear),
     }),
-  };
+  });
 }
 
 export default async function RoutersEditionPage({

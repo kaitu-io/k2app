@@ -1,5 +1,6 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
+import { generateMetadata as generateBaseMetadata } from '../metadata';
 import { routing } from '@/i18n/routing';
 import PurchaseClient from './PurchaseClient';
 
@@ -13,10 +14,10 @@ export async function generateMetadata({
   const { locale: rawLocale } = await params;
   const locale = rawLocale as Locale;
   const t = await getTranslations({ locale, namespace: 'purchase' });
-  return {
+  return generateBaseMetadata(locale, '/purchase', {
     title: t('purchase.title'),
     description: t('purchase.metaDescription'),
-  };
+  });
 }
 
 export default async function PurchasePage({

@@ -1,5 +1,6 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
+import { generateMetadata as generateBaseMetadata } from '../metadata';
 import { routing } from '@/i18n/routing';
 import { Card } from '@/components/ui/card';
 import { Shield, Calendar, Users, Handshake, BadgeCheck } from 'lucide-react';
@@ -26,10 +27,10 @@ export async function generateMetadata({
   const locale = rawLocale as Locale;
   const t = await getTranslations({ locale, namespace: 'theme' });
 
-  return {
+  return generateBaseMetadata(locale, '/opensource', {
     title: t('opensource.title'),
     description: t('opensource.subtitle'),
-  };
+  });
 }
 
 /**

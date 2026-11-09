@@ -1,5 +1,6 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
+import { generateMetadata as generateBaseMetadata } from '../metadata';
 import { routing } from '@/i18n/routing';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
@@ -19,10 +20,10 @@ export async function generateMetadata({
   const { locale: rawLocale } = await params;
   const locale = rawLocale as Locale;
   const t = await getTranslations({ locale, namespace: 'install' });
-  return {
+  return generateBaseMetadata(locale, '/install', {
     title: t('install.title'),
     description: t('install.metaDescription'),
-  };
+  });
 }
 
 export default async function InstallPage({
