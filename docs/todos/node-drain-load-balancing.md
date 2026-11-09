@@ -37,3 +37,7 @@
 
 - [ ] 写设计稿（`docs/superpowers/specs/`），先定触发策略：手动 / 负载阈值 / 额度阈值
 - [ ] 依赖：k2s 优雅退出（关闭帧 + restarting 原因码）先落地
+
+## 约束：固定节点（2026-11-10 起）
+
+webapp 已上「固定节点」（`docs/superpowers/specs/2026-11-10-pinned-tunnels-design.md`）：连接固定节点时，`ClientConfig.fallbacks` = 用户其余固定节点（按节点 IP 识别）。排空切换**必须只用客户端传入的 fallbacks**，不得改用 Center 随机下发的备用节点，否则固定用户会被切出固定池、换掉 IP。未提交的设计稿 `2026-10-31-node-drain-redirect-design.md` §5「手动选的节点同样会被切走」与此冲突，实现前须改。
