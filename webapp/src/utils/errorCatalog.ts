@@ -259,7 +259,7 @@ export const API_ERROR_CATALOG: Readonly<Record<number, ErrorEntry>> = {
   // ("参数错误") read as a transient glitch and users retried for hours.
   [ERROR_CODES.EMAIL_ALREADY_IN_USE]: { key: 'auth:updateEmail.emailAlreadyInUse', defaultValue: 'This email is already used by another account' },
   // 409004: the Apple subscription is owned by another device's account.
-  [ERROR_CODES.APPLE_SUBSCRIPTION_OWNED_ELSEWHERE]: { key: 'auth:auth.appleSubscriptionOwnedElsewhere', defaultValue: "This subscription belongs to another account. Sign in with that account's email or Apple ID, or contact support." },
+  [ERROR_CODES.APPLE_SUBSCRIPTION_OWNED_ELSEWHERE]: { key: 'auth:auth.appleSubscriptionOwnedElsewhere', defaultValue: "This Apple ID's subscription can't be restored on this device right now. Please contact support." },
 
   // Backend custom codes (400000+ range)
   [ERROR_CODES.INVALID_CAMPAIGN_CODE]: { key: 'purchase:purchase.invalidCampaignCode', defaultValue: 'Invalid promo code' },

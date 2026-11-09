@@ -244,6 +244,7 @@ Spec `docs/superpowers/specs/2026-10-01-support-chat-design.md`. Entry: `api_cha
 Spec `docs/superpowers/specs/2026-10-20-ios-device-account-design.md`. `POST /api/auth/device-account`, `/device-account/restore` (`api_device_account.go`, `logic_device_account.go`). Gated by `BrandConfig.DeviceAccount` (kaitu only → else 403004); router (gateway) clients are refused.
 - "零身份" is decided **only** by `userHasIdentity` (no `login_identifies` row) — don't hand-count elsewhere.
 - **A udid is not a secret**: an existing device row never gets a token by udid — 403005 (owner has an identity → log in) / 403006 (device account → Keychain token or Apple-transaction restore).
+- **The subscription follows the Apple ID** (App Review 5.1.1(v), 4.4.16 rejection; spec revision 2026-11-10): `/device-account/restore` admits a device into the subscription owner's account whatever the owner's identity — zero-identity owner = move (cap 1), identity owner = join (`checkDeviceLimitOrKick`). Never reintroduce "owner has an identity → 409004 / ask to sign in". A device held by an identity account is switched only when the request is authenticated as that account (route carries `AuthOptional`).
 
 ## Enterprise (企业路由器多 SSID)
 

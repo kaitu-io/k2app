@@ -159,7 +159,7 @@ type restoreFixture struct {
 func newRestoreFixture(t *testing.T) *restoreFixture {
 	t.Helper()
 	r := devAcctRouter(t)
-	r.POST("/api/auth/device-account/restore", api_device_account_restore)
+	r.POST("/api/auth/device-account/restore", AuthOptional(), api_device_account_restore) // 同 route.go
 	ca := newTestAppleCA(t, appleJWSLeafOID, appleJWSIntermediateOID)
 	useTestAppleRoot(t, ca)
 
@@ -208,10 +208,19 @@ func (f *restoreFixture) ownerDevice(t *testing.T) (udid string, refresh string)
 
 func postRestore(t *testing.T, r *gin.Engine, host, udid, signed string) devAcctResp {
 	t.Helper()
+	return postRestoreAs(t, r, host, udid, signed, "")
+}
+
+// postRestoreAs 带 Bearer（App 当前登录账号的 access token）调恢复；bearer 空 = 匿名。
+func postRestoreAs(t *testing.T, r *gin.Engine, host, udid, signed, bearer string) devAcctResp {
+	t.Helper()
 	b, _ := json.Marshal(map[string]string{"udid": udid, "signedTransaction": signed, "remark": "iPhone"})
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/device-account/restore", strings.NewReader(string(b)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-K2-Client", devAcctClientHeader)
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
 	req.Host = host
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -291,17 +300,6 @@ func TestDeviceAccountRestore_Refusals(t *testing.T) {
 		require.NoError(t, err, "主人原设备照常可用")
 	}
 
-	t.Run("主人有登录身份", func(t *testing.T) {
-		f := newRestoreFixture(t)
-		ownerUDID, ownerRefresh := f.ownerDevice(t)
-		require.NoError(t, db.Get().Create(&LoginIdentify{UserID: f.owner.ID, Type: "email",
-			IndexID: "restore-idx-" + f.otx, EncryptedValue: "x", Brand: string(BrandKaitu)}).Error)
-		resp := postRestore(t, f.r, "www.kaitu.io", devAcctUDID(t), f.jws(t))
-		require.Equal(t, int(ErrorAppleSubscriptionOwnedElsewhere), resp.Code)
-		require.Empty(t, resp.Data.AccessToken)
-		assertUntouched(t, f, ownerUDID, ownerRefresh)
-	})
-
 	t.Run("订阅链没有订阅行", func(t *testing.T) {
 		f := newRestoreFixture(t)
 		ownerUDID, ownerRefresh := f.ownerDevice(t)
@@ -358,6 +356,24 @@ func TestDeviceAccountRestore_Refusals(t *testing.T) {
 		require.NoError(t, db.Get().Create(&LoginIdentify{UserID: holder, Type: "email",
 			IndexID: "restore-holder-" + f.otx, EncryptedValue: "x", Brand: string(BrandKaitu)}).Error)
 		resp := postRestore(t, f.r, "www.kaitu.io", udid, f.jws(t))
+		require.Equal(t, int(ErrorAppleSubscriptionOwnedElsewhere), resp.Code, "匿名请求不能把有身份用户的设备挤下线")
+		require.Equal(t, holder, devAcctDevice(t, udid).UserID)
+		assertUntouched(t, f, ownerUDID, ownerRefresh)
+	})
+
+	t.Run("设备属有身份账号，请求以另一个账号登录", func(t *testing.T) {
+		f := newRestoreFixture(t)
+		ownerUDID, ownerRefresh := f.ownerDevice(t)
+		udid := devAcctUDID(t)
+		require.Equal(t, 0, postDeviceAccount(t, f.r, "www.kaitu.io", udid).Code)
+		holder := devAcctDevice(t, udid).UserID
+		require.NoError(t, db.Get().Create(&LoginIdentify{UserID: holder, Type: "email",
+			IndexID: "restore-holder2-" + f.otx, EncryptedValue: "x", Brand: string(BrandKaitu)}).Error)
+		otherUDID := devAcctUDID(t)
+		other := postDeviceAccount(t, f.r, "www.kaitu.io", otherUDID)
+		require.Equal(t, 0, other.Code)
+		t.Cleanup(func() { db.Get().Unscoped().Delete(&User{}, devAcctDevice(t, otherUDID).UserID) })
+		resp := postRestoreAs(t, f.r, "www.kaitu.io", udid, f.jws(t), other.Data.AccessToken)
 		require.Equal(t, int(ErrorAppleSubscriptionOwnedElsewhere), resp.Code)
 		require.Equal(t, holder, devAcctDevice(t, udid).UserID)
 		assertUntouched(t, f, ownerUDID, ownerRefresh)
@@ -444,4 +460,87 @@ func TestDeviceAccountRestore_ConcurrentSameOwner(t *testing.T) {
 		require.Equal(t, 0, rs.Code, "请求 %d: %s", i, rs.Message)
 	}
 	require.Equal(t, int64(1), devAcctCount(t, f.owner.ID), "轮流挤，最后只剩 1 台")
+}
+
+// 2026-11-10 修订（Apple 5.1.1(v)）：主人有登录身份时，这台设备直接加入主人账号——不要求先登录，
+// 主人其他设备不动（与零身份主人「搬」不同）。
+func TestDeviceAccountRestore_IdentityOwnerJoins(t *testing.T) {
+	f := newRestoreFixture(t)
+	ownerUDID, ownerRefresh := f.ownerDevice(t)
+	require.NoError(t, db.Get().Create(&LoginIdentify{UserID: f.owner.ID, Type: "email",
+		IndexID: "restore-idx-" + f.otx, EncryptedValue: "x", Brand: string(BrandKaitu)}).Error)
+	newUDID := devAcctUDID(t)
+
+	resp := postRestore(t, f.r, "www.kaitu.io", newUDID, f.jws(t))
+	require.Equal(t, 0, resp.Code, resp.Message)
+	claims, dev, err := validateToken(context.Background(), resp.Data.RefreshToken, TokenTypeRefresh)
+	require.NoError(t, err)
+	require.Equal(t, f.owner.ID, claims.UserID)
+	require.Equal(t, newUDID, dev.UDID)
+	require.Equal(t, int64(2), devAcctCount(t, f.owner.ID), "加入不是搬：原设备保留")
+	_, _, err = validateToken(context.Background(), ownerRefresh, TokenTypeRefresh)
+	require.NoError(t, err, "主人原设备照常可用")
+	require.Equal(t, f.owner.ID, devAcctDevice(t, ownerUDID).UserID)
+}
+
+// 有身份主人设备已满：加入时按登录同一规则踢最久未用的那台。
+func TestDeviceAccountRestore_IdentityOwnerAtLimitKicksOldest(t *testing.T) {
+	f := newRestoreFixture(t)
+	require.NoError(t, db.Get().Create(&LoginIdentify{UserID: f.owner.ID, Type: "email",
+		IndexID: "restore-idx-" + f.otx, EncryptedValue: "x", Brand: string(BrandKaitu)}).Error)
+	max := f.owner.Quota().MaxDevice
+	require.Greater(t, max, 1)
+	var oldest string
+	for i := 0; i < max; i++ {
+		udid := devAcctUDID(t)
+		require.NoError(t, db.Get().Create(&Device{UDID: udid, UserID: f.owner.ID, TokenIssueAt: 1, TokenLastUsedAt: int64(100 + i)}).Error)
+		if i == 0 {
+			oldest = udid
+		}
+	}
+	newUDID := devAcctUDID(t)
+	resp := postRestore(t, f.r, "www.kaitu.io", newUDID, f.jws(t))
+	require.Equal(t, 0, resp.Code, resp.Message)
+	require.Equal(t, int64(max), devAcctCount(t, f.owner.ID), "仍在上限内")
+	var n int64
+	require.NoError(t, db.Get().Model(&Device{}).Where("udid = ?", oldest).Count(&n).Error)
+	require.Zero(t, n, "最久未用的设备被踢")
+	require.Equal(t, f.owner.ID, devAcctDevice(t, newUDID).UserID)
+}
+
+// 审核员路径（4.4.16 被拒）：App 当前以有身份账号 H 登录，这台设备上的 Apple ID 订阅属于主人；
+// 以 H 的 token 恢复 → 设备从 H 切到主人，H 在这台设备上的 token 失效，H 的其他设备不动。
+func TestDeviceAccountRestore_SignedInHolderSwitchesToOwner(t *testing.T) {
+	f := newRestoreFixture(t)
+	require.NoError(t, db.Get().Create(&LoginIdentify{UserID: f.owner.ID, Type: "email",
+		IndexID: "restore-idx-" + f.otx, EncryptedValue: "x", Brand: string(BrandKaitu)}).Error)
+	ownerUDID, ownerRefresh := f.ownerDevice(t)
+
+	udid := devAcctUDID(t)
+	created := postDeviceAccount(t, f.r, "www.kaitu.io", udid)
+	require.Equal(t, 0, created.Code)
+	holder := devAcctDevice(t, udid).UserID
+	t.Cleanup(func() {
+		db.Get().Where("user_id = ?", holder).Delete(&LoginIdentify{})
+		db.Get().Unscoped().Where("user_id = ?", holder).Delete(&Device{})
+		db.Get().Unscoped().Delete(&User{}, holder)
+	})
+	require.NoError(t, db.Get().Create(&LoginIdentify{UserID: holder, Type: "email",
+		IndexID: "restore-holder3-" + f.otx, EncryptedValue: "x", Brand: string(BrandKaitu)}).Error)
+	holderOther := devAcctUDID(t)
+	require.NoError(t, db.Get().Create(&Device{UDID: holderOther, UserID: holder, TokenIssueAt: 1, TokenLastUsedAt: 1}).Error)
+
+	resp := postRestoreAs(t, f.r, "www.kaitu.io", udid, f.jws(t), created.Data.AccessToken)
+	require.Equal(t, 0, resp.Code, resp.Message)
+	claims, dev, err := validateToken(context.Background(), resp.Data.RefreshToken, TokenTypeRefresh)
+	require.NoError(t, err)
+	require.Equal(t, f.owner.ID, claims.UserID)
+	require.Equal(t, udid, dev.UDID)
+	require.Equal(t, f.owner.ID, devAcctDevice(t, udid).UserID)
+	_, _, err = validateToken(context.Background(), created.Data.RefreshToken, TokenTypeRefresh)
+	require.Error(t, err, "H 在这台设备上的 token 失效")
+	require.Equal(t, holder, devAcctDevice(t, holderOther).UserID, "H 的其他设备不动")
+	_, _, err = validateToken(context.Background(), ownerRefresh, TokenTypeRefresh)
+	require.NoError(t, err, "主人原设备照常可用")
+	require.Equal(t, f.owner.ID, devAcctDevice(t, ownerUDID).UserID)
 }
