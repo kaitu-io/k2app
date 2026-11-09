@@ -18,6 +18,11 @@ Protocol detection and domain extraction from first packet/bytes. Used by `core/
 | `IsBitTorrent(io.Reader)` | BT handshake | TCP peek | bool | PROXY→DIRECT |
 | `IsUTP([]byte)` | uTP (BT UDP) | UDP packet | bool | PROXY→DIRECT |
 | `IsUDPTracker([]byte)` | BT UDP Tracker | UDP packet | bool | PROXY→DIRECT |
+| `IsUTPSyn([]byte)` | uTP SYN only (strict) | UDP packet | bool | Server BT block (`server/bt_block.go`) |
+| `IsDHT([]byte)` | Mainline DHT (BEP 5) | UDP packet | bool | Server BT block |
+| `IsBitTorrentUDP([]byte)` | uTP SYN ∨ DHT ∨ tracker | UDP packet | bool | Server BT block — first packet per new dest |
+
+**`IsUTP` is too loose to drop traffic on**: it accepts a WireGuard handshake initiation (`0x01 00 00 00…`) and some QUIC short-header packets. Fine for the client's PROXY→DIRECT reroute (a false positive just goes direct); anything that *refuses* traffic must use `IsUTPSyn` / `IsBitTorrentUDP`.
 | `IsSTUN([]byte)` | STUN (RFC 8489) | UDP packet | bool | Identify WebRTC and **keep it on the tunnel** (ticket #3051) |
 | `IsDTLS([]byte)` | DTLS (RFC 6347) | UDP packet | bool | Identify WebRTC and **keep it on the tunnel** (ticket #3051) |
 
