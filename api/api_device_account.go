@@ -106,8 +106,9 @@ type DataDeviceAccountRestoreRequest struct {
 
 // api_device_account_restore POST /api/auth/device-account/restore
 //
-// 重置 / 换手机后，凭这台设备上 Apple ID 的签名交易，把交易所属的零身份设备账号搬到 udid 这台设备，
-// 返回该账号的 token（与 api_login 同形）。交易属有身份账号、或设备上已有别的有内容的账号 → 409004。
+// 凭这台设备上 Apple ID 的签名交易，让 udid 这台设备进入订阅主人的账号（零身份主人：搬过来；有身份主人：
+// 加入，按上限踢最旧），返回该账号的 token（与 api_login 同形）。挂 AuthOptional：设备当前属于有身份
+// 账号时，只有以该账号登录的请求能把它切走。设备上是别的有内容的零身份账号、或订阅从未入账 → 409004。
 func api_device_account_restore(c *gin.Context) {
 	if !deviceAccountLimiter.Allow(c.ClientIP()) {
 		Error(c, ErrorTooManyRequests, "too many requests")
@@ -155,7 +156,7 @@ func api_device_account_restore(c *gin.Context) {
 		return
 	}
 
-	res, err := deviceAccountRestore(c, brand, req.UDID, req.Remark, info)
+	res, err := deviceAccountRestore(c, brand, req.UDID, req.Remark, info, ReqUserID(c))
 	if err != nil {
 		log.Warnf(c, "device-account restore failed for udid %s txn %s: %v", req.UDID, signed.TransactionID, err)
 		ErrorE(c, err)

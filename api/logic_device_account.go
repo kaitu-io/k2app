@@ -111,10 +111,16 @@ func deviceAccountSignIn(c *gin.Context, brand Brand, req DataDeviceAccountReque
 	return res, nil
 }
 
-// deviceAccountRestore 凭 Apple 交易把零身份设备账号搬到 udid 这台设备（spec §4.2.1）。
-// 调用方已验过 JWS、并向 Apple 复核了交易（info）。主人 = 这条订阅链订阅行上的用户；
-// 搬是移动不是共享：主人的其他设备行全删（零身份上限 1）。所有拒绝都不写库。
-func deviceAccountRestore(c *gin.Context, brand Brand, udid, remark string, info *appstore.TransactionInfo) (*deviceAccountResult, error) {
+// deviceAccountRestore 凭 Apple 交易让 udid 这台设备进入订阅主人的账号（spec §4.2.1 + 2026-11-10 修订）。
+// 调用方已验过 JWS、并向 Apple 复核了交易（info）。主人 = 这条订阅链订阅行上的用户。
+//   - 主人零身份：搬是移动不是共享——主人的其他设备行全删（零身份上限 1）。
+//   - 主人有身份：这台设备加入主人账号，按套餐上限踢最旧设备（checkDeviceLimitOrKick），其他设备不动。
+//     Apple 5.1.1(v)：订阅随 Apple ID，不能要求先登录我们的账号才能用（4.4.16 因此被拒）。
+//
+// udid 当前属于别的账号 H 时：H 零身份 → 必须是空号（deviceAccountIsDisposable）；H 有身份 → 只有
+// 本请求就以 H 登录（callerUserID == H）才允许把设备从 H 切走（H 可随时用邮箱登回来）——udid 不是
+// 秘密，匿名请求不能把有身份用户的设备挤下线。所有拒绝都不写库。
+func deviceAccountRestore(c *gin.Context, brand Brand, udid, remark string, info *appstore.TransactionInfo, callerUserID uint64) (*deviceAccountResult, error) {
 	res := &deviceAccountResult{}
 	// 读已提交：并发恢复靠主人行 FOR UPDATE 排队；可重复读下，排在后面的事务开头的快照读早于
 	// 前一个的提交，之后锁读 / 删主人设备行会撞 MariaDB innodb_snapshot_isolation 的 1020。
@@ -140,12 +146,9 @@ func deviceAccountRestore(c *gin.Context, brand Brand, udid, remark string, info
 			log.Warnf(c, "device-account restore: owner %d is blocked", owner.ID)
 			return e(ErrorForbidden, "account blocked")
 		}
-		has, err := userHasIdentity(tx, owner.ID)
+		ownerHasIdentity, err := userHasIdentity(tx, owner.ID)
 		if err != nil {
 			return err
-		}
-		if has {
-			return e(ErrorAppleSubscriptionOwnedElsewhere, "subscription belongs to an account with a login identity")
 		}
 
 		var device Device
@@ -155,11 +158,26 @@ func deviceAccountRestore(c *gin.Context, brand Brand, udid, remark string, info
 		}
 		exists := findErr == nil
 		if exists && device.UserID != owner.ID {
-			if ok, err := deviceAccountIsDisposable(tx, device.UserID); err != nil {
+			holderHasIdentity, err := userHasIdentity(tx, device.UserID)
+			if err != nil {
+				return err
+			}
+			if holderHasIdentity {
+				if callerUserID != device.UserID {
+					log.Warnf(c, "device-account restore: udid %s held by identity user %d, caller is %d", udid, device.UserID, callerUserID)
+					return e(ErrorAppleSubscriptionOwnedElsewhere, "device holds another account")
+				}
+			} else if ok, err := deviceAccountIsDisposable(tx, device.UserID); err != nil {
 				return err
 			} else if !ok {
 				log.Warnf(c, "device-account restore: udid %s held by user %d which is not an empty device account", udid, device.UserID)
 				return e(ErrorAppleSubscriptionOwnedElsewhere, "device holds another account")
+			}
+		}
+		// 有身份的主人：新加入的设备占一个名额，满了踢最旧（与登录同一规则）。设备已是主人的则不算新增。
+		if ownerHasIdentity && (!exists || device.UserID != owner.ID) {
+			if err := checkDeviceLimitOrKick(c, tx, &owner, false); err != nil {
+				return err
 			}
 		}
 
@@ -188,8 +206,10 @@ func deviceAccountRestore(c *gin.Context, brand Brand, udid, remark string, info
 				return err
 			}
 		}
-		if err := tx.Where("user_id = ? AND udid <> ?", owner.ID, udid).Delete(&Device{}).Error; err != nil {
-			return err
+		if !ownerHasIdentity {
+			if err := tx.Where("user_id = ? AND udid <> ?", owner.ID, udid).Delete(&Device{}).Error; err != nil {
+				return err
+			}
 		}
 		res.Auth, res.UserID, res.Created = auth, owner.ID, !exists
 		return nil

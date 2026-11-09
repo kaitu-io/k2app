@@ -29,6 +29,22 @@ export const IAP_PRODUCT_IDS: readonly string[] = brandConfig.iapProductIds;
 /** 用户缓存 key（与 useUser 保持一致） */
 const USER_CACHE_KEY = 'api:user_info';
 
+/**
+ * The JWS proving this device's Apple ID holds `transactionId` (a purchase result carries
+ * only the id). Reads StoreKit's current entitlements — no Apple ID prompt. Prefers the
+ * same transaction, else any entitlement with a JWS (renewals change the id, not the chain).
+ */
+async function entitlementJws(transactionId: string): Promise<string | undefined> {
+  try {
+    const txns = (await window._platform?.iap?.restore()) ?? [];
+    const withJws = txns.filter((tx) => typeof tx.jws === 'string' && tx.jws.length > 0);
+    return (withJws.find((tx) => tx.transactionId === transactionId) ?? withJws[0])?.jws;
+  } catch (err) {
+    console.warn('[useIapPurchase] entitlementJws failed:', err);
+    return undefined;
+  }
+}
+
 export interface UseIapPurchaseReturn {
   products: IapProduct[];
   loadProducts: () => Promise<void>;
@@ -91,7 +107,7 @@ export function useIapPurchase(): UseIapPurchaseReturn {
    * after a confirmed grant.
    */
   const verifyAndGrant = useCallback(
-    async (transactionId: string, jws?: string): Promise<void> => {
+    async (transactionId: string, jws?: string, userInitiated = false): Promise<void> => {
       const iap = window._platform?.iap;
       if (!iap) {
         console.warn('[useIapPurchase] verifyAndGrant: iap missing');
@@ -103,18 +119,23 @@ export function useIapPurchase(): UseIapPurchaseReturn {
         });
 
         if (res.code === ERROR_CODES.APPLE_SUBSCRIPTION_OWNED_ELSEWHERE) {
-          // The transaction belongs to another account. If this device is a zero-identity
-          // device account and we hold the JWS, move that account here and verify once more.
-          // Never finish on this branch — only the re-verify (which finishes on success) may.
-          const cachedUser = cacheStore.get<DataUser>(USER_CACHE_KEY);
-          const zeroIdentity = !!cachedUser && !(cachedUser.loginIdentifies?.length > 0);
-          // Lazy: device-account pulls in i18n + auth store, only needed on this rare path.
-          const restored =
-            zeroIdentity && !!jws &&
-            (await (await import('../services/device-account')).restoreDeviceAccount(jws));
-          if (restored) {
-            await verifyAndGrant(transactionId);
-            return;
+          // The transaction belongs to another account. The subscription follows the Apple ID
+          // (App Review 5.1.1(v) — 4.4.16 was rejected for asking the user to sign in instead):
+          // prove it with the JWS and bring this device into the owner's account, whatever
+          // account (identity or not) the app is on now, then verify once more.
+          // Only on a user tap (purchase / restore) — a background renewal never switches
+          // accounts. Never finish on this branch — only the re-verify (which finishes) may;
+          // the re-verify passes userInitiated=false so a second 409004 cannot loop.
+          if (userInitiated) {
+            const proof = jws ?? (await entitlementJws(transactionId));
+            // Lazy: device-account pulls in i18n + auth store, only needed on this rare path.
+            const restored =
+              !!proof &&
+              (await (await import('../services/device-account')).restoreDeviceAccount(proof));
+            if (restored) {
+              await verifyAndGrant(transactionId);
+              return;
+            }
           }
           if (mountedRef.current) {
             setPurchaseError(getErrorMessage(res.code, res.message, t));
@@ -188,7 +209,7 @@ export function useIapPurchase(): UseIapPurchaseReturn {
         }
         // success
         if (result.transactionId) {
-          await verifyAndGrant(result.transactionId);
+          await verifyAndGrant(result.transactionId, undefined, true);
         } else {
           console.error('[useIapPurchase] success without transactionId');
           if (mountedRef.current) {
@@ -228,7 +249,7 @@ export function useIapPurchase(): UseIapPurchaseReturn {
       // SEQUENTIAL on purpose — Center uses FOR UPDATE row locks; parallel
       // verify calls deadlock. Never Promise.all here.
       for (const txn of txns) {
-        await verifyAndGrant(txn.transactionId, txn.jws);
+        await verifyAndGrant(txn.transactionId, txn.jws, true);
       }
     } catch (err) {
       console.error('[useIapPurchase] restore threw:', err);
