@@ -126,14 +126,14 @@ export const KAITU_SITE: SiteConfig = {
   },
   seo: {
     defaultTitle: {
-      'zh-CN': '{wordmark} k2cc — 30% 丢包照样满速的隐身隧道',
-      'zh-TW': '{wordmark} k2cc — 30% 丟包照樣滿速的隱身隧道',
-      'zh-HK': '{wordmark} k2cc — 30% 丟包照樣滿速的隱身隧道',
+      'zh-CN': '{wordmark} k2cc — 为 26% 丢包设计的隐身隧道',
+      'zh-TW': '{wordmark} k2cc — 為 26% 丟包設計的隱身隧道',
+      'zh-HK': '{wordmark} k2cc — 為 26% 丟包設計的隱身隧道',
     },
     defaultDescription: {
-      'zh-CN': 'k2cc 重写拥塞控制规则，30% 丢包依然满速。ECH 加密隐身 + QUIC/TCP-WS 双栈传输，一行命令部署，CT 日志零暴露。',
-      'zh-TW': 'k2cc 重寫擁塞控制規則，30% 丟包依然滿速。ECH 加密隱身 + QUIC/TCP-WS 雙棧傳輸，一行命令部署，CT 日誌零暴露。',
-      'zh-HK': 'k2cc 重寫擁塞控制規則，30% 丟包依然滿速。ECH 加密隱身 + QUIC/TCP-WS 雙棧傳輸，一行命令部署，CT 日誌零暴露。',
+      'zh-CN': 'k2cc 重写拥塞控制规则，为 26% 丢包的跨境线路设计。ECH 加密隐身 + QUIC/TCP-WS 双栈传输，一行命令部署，CT 日志零暴露。',
+      'zh-TW': 'k2cc 重寫擁塞控制規則，為 26% 丟包的跨境線路設計。ECH 加密隱身 + QUIC/TCP-WS 雙棧傳輸，一行命令部署，CT 日誌零暴露。',
+      'zh-HK': 'k2cc 重寫擁塞控制規則，為 26% 丟包的跨境線路設計。ECH 加密隱身 + QUIC/TCP-WS 雙棧傳輸，一行命令部署，CT 日誌零暴露。',
     },
   },
 };

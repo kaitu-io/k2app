@@ -14,7 +14,7 @@ Overleap 使用 <strong>k2cc 自研壅塞控制演算法</strong>，能在 30% �
 
 Overleap 自研的 <strong>k2cc</strong> 壅塞控制演算法（有別於 BBR、Cubic）專為中國跨境網路環境設計，核心特點：
 
-- <strong>抗掉包</strong>：在 26%-30% 掉包率下仍保持 90%+ 有效吞吐量（USENIX Security 2023 測量值）—— 而 Cubic 在同條件下會跌到不到 10%。
+- <strong>抗掉包</strong>：k2cc 能區分壅塞造成的掉包和非壅塞掉包。Cubic 這類傳統演算法則把每次掉包都當成壅塞訊號，每掉一次就縮小傳送視窗，掉包率越高，吞吐量掉得越多。
 - <strong>零組態</strong>：無需手動設定頻寬，演算法會自適應鏈路容量。
 - <strong>慢啟動</strong>：和所有 TCP 類演算法一樣，連線初期會從一個保守速率開始，逐步探測瓶頸鏈路的真實頻寬。
 
