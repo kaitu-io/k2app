@@ -1480,9 +1480,9 @@ type DeviceLog struct {
 	UserID     *uint64        `gorm:"index" json:"userId,omitempty"`
 	FeedbackID *string        `gorm:"type:varchar(36);index" json:"feedbackId,omitempty"`
 	S3Key      string         `gorm:"type:varchar(512);not null" json:"s3Key"`
-	LogType    string         `gorm:"type:varchar(32);not null" json:"logType"` // service/crash/desktop/system
-	Reason     string         `gorm:"type:varchar(64);not null" json:"reason"`  // user_feedback_report/beta-auto-upload
-	Meta       string         `gorm:"type:json" json:"meta,omitempty"`          // {email,os,appVersion,channel,fileSize,...}
+	LogType    string         `gorm:"type:varchar(256);not null" json:"logType"` // 客户端上传的文件名，如 k2-2026-11-09T04-13-46.470.log.gz
+	Reason     string         `gorm:"type:varchar(64);not null" json:"reason"`   // user_feedback_report/beta-auto-upload
+	Meta       string         `gorm:"type:json" json:"meta,omitempty"`           // {email,os,appVersion,channel,fileSize,...}
 }
 
 // FeedbackTicket 用户反馈工单
