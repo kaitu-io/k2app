@@ -226,8 +226,12 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	priorPeriodEnd := sub.CurrentPeriodEnd // 0 when first
 
 	// Dedup (INV1): credit each transaction id once.
+	// 必须是加锁读：REPEATABLE READ 下普通读用事务里第一条普通读（planByAppleProductID）建立的快照。
+	// 同一交易的两个并发 verify 中，后者的订阅行 FOR UPDATE 等到前者提交后读到最新行，但普通读
+	// 的去重查询仍看旧快照、看不到前者的 credit → 重复插入撞 1062 → 已到账的用户收到 "verification
+	// failed"（2026-11 线上 5 例）。加锁读读最新已提交版本，走下面的 alreadyCredited 幂等分支。
 	var existing SubscriptionCredit
-	dErr := tx.Where(&SubscriptionCredit{Provider: provider, TransactionID: info.TransactionId}).First(&existing).Error
+	dErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(&SubscriptionCredit{Provider: provider, TransactionID: info.TransactionId}).First(&existing).Error
 	alreadyCredited := dErr == nil
 	if dErr != nil && !errors.Is(dErr, gorm.ErrRecordNotFound) {
 		return dErr
