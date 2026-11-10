@@ -138,3 +138,27 @@
 5. Codex 安装
 6. Weverse（先核实）
 7. 英文两篇（语言分支合并后）
+
+## 七、进度（2026-11-10）
+
+David 11-10 改为「写一篇、自查过关就发一篇」，发布关卡第 8 条（David 看过）对本系列不再逐篇要求。
+
+| 文章 | slug | 状态 | 独有内容 |
+|---|---|---|---|
+| Instagram 网页版入口与官网 | `instagram-web-china` | 已上线 | 大陆实测：DNS 污染 + Meta 真实 IP（AS32934）也超时；App Store 中国区可下载 Instagram，查不到 WhatsApp / Threads |
+| Claude 账号为什么会被封（k2app-32 交接） | `claude-account-suspended-reasons` | 已上线 | 官方三类原因原文 + 官方 / 社区因素分栏 |
+| 国内能用 ChatGPT 和 Claude 吗（改写） | `chatgpt-claude-china` | 已上线 | 多因素口径；补 OpenAI 付款方式条款原文 |
+| IP 纯净度检测到底在测什么 | `ip-purity-check-explained` | 已上线 | 三个公开 IP（Google DNS / AWS / Tor 出口）在 ping0 与 Scamalytics 的对照：同一 Tor 出口 91% vs 0 分 |
+| Claude Code 安装教程 | `claude-code-install-china` | 已上线 | npmmirror 主包 + 8 平台包与官方同版本；DeepSeek 文档 Node 18+ 与官方 22+ 的差异 |
+| Does LetsVPN Still Work in China?（en-US） | `letsvpn-china` | 已发布 | 官方博客时间线；「letsvpn」en-US 8,111 次中 6,541 次来自中国 |
+| Astrill VPN in China（en-US） | `astrill-vpn-china` | 已发布 | Astrill 官网价格 / 退款 / 同时在线 5 台原文；中国区 App Store 查无 |
+| 谷歌学术镜像 | — | 等大陆出口 | 7 天可用率实测 |
+| Pinterest | — | 等大陆出口 | 已查：官网入口 29,003 / 官网 27,166 / 网页版入口 7,658；**中国区 App Store 没有官方 Pinterest，搜索第一是第三方「Pinnable Pinterest 美图壁纸…」**，文章要提醒别下错 |
+| Weverse | — | 等大陆出口 | |
+
+### 踩过的坑
+
+- **GreatFire 的「首次记录到干扰」日期 ≠ 封锁日期**，且同一网站不同 URL 给的日期不同（pinterest.com 2011-08-18、https://www.pinterest.com 2014-03-08，媒体报道全面封锁是 2017-03）。正文写封锁时间用当时的媒体报道，GreatFire 只用来佐证「最近一次测试仍屏蔽」。Instagram 那篇因此改过一次。
+- **新文章构建完成前，其 URL 返回 200 + 首页内容，canonical 指向首页（软 404）**。回读上线状态要按 `<title>` 判断，不能看状态码。
+- **英文读者链接**：`/guides/getting-started`、`/k2/*`、`/releases` 只有中文，英文文章里少链或注明 in Chinese。
+- 检测站 / 帮助中心多为 JS 渲染或拦脚本（IPQS 403、ping0 需浏览器），WebFetch 的小模型摘要会编造细节，关键数字一律用原始 HTML 或浏览器复核。
