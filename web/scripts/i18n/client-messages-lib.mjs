@@ -115,13 +115,16 @@ export function createAnalyzer(webRoot, referenceLocale = 'zh-CN') {
     return [...set].filter((k) => !k.includes('.') || !set.has(k.split('.')[0])).sort();
   };
 
+  // Next.js special files that render inside a route's provider.
+  const SPECIAL = /^(page|layout|template|error|loading|not-found|default)\.tsx$/;
+
   const entriesIn = (dir) => {
     const out = [];
     const walk = (d) => {
       for (const e of fs.readdirSync(d, { withFileTypes: true })) {
         const p = path.join(d, e.name);
         if (e.isDirectory()) walk(p);
-        else if (/^(page|layout)\.tsx$/.test(e.name)) out.push(p);
+        else if (SPECIAL.test(e.name)) out.push(p);
       }
     };
     walk(dir);
@@ -151,7 +154,16 @@ export function createAnalyzer(webRoot, referenceLocale = 'zh-CN') {
       const extra = normalize([...keys].filter((k) => !coveredBy(k, baseSet)));
       if (extra.length) groups[e.name] = extra;
     }
-    return { base: baseN, groups };
+    // Files directly under [locale]/ (the home page, error.tsx ...) sit under the
+    // root provider, which is BASE only: whatever they need beyond it is a bug.
+    const rootKeys = new Set();
+    for (const e of fs.readdirSync(APP, { withFileTypes: true })) {
+      if (e.isFile() && SPECIAL.test(e.name) && e.name !== 'layout.tsx') {
+        for (const k of clientKeys(path.join(APP, e.name))) rootKeys.add(k);
+      }
+    }
+    const rootExtra = normalize([...rootKeys].filter((k) => !coveredBy(k, baseSet)));
+    return { base: baseN, groups, rootExtra };
   };
 
   const coveredBy = (k, set) => {

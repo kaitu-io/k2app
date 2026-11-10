@@ -51,6 +51,14 @@ describe('client-messages.generated.ts', () => {
   });
 });
 
+describe('files outside any group', () => {
+  it('the home page and [locale]-level error/loading files need nothing beyond BASE', () => {
+    // They render under the root provider (BASE only). A new client component on
+    // the home page that starts using e.g. hero.* would otherwise ship raw keys.
+    expect(createAnalyzer(WEB).analyze().rootExtra).toEqual([]);
+  });
+});
+
 describe('route wiring', () => {
   const layouts = layoutFiles(APP).map((f) => ({ f, src: fs.readFileSync(f, 'utf8') }));
 
