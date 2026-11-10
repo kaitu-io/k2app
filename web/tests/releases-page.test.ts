@@ -42,6 +42,19 @@ async function outcome(run: () => Promise<unknown>): Promise<'rendered' | 'notFo
   }
 }
 
+describe('/releases metadata (notes are Chinese-only)', () => {
+  it('a foreign URL is noindex + canonical zh-CN; a zh URL is indexable', async () => {
+    vi.resetModules();
+    const { generateMetadata } = await import('../src/app/[locale]/releases/page');
+    const en = await generateMetadata({ params: Promise.resolve({ locale: 'en-US' }) });
+    expect(en.alternates?.canonical).toBe('https://www.kaitu.io/zh-CN/releases');
+    expect(en.robots).toEqual({ index: false, follow: true });
+    const tw = await generateMetadata({ params: Promise.resolve({ locale: 'zh-TW' }) });
+    expect(tw.robots).toBeUndefined();
+    expect(Object.keys(tw.alternates?.languages ?? {}).sort()).toEqual(['x-default', 'zh', 'zh-cn', 'zh-hk', 'zh-tw']);
+  });
+});
+
 describe('/releases + /changelog', () => {
   it('serves /releases', async () => {
     vi.resetModules();

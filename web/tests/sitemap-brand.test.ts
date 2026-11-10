@@ -57,6 +57,34 @@ describe('sitemap', () => {
     }
   });
 
+  it('a static page carries the same hreflang map as the page itself (x-default → English)', async () => {
+    const { hreflangAlternates } = await import('../src/lib/hreflang');
+    const { KAITU } = await import('../src/lib/brands');
+    const entries = await sitemap();
+    const e = entries.find((x) => x.url === 'https://www.kaitu.io/ko/pricing')!;
+    expect(e.alternates?.languages).toEqual(hreflangAlternates(KAITU.allowedLocales, '/pricing', KAITU));
+    expect((e.alternates?.languages as Record<string, string>)['x-default']).toBe('https://www.kaitu.io/en-US/pricing');
+  });
+
+  it('/releases (Chinese-only notes) is advertised in the zh locales only', async () => {
+    const urls = (await sitemap()).map((e) => e.url).filter((u) => u.endsWith('/releases'));
+    expect(urls.sort()).toEqual([
+      'https://www.kaitu.io/zh-CN/releases',
+      'https://www.kaitu.io/zh-HK/releases',
+      'https://www.kaitu.io/zh-TW/releases',
+    ]);
+  });
+
+  it('every hreflang target is itself a sitemap URL (no dangling alternates)', async () => {
+    const entries = await sitemap();
+    const urls = new Set(entries.map((e) => e.url));
+    for (const e of entries) {
+      for (const target of Object.values(e.alternates?.languages ?? {})) {
+        expect(urls.has(target as string), `${e.url} → ${target}`).toBe(true);
+      }
+    }
+  });
+
   it.each(['/guides', '/routers', '/releases', '/pricing'])('%s is present', async (route) => {
     const entries = await sitemap();
     expect(entries.some((e) => e.url.endsWith(route))).toBe(true);
@@ -70,7 +98,7 @@ describe('sitemap', () => {
       const entries = await sitemap();
       expect(urlsFor(entries, '/guides/cn-guide')).toEqual(['https://www.kaitu.io/zh-CN/guides/cn-guide']);
       const entry = entries.find((e) => e.url.endsWith('/zh-CN/guides/cn-guide'))!;
-      expect(Object.keys(entry.alternates?.languages ?? {})).toEqual(['zh-CN']);
+      expect(Object.keys(entry.alternates?.languages ?? {}).sort()).toEqual(['x-default', 'zh', 'zh-cn']);
     });
 
     it('a post translated into zh-TW lists zh-CN + zh-TW but not zh-HK', async () => {
@@ -80,7 +108,7 @@ describe('sitemap', () => {
         'https://www.kaitu.io/zh-TW/guides/tw-too',
       ]);
       const entry = entries.find((e) => e.url.endsWith('/zh-TW/guides/tw-too'))!;
-      expect(Object.keys(entry.alternates?.languages ?? {}).sort()).toEqual(['zh-CN', 'zh-TW']);
+      expect(Object.keys(entry.alternates?.languages ?? {}).sort()).toEqual(['x-default', 'zh', 'zh-cn', 'zh-tw']);
     });
 
     it('a category listing appears only in locales with posts of their own', async () => {

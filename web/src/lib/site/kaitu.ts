@@ -97,6 +97,8 @@ export const KAITU_SITE: SiteConfig = {
     '/support',
     '/terms',
   ],
+  // 正文是只有中文的内容（发版说明 web/releases/*.md），外语 URL 不进 sitemap、noindex。
+  chineseOnlyRoutes: ['/releases'],
   // /pricing 的 App 版价表快照（美分），pid 对应 Center plans 表；线上价由页面加载后的 /api/plans 覆盖。
   // 2026-09-24 线上值：1y $49（原 $59）· 2y $94.9（原 $128，热门）· 3y $139（原 $177）· 5y $199（原 $295）。
   appPlans: [

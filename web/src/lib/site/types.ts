@@ -48,6 +48,12 @@ export interface SiteConfig {
   footer: FooterColumn[];
   /** sitemap 静态路由（'' = 首页）。只列真实存在的页面。 */
   staticRoutes: string[];
+  /**
+   * Static routes whose body is Chinese-only content (not messages) — e.g.
+   * /releases renders web/releases/*.md. They are advertised in the zh locales
+   * only; foreign URLs are noindex + canonical zh-CN (lib/hreflang.ts).
+   */
+  chineseOnlyRoutes: string[];
   /** `[locale]/[...slug]` 目录页服务的内容分类（slug → 定义）。 */
   contentCategories: Record<string, ContentCategoryDef>;
   /**

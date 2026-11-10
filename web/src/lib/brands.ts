@@ -25,6 +25,12 @@ export type Brand = BrandIdentity & {
   legalName: string;
   defaultLocale: Locale;
   allowedLocales: readonly Locale[];
+  /**
+   * hreflang x-default: the page for a reader of none of the served languages
+   * (see lib/hreflang.ts). Matches the root redirect for an unrecognised
+   * Accept-Language (middleware.ts).
+   */
+  xDefaultLocale: Locale;
   logoPath: string;
   /** Recipient named by the privacy policy for data-subject requests. */
   privacyEmail: string;
@@ -73,6 +79,7 @@ export const KAITU: Brand = {
   // canonical / sitemap / hreflang 必须指向不跳转的地址，否则搜索引擎拒收。
   baseUrl: 'https://www.kaitu.io',
   defaultLocale: 'zh-CN',
+  xDefaultLocale: 'en-US',
   allowedLocales: ['zh-CN', 'zh-TW', 'zh-HK', 'en-US', 'ko', 'ja', 'ru'],
   logoPath: '/kaitu-icon.png',
   contactEmail: 'support@kaitu.io',

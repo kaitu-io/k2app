@@ -1,5 +1,5 @@
 // Unit tests for generateMetadata(). hreflang links only this site's own
-// locales on its own host; x-default is the default locale. No cross-domain
+// locales on its own host; x-default per lib/hreflang.ts. No cross-domain
 // linking to the other brand's site.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
@@ -37,10 +37,11 @@ describe('generateMetadata', () => {
     const generateMetadata = await loadMetadata();
     const meta = generateMetadata('zh-CN', '/install', {}, KAITU);
     const langs = meta.alternates!.languages as Record<string, string>;
-    expect(Object.keys(langs).sort()).toEqual(['en-us', 'ja', 'ko', 'ru', 'x-default', 'zh-cn', 'zh-hk', 'zh-tw']);
+    expect(Object.keys(langs).sort()).toEqual(['en', 'ja', 'ko', 'ru', 'x-default', 'zh', 'zh-cn', 'zh-hk', 'zh-tw']);
     expect(langs['ko']).toBe('https://www.kaitu.io/ko/install');
     expect(langs['zh-tw']).toBe('https://www.kaitu.io/zh-TW/install');
-    expect(langs['x-default']).toBe('https://www.kaitu.io/zh-CN/install');
+    // x-default = a reader of none of these languages → English (lib/hreflang.ts)
+    expect(langs['x-default']).toBe('https://www.kaitu.io/en-US/install');
     expect(JSON.stringify(meta)).not.toContain('overleap');
   });
 

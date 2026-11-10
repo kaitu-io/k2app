@@ -2,6 +2,7 @@ import { Metadata } from 'next';
 import { routing } from '@/i18n/routing';
 import { siteBrand, type Brand } from '@/lib/brands';
 import { siteConfig, fillBrandTemplate } from '@/lib/site';
+import { hreflangAlternates } from '@/lib/hreflang';
 
 interface MetadataOverrides {
   title?: string;
@@ -70,17 +71,13 @@ export function generateMetadata(
   const ogType = overrides.ogType || 'website';
 
   // hreflang links only this site's own locales on its own host (and only those
-  // with their own version of the page); x-default is the default locale when served. No cross-domain linking to the other brand's site.
+  // with their own version of the page); x-default per lib/hreflang.ts. No cross-domain linking to the other brand's site.
   //
   // Hreflang must use the brand's own baseUrl — NOT NEXT_PUBLIC_BASE_URL —
   // because a preview env override would poison the published SEO graph.
   const loc = localeSeo(locale, brand, overrides.availableLocales);
-  const languages: Record<string, string> = {};
-  loc.served.forEach(l => {
-    languages[l.toLowerCase()] = `${brand.baseUrl}/${l}${pathname}`;
-  });
-  const xDefault = loc.served.includes(brand.defaultLocale) ? brand.defaultLocale : loc.served[0];
-  languages['x-default'] = `${brand.baseUrl}/${xDefault}${pathname}`;
+  // Same map the sitemap emits for this page (lib/hreflang.ts).
+  const languages = hreflangAlternates(loc.served, pathname, brand);
 
   const ogBase = {
     title,

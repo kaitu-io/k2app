@@ -165,7 +165,7 @@ The kaitu.io AWS Amplify app builds the `website` branch — a pure mirror of `m
 
 ## SEO & GEO
 
-- Every public `[locale]` page exports `generateMetadata()` (title, description, canonical, OG) and is in `sitemap.ts` with hreflang alternates. The rest of the SEO checklist: [`docs/web/seo-guidelines.md`](../docs/web/seo-guidelines.md); GEO content rules: [`docs/marketing/geo-content-rules.md`](../docs/marketing/geo-content-rules.md) (applied by the `kaitu-content` skill).
+- Every public `[locale]` page exports `generateMetadata()` (title, description, canonical, OG) and is in `sitemap.ts` with hreflang alternates. **hreflang 只有一个来源 `lib/hreflang.ts` `hreflangAlternates()`**——页面 `<link rel=alternate>` 与 sitemap 条目都调它（两边不一致 = 给搜索引擎矛盾信号）：en-US 广播为 `en`，另加 `zh`→zh-CN，x-default = `Brand.xDefaultLocale`（en-US，与根路径不认识语言时落英文一致），页面没有英文版时退回 zh-CN。正文是纯中文内容的静态路由登记在 `siteConfig().chineseOnlyRoutes`（现为 `/releases`）：只进中文 sitemap，外语 URL noindex + canonical zh-CN。 The rest of the SEO checklist: [`docs/web/seo-guidelines.md`](../docs/web/seo-guidelines.md); GEO content rules: [`docs/marketing/geo-content-rules.md`](../docs/marketing/geo-content-rules.md) (applied by the `kaitu-content` skill).
 - Brand keyword consistency: product is「开途」in Chinese copy (standalone "Kaitu" in zh messages fails `tests/messages-integrity.test.ts`); protocol is "k2", congestion control is "k2cc" (not "k2arc"). Never deviate.
 
 ## Gotchas

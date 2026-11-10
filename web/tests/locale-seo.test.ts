@@ -49,6 +49,7 @@ describe('generateMetadata with availableLocales', () => {
     expect(meta.robots).toEqual({ index: false, follow: true });
     expect(meta.alternates?.languages).toEqual({
       'zh-cn': `${base}/zh-CN${path}`,
+      zh: `${base}/zh-CN${path}`,
       'x-default': `${base}/zh-CN${path}`,
     });
   });
@@ -57,13 +58,15 @@ describe('generateMetadata with availableLocales', () => {
     const meta = generateMetadata('zh-TW', path, { availableLocales: ['zh-CN', 'zh-TW'] }, brand);
     expect(meta.alternates?.canonical).toBe(`${base}/zh-TW${path}`);
     expect(meta.robots).toBeUndefined();
-    expect(Object.keys(meta.alternates?.languages ?? {}).sort()).toEqual(['x-default', 'zh-cn', 'zh-tw']);
+    expect(Object.keys(meta.alternates?.languages ?? {}).sort()).toEqual(['x-default', 'zh', 'zh-cn', 'zh-tw']);
   });
 
   it('UI pages (no availableLocales) are unchanged', () => {
     const meta = generateMetadata('zh-HK', '/pricing', {}, brand);
     expect(meta.alternates?.canonical).toBe(`${base}/zh-HK/pricing`);
     expect(meta.robots).toBeUndefined();
-    expect(Object.keys(meta.alternates?.languages ?? {})).toHaveLength(brand.allowedLocales.length + 1);
+    // every locale + plain zh + x-default
+    expect(Object.keys(meta.alternates?.languages ?? {})).toHaveLength(brand.allowedLocales.length + 2);
   });
+
 });

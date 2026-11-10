@@ -4,6 +4,7 @@ import { getBrand } from '@/lib/brand-server';
 import { isPostVisibleToBrand } from '@/lib/k2-posts';
 import { categoryLocales, categorySlugs } from '@/lib/content-posts';
 import { siteConfig } from '@/lib/site';
+import { hreflangAlternates, staticRouteLocales } from '@/lib/hreflang';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const brand = await getBrand();
@@ -11,19 +12,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const locales = brand.allowedLocales;
 
   // 静态路由来自站点结构（lib/site/kaitu.ts）：只列真实存在的页面。
-  const staticPages = siteConfig().staticRoutes;
+  const { staticRoutes: staticPages, chineseOnlyRoutes } = siteConfig();
 
   const sitemapEntries: MetadataRoute.Sitemap = [];
 
   // Generate entries for static pages
+  // hreflang maps come from lib/hreflang.ts — the same function the page's own
+  // <link rel="alternate"> tags use, so the two can never disagree.
   staticPages.forEach(page => {
-    locales.forEach(locale => {
+    const served = staticRouteLocales(page, brand, chineseOnlyRoutes);
+    const alternates = hreflangAlternates(served, page, brand);
+    served.forEach(locale => {
       const url = `${baseUrl}/${locale}${page}`;
-
-      const alternates: Record<string, string> = {};
-      locales.forEach(altLocale => {
-        alternates[altLocale] = `${baseUrl}/${altLocale}${page}`;
-      });
 
       sitemapEntries.push({
         url,
@@ -71,10 +71,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     );
     const ownLocales = locales.filter(locale => postsForSlug.some(p => p.locale === locale));
 
-    const alternates: Record<string, string> = {};
-    ownLocales.forEach(locale => {
-      alternates[locale] = `${baseUrl}/${locale}/${slug}`;
-    });
+    const alternates = hreflangAlternates(ownLocales, `/${slug}`, brand);
 
     ownLocales.forEach(locale => {
       sitemapEntries.push({
@@ -93,10 +90,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const ownLocales = locales.filter(locale => categoryLocales(category, brand).includes(locale));
     if (ownLocales.length === 0) continue;
 
-    const alternates: Record<string, string> = {};
-    ownLocales.forEach(locale => {
-      alternates[locale] = `${baseUrl}/${locale}/${category}`;
-    });
+    const alternates = hreflangAlternates(ownLocales, `/${category}`, brand);
     ownLocales.forEach(locale => {
       sitemapEntries.push({
         url: `${baseUrl}/${locale}/${category}`,

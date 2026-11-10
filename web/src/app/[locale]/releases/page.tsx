@@ -3,6 +3,8 @@ import type { Metadata } from 'next';
 import { generateMetadata as generateBaseMetadata } from '../metadata';
 import { routing } from '@/i18n/routing';
 import { siteBrand } from '@/lib/brands';
+import { siteConfig } from '@/lib/site';
+import { staticRouteLocales } from '@/lib/hreflang';
 import ReleasesClient from './ReleasesClient';
 
 type Locale = (typeof routing.locales)[number];
@@ -23,9 +25,11 @@ export async function generateMetadata({
   const locale = rawLocale as Locale;
   const t = await getTranslations({ locale, namespace: 'releases' });
 
+  // The notes themselves are Chinese-only: foreign URLs are noindex + canonical zh-CN.
   return generateBaseMetadata(locale, '/releases', {
     title: t('title'),
     description: t('subtitle'),
+    availableLocales: staticRouteLocales('/releases', siteBrand(), siteConfig().chineseOnlyRoutes),
   });
 }
 
