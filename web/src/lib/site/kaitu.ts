@@ -129,6 +129,7 @@ export const KAITU_SITE: SiteConfig = {
         { key: 'kaitu', name: { 'zh-CN': '{wordmark}入门与使用', 'zh-TW': '{wordmark}入門與使用', 'zh-HK': '{wordmark}入門與使用', 'en-US': 'Getting started with {wordmark}', ko: '{wordmark} 시작하기', ja: '{wordmark} の使い方', ru: 'Как начать работу с {wordmark}' } },
         { key: 'study', name: { 'zh-CN': '国际学校、留学与网课', 'zh-TW': '國際學校、留學與網課', 'zh-HK': '國際學校、留學與網課', 'en-US': 'School, study and online courses', ko: '학교·유학·온라인 강의', ja: '学校・留学・オンライン授業', ru: 'Учёба и онлайн-курсы' } },
         { key: 'apple-id', name: { 'zh-CN': '海外 Apple ID', 'zh-TW': '海外 Apple ID', 'zh-HK': '海外 Apple ID', 'en-US': 'Apple ID', ko: 'Apple ID', ja: 'Apple ID', ru: 'Apple ID' } },
+        { key: 'overseas-sites', name: { 'zh-CN': '境外网站与 App', 'zh-TW': '境外網站與 App', 'zh-HK': '境外網站與 App', 'en-US': 'Overseas sites and apps', ko: '해외 사이트와 앱', ja: '海外サイトとアプリ', ru: 'Зарубежные сайты и приложения' } },
         // Sections for foreign-language guides (posts written for foreigners in China).
         { key: 'living-in-china', name: { 'zh-CN': '在华生活上网', 'zh-TW': '在華生活上網', 'zh-HK': '在華生活上網', 'en-US': 'Living in China', ko: '중국 생활과 인터넷', ja: '中国生活とネット', ru: 'Жизнь в Китае' } },
       ],
