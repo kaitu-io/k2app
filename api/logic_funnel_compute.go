@@ -12,14 +12,21 @@ import (
 // 不碰数据库、不读时钟；结果不依赖 map 迭代顺序。
 
 // funnelGroupDims 是 computeFunnel 接受的 groupBy 取值；其它值一律按不分组处理。
-var funnelGroupDims = []string{"source", "utm_campaign", "landing_path", "country", "os", "device", "app_version", "paywall_source", "plan", "channel"}
+var funnelGroupDims = []string{"source", "utm_campaign", "landing_path", "country", "os", "device", "app_version", "paywall_source", "plan", "channel", "content"}
+
+// funnelContentPlatforms 是站外文章的平台白名单（spec 2026-11-10 内容收益统计 §3.2）：
+// 进入记录的 utm_source 在这里时，content 分组取「平台/话题」，否则取进站路径。
+// 新增平台要同时改 docs/marketing/content-registry.md 的链接规范。
+var funnelContentPlatforms = []string{"zhihu", "xiaohongshu", "v2ex", "weibo", "wechat", "x", "reddit", "other"}
 
 const (
-	funnelMaxGroups     = 50
-	funnelGroupDirect   = "direct"
-	funnelGroupUnknown  = "unknown"
-	funnelGroupOther    = "(other)"
-	funnelDailyDateForm = "2006-01-02"
+	funnelMaxGroups = 50
+	// 按 content 分组时每篇文章都要单独成行，小样本也不能并进 "(other)"。
+	funnelMaxGroupsContent = 500
+	funnelGroupDirect      = "direct"
+	funnelGroupUnknown     = "unknown"
+	funnelGroupOther       = "(other)"
+	funnelDailyDateForm    = "2006-01-02"
 )
 
 type FunnelStepResult struct {
@@ -39,12 +46,19 @@ type FunnelDay struct {
 type FunnelGroup struct {
 	Key   string `json:"key"`
 	Steps []int  `json:"steps"`
+	// 金额（美分）：该组走完全程的人在 [进入, 进入+窗口] 内的全部付款。只有以付款结尾的路径非 0。
+	// PaidCents = 网页订单实付扣已知退款；ListCents = Apple / Stripe 订阅按套餐标价（不是实收）。两者不能相加。
+	PaidCents int64 `json:"paidCents"`
+	ListCents int64 `json:"listCents"`
 }
 
 type FunnelResult struct {
-	Steps  []FunnelStepResult `json:"steps"`
-	Daily  []FunnelDay        `json:"daily"`  // 按所选进入记录的日期（UTC），区间内每天都有一项
-	Groups []FunnelGroup      `json:"groups"` // 不分组时为空数组。前 50 组按第 1 步人数降序、key 升序；其余并进末尾的 "(other)"，它不参与排序，人数可以比前面的组多
+	Steps []FunnelStepResult `json:"steps"`
+	Daily []FunnelDay        `json:"daily"` // 按所选进入记录的日期（UTC），区间内每天都有一项
+	// 全部走完全程的人的付款金额合计，口径同 FunnelGroup。
+	PaidCents int64         `json:"paidCents"`
+	ListCents int64         `json:"listCents"`
+	Groups    []FunnelGroup `json:"groups"` // 不分组时为空数组。前 50 组（content 维度 500 组）按第 1 步人数降序、key 升序；其余并进末尾的 "(other)"，它不参与排序，人数可以比前面的组多
 	// Inferred 仅在 ?inferred=1 时出现：本结果并入了推断归因（ip_os_v1），数字不再是纯确定性的。
 	Inferred *FunnelInferredSummary `json:"inferred,omitempty"`
 }
@@ -115,6 +129,11 @@ func funnelGroupKey(groupBy string, entry, last *funnelRecord) string {
 		return funnelOrUnknown(last.Plan)
 	case "channel":
 		return funnelOrUnknown(last.Channel)
+	case "content":
+		if slices.Contains(funnelContentPlatforms, entry.UtmSource) {
+			return entry.UtmSource + "/" + funnelOrUnknown(entry.UtmCampaign)
+		}
+		return funnelOrUnknown(entry.Path)
 	}
 	return funnelGroupUnknown
 }
@@ -225,7 +244,13 @@ func computeFunnel(p funnelPath, recs []funnelRecord, identities map[string]uint
 	gaps := make([][]int64, nSteps) // gaps[i] = 到达第 i 步的人从上一步到这一步的秒数
 	entered := make(map[string]int)
 	completed := make(map[string]int)
-	groups := make(map[string][]int)
+	groups := make(map[string]*FunnelGroup)
+	paidPath := nSteps > 0 && funnelEndsWithPayment(p)
+	maxGroups := funnelMaxGroups
+	if groupBy == "content" {
+		maxGroups = funnelMaxGroupsContent
+	}
+	var totalPaid, totalList int64
 
 	for _, key := range order {
 		mine := byPerson[key]
@@ -244,26 +269,36 @@ func computeFunnel(p funnelPath, recs []funnelRecord, identities map[string]uint
 		entry := mine[reached[0]]
 		day := entry.At.UTC().Format(funnelDailyDateForm)
 		entered[day]++
+		var paid, list int64
 		if len(reached) == nSteps {
 			completed[day]++
+			if paidPath {
+				paid, list = funnelPaymentsInWindow(mine, entry.At, entry.At.Add(p.Window))
+				totalPaid += paid
+				totalList += list
+			}
 		}
 		if groupBy != "" {
 			gk := funnelGroupKey(groupBy, entry, mine[reached[len(reached)-1]])
 			g := groups[gk]
 			if g == nil {
-				g = make([]int, nSteps)
+				g = &FunnelGroup{Key: gk, Steps: make([]int, nSteps)}
 				groups[gk] = g
 			}
 			for i := range reached {
-				g[i]++
+				g.Steps[i]++
 			}
+			g.PaidCents += paid
+			g.ListCents += list
 		}
 	}
 
 	res := FunnelResult{
-		Steps:  make([]FunnelStepResult, nSteps),
-		Daily:  []FunnelDay{},
-		Groups: []FunnelGroup{},
+		Steps:     make([]FunnelStepResult, nSteps),
+		Daily:     []FunnelDay{},
+		Groups:    []FunnelGroup{},
+		PaidCents: totalPaid,
+		ListCents: totalList,
 	}
 	for i, s := range p.Steps {
 		sr := FunnelStepResult{Label: s.Label, Count: counts[i]}
@@ -286,8 +321,8 @@ func computeFunnel(p funnelPath, recs []funnelRecord, identities map[string]uint
 		}
 	}
 
-	for key, steps := range groups {
-		res.Groups = append(res.Groups, FunnelGroup{Key: key, Steps: steps})
+	for _, g := range groups {
+		res.Groups = append(res.Groups, *g)
 	}
 	sort.Slice(res.Groups, func(i, j int) bool {
 		a, b := res.Groups[i], res.Groups[j]
@@ -296,18 +331,20 @@ func computeFunnel(p funnelPath, recs []funnelRecord, identities map[string]uint
 		}
 		return a.Key < b.Key
 	})
-	// 超过 50 组：第 51 名起并进最后一个 "(other)" 组，保证每一步各组相加 = 该步总数。
-	// 真实取值恰好是 "(other)" 的组也并进去（否则会出现两个同名的组）；不超过 50 组时它就是普通的一组。
-	if len(res.Groups) > funnelMaxGroups {
+	// 超过上限（50；content 维度 500）：之后的名次并进最后一个 "(other)" 组，保证每一步各组相加 = 该步总数、
+	// 各组金额相加 = 总额。真实取值恰好是 "(other)" 的组也并进去（否则会出现两个同名的组）；不超过上限时它就是普通的一组。
+	if len(res.Groups) > maxGroups {
 		other := FunnelGroup{Key: funnelGroupOther, Steps: make([]int, nSteps)}
 		fold := func(g FunnelGroup) {
 			for i, n := range g.Steps {
 				other.Steps[i] += n
 			}
+			other.PaidCents += g.PaidCents
+			other.ListCents += g.ListCents
 		}
-		kept := make([]FunnelGroup, 0, funnelMaxGroups+1)
+		kept := make([]FunnelGroup, 0, maxGroups+1)
 		for _, g := range res.Groups {
-			if g.Key == funnelGroupOther || len(kept) == funnelMaxGroups {
+			if g.Key == funnelGroupOther || len(kept) == maxGroups {
 				fold(g)
 				continue
 			}
@@ -316,4 +353,31 @@ func computeFunnel(p funnelPath, recs []funnelRecord, identities map[string]uint
 		res.Groups = append(kept, other)
 	}
 	return res
+}
+
+// funnelEndsWithPayment：路径末步是付款事实（funnelPaidFacts）时才算金额。
+func funnelEndsWithPayment(p funnelPath) bool {
+	last := p.Steps[len(p.Steps)-1].Events
+	for _, e := range last {
+		if e != funnelFactPurchase && e != funnelFactRenewal {
+			return false
+		}
+	}
+	return len(last) > 0
+}
+
+// funnelPaymentsInWindow 合计一个人在 [from, to] 内全部付款事实的金额（mine 已按 At 升序）。
+// 同一时刻的多条付款是不同的付款，各算一次。
+func funnelPaymentsInWindow(mine []*funnelRecord, from, to time.Time) (paid, list int64) {
+	for _, r := range mine {
+		if r.Event != funnelFactPurchase && r.Event != funnelFactRenewal {
+			continue
+		}
+		if r.At.Before(from) || r.At.After(to) {
+			continue
+		}
+		paid += r.PaidCents
+		list += r.ListCents
+	}
+	return paid, list
 }

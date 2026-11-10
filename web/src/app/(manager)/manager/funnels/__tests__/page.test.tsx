@@ -429,14 +429,14 @@ describe('manager funnels page', () => {
     await renderGrouped();
     expect(screen.getByText('直接访问')).toBeTruthy();
     expect(screen.getByText('未知')).toBeTruthy();
-    expect(screen.getByText('其他（第 50 名之后合并）')).toBeTruthy();
+    expect(screen.getByText('其他（超出分组上限后合并）')).toBeTruthy();
     expect(screen.queryByText('direct')).toBeNull();
     expect(screen.queryByText('(other)')).toBeNull();
   });
 
   it('(other) stays last whatever the sort column or direction', async () => {
     await renderGrouped();
-    const OTHER = '其他（第 50 名之后合并）';
+    const OTHER = '其他（超出分组上限后合并）';
     // default: first step, descending — (other) has the largest count and still goes last
     expect(firstColumn()).toEqual(['直接访问', '未知', 'twitter', OTHER]);
     fireEvent.click(screen.getByRole('button', { name: /^步骤1/ }));

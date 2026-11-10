@@ -157,6 +157,19 @@ var funnelPathRegistry = []funnelPath{
 		},
 	},
 	{
+		// 内容收益统计（spec 2026-11-10）：任意网页进站 → 进站之后才创建的账号 → 付款。
+		// 与 guide_conversion 的区别：进入不限 /guides/（站外文章常落在首页、/install），第 2 步只认 signup（只算拉新）。
+		// 按 content 分组：站外平台带来的归「平台/话题」，其余归进站路径；结果带付款金额。
+		Key: "content_conversion", Title: "内容转化（拉新）", Question: "从文章进站的人里，有多少注册了新账号、最终付款、付了多少？按 content 分组看每篇文章。",
+		Lane: funnelLaneWeb, Hop: "读完去 App 里注册的人，只有网页上也登录过才接得上；开「含推断归因」可再接上在网站点过下载的一部分（仅开途）。",
+		Window: 14 * funnelDay,
+		Steps: []funnelStep{
+			{Label: "访问", Events: funnelViewsWeb(), Surface: FunnelSurfaceWeb},
+			{Label: "新注册", Events: []string{funnelFactSignup}},
+			{Label: "付款", Events: funnelPaidFacts},
+		},
+	},
+	{
 		// X 广告着陆页 /go/<码>：分组用 landing_path（= 归因码，A/B = /go/xa1 vs /go/xb1，扫码 = /go/xa1q；Mac 组 xa1m / xb1m，扫码 xa1mq / xb1mq）。
 		// 不要把 /go/ 加进 funnelCodePathPrefixes，否则码被折叠成 *、A/B 分不开。
 		// 首次打开 / 开始试用 / 付款只能靠推断归因接上，只是下限；A/B 胜负看确定性的上半段。

@@ -80,6 +80,9 @@ func TestFunnelPaths_RegistryContent(t *testing.T) {
 			{"读指南", "web", []string{"page_view"}},
 			{"注册 / 登录", "", []string{"signup", "auth_done"}}, {"付款", "", []string{"purchase", "renewal"}},
 		}},
+		{"content_conversion", 14 * day, []step{
+			{"访问", "web", views}, {"新注册", "", []string{"signup"}}, {"付款", "", []string{"purchase", "renewal"}},
+		}},
 		{"ad_landing", 14 * day, []step{
 			{"访问", "web", []string{"page_view"}}, {"点获取 / 看到二维码", "", []string{"install_click", "qr_view"}},
 			{"首次打开", "", []string{"app_first_open"}}, {"开始试用", "", []string{"trial_start"}},
@@ -178,7 +181,7 @@ func TestFunnelPaths_EventNames(t *testing.T) {
 }
 
 func TestFunnelGroupDims(t *testing.T) {
-	assert.Equal(t, []string{"source", "utm_campaign", "landing_path", "country", "os", "device", "app_version", "paywall_source", "plan", "channel"}, funnelGroupDims)
+	assert.Equal(t, []string{"source", "utm_campaign", "landing_path", "country", "os", "device", "app_version", "paywall_source", "plan", "channel", "content"}, funnelGroupDims)
 }
 
 // web_checkout_auth 量的是购买页的内联登录，不是全站登录：标题问句必须说清楚。
@@ -226,13 +229,18 @@ var funnelStepEmitSites = map[string][][]string{
 		{"web/src/app/[locale]/purchase/PurchaseClient.tsx", "webapp/src/components/LoginDialog.tsx", "webapp/src/components/EmailLoginForm.tsx"},
 		nil, // 事实
 	},
+	"content_conversion": {
+		{"web/src/components/FunnelPageView.tsx", "sites/overleap/src/components/FunnelPageViews.tsx"}, // 每个页面挂载即发（任意页面都能进入）
+		nil, // 事实
+		nil, // 事实
+	},
 	"ad_landing": {
 		{"web/src/components/FunnelPageView.tsx"}, // 全站挂载即发（PathPrefix 限 /go/）
 		// 第 2 步按设备二选一：install_click（手机端唯一按钮）/ qr_view（桌面端二维码挂载即发）。
 		{"web/src/app/[locale]/go/[code]/AdLandingClient.tsx"},
 		{"webapp/src/main.tsx"}, // 启动即发（每设备一次）
-		nil, // 事实（trial_start）
-		nil, // 事实
+		nil,                     // 事实（trial_start）
+		nil,                     // 事实
 	},
 	"app_activation": {
 		{"webapp/src/main.tsx"}, // 启动即发（每设备一次）
@@ -305,7 +313,7 @@ func TestFunnelPaths_EveryStepHasUnconditionalEmitSite(t *testing.T) {
 // 路线归属与跨面说明：每条路径都属于一条路线；跨面（中途换了网站 / App）的路径必须写明靠什么接上。
 func TestFunnelPaths_LaneAndHop(t *testing.T) {
 	wantLane := map[string]string{
-		"web_purchase": "web", "web_checkout_auth": "web", "web_install": "web", "web_to_app": "web", "guide_conversion": "web", "ad_landing": "web",
+		"web_purchase": "web", "web_checkout_auth": "web", "web_install": "web", "web_to_app": "web", "guide_conversion": "web", "content_conversion": "web", "ad_landing": "web",
 		"app_activation": "app", "app_trial": "app", "app_purchase": "app", "app_to_web": "app", "post_purchase_activation": "app",
 	}
 	require.Len(t, wantLane, len(funnelPathRegistry))

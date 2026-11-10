@@ -31,6 +31,8 @@ type funnelRecord struct {
 	AnonID                                                                                        string
 	UserID                                                                                        uint64
 	Plan, Source, Channel, Path, RefHost, UtmSource, UtmCampaign, Country, Device, OS, AppVersion string
+	// 金额（美分）只在 purchase / renewal 事实上非 0，两种口径分开、不相加（见 funnelPayment）。
+	PaidCents, ListCents int64
 }
 
 // funnelPayment 是一笔付款（订单或入账行），尚未区分首购 / 续费。
@@ -38,6 +40,10 @@ type funnelPayment struct {
 	UserID        uint64
 	At            time.Time
 	Plan, Channel string
+	// PaidCents 订单实付扣已知退款（网页渠道；apple_iap 订单已被排除）。
+	// ListCents 入账行（Apple IAP / Stripe）按套餐标价——不是实收（Apple 抽成、多币种），Apple 退款仍有效时为 0；
+	// Stripe 退款无表可查，不扣。两者口径不同，见 Order.Channel 的口径警告。
+	PaidCents, ListCents int64
 }
 
 const (
@@ -226,7 +232,10 @@ func loadFunnelFacts(ctx context.Context, brand Brand, hasBrand bool, from, to t
 			if !want[event] {
 				continue
 			}
-			recs = append(recs, funnelRecord{At: p.At, Event: event, UserID: p.UserID, Plan: p.Plan, Channel: p.Channel})
+			recs = append(recs, funnelRecord{
+				At: p.At, Event: event, UserID: p.UserID, Plan: p.Plan, Channel: p.Channel,
+				PaidCents: p.PaidCents, ListCents: p.ListCents,
+			})
 		}
 	}
 
@@ -315,7 +324,7 @@ func loadFunnelIdentities(ctx context.Context, recs []funnelRecord) (map[string]
 func loadPayments(ctx context.Context, brand Brand, hasBrand bool, from, to time.Time) ([]funnelPayment, error) {
 	var orders []Order
 	if err := db.Get().WithContext(ctx).Model(&Order{}).
-		Select("id", "user_id", "paid_at", "channel", "meta").
+		Select("id", "user_id", "paid_at", "channel", "meta", "pay_amount", "is_refunded", "refund_amount").
 		Scopes(funnelPaidOrderScope, funnelUserBrandScope(ctx, brand, hasBrand, "user_id")).
 		Where("paid_at >= ? AND paid_at < ?", from, to).
 		Order("paid_at, id").
@@ -337,17 +346,30 @@ func loadPayments(ctx context.Context, brand Brand, hasBrand bool, from, to time
 		if o.PaidAt == nil {
 			continue
 		}
+		paid := int64(o.PayAmount)
+		if o.IsRefunded != nil && *o.IsRefunded {
+			paid = max(paid-int64(o.RefundAmount), 0)
+		}
 		pays = append(pays, funnelPayment{
-			UserID: o.UserID, At: *o.PaidAt, Plan: funnelOrderPlan(o), Channel: funnelOrderChannel(o.Channel),
+			UserID: o.UserID, At: *o.PaidAt, Plan: funnelOrderPlan(o), Channel: funnelOrderChannel(o.Channel), PaidCents: paid,
 		})
 	}
 	plans, err := funnelCreditPlans(ctx, credits)
 	if err != nil {
 		return nil, err
 	}
+	refunded, err := funnelAppleRefundedTxns(ctx, credits)
+	if err != nil {
+		return nil, err
+	}
 	for i := range credits {
 		c := &credits[i]
-		pays = append(pays, funnelPayment{UserID: c.UserID, At: c.CreatedAt, Plan: plans[c.ID], Channel: c.Provider})
+		pl := plans[c.ID]
+		list := pl.Cents
+		if c.Provider == SubscriptionProviderApple && refunded[c.TransactionID] {
+			list = 0
+		}
+		pays = append(pays, funnelPayment{UserID: c.UserID, At: c.CreatedAt, Plan: pl.PID, Channel: c.Provider, ListCents: list})
 	}
 	sort.SliceStable(pays, func(i, j int) bool { return pays[i].At.Before(pays[j].At) })
 	return pays, nil
@@ -363,12 +385,42 @@ type funnelPlanKey struct {
 	Provider, ProductID, Brand string
 }
 
-// funnelCreditPlans 返回 入账行 ID → 套餐 PID。入账行本身没有套餐，经该用户同 provider 的
+// funnelCreditPlan 是一条入账行反查到的套餐：PID 与标价（美分）。
+type funnelCreditPlan struct {
+	PID   string
+	Cents int64
+}
+
+// funnelAppleRefundedTxns 返回 Apple 退款仍有效（Active）的交易号集合。
+func funnelAppleRefundedTxns(ctx context.Context, credits []SubscriptionCredit) (map[string]bool, error) {
+	var txns []string
+	for i := range credits {
+		if credits[i].Provider == SubscriptionProviderApple {
+			txns = append(txns, credits[i].TransactionID)
+		}
+	}
+	out := make(map[string]bool)
+	for start := 0; start < len(txns); start += funnelLoadBatch {
+		batch := txns[start:min(start+funnelLoadBatch, len(txns))]
+		var hit []string
+		if err := db.Get().WithContext(ctx).Model(&AppleRefund{}).
+			Where("transaction_id IN ? AND active = ?", batch, true).
+			Pluck("transaction_id", &hit).Error; err != nil {
+			return nil, err
+		}
+		for _, h := range hit {
+			out[h] = true
+		}
+	}
+	return out, nil
+}
+
+// funnelCreditPlans 返回 入账行 ID → 套餐（PID + 标价）。入账行本身没有套餐，经该用户同 provider 的
 // Subscription.ProductID 反查：优先精确匹配这条入账行所属的订阅
 // （original_transaction_id == provider_subscription_id），否则退到该用户该 provider 最新的订阅。
 // 查不到（没有订阅行 / 套餐不存在）留空；其它错误上抛。
-func funnelCreditPlans(ctx context.Context, credits []SubscriptionCredit) (map[uint64]string, error) {
-	out := make(map[uint64]string, len(credits))
+func funnelCreditPlans(ctx context.Context, credits []SubscriptionCredit) (map[uint64]funnelCreditPlan, error) {
+	out := make(map[uint64]funnelCreditPlan, len(credits))
 	if len(credits) == 0 {
 		return out, nil
 	}
@@ -406,7 +458,7 @@ func funnelCreditPlans(ctx context.Context, credits []SubscriptionCredit) (map[u
 		}
 	}
 
-	cache := make(map[funnelPlanKey]string)
+	cache := make(map[funnelPlanKey]funnelCreditPlan)
 	for i := range credits {
 		c := &credits[i]
 		productID, ok := products[funnelSubKey{c.UserID, c.Provider, c.OriginalTransactionID}]
@@ -426,7 +478,7 @@ func funnelCreditPlans(ctx context.Context, credits []SubscriptionCredit) (map[u
 			switch {
 			case err == nil:
 				if plan != nil {
-					pid = plan.PID
+					pid = funnelCreditPlan{PID: plan.PID, Cents: int64(plan.Price)}
 				}
 			case errors.Is(err, gorm.ErrRecordNotFound):
 				// 套餐不存在 / 已下架：留空。

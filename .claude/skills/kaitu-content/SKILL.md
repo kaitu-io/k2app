@@ -356,6 +356,7 @@ Never include API keys, tokens, internal URLs, server IPs, employee names (excep
 - Primary keyword（用户搜什么）+ 2-3 secondary + 3-5 条 FAQ 长尾
 - 查现有分类：`web/src/lib/content-posts.ts` CATEGORIES（当前只有 `guides`）
 - 定 slug（小写字母+数字+连字符），最终 URL = `/{locale}/{category}/{slug}`；避开 Reserved Path Segments
+- **slug 发布后不改**：收益统计按进站路径 `/guides/<slug>` 归属文章，改 slug 会让历史断档。万一必须改，在 `docs/marketing/content-registry.md` 的「站内别名」表登记旧路径
 
 ### Step 2: 写 zh-CN markdown
 
@@ -375,6 +376,10 @@ cd web && yarn dev         # 浏览器打开 /zh-CN/{category}/{slug} 真实渲�
 
 - 给用户：URL + 文章要点 + 渲染截图
 - 用户确认后：worktree 分支合并 main，`git push origin main:website` 部署（Amplify 构建 5-10 分钟）
+
+### Step 4b: 站外分发
+
+同一篇内容发到知乎、小红书、V2EX 等平台时，指向官网的链接一律带 `utm_source=<平台>&utm_medium=article&utm_campaign=<话题>`（平台白名单、话题命名、登记格式见 `docs/marketing/content-registry.md`），发布当天在登记表加一行。不带平台标记的站外流量会被算成直接访问。
 
 ### Step 5: 验证 live
 
