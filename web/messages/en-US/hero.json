@@ -430,7 +430,8 @@
       },
       "platforms": {
         "question": "Which devices does 开途 Kaitu support?",
-        "answer": "开途 Kaitu runs on every platform: Windows 10/11, macOS 12+ (universal binary for Intel + Apple Silicon), Linux (Ubuntu/Debian and other major distros), iOS (iPhone/iPad, downloadable directly from the China App Store), Android, plus the 开途 Kaitu Router Edition for the whole household. One account allows up to 5 devices online at once. We also offer the k2s server for self-hosting on any VPS."
+        "answer": "开途 Kaitu runs on every platform: Windows 10/11, macOS 12+ (universal binary for Intel + Apple Silicon), Linux (Ubuntu/Debian and other major distros), iOS (iPhone/iPad, downloadable directly from the China App Store), Android, plus the 开途 Kaitu Router Edition for the whole household. One account allows up to 5 devices online at once. We also offer the k2s server for self-hosting on any VPS.",
+        "answerNoRouter": "开途 Kaitu runs on every platform: Windows 10/11, macOS 12+ (universal binary for Intel + Apple Silicon), Linux (Ubuntu/Debian and other major distros), iOS (iPhone/iPad, downloadable directly from the China App Store), Android. One account allows up to 5 devices online at once. We also offer the k2s server for self-hosting on any VPS."
       },
       "selfHosting": {
         "question": "Can I host my own 开途 Kaitu server?",

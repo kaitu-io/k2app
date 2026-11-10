@@ -430,7 +430,8 @@
       },
       "platforms": {
         "question": "开途 Kaitu はどのデバイスに対応していますか？",
-        "answer": "开途 Kaitu は全プラットフォームに対応しています：Windows 10/11、macOS 12+（Intel + Apple Silicon のユニバーサルバイナリ）、Linux（Ubuntu/Debian および主要ディストリビューション）、iOS（iPhone/iPad、中国の App Store から直接ダウンロード可能）、Android、そして家族で共有できる开途 Kaitu ルーター版。1 つのアカウントで最大 5 台まで同時接続できます。さらに k2s サーバーも提供しており、任意の VPS にセルフデプロイできます。"
+        "answer": "开途 Kaitu は全プラットフォームに対応しています：Windows 10/11、macOS 12+（Intel + Apple Silicon のユニバーサルバイナリ）、Linux（Ubuntu/Debian および主要ディストリビューション）、iOS（iPhone/iPad、中国の App Store から直接ダウンロード可能）、Android、そして家族で共有できる开途 Kaitu ルーター版。1 つのアカウントで最大 5 台まで同時接続できます。さらに k2s サーバーも提供しており、任意の VPS にセルフデプロイできます。",
+        "answerNoRouter": "开途 Kaitu は全プラットフォームに対応しています：Windows 10/11、macOS 12+（Intel + Apple Silicon のユニバーサルバイナリ）、Linux（Ubuntu/Debian および主要ディストリビューション）、iOS（iPhone/iPad、中国の App Store から直接ダウンロード可能）、Android。1 つのアカウントで最大 5 台まで同時接続できます。さらに k2s サーバーも提供しており、任意の VPS にセルフデプロイできます。"
       },
       "selfHosting": {
         "question": "开途 Kaitu のサーバーを自分でデプロイできますか？",

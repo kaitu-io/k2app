@@ -430,7 +430,8 @@
       },
       "platforms": {
         "question": "开途 Kaitu는 어떤 기기를 지원하나요?",
-        "answer": "开途 Kaitu는 전 플랫폼을 지원합니다: Windows 10/11, macOS 12+(Intel + Apple Silicon 유니버설 바이너리), Linux(Ubuntu/Debian 및 주요 배포판), iOS(iPhone/iPad, 중국 App Store에서 바로 다운로드 가능), Android, 그리고 온 가족이 함께 쓰는 开途 Kaitu 라우터 에디션. 계정 하나로 최대 5대의 기기가 동시에 접속할 수 있습니다. 또한 k2s 서버를 제공해 어떤 VPS에든 자체 배포할 수 있습니다."
+        "answer": "开途 Kaitu는 전 플랫폼을 지원합니다: Windows 10/11, macOS 12+(Intel + Apple Silicon 유니버설 바이너리), Linux(Ubuntu/Debian 및 주요 배포판), iOS(iPhone/iPad, 중국 App Store에서 바로 다운로드 가능), Android, 그리고 온 가족이 함께 쓰는 开途 Kaitu 라우터 에디션. 계정 하나로 최대 5대의 기기가 동시에 접속할 수 있습니다. 또한 k2s 서버를 제공해 어떤 VPS에든 자체 배포할 수 있습니다.",
+        "answerNoRouter": "开途 Kaitu는 전 플랫폼을 지원합니다: Windows 10/11, macOS 12+(Intel + Apple Silicon 유니버설 바이너리), Linux(Ubuntu/Debian 및 주요 배포판), iOS(iPhone/iPad, 중국 App Store에서 바로 다운로드 가능), Android. 계정 하나로 최대 5대의 기기가 동시에 접속할 수 있습니다. 또한 k2s 서버를 제공해 어떤 VPS에든 자체 배포할 수 있습니다."
       },
       "selfHosting": {
         "question": "开途 Kaitu 서버를 직접 배포할 수 있나요?",
