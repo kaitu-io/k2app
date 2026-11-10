@@ -17,6 +17,33 @@ export function fleetCountries(rows: FleetRow[]): string[] {
   return [...new Set(rows.map(rowCountry).filter(Boolean))].sort();
 }
 
+export function rowProvider(row: FleetRow): string {
+  return row.instance?.provider ?? "";
+}
+
+// Providers present in the fleet with how many machines each has, most first.
+export function fleetProviders(rows: FleetRow[]): { provider: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const provider = rowProvider(row);
+    if (provider) counts.set(provider, (counts.get(provider) ?? 0) + 1);
+  }
+  return [...counts]
+    .map(([provider, count]) => ({ provider, count }))
+    .sort((a, b) => b.count - a.count || a.provider.localeCompare(b.provider));
+}
+
+// The monthly reset moment behind a "next reset" timestamp. Providers and the
+// node meter both reset at a fixed UTC clock time, so the day is read in UTC;
+// reading it in the browser's zone would show 23 or 24 for the same node.
+export function resetCycle(unixSeconds: number): { day: number; label: string } | null {
+  if (!unixSeconds || unixSeconds <= 0) return null;
+  const d = new Date(unixSeconds * 1000);
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return { day: d.getUTCDate(), label: `每月 ${d.getUTCDate()} 日 ${hh}:${mm} UTC` };
+}
+
 // Joins on IPv4, the one key both sides share. Rows sort by country, then
 // busiest first, so a skewed country reads top to bottom; instances without a
 // node go last.

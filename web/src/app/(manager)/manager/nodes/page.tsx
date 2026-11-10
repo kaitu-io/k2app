@@ -32,7 +32,7 @@ import {
   NodeDistributionSummary,
   NodeDistributionVerdict,
 } from "@/lib/api";
-import { fleetCountries, FleetRow, mergeFleetRows, rowCountry } from "@/lib/node-fleet";
+import { fleetCountries, fleetProviders, FleetRow, mergeFleetRows, resetCycle, rowCountry, rowProvider } from "@/lib/node-fleet";
 import { useManagerBrand } from "@/components/manager/brand";
 import { toast } from "sonner";
 import { RefreshCw, Globe, Loader2, AlertCircle, Plus, Trash2, Copy, ChevronDown, ChevronRight } from "lucide-react";
@@ -144,6 +144,20 @@ function ProviderUsage({ instance }: { instance: CloudInstance }) {
       <div className="text-xs text-muted-foreground">
         {formatTraffic(instance.traffic_used_gb)}{" / "}{formatTraffic(instance.traffic_total_gb)}
       </div>
+    </div>
+  );
+}
+
+// "Resets on the 23rd at 05:36 UTC". Amber when the provider's day and the
+// node meter's day differ: the two counters then disagree for a while each cycle.
+function ResetNote({ label, resetAt, otherResetAt }: { label: string; resetAt?: number; otherResetAt?: number }) {
+  const cycle = resetCycle(resetAt ?? 0);
+  if (!cycle) return null;
+  const other = resetCycle(otherResetAt ?? 0);
+  const differs = other !== null && other.day !== cycle.day;
+  return (
+    <div className={`text-xs ${differs ? "text-amber-600" : "text-muted-foreground"}`}>
+      {label}{" 🔄 "}{cycle.label}
     </div>
   );
 }
@@ -372,6 +386,7 @@ export default function NodesPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [scope, setScope] = useState("all");
   const [account, setAccount] = useState("all");
+  const [provider, setProvider] = useState("all");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [changeIPInstance, setChangeIPInstance] = useState<CloudInstance | null>(null);
   const [deleteInstance, setDeleteInstance] = useState<CloudInstance | null>(null);
@@ -499,13 +514,15 @@ export default function NodesPage() {
       rows.filter(
         (row) =>
           (scope === "all" || rowCountry(row) === scope) &&
+          (provider === "all" || rowProvider(row) === provider) &&
           (account === "all" || row.instance?.account_name === account),
       ),
-    [rows, scope, account],
+    [rows, scope, provider, account],
   );
   const maxDevices = visibleRows.reduce((max, row) => Math.max(max, row.node?.activeDevices ?? 0), 0);
   const summaries = distribution?.summaries ?? [];
   const countries = fleetCountries(rows);
+  const providers = fleetProviders(rows);
   const scopeCards = summaries.filter((s) => s.scope === "all" || countries.includes(s.scope));
 
   return (
@@ -557,6 +574,22 @@ export default function NodesPage() {
             />
           ))}
         </div>
+
+        {providers.length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-2">
+            {[{ provider: "all", count: rows.length }, ...providers].map((item) => (
+              <button
+                key={item.provider}
+                type="button"
+                onClick={() => setProvider(item.provider)}
+                className={`rounded-md border px-3 py-1.5 text-sm ${provider === item.provider ? "border-primary" : ""}`}
+              >
+                {item.provider === "all" ? "全部厂商" : providerNames[item.provider] || item.provider}
+                <span className="ml-2 text-xs text-muted-foreground">{item.count}</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         {accountUsages.length > 0 && (
           <div className="mb-4 flex flex-wrap gap-3">
@@ -676,7 +709,15 @@ export default function NodesPage() {
                             {instance ? (
                           <div className="space-y-1">
                             <ProviderUsage instance={instance} />
+                            {hasProviderTraffic(instance) && (
+                              <ResetNote label="厂商" resetAt={instance.traffic_reset_at} otherResetAt={instance.meter?.reset_at} />
+                            )}
                             <MeterUsage instance={instance} />
+                            <ResetNote
+                              label="自测"
+                              resetAt={instance.meter?.reset_at}
+                              otherResetAt={hasProviderTraffic(instance) ? instance.traffic_reset_at : undefined}
+                            />
                             {/* Time progress bar - fills from left */}
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-muted-foreground w-6">时间</span>
