@@ -1,5 +1,5 @@
-import { NextIntlClientProvider } from 'next-intl';
-import { getMessages, setRequestLocale } from 'next-intl/server';
+import { setRequestLocale } from 'next-intl/server';
+import ClientMessages from '@/i18n/ClientMessages';
 import { notFound } from 'next/navigation';
 import { routing } from '@/i18n/routing';
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -73,9 +73,6 @@ export default async function LocaleLayout({
   // Enable static rendering
   setRequestLocale(locale as (typeof routing.locales)[number]);
 
-  // Providing all messages to the client
-  // side is the easiest way to get started
-  const messages = await getMessages();
   const brand = await getBrand(locale);
 
   return (
@@ -119,7 +116,7 @@ export default async function LocaleLayout({
             </Script>
           </>
         )}
-        <NextIntlClientProvider messages={messages}>
+        <ClientMessages locale={locale}>
           <LocaleProvider locale={locale}>
             <Suspense fallback={null}>
               <EmbedThemeProvider>
@@ -137,7 +134,7 @@ export default async function LocaleLayout({
               </EmbedThemeProvider>
             </Suspense>
           </LocaleProvider>
-        </NextIntlClientProvider>
+        </ClientMessages>
       </body>
     </html>
   );

@@ -95,6 +95,11 @@ Locales and the legacy en-GB/en-AU 301 live in the Brand section above; `src/i18
 
 **File-level fallback**: `request.ts` loads `messages/zh-CN/{ns}.json` when `{locale}/{ns}.json` is missing.
 
+**客户端只拿自己用得到的翻译（2026-11-10，Amplify 产物上限 220 MiB）**：根布局**不再**把全量 messages 交给 `NextIntlClientProvider`——每个预渲染页的 `.html` 和 `.rsc` 都会内嵌 provider 拿到的全部内容（全量 ≈ 每页 300–450 KB，压缩后 55 KB），7 语言乘几百页撑爆了 Amplify 的 220 MiB 上限（job 145/146 失败）。现在是 `src/i18n/ClientMessages.tsx`：根布局给 BASE（外壳 + Header/Footer），需要更多的路由目录在自己的 `layout.tsx` 里 `<ClientMessages locale group="<目录名>">`（**嵌套 provider 是替换不是合并**，所以 group = BASE ∪ 本组额外）。服务端组件用 `getTranslations`，只发文字，不需要 messages。清单 `src/i18n/client-messages.generated.ts` 由 `node scripts/i18n/gen-client-messages.mjs` 沿 import 图生成（从 `"use client"` 边界往下，收集字符串字面量里真实存在的 `<文件>.<顶层键>`）。
+- **改了客户端组件用到的键 / 新增带客户端组件的路由目录**：重跑上面那条命令。`tests/client-messages.test.ts` 会在清单过期、某个 group 没有对应 layout、或某语言缺路径时变红。
+- **盲区**：完全在运行时拼出、源码里没有任何字面量的键，静态分析看不到——这种键必须在源码里至少出现一次带前缀的字面量，或者在真实浏览器里走一遍。`useTranslations` 在单测里被桩成恒等，所以单测抓不到；预渲染日志里的 `MISSING_MESSAGE` 要保持为 0。
+- 页面能做成服务端组件就别 `"use client"`：纯文章页（隐私、条款、guides、定价）的客户端 messages 是 0 增量。
+
 ## Content Publishing (Velite)
 
 Velite compiles `content/{locale}/**/*.md` at build time (`velite.config.ts`: `order` / `section` sidebar fields, `brand: kaitu|overleap|both`). Consumers: `src/app/[locale]/k2/[[...path]]/page.tsx` + `src/lib/k2-posts.ts` (the `k2/` docs), `src/app/[locale]/[...slug]/page.tsx` + `src/lib/content-posts.ts` (everything else, e.g. `guides/`), and `src/app/sitemap.ts`. Velite is the ONLY content pipeline — Payload CMS and its PostgreSQL database were removed 2026-09 (articles migrated to `content/{locale}/guides/*.md`).

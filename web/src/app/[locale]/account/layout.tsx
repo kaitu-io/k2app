@@ -1,212 +1,23 @@
-"use client";
+import type { ReactNode } from 'react';
+import ClientMessages from '@/i18n/ClientMessages';
+import AccountShell from './AccountShell';
 
-export const dynamic = "force-dynamic";
+// force-dynamic stays on the layout (route segment config is read from here).
+export const dynamic = 'force-dynamic';
 
-import { useEffect, useState } from "react";
-import { useRouter } from "@/i18n/routing";
-import { useAuth } from "@/contexts/AuthContext";
-import { CircleDashed, Users, CreditCard, Wallet, Lock, LogOut, Receipt, Router } from "lucide-react";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
-import { useTranslations } from "next-intl";
-import { Link } from "@/i18n/routing";
-import { usePathname } from "@/i18n/routing";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api";
-
-export default function AccountLayout({
+// Server wrapper: the client shell (sidebar, auth guard) and every account page
+// read messages from the "account" group (src/i18n/client-messages.generated.ts).
+export default async function AccountLayout({
   children,
+  params,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
+  params: Promise<{ locale: string }>;
 }) {
-  const t = useTranslations();
-  const router = useRouter();
-  const pathname = usePathname();
-  const { isAuthenticated, isAuthLoading, logout } = useAuth();
-  const [hasRouter, setHasRouter] = useState(false);
-
-  useEffect(() => {
-    if (isAuthLoading) {
-      return; // Wait for the auth state to be loaded
-    }
-    if (!isAuthenticated) {
-      // Return URL goes in `next` — the only param the login page reads (same as lib/auth.ts).
-      const here = pathname + (typeof window !== "undefined" ? window.location.search : "");
-      router.push(`/login?next=${encodeURIComponent(here)}`);
-    }
-  }, [isAuthenticated, isAuthLoading, router, pathname]);
-
-  // 「我的路由器」入口只对有路由器版的用户出现。
-  // 失败当作没有——这只是一个侧栏入口的显隐开关，不是页面本身的鉴权。
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    let cancelled = false;
-    api
-      .getUserRouter({ autoRedirectToAuth: false })
-      .then((r) => {
-        if (!cancelled) setHasRouter(!!r.hasRouter);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated]);
-
-  if (isAuthLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <CircleDashed className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return null; // Will redirect
-  }
-
-  // Navigation items for account section.
-  const navItems = [
-    // 首项是订阅概览而非直接跳购买页 —— 点「我的账号」应该先看到自己的
-    // 订阅状态，续费是紧随其后的动作，不是入口本身。
-    {
-      href: "/account",
-      label: t("account.subscription.navTitle"),
-      icon: Receipt,
-    },
-    {
-      href: "/purchase",
-      label: t("admin.account.renew.title"),
-      icon: CreditCard,
-    },
-    ...(hasRouter
-      ? [
-          {
-            href: "/account/router",
-            label: t("routers.edition.account.navTitle"),
-            icon: Router,
-          },
-        ]
-      : []),
-    {
-      href: "/account/delegate",
-      label: t("admin.account.delegate.title"),
-      icon: Users,
-    },
-    {
-      href: "/account/wallet",
-      label: t("admin.account.wallet.title"),
-      icon: Wallet,
-    },
-    {
-      href: "/account/security",
-      label: t("admin.account.security.title"),
-      icon: Lock,
-    },
-    // Reserved for future features
-    // {
-    //   href: "/account/devices",
-    //   label: t("admin.account.devices.title"),
-    //   icon: Smartphone,
-    // },
-    // {
-    //   href: "/account/payment-history",
-    //   label: t("admin.account.paymentHistory.title"),
-    //   icon: CreditCard,
-    // },
-  ];
-
+  const { locale } = await params;
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <Header />
-      <div className="container mx-auto py-6 px-4 flex-1">
-      {/* Page Title */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold">{t("admin.account.title")}</h1>
-        <p className="text-muted-foreground mt-1">{t("admin.account.subtitle")}</p>
-      </div>
-
-      {/* Mobile Navigation */}
-      <div className="md:hidden mb-4">
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          {navItems.map((item) => {
-            const isActive =
-              item.href === "/account"
-                ? /\/account\/?$/.test(pathname)
-                : pathname.includes(item.href);
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-lg text-sm whitespace-nowrap transition-colors",
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted hover:bg-muted/80"
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            );
-          })}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm whitespace-nowrap bg-muted hover:bg-muted/80"
-            onClick={() => logout()}
-          >
-            <LogOut className="h-4 w-4" />
-            {t("nav.nav.logout")}
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex flex-col md:flex-row gap-6">
-        {/* Desktop Sidebar Navigation */}
-        <aside className="hidden md:block md:w-[220px] flex-shrink-0">
-          <nav className="space-y-2">
-            {navItems.map((item) => {
-              const isActive =
-                item.href === "/account"
-                  ? /\/account\/?$/.test(pathname)
-                  : pathname.includes(item.href);
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "flex items-center gap-3 px-4 py-2 rounded-lg text-sm transition-colors",
-                    isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-muted"
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-          <div className="mt-4 pt-4 border-t">
-            <Button
-              variant="ghost"
-              className="w-full justify-start gap-3 text-sm"
-              onClick={() => logout()}
-            >
-              <LogOut className="h-4 w-4" />
-              {t("nav.nav.logout")}
-            </Button>
-          </div>
-        </aside>
-
-        {/* Main Content */}
-        <main className="flex-1 min-w-0">{children}</main>
-      </div>
-      </div>
-      <Footer />
-    </div>
+    <ClientMessages locale={locale} group="account">
+      <AccountShell>{children}</AccountShell>
+    </ClientMessages>
   );
 }

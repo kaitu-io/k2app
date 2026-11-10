@@ -4,7 +4,7 @@
  */
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import AccountLayout from '../layout';
+import AccountLayout from '../AccountShell';
 
 const mockGetUserRouter = vi.fn();
 

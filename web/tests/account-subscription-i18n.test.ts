@@ -24,7 +24,7 @@ const NAMESPACED_SOURCES = [
 ];
 
 // useTranslations() 无命名空间 + t("account.subscription.X")
-const BARE_SOURCES = ['src/app/[locale]/account/layout.tsx'];
+const BARE_SOURCES = ['src/app/[locale]/account/AccountShell.tsx'];
 
 function collectKeys(): string[] {
   const keys = new Set<string>();

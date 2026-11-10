@@ -16,6 +16,7 @@ import Breadcrumb, { type BreadcrumbItem } from '@/components/Breadcrumb';
 import { getK2Posts, findK2Post } from '@/lib/k2-posts';
 import { getBrand } from '@/lib/brand-server';
 import { routing } from '@/i18n/routing';
+import ClientMessages from '@/i18n/ClientMessages';
 
 interface LayoutParams {
   locale: string;
@@ -74,7 +75,10 @@ export default async function K2Layout({
     }
   }
 
+  // The sidebar and Header/Footer are client components: they sit under the
+  // "k2" group provider (src/i18n/client-messages.generated.ts).
   return (
+    <ClientMessages locale={rawLocale} group="k2">
     <div className="min-h-screen bg-background">
       <Header />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-12">
@@ -92,5 +96,6 @@ export default async function K2Layout({
       </div>
       <Footer />
     </div>
+    </ClientMessages>
   );
 }
