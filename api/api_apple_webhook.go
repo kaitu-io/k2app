@@ -18,6 +18,7 @@ import (
 	"github.com/wordgate/qtoolkit/appstore"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
+	"gorm.io/gorm"
 )
 
 // api_apple_webhook 处理 App Store Server Notifications V2。
@@ -93,6 +94,22 @@ func api_apple_webhook(c *gin.Context) {
 	// 通知与交易的 bundleId 都必须是这条订阅所属品牌的 bundle；对不上一律 400（不重试）。
 	var owner User
 	if err := db.Get().Select("id", "brand", "apple_consumption_consent").First(&owner, sub.UserID).Error; err != nil {
+		// 主人已自行注销（用户行软删）是终态，不是故障：Apple 仍会就这条链发 EXPIRED / 关续费等通知，
+		// 回 500 只会让它按重试策略连发数天。确认收到、不做任何处理。真正的查询失败仍回 500 让 Apple 重试。
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			var gone User
+			if e := db.Get().Unscoped().Select("id", "deleted_at").First(&gone, sub.UserID).Error; e == nil && gone.DeletedAt.Valid {
+				// 已注销账号仍被 Apple 扣费是值得人看一眼的事（无人可入账）；其余通知只是噪音。
+				logf := log.Infof
+				if nType == "DID_RENEW" {
+					logf = log.Warnf
+				}
+				logf(c, "[AppleWebhook] owner user %d of otx=%s deleted their account at %s; acked %s without action",
+					sub.UserID, otx, gone.DeletedAt.Time.Format(time.RFC3339), nType)
+				c.Status(200)
+				return
+			}
+		}
 		log.Errorf(c, "[AppleWebhook] load owner of otx=%s: %v", otx, err)
 		c.AbortWithStatus(500)
 		return
