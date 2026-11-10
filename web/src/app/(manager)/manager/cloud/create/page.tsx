@@ -27,6 +27,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 // Provider display names
 const providerNames: Record<string, string> = {
   bandwagon: "搬瓦工",
+  vultr: "Vultr",
   aws_lightsail: "AWS Lightsail",
   alibaba_swas: "阿里云轻量(国际)",
   aliyun_swas: "阿里云轻量(国内)",
@@ -64,9 +65,9 @@ export default function CreateCloudInstancePage() {
     const fetchAccounts = async () => {
       try {
         const response = await api.listCloudAccounts();
-        // Filter out bandwagon accounts (can't create instances)
+        // Filter out bandwagon / vultr accounts (sync only, can't create instances)
         const createableAccounts = (response.items || []).filter(
-          acc => acc.provider !== "bandwagon"
+          acc => acc.provider !== "bandwagon" && acc.provider !== "vultr"
         );
         setAccounts(createableAccounts);
       } catch (error) {

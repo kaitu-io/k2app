@@ -56,6 +56,7 @@ const LIVE_REFRESH_MS = 30_000;
 // Provider display names
 const providerNames: Record<string, string> = {
   bandwagon: "搬瓦工",
+  vultr: "Vultr",
   aws_lightsail: "AWS Lightsail",
   alibaba_swas: "阿里云轻量(国际)",
   aliyun_swas: "阿里云轻量(国内)",
