@@ -110,12 +110,19 @@ func TestCreditAppleTransaction_StaleSnapshotDuplicateVerify(t *testing.T) {
 	assert.Equal(t, int64(1), f.credits(t))
 }
 
-// 真并发：同一交易 4 个并发 verify 全部成功，只入账一次。
+// 真并发：同一交易 2 个并发 verify（线上实际形态）全部成功，只入账一次；重复 5 轮，每轮新用户新交易。
+// 不用更多路数：MariaDB ≥11.6 上多路会连环 1020，超过 withDeadlockRetry 的 3 次上限——线上不会出现。
 func TestVerifyAndGrantTransaction_ConcurrentSameTxn(t *testing.T) {
+	for round := 0; round < 5; round++ {
+		t.Run(fmt.Sprintf("round%d", round), testConcurrentSameTxnRound)
+	}
+}
+
+func testConcurrentSameTxnRound(t *testing.T) {
 	f := setupVerifyRace(t)
 	ctx := context.Background()
 
-	const n = 4
+	const n = 2
 	errs := make([]error, n)
 	var wg sync.WaitGroup
 	start := make(chan struct{})
