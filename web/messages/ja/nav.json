@@ -1,0 +1,82 @@
+{
+  "nav": {
+    "openSource": "セキュリティ監査",
+    "welcome": "ようこそ",
+    "adminPanel": "管理画面",
+    "login": "ログイン",
+    "logout": "ログアウト",
+    "purchase": "今すぐ始める",
+    "home": "ホーム",
+    "backToHome": "ホームに戻る",
+    "introGuide": "保護者向けガイド",
+    "guides": "ユーザーガイド",
+    "k2Protocol": "k2 プロトコル",
+    "routers": "ルーター",
+    "download": "ダウンロード",
+    "quickstart": "クイックセルフデプロイ",
+    "productFeatures": "製品の機能",
+    "whyBrand": "{brand} を選ぶ理由",
+    "freeDownload": "無料ダウンロード",
+    "pricing": "料金",
+    "help": "ヘルプ",
+    "useCases": "利用シーン",
+    "breakBarriers": "ネット規制を越える",
+    "familyProtection": "家族の全デバイスを保護",
+    "mobilePlusDesktop": "モバイル + デスクトップ",
+    "supportedPlatforms": "対応プラットフォーム",
+    "whySpeed": "速度と安定性",
+    "whyTech": "技術力",
+    "whyTestimonials": "ユーザーの声",
+    "quickStart": "クイックスタート",
+    "faq": "よくある質問",
+    "contactUs": "お問い合わせ",
+    "features": "機能",
+    "docs": "ドキュメント",
+    "routerEdition": "ルーター版",
+    "breadcrumb": "現在の位置",
+    "navigation": "サイトナビゲーション",
+    "menu": "メニュー"
+  },
+  "footer": {
+    "brandName": "开途 Kaitu",
+    "brandDescription": "安全で便利なネットワークプロキシソリューション",
+    "product": {
+      "title": "製品",
+      "clientDownload": "クライアントのダウンロード",
+      "smartRouter": "スマートルーター製品",
+      "retailerProgram": "販売代理店プログラム",
+      "nodeStatus": "ノードの状態"
+    },
+    "developer": {
+      "title": "開発者",
+      "apiDocs": "API ドキュメント",
+      "openSource": "セキュリティ監査",
+      "techBlog": "技術ブログ",
+      "k2Docs": "k2 プロトコルドキュメント",
+      "selfDeploy": "クイックセルフデプロイ",
+      "changelog": "更新履歴"
+    },
+    "support": {
+      "title": "サポート",
+      "userGuide": "使い方ガイド",
+      "faq": "よくある質問",
+      "contact": "お問い合わせ",
+      "homeschoolGuide": "Homeschool インストールガイド"
+    },
+    "legal": {
+      "title": "法的事項"
+    },
+    "optOut": "アクセス統計に参加しない",
+    "copyright": "All rights reserved.",
+    "copyrightSymbol": "©",
+    "period": "。",
+    "company": {
+      "title": "会社情報"
+    }
+  },
+  "languageDetection": {
+    "message": "お使いのブラウザの言語は",
+    "question": "です。切り替えますか？",
+    "switchTo": "切り替え先："
+  }
+}

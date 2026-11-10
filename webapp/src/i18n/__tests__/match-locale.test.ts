@@ -51,7 +51,9 @@ describe('matchLocale', () => {
     // Swahili first, French second: French is honoured, the default is not used.
     expect(match(['sw-KE', 'fr-FR', 'en-US'])).toBe('fr');
     // The same list on a build without French lands on English by preference.
-    expect(match(['sw-KE', 'fr-FR', 'en-GB'], KAITU, 'zh-CN')).toBe('en-GB');
+    expect(match(['sw-KE', 'fr-FR', 'en-GB'], KAITU, 'zh-CN')).toBe('en-US');
+    expect(match(['sw-KE', 'ko-KR'], KAITU, 'zh-CN')).toBe('ko');
+    expect(match(['ru-KZ'], KAITU, 'zh-CN')).toBe('ru');
   });
 
   it('uses the fallback only when nothing in the list matches', () => {

@@ -1,0 +1,56 @@
+{
+  "account": {
+    "delegate": {
+      "pageTitle": "Payer settings",
+      "emptyTitle": "Set up a payer",
+      "emptyDescription": "Once set, you can invite this person to pay for you in one tap at checkout.",
+      "emptyHint": "Saving doesn't notify them right away. The first email they receive is the payment invitation when you actually request a payment.",
+      "emailLabel": "Payer's email",
+      "emailPlaceholder": "friend@example.com",
+      "saveButton": "Save",
+      "currentTitle": "Current payer",
+      "setAtLabel": "Set on {date}",
+      "modifyButton": "Change",
+      "cancelButton": "Cancel",
+      "removeButton": "Remove payer",
+      "removeConfirm": "Remove this payer? Your payments will no longer have a default payer.",
+      "currentHint": "At checkout you can choose \"Ask {email} to pay\" and we'll email them.",
+      "savedToast": "Saved"
+    }
+  },
+  "stripe": {
+    "navSubscription": "Subscription",
+    "activating": "Activating your subscription…",
+    "activationDelayed": "Payment received. Your subscription will be active within a few minutes — refresh this page to check.",
+    "subscriptionTitle": "Your subscription",
+    "renewsOn": "Renews on {date}",
+    "expiresOn": "Expires on {date}",
+    "manage": "Manage subscription",
+    "opening": "Opening…",
+    "noSubscription": "No active subscription yet.",
+    "choosePlan": "See plans",
+    "downloadTitle": "You're all set — get the apps",
+    "downloadCta": "Download the apps",
+    "genericError": "Something went wrong. Please try again."
+  },
+  "subscription": {
+    "accountTitle": "Account",
+    "activeUntil": "Active until {date}",
+    "choosePlan": "Choose a plan",
+    "daysLeft": "{days} days left",
+    "devicesLabel": "Linked devices",
+    "emailLabel": "Login email",
+    "expiredOn": "Expired on {date}",
+    "historyDays": "+{days} days",
+    "historyEmpty": "No purchases yet",
+    "historyRecharge": "Purchase",
+    "historyReward": "Bonus",
+    "historyTitle": "Purchase history",
+    "loadFailed": "Failed to load. Please try again later.",
+    "navTitle": "My subscription",
+    "never": "Not subscribed yet",
+    "renew": "Renew",
+    "tierLabel": "Current tier",
+    "title": "Subscription status"
+  }
+}

@@ -1,0 +1,130 @@
+{
+  "install": {
+    "title": "开途 Kaitu 앱 다운로드",
+    "backToHome": "홈으로 돌아가기",
+    "deviceDetected": "감지된 기기: {device}",
+    "detectingDevice": "기기를 확인하는 중...",
+    "analyzingDevice": "기기 구성을 분석하는 중...",
+    "readyToDownload": "다운로드 준비 완료",
+    "autoDownloadCountdown": "{seconds}초 후 다운로드가 자동으로 시작됩니다",
+    "downloadNow": "지금 다운로드",
+    "cancelAutoDownload": "자동 다운로드 취소",
+    "downloading": "다운로드 중...",
+    "checkDownloadLocation": "다운로드 폴더에서 설치 파일을 확인하세요",
+    "downloadSuccess": "다운로드 완료!",
+    "runInstaller": "다운로드한 설치 프로그램을 실행해 설치를 완료하세요",
+    "redownload": "다시 다운로드",
+    "downloadFailed": "다운로드 실패",
+    "downloadFailedMessage": "자동 다운로드에 실패했습니다. 수동으로 다운로드해 보세요.",
+    "manualDownload": "수동 다운로드",
+    "retryAutoDownload": "자동 다운로드 다시 시도",
+    "allDownloadOptions": "모든 다운로드 옵션",
+    "windows": "Windows",
+    "windowsVersion": "Windows 10/11",
+    "downloadExe": "Windows용",
+    "macos": "Mac",
+    "macosVersion": "macOS 12+",
+    "downloadDmg": "Mac용",
+    "ios": "iPhone / iPad",
+    "iosDevices": "iPhone 및 iPad",
+    "android": "Android",
+    "androidVersion": "Android 7.0+",
+    "needHelp": "도움이 필요하신가요?",
+    "helpBrowserBlock": "• 브라우저가 다운로드를 차단하면 이 사이트에서의 다운로드를 허용하세요",
+    "helpWindowsInstall": "• Windows에서는 Windows Defender에서 앱을 허용해야 할 수 있습니다",
+    "helpMacosInstall": "• macOS에서는 보안 및 개인정보 보호 설정에서 앱을 허용해야 할 수 있습니다",
+    "helpSecurityWarning": "• 보안 경고가 표시되더라도 저희 앱은 안전합니다 - 아직 코드 서명을 하지 않았기 때문에 나타나는 경고입니다",
+    "betaVersion": "베타 v{version}",
+    "stableVersion": "정식 버전 v{version}",
+    "stableChannel": "정식 버전",
+    "lookingForStable": "정식 버전이 필요하신가요?",
+    "viewAllReleases": "모든 버전 보기 →",
+    "backupDownload": "예비 다운로드",
+    "latestVersion": "최신 버전 v{version}",
+    "recommended": "추천",
+    "downloadCancelled": "자동 다운로드가 취소되었습니다",
+    "clickToDownload": "눌러서 다운로드",
+    "metaDescription": "开途 Kaitu k2cc 앱 다운로드 — Windows, macOS, iOS, Android 지원. k2cc 적응형 속도 제어로 패킷 손실이 많아도 최대 속도를 내는 스텔스 터널.",
+    "linux": "Linux",
+    "linuxVersion": "Ubuntu / Fedora / Arch",
+    "downloadLinux": "Linux 데스크톱용",
+    "cliInstall": "또는 명령줄로 설치",
+    "cliCommand": "curl -fsSL https://kaitu.io/i/k2 | sudo bash",
+    "copied": "복사됨",
+    "beta": "베타",
+    "alsoAvailableStable": "정식 버전 v{version}도 다운로드할 수 있습니다",
+    "linuxCliRecommended": "의존성을 자동으로 확인하는 명령줄 설치를 권장합니다",
+    "otherPlatforms": "기타 플랫폼",
+    "terminalInstall": "또는 터미널에서 한 줄로 설치",
+    "downloadButton": "설치 파일 다운로드",
+    "mobileDownloads": "모바일",
+    "heroTitle": {
+      "windows": "Windows용으로 준비되었습니다",
+      "macos": "Mac용으로 준비되었습니다",
+      "linux": "Linux용으로 준비되었습니다",
+      "ios": "开途 Kaitu iOS 버전",
+      "android": "开途 Kaitu Android 버전",
+      "unknown": "플랫폼을 선택하세요"
+    },
+    "installSteps": {
+      "title": "설치 단계",
+      "windows": {
+        "1": "다운로드한 .exe 설치 파일을 엽니다",
+        "2": "「Windows의 PC 보호」 안내가 나타나면 「추가 정보」 → 「실행」을 누릅니다",
+        "3": "안내에 따라 설치를 마칩니다. 처음 실행할 때 관리자 권한이 필요합니다"
+      },
+      "macos": {
+        "1": "다운로드한 .pkg 설치 파일을 엽니다",
+        "2": "안내에 따라 설치를 마칩니다",
+        "3": "처음 열 때 「시스템 설정 → 개인정보 보호 및 보안」에서 시스템 확장 프로그램을 허용합니다"
+      },
+      "linux": {
+        "1": "원클릭 스크립트 설치를 권장합니다: curl -fsSL https://kaitu.io/i/k2 | sudo bash",
+        "2": "스크립트가 k2 바이너리를 자동으로 내려받고 systemd 서비스(kaitu.service)를 등록합니다",
+        "3": "설치가 끝나면 브라우저에서 http://127.0.0.1:1777 을 열어 로그인해 사용합니다"
+      },
+      "android": {
+        "1": "APK 설치 파일을 다운로드하고, 브라우저가 묻으면 「유지」를 선택합니다",
+        "2": "설치 전에 비행기 모드를 켭니다(휴대폰 보안 센터의 클라우드 검사로 인한 차단 방지)",
+        "3": "APK 열기 → 「출처를 알 수 없는 앱 설치」 허용 → 설치",
+        "4": "설치가 끝나면 비행기 모드를 끕니다",
+        "5": "开途 Kaitu를 열고 VPN 권한을 허용합니다"
+      }
+    },
+    "faq": {
+      "browserBlock": {
+        "question": "브라우저가 다운로드를 차단하면 어떻게 하나요?",
+        "answer": "일부 브라우저는 .exe 또는 .pkg 파일 다운로드를 차단합니다. 브라우저 다운로드 표시줄에서 「유지」 또는 「그래도 다운로드」를 선택하세요. Chrome을 사용한다면 다운로드 페이지(chrome://downloads)에서 차단된 파일을 찾을 수 있습니다."
+      },
+      "edgeBlock": {
+        "question": "Edge 브라우저가 다운로드를 차단했나요?",
+        "answer": "Edge에서는 「일반적으로 다운로드되지 않는 파일」이라는 안내가 나옵니다. 파일 오른쪽의 ··· 메뉴를 눌러 「유지」를 선택하면 됩니다."
+      },
+      "chromeBlock": {
+        "question": "Chrome 브라우저가 다운로드를 차단했나요?",
+        "answer": "Chrome에서는 파일이 「일반적으로 다운로드되는 파일이 아님」이라는 안내가 나옵니다. 하단 다운로드 표시줄에서 「유지」를 누르면 됩니다."
+      },
+      "windowsSmartScreen": {
+        "question": "Windows에서 「PC 보호」 안내가 뜨면 어떻게 하나요?",
+        "answer": "Windows SmartScreen이 새 앱에 대해 기본적으로 표시하는 안내입니다. 「추가 정보」를 누른 다음 「실행」을 누르면 됩니다. 开途 Kaitu 앱은 EV 코드 서명을 거쳤으며, 설치 후에는 이 안내가 다시 나타나지 않습니다."
+      },
+      "macosGatekeeper": {
+        "question": "macOS에서 「개발자를 확인할 수 없습니다」라고 나오면 어떻게 하나요?",
+        "answer": "처음 설치한 뒤 「시스템 설정 → 개인정보 보호 및 보안」을 열고, 아래쪽에서 开途 Kaitu 관련 안내를 찾아 「그래도 열기」를 누르세요. 이후 실행할 때는 다시 묻지 않습니다. 시스템 확장 프로그램(VPN 모드)을 활성화해야 하는 경우, 시스템이 「개인정보 보호 및 보안 → 일반」에서 허용하도록 안내합니다."
+      },
+      "androidInstallBlock": {
+        "question": "Android 휴대폰에서 설치가 차단되면 어떻게 하나요?",
+        "answer": "Huawei, Xiaomi, OPPO, vivo 등 휴대폰의 보안 센터는 설치 시 온라인으로 클라우드 검사를 하며, 앱스토어 외부에서 받은 APK를 차단할 수 있습니다. 해결 방법: APK를 다운로드한 뒤 비행기 모드를 켜고 오프라인 상태에서 설치한 다음, 설치가 끝나면 비행기 모드를 끄면 됩니다."
+      },
+      "androidUsbInstall": {
+        "question": "Android 휴대폰 설치가 차단되었는데 설치 방법을 모르겠다면?",
+        "answer": "컴퓨터에서 开途 Kaitu 앱을 열고 「계정 → 다른 기기에 설치 → Android 휴대폰에 설치」로 들어가 USB 케이블로 휴대폰을 연결한 뒤 마법사를 따라 하면 휴대폰에 자동으로 설치됩니다."
+      },
+      "security": {
+        "question": "开途 Kaitu 앱은 안전한가요?",
+        "answer": "开途 Kaitu 앱은 Apple 공증과 Windows EV 코드 서명을 거쳤습니다. 모든 설치 파일은 HTTPS로 배포되며 SHA-256 체크섬을 확인할 수 있습니다. k2 프로토콜 코어는 독립 보안 감사 프로그램의 대상입니다."
+      }
+    },
+    "router": "라우터"
+  }
+}

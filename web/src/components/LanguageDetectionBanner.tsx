@@ -12,6 +12,10 @@ const localeNames: Record<string, string> = {
   'zh-CN': '简体中文',
   'zh-TW': '繁體中文 (台灣)',
   'zh-HK': '繁體中文 (香港)',
+  'en-US': 'English',
+  'ko': '한국어',
+  'ja': '日本語',
+  'ru': 'Русский',
 };
 
 export default function LanguageDetectionBanner() {

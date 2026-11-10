@@ -1,0 +1,65 @@
+{
+  "pricing": {
+    "metaTitle": "Pricing",
+    "metaDescription": "开途 Kaitu App Edition from {app1y} for 1 year: 5 devices, unlimited data. Router Edition {router} for the first year, router included — every device at home works once it's plugged in.",
+    "title": "Simple, transparent pricing",
+    "subtitle": "The App Edition is billed yearly — the longer the term, the better the deal. One Router Edition covers your whole home.",
+    "app": {
+      "title": "App Edition",
+      "subtitle": "Install the 开途 Kaitu app on each device — one account, 5 devices online at once",
+      "plan": "{years}-year plan",
+      "perMonth": "Just {price}/month",
+      "origin": "Regular price {price}",
+      "save": "Save {percent}%",
+      "popular": "Most popular",
+      "includes": [
+        "5 devices online at once",
+        "Unlimited data",
+        "Windows, macOS, iOS, Android, Linux",
+        "Alipay, UnionPay, credit card and crypto"
+      ],
+      "cta": "Choose plan"
+    },
+    "router": {
+      "title": "Router Edition",
+      "subtitle": "One pre-configured router covers your whole home — no app needed on TVs, game consoles or smart speakers",
+      "firstYear": "First year {price}",
+      "firstYearIncludes": "Includes one router and one year of service",
+      "renewal": "Renews at {price}/year from year two",
+      "origin": "Regular price {price}",
+      "presaleBadge": "Pre-order · ships from {date}",
+      "presaleNote": "Pre-order price; the struck-through price is the list price after launch. Service starts on the day your router ships.",
+      "includes": [
+        "Dedicated exit, 2 TB per month",
+        "Unlimited devices at home",
+        "Pre-configured — just plug in the network cable"
+      ],
+      "cta": "Learn about the Router Edition"
+    },
+    "faq": {
+      "title": "Pricing FAQ",
+      "items": [
+        {
+          "q": "Which payment methods do you accept?",
+          "a": "Alipay, UnionPay, credit card and cryptocurrencies such as USDT. Your plan is active right after purchase."
+        },
+        {
+          "q": "Can I get a refund?",
+          "a": "For a first purchase, you can request a refund within 7 days if you've used no more than 1 GB of data. The refund goes to your account wallet balance, which you can use to renew or withdraw to a crypto wallet."
+        },
+        {
+          "q": "How many devices can one account use?",
+          "a": "The App Edition allows 5 devices online at once; the Router Edition supports unlimited devices connected to the router."
+        },
+        {
+          "q": "App Edition or Router Edition — which should I choose?",
+          "a": "If it's just your own phone and computer, choose the App Edition. If you have TVs, game consoles or smart speakers at home that need it too, or you don't want to install software device by device, choose the Router Edition. You can have both."
+        },
+        {
+          "q": "When does Router Edition service start?",
+          "a": "One year counted from the day your router ships. The wait between payment and shipping doesn't count against your service period."
+        }
+      ]
+    }
+  }
+}

@@ -7,10 +7,13 @@ type Locale = (typeof routing.locales)[number];
 
 const intlMiddleware = createMiddleware(routing);
 
-// Locales this site used to serve when it also built the overleap site (en-* / ja).
+// Regional English this site served when it also built the overleap site.
 // Their URLs are still indexed / bookmarked: 301 them to the same path under
-// zh-CN rather than letting next-intl treat `en-US` as a path segment.
-const LEGACY_LOCALE_RE = /^\/(en-US|en-GB|en-AU|ja)(\/.*)?$/;
+// en-US rather than letting next-intl treat `en-GB` as a path segment.
+const LEGACY_LOCALE_RE = /^\/(en-GB|en-AU)(\/.*)?$/;
+const LEGACY_LOCALE_TARGET = 'en-US';
+
+const LOCALE_PREFIX_RE = new RegExp(`^/(${routing.locales.join('|')})(?=/|$)`);
 
 export default function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
@@ -60,12 +63,12 @@ export default function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // ---- Legacy en-* / ja URLs → 301 to the same path under the default
-  // locale, same host. ---------------------------------------------------------
+  // ---- Legacy en-GB / en-AU URLs → 301 to the same path under en-US, same
+  // host. ----------------------------------------------------------------------
   const legacyMatch = pathname.match(LEGACY_LOCALE_RE);
   if (legacyMatch) {
     const rest = legacyMatch[2] ?? '';
-    const targetUrl = new URL(`/${brand.defaultLocale}${rest}`, request.url);
+    const targetUrl = new URL(`/${LEGACY_LOCALE_TARGET}${rest}`, request.url);
     targetUrl.search = request.nextUrl.search;
     return NextResponse.redirect(targetUrl, 301);
   }
@@ -117,7 +120,7 @@ export default function middleware(request: NextRequest) {
   // next-intl's internal rewrite/next() response.
   const response = intlMiddleware(request);
   const strippedPathname =
-    pathname.replace(/^\/(zh-CN|zh-TW|zh-HK)(?=\/|$)/, '') || '/';
+    pathname.replace(LOCALE_PREFIX_RE, '') || '/';
   if (response && typeof (response as Response).headers?.set === 'function') {
     (response as Response).headers.set('x-middleware-request-x-pathname', strippedPathname);
   }
@@ -125,7 +128,9 @@ export default function middleware(request: NextRequest) {
 }
 
 // Get the best matching locale based on Accept-Language header, constrained to
-// allowedLocales; anything unmatched (en, ja, …) lands on the default zh-CN.
+// allowedLocales. Every listed language is tried in quality order (so "fr, ko"
+// lands on Korean); a header naming no language we carry lands on English —
+// that visitor is not a Chinese reader. No header at all (crawlers) → zh-CN.
 function getBestLocale(
   acceptLanguage: string | null,
   allowedLocales: readonly Locale[]
@@ -158,22 +163,34 @@ function getBestLocale(
           : langSuffix === 'tw' ? 'zh-TW'
             : 'zh-CN';
       if (allowedSet.has(zhPick)) return zhPick as Locale;
+      continue;
     }
+
+    // Russian is the lingua franca of Central Asia (Kazakh / Kyrgyz / Belarusian
+    // browsers usually list ru too, but not always first).
+    const otherPick =
+      langPrefix === 'en' ? 'en-US'
+        : langPrefix === 'ko' ? 'ko'
+          : langPrefix === 'ja' ? 'ja'
+            : langPrefix === 'ru' || langPrefix === 'kk' || langPrefix === 'ky' || langPrefix === 'be' ? 'ru'
+              : null;
+    if (otherPick && allowedSet.has(otherPick)) return otherPick as Locale;
   }
 
-  return fallback;
+  const hasAnyLanguage = languages.some((l) => l.code && l.code !== '*');
+  return hasAnyLanguage && allowedSet.has('en-US') ? ('en-US' as Locale) : fallback;
 }
 
 export const config = {
   // /api, /app, /manager, /favicon.ico MUST hit the middleware (X-K2-Brand
-  // injection, /manager passthrough). The legacy en-* / ja prefixes are listed
+  // injection, /manager passthrough). The legacy en-GB / en-AU prefixes are listed
   // so their 301 also covers dotted paths the catch-all excludes. Static
   // assets and _next remain excluded via the catch-all.
   matcher: [
     '/',
     '/favicon.ico',
-    '/(zh-CN|zh-TW|zh-HK)/:path*',
-    '/(en-GB|en-US|en-AU|ja)/:path*',
+    '/(zh-CN|zh-TW|zh-HK|en-US|ko|ja|ru)/:path*',
+    '/(en-GB|en-AU)/:path*',
     '/(api|app)/:path*',
     '/manager/:path*',
     '/manager',

@@ -1,6 +1,7 @@
 "use client";
 
 import { useLocale, useTranslations } from 'next-intl';
+import { localizedWordmark } from '@/lib/brands';
 import { Link } from '@/i18n/routing';
 import NextLink from 'next/link';
 import Image from 'next/image';
@@ -20,7 +21,7 @@ export default function Footer() {
   const showTaglineZh = Boolean(brand.taglineZh) && locale.startsWith('zh');
 
   const renderItem = (item: NavItem) => {
-    const text = t(item.labelKey, { brand: brand.wordmark });
+    const text = t(item.labelKey, { brand: localizedWordmark(brand, locale) });
     const href = item.href.replace('{contactEmail}', brand.contactEmail);
     if (item.external) {
       return (
@@ -61,10 +62,10 @@ export default function Footer() {
                 height={32}
                 className="rounded-md"
               />
-              <span className="text-xl font-bold text-foreground">{brand.wordmark}</span>
+              <span className="text-xl font-bold text-foreground">{localizedWordmark(brand, locale)}</span>
             </div>
             <p className="text-muted-foreground text-sm">
-              {t('nav.footer.brandDescription', { brand: brand.wordmark })}
+              {t('nav.footer.brandDescription', { brand: localizedWordmark(brand, locale) })}
             </p>
           </div>
 

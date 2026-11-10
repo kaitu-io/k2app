@@ -1,0 +1,23 @@
+{
+  "badRequest": "リクエストのパラメータが正しくありません",
+  "unauthorized": "先にログインしてください",
+  "paymentRequired": "会員期間が終了しています。更新してください",
+  "forbidden": "この操作を行う権限がありません",
+  "notFound": "リクエストされたリソースが見つかりません",
+  "notSupported": "この機能はサポートされていません",
+  "upgradeRequired": "最新バージョンにアップデートしてください",
+  "conflict": "操作が競合しました。もう一度お試しください",
+  "invalidArgument": "パラメータが正しくありません",
+  "tooEarly": "しばらくしてから再度お試しください",
+  "tooManyRequests": "リクエストが多すぎます。しばらくしてから再度お試しください",
+  "serverError": "サーバーエラーです。しばらくしてから再度お試しください",
+  "serviceUnavailable": "サーバーを利用できません。しばらくしてから再度お試しください",
+  "invalidCampaignCode": "キャンペーンコードが無効です",
+  "invalidClock": "デバイスの時刻が正しくありません。システムの時刻を合わせてください",
+  "invalidVerificationCode": "認証コードが正しくありません。確認して再度お試しください",
+  "verificationCodeExpired": "認証コードの有効期限が切れているか、送信されていません。再送信をクリックしてください",
+  "invalidInviteCode": "招待コードが正しくありません",
+  "selfInvitation": "ご自身の招待コードは使用できません",
+  "invalidCredentials": "ログイン情報が無効です",
+  "unknown": "操作に失敗しました。もう一度お試しください"
+}

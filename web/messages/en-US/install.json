@@ -1,0 +1,130 @@
+{
+  "install": {
+    "title": "Download the 开途 Kaitu app",
+    "backToHome": "Back to home",
+    "deviceDetected": "Device detected: {device}",
+    "detectingDevice": "Detecting your device...",
+    "analyzingDevice": "Analyzing your device setup...",
+    "readyToDownload": "Ready to download",
+    "autoDownloadCountdown": "Download will start automatically in {seconds} seconds",
+    "downloadNow": "Download now",
+    "cancelAutoDownload": "Cancel auto-download",
+    "downloading": "Downloading...",
+    "checkDownloadLocation": "Check your Downloads folder for the installer",
+    "downloadSuccess": "Download complete!",
+    "runInstaller": "Run the downloaded installer to finish installing",
+    "redownload": "Download again",
+    "downloadFailed": "Download failed",
+    "downloadFailedMessage": "The automatic download failed. Please try downloading manually.",
+    "manualDownload": "Manual download",
+    "retryAutoDownload": "Retry auto-download",
+    "allDownloadOptions": "All download options",
+    "windows": "Windows",
+    "windowsVersion": "Windows 10/11",
+    "downloadExe": "Windows",
+    "macos": "Mac",
+    "macosVersion": "macOS 12+",
+    "downloadDmg": "Mac",
+    "ios": "iPhone / iPad",
+    "iosDevices": "iPhone and iPad",
+    "android": "Android",
+    "androidVersion": "Android 7.0+",
+    "needHelp": "Need help?",
+    "helpBrowserBlock": "• If your browser blocks the download, allow downloads from this site",
+    "helpWindowsInstall": "• On Windows, you may need to allow the app through Windows Defender",
+    "helpMacosInstall": "• On macOS, you may need to allow the app in Security & Privacy settings",
+    "helpSecurityWarning": "• If you see a security warning, our app is safe — it appears because we haven't code-signed it yet",
+    "betaVersion": "Beta v{version}",
+    "stableVersion": "Stable v{version}",
+    "stableChannel": "Stable",
+    "lookingForStable": "Need the stable version?",
+    "viewAllReleases": "View all releases →",
+    "backupDownload": "Mirror download",
+    "latestVersion": "Latest v{version}",
+    "recommended": "Recommended",
+    "downloadCancelled": "Auto-download cancelled",
+    "clickToDownload": "Click to download",
+    "metaDescription": "Download the 开途 Kaitu k2cc app for Windows, macOS, iOS and Android. A stealth tunnel with k2cc adaptive rate control that keeps full speed even under heavy packet loss.",
+    "linux": "Linux",
+    "linuxVersion": "Ubuntu / Fedora / Arch",
+    "downloadLinux": "Linux desktop",
+    "cliInstall": "Or install from the command line",
+    "cliCommand": "curl -fsSL https://kaitu.io/i/k2 | sudo bash",
+    "copied": "Copied",
+    "beta": "Beta",
+    "alsoAvailableStable": "Stable v{version} is also available",
+    "linuxCliRecommended": "Command-line install recommended — it checks dependencies automatically",
+    "otherPlatforms": "Other platforms",
+    "terminalInstall": "Or install in one line from the terminal",
+    "downloadButton": "Download installer",
+    "mobileDownloads": "Mobile",
+    "heroTitle": {
+      "windows": "Ready for your Windows PC",
+      "macos": "Ready for your Mac",
+      "linux": "Ready for your Linux machine",
+      "ios": "开途 Kaitu for iOS",
+      "android": "开途 Kaitu for Android",
+      "unknown": "Choose your platform"
+    },
+    "installSteps": {
+      "title": "Installation steps",
+      "windows": {
+        "1": "Open the downloaded .exe installer",
+        "2": "If you see \"Windows protected your PC\", click \"More info\" → \"Run anyway\"",
+        "3": "Follow the prompts to finish installing; the first launch requires administrator rights"
+      },
+      "macos": {
+        "1": "Open the downloaded .pkg installer",
+        "2": "Follow the prompts to finish installing",
+        "3": "The first time you open it, allow the system extension under System Settings → Privacy & Security"
+      },
+      "linux": {
+        "1": "We recommend the one-line install script: curl -fsSL https://kaitu.io/i/k2 | sudo bash",
+        "2": "The script downloads the k2 binary and registers a systemd service (kaitu.service)",
+        "3": "Once installed, open http://127.0.0.1:1777 in your browser and sign in"
+      },
+      "android": {
+        "1": "Download the APK; choose \"Keep\" if your browser asks",
+        "2": "Turn on airplane mode before installing (so the phone's security center can't block it with a cloud scan)",
+        "3": "Open the APK → allow \"Install unknown apps\" → Install",
+        "4": "Turn off airplane mode once installed",
+        "5": "Open 开途 Kaitu and allow the VPN permission"
+      }
+    },
+    "faq": {
+      "browserBlock": {
+        "question": "What if my browser blocks the download?",
+        "answer": "Some browsers block downloads of .exe or .pkg files. In your browser's download bar, choose \"Keep\" or \"Download anyway\". In Chrome, you can find the blocked file on the downloads page (chrome://downloads)."
+      },
+      "edgeBlock": {
+        "question": "Edge blocked the download?",
+        "answer": "Edge says the file \"isn't commonly downloaded\". Click the ··· menu next to the file and choose \"Keep\"."
+      },
+      "chromeBlock": {
+        "question": "Chrome blocked the download?",
+        "answer": "Chrome says the file \"isn't commonly downloaded\". Click \"Keep\" in the download bar at the bottom."
+      },
+      "windowsSmartScreen": {
+        "question": "Windows says \"Windows protected your PC\" — what do I do?",
+        "answer": "This is Windows SmartScreen's default prompt for new apps. Click \"More info\", then \"Run anyway\". The 开途 Kaitu app is EV code-signed, so you won't see this prompt again after installing."
+      },
+      "macosGatekeeper": {
+        "question": "macOS says it \"can't verify the developer\" — what do I do?",
+        "answer": "After the first install, open System Settings → Privacy & Security, find the message about 开途 Kaitu at the bottom and click \"Open Anyway\". You won't be asked again on later launches. To enable the system extension (VPN mode), the system will guide you to allow it under Privacy & Security → General."
+      },
+      "androidInstallBlock": {
+        "question": "What if my Android phone blocks the install?",
+        "answer": "On phones from Huawei, Xiaomi, OPPO, vivo and others, the security center runs an online cloud scan during installation and may block APKs that don't come from an app store. Fix: after downloading the APK, turn on airplane mode, install while offline, then turn airplane mode off once it's installed."
+      },
+      "androidUsbInstall": {
+        "question": "My Android phone blocks the install and I can't figure out how to install it — what now?",
+        "answer": "Open the 开途 Kaitu app on your computer, go to \"Account → Install on other devices → Install on Android phone\", connect your phone with a USB cable and follow the wizard — it installs onto the phone automatically."
+      },
+      "security": {
+        "question": "Is the 开途 Kaitu app safe?",
+        "answer": "The 开途 Kaitu app is Apple-notarized and Windows EV code-signed. All installers are distributed over HTTPS with verifiable SHA-256 checksums. The core of the k2 protocol is covered by our independent security review program."
+      }
+    },
+    "router": "Router"
+  }
+}

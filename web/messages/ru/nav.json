@@ -1,0 +1,82 @@
+{
+  "nav": {
+    "openSource": "Аудит безопасности",
+    "welcome": "Добро пожаловать",
+    "adminPanel": "Панель управления",
+    "login": "Войти",
+    "logout": "Выйти",
+    "purchase": "Подключить",
+    "home": "Главная",
+    "backToHome": "На главную",
+    "introGuide": "Гид для родителей",
+    "guides": "Руководства",
+    "k2Protocol": "Протокол k2",
+    "routers": "Роутеры",
+    "download": "Скачать",
+    "quickstart": "Быстрое самостоятельное развёртывание",
+    "productFeatures": "Возможности",
+    "whyBrand": "Почему {brand}",
+    "freeDownload": "Скачать бесплатно",
+    "pricing": "Цены",
+    "help": "Помощь",
+    "useCases": "Сценарии использования",
+    "breakBarriers": "Обход сетевых ограничений",
+    "familyProtection": "Защита всех устройств семьи",
+    "mobilePlusDesktop": "Телефон + компьютер",
+    "supportedPlatforms": "Поддерживаемые платформы",
+    "whySpeed": "Скорость и стабильность",
+    "whyTech": "Технологии",
+    "whyTestimonials": "Отзывы пользователей",
+    "quickStart": "Быстрый старт",
+    "faq": "Частые вопросы",
+    "contactUs": "Связаться с нами",
+    "features": "Возможности",
+    "docs": "Документация",
+    "routerEdition": "Версия для роутера",
+    "breadcrumb": "Вы здесь",
+    "navigation": "Навигация по сайту",
+    "menu": "Меню"
+  },
+  "footer": {
+    "brandName": "开途 Kaitu",
+    "brandDescription": "Безопасное и удобное решение для сетевого прокси",
+    "product": {
+      "title": "Продукт",
+      "clientDownload": "Скачать клиент",
+      "smartRouter": "Умный роутер",
+      "retailerProgram": "Программа для реселлеров",
+      "nodeStatus": "Статус узлов"
+    },
+    "developer": {
+      "title": "Разработчикам",
+      "apiDocs": "Документация API",
+      "openSource": "Аудит безопасности",
+      "techBlog": "Технический блог",
+      "k2Docs": "Документация протокола k2",
+      "selfDeploy": "Быстрое самостоятельное развёртывание",
+      "changelog": "История изменений"
+    },
+    "support": {
+      "title": "Поддержка",
+      "userGuide": "Руководство пользователя",
+      "faq": "Частые вопросы",
+      "contact": "Связаться с нами",
+      "homeschoolGuide": "Установка для Homeschool"
+    },
+    "legal": {
+      "title": "Правовая информация"
+    },
+    "optOut": "Отказаться от статистики посещений",
+    "copyright": "Все права защищены.",
+    "copyrightSymbol": "©",
+    "period": ".",
+    "company": {
+      "title": "Компания"
+    }
+  },
+  "languageDetection": {
+    "message": "Язык вашего браузера —",
+    "question": ". Переключить?",
+    "switchTo": "Переключить на"
+  }
+}

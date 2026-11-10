@@ -1,7 +1,9 @@
 // Authentication utilities for the web application
 
-// Supported locales - must match i18n/routing.ts
-const LOCALES = ['zh-CN', 'zh-TW', 'zh-HK'];
+import { ALL_LOCALES } from './brands';
+
+// Supported locales (brands.ts mirrors i18n/routing.ts)
+const LOCALES: readonly string[] = ALL_LOCALES;
 
 /**
  * Remove locale prefix from path

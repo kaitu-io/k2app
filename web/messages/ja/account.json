@@ -1,0 +1,56 @@
+{
+  "account": {
+    "delegate": {
+      "pageTitle": "代理支払い人の設定",
+      "emptyTitle": "代理支払い人を設定",
+      "emptyDescription": "設定しておくと、お支払いの際にワンタップでその方に代理支払いを依頼できます。",
+      "emptyHint": "保存してもすぐにはその方へ通知されません。その方に最初に届くメールは、あなたが実際にお支払いを依頼したときの支払い依頼メールです。",
+      "emailLabel": "代理支払い人のメールアドレス",
+      "emailPlaceholder": "friend@example.com",
+      "saveButton": "保存",
+      "currentTitle": "現在の代理支払い人",
+      "setAtLabel": "{date} に設定",
+      "modifyButton": "変更",
+      "cancelButton": "キャンセル",
+      "removeButton": "代理支払い人を削除",
+      "removeConfirm": "削除しますか？今後のお支払いに代理支払い人が設定されていない状態になります。",
+      "currentHint": "お支払いの際に「{email} に代理支払いを依頼」を選択できます。その方へメールでお知らせします。",
+      "savedToast": "保存しました"
+    }
+  },
+  "stripe": {
+    "navSubscription": "サブスクリプション",
+    "activating": "サブスクリプションを有効化しています…",
+    "activationDelayed": "お支払いを受け付けました。数分以内にサブスクリプションが有効になります。このページを再読み込みしてご確認ください。",
+    "subscriptionTitle": "ご利用中のサブスクリプション",
+    "renewsOn": "{date} に更新",
+    "expiresOn": "{date} に終了",
+    "manage": "サブスクリプションを管理",
+    "opening": "開いています…",
+    "noSubscription": "有効なサブスクリプションはまだありません。",
+    "choosePlan": "プランを見る",
+    "downloadTitle": "準備完了です。アプリを入手しましょう",
+    "downloadCta": "アプリをダウンロード",
+    "genericError": "問題が発生しました。もう一度お試しください。"
+  },
+  "subscription": {
+    "accountTitle": "アカウント情報",
+    "activeUntil": "{date} まで有効",
+    "choosePlan": "プランを選択",
+    "daysLeft": "残り {days} 日",
+    "devicesLabel": "登録済みデバイス",
+    "emailLabel": "ログイン用メールアドレス",
+    "expiredOn": "{date} に期限切れ",
+    "historyDays": "+{days} 日",
+    "historyEmpty": "購入履歴はありません",
+    "historyRecharge": "購入",
+    "historyReward": "プレゼント",
+    "historyTitle": "購入履歴",
+    "loadFailed": "読み込みに失敗しました。しばらくしてから再度お試しください",
+    "navTitle": "マイサブスクリプション",
+    "never": "未加入",
+    "renew": "更新",
+    "tierLabel": "現在のプラン",
+    "title": "サブスクリプションの状態"
+  }
+}

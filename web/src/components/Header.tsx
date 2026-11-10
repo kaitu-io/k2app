@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
+import { localizedWordmark } from '@/lib/brands'
 import { Link, usePathname } from '@/i18n/routing'
 import NextLink from 'next/link'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
@@ -84,6 +85,7 @@ function NavLink({
 
 export default function Header() {
   const brand = useBrand()
+  const locale = useLocale()
   const site = siteConfig()
   const { isAuthenticated } = useAuth()
   const t = useTranslations()
@@ -110,7 +112,7 @@ export default function Header() {
     setOpenDropdown(null)
   }, [pathname])
 
-  const vars = { brand: brand.wordmark }
+  const vars = { brand: localizedWordmark(brand, locale) }
   const label = (item: NavItem) => t(item.labelKey, vars)
 
   // 悬停离开时延迟收起，给鼠标从触发项移到面板留出间隙。
@@ -152,7 +154,7 @@ export default function Header() {
               height={32}
               className="rounded-md"
             />
-            <span className="text-xl font-bold text-foreground">{brand.wordmark}</span>
+            <span className="text-xl font-bold text-foreground">{localizedWordmark(brand, locale)}</span>
           </Link>
 
           {/* Desktop nav */}

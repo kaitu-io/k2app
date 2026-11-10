@@ -1,0 +1,21 @@
+{
+  "title": "Changelog",
+  "subtitle": "The latest features and improvements in 开途 Kaitu",
+  "sections": {
+    "newFeatures": "New features",
+    "bugFixes": "Bug fixes",
+    "improvements": "Improvements",
+    "breakingChanges": "Breaking changes"
+  },
+  "controls": {
+    "expandAll": "Expand all",
+    "collapseAll": "Collapse all"
+  },
+  "noData": "No changelog entries yet.",
+  "bullet": "•",
+  "cta": {
+    "title": "Try the latest version",
+    "description": "Download the latest 开途 Kaitu app for a better connection",
+    "download": "Download the app"
+  }
+}

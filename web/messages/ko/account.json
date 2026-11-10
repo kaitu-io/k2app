@@ -1,0 +1,56 @@
+{
+  "account": {
+    "delegate": {
+      "pageTitle": "대리 결제자 설정",
+      "emptyTitle": "대리 결제자 설정",
+      "emptyDescription": "설정해 두면 결제할 때 한 번에 대리 결제를 요청할 수 있습니다.",
+      "emptyHint": "저장해도 상대방에게 바로 알림이 가지 않습니다. 상대방이 처음 받는 이메일은 실제로 결제를 요청할 때 보내는 결제 초대장입니다.",
+      "emailLabel": "대리 결제자 이메일",
+      "emailPlaceholder": "friend@example.com",
+      "saveButton": "저장",
+      "currentTitle": "현재 대리 결제자",
+      "setAtLabel": "{date}에 설정됨",
+      "modifyButton": "변경",
+      "cancelButton": "취소",
+      "removeButton": "대리 결제자 삭제",
+      "removeConfirm": "삭제하시겠습니까? 이후 결제 시 미리 지정된 대리 결제자가 없게 됩니다.",
+      "currentHint": "결제 시 「{email} 님에게 대리 결제 요청」을 선택할 수 있으며, 저희가 상대방에게 이메일을 보내 드립니다.",
+      "savedToast": "저장되었습니다"
+    }
+  },
+  "stripe": {
+    "navSubscription": "구독",
+    "activating": "구독을 활성화하는 중…",
+    "activationDelayed": "결제가 완료되었습니다. 몇 분 안에 구독이 활성화됩니다. 이 페이지를 새로고침해 확인해 주세요.",
+    "subscriptionTitle": "내 구독",
+    "renewsOn": "{date}에 갱신",
+    "expiresOn": "{date}에 만료",
+    "manage": "구독 관리",
+    "opening": "여는 중…",
+    "noSubscription": "아직 활성화된 구독이 없습니다.",
+    "choosePlan": "요금제 보기",
+    "downloadTitle": "준비가 끝났습니다. 앱을 받으세요",
+    "downloadCta": "앱 다운로드",
+    "genericError": "문제가 발생했습니다. 다시 시도해 주세요."
+  },
+  "subscription": {
+    "accountTitle": "계정 정보",
+    "activeUntil": "{date}까지 유효",
+    "choosePlan": "요금제 선택",
+    "daysLeft": "{days}일 남음",
+    "devicesLabel": "연결된 기기",
+    "emailLabel": "로그인 이메일",
+    "expiredOn": "{date}에 만료됨",
+    "historyDays": "+{days}일",
+    "historyEmpty": "구매 내역이 없습니다",
+    "historyRecharge": "구매",
+    "historyReward": "증정",
+    "historyTitle": "구매 내역",
+    "loadFailed": "불러오지 못했습니다. 잠시 후 다시 시도해 주세요",
+    "navTitle": "내 구독",
+    "never": "구독 이력 없음",
+    "renew": "연장하기",
+    "tierLabel": "현재 등급",
+    "title": "구독 상태"
+  }
+}

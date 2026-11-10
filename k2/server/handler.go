@@ -16,6 +16,7 @@ import (
 	"time"
 
 	k2dns "github.com/kaitu-io/k2/core/dns"
+	"github.com/kaitu-io/k2/sniff"
 	"github.com/miekg/dns"
 	"github.com/sasha-s/go-deadlock"
 
@@ -324,6 +325,9 @@ type ProxyHandler struct {
 	// (Center verdict=stop). MUST default true — see NewProxyHandler.
 	// Established connections are never force-killed; stop = refuse new only.
 	accepting atomic.Bool
+
+	// Rate limiter for DIAG: bt-blocked (bt_block.go).
+	btLog btBlockLog
 }
 
 // TrafficBytes returns node-level cumulative rx/tx since process start or last reset.
@@ -610,6 +614,13 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 					log.Warn("server: HandleUDP dest unresolvable", "dest", destKey, "err", rerr)
 				default:
 					log.Debug("server: HandleUDP dest resolved", "dest", destKey)
+				}
+				// First packet to a new destination: a BT opener (uTP SYN,
+				// DHT, tracker connect) ends the whole session — a torrent
+				// client multiplexes its swarm over this one socket.
+				if ua != nil && sniff.IsBitTorrentUDP(buf[:n]) {
+					h.reportBTBlocked(log, key, "udp", destKey)
+					break
 				}
 			} else {
 				lru.MoveToFront(entry.lru)
@@ -902,10 +913,18 @@ func (h *ProxyHandler) pipe(a, b net.Conn) {
 	go func() {
 		defer close(done)
 		bp := tcpBufPool.Get().(*[]byte)
-		n, _ := io.CopyBuffer(b, a, *bp) // a->b: uplink (rx)
+		up := &btSniffReader{r: a}
+		n, _ := io.CopyBuffer(b, up, *bp) // a->b: uplink (rx)
 		h.rxBytes.Add(n)
 		h.devTraffic.Add(key, n, 0)
 		tcpBufPool.Put(bp)
+		if up.blocked {
+			// Nothing reached the target; drop it, which also ends the
+			// downlink copy below and closes the stream to the client.
+			h.reportBTBlocked(slog.With("remote", a.RemoteAddr()), key, "tcp", b.RemoteAddr().String())
+			b.Close()
+			return
+		}
 		if cw, ok := b.(closeWriter); ok {
 			cw.CloseWrite()
 		} else {

@@ -1,0 +1,30 @@
+{
+  "title": "Релизы",
+  "subtitle": "Подробности изменений и загрузки для всех версий",
+  "latestRelease": "Последняя версия",
+  "betaTag": "Бета",
+  "stableTag": "Стабильная",
+  "downloadWindows": "Для Windows",
+  "downloadMacOS": "Для Mac",
+  "downloadLinux": "Для Linux",
+  "downloadAndroid": "Для Android",
+  "downloadIOS": "App Store",
+  "downloadAssets": "Скачать",
+  "noDownloads": "Для этой версии нет файлов для скачивания",
+  "viewAllReleases": "Все версии",
+  "sections": {
+    "newFeatures": "Новые функции",
+    "bugFixes": "Исправления",
+    "improvements": "Улучшения",
+    "infrastructure": "Инфраструктура",
+    "breakingChanges": "Важные изменения"
+  },
+  "controls": {
+    "expandAll": "Развернуть всё",
+    "collapseAll": "Свернуть всё"
+  },
+  "noData": "Данных о релизах пока нет.",
+  "bullet": "•",
+  "comingSoon": "Скоро",
+  "backupDownload": "Резервная ссылка"
+}

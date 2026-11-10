@@ -1,7 +1,7 @@
 /**
- * Middleware routing tests. The site serves kaitu.io only (zh-CN / zh-TW /
- * zh-HK); the en-* / ja locales left with overleap.io (sites/overleap/), and
- * their old URLs must keep resolving on this host via a 301 to zh-CN.
+ * Middleware routing tests. kaitu.io serves zh-CN / zh-TW / zh-HK plus en-US /
+ * ko / ja / ru (foreigners living in China, 2026-11-10). The en-GB / en-AU URLs
+ * of the old overleap-era build must keep resolving via a 301 to en-US.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
@@ -11,7 +11,7 @@ vi.mock('next-intl/middleware', () => ({
 }));
 vi.mock('../src/i18n/routing', () => ({
   routing: {
-    locales: ['zh-CN', 'zh-TW', 'zh-HK'],
+    locales: ['zh-CN', 'zh-TW', 'zh-HK', 'en-US', 'ko', 'ja', 'ru'],
     defaultLocale: 'zh-CN',
   },
 }));
@@ -34,13 +34,11 @@ async function run(req: NextRequest): Promise<Response> {
   return res ?? new Response(null, { status: 200 });
 }
 
-describe('legacy en-* / ja URLs → same-host 301 to zh-CN', () => {
+describe('legacy en-GB / en-AU URLs → same-host 301 to en-US', () => {
   it.each([
-    ['/en-US/install', 'https://example.test/zh-CN/install'],
-    ['/en-GB/k2/vs-hysteria2', 'https://example.test/zh-CN/k2/vs-hysteria2'],
-    ['/en-AU/purchase', 'https://example.test/zh-CN/purchase'],
-    ['/ja', 'https://example.test/zh-CN'],
-    ['/ja/support', 'https://example.test/zh-CN/support'],
+    ['/en-GB/k2/vs-hysteria2', 'https://example.test/en-US/k2/vs-hysteria2'],
+    ['/en-AU/purchase', 'https://example.test/en-US/purchase'],
+    ['/en-GB', 'https://example.test/en-US'],
   ])('%s → 301 %s', async (path, location) => {
     const res = await run(makeRequest(path));
     expect(res.status).toBe(301);
@@ -48,22 +46,30 @@ describe('legacy en-* / ja URLs → same-host 301 to zh-CN', () => {
   });
 
   it('keeps the query string', async () => {
-    const res = await run(makeRequest('/en-US/purchase', { search: '?ref=x' }));
+    const res = await run(makeRequest('/en-AU/purchase', { search: '?ref=x' }));
     expect(res.status).toBe(301);
-    expect(res.headers.get('location')).toBe('https://example.test/zh-CN/purchase?ref=x');
+    expect(res.headers.get('location')).toBe('https://example.test/en-US/purchase?ref=x');
   });
 
-  it('served locales pass through', async () => {
-    expect((await run(makeRequest('/zh-TW/install'))).status).not.toBe(301);
-    expect((await run(makeRequest('/zh-HK'))).status).not.toBe(301);
-  });
+  it.each(['/zh-TW/install', '/zh-HK', '/en-US/install', '/ko', '/ja/support', '/ru/pricing'])(
+    'served locale %s passes through',
+    async (path) => {
+      expect((await run(makeRequest(path))).status).not.toBe(301);
+    },
+  );
 
   it('a path that merely starts with a legacy code is not a locale prefix', async () => {
-    expect((await run(makeRequest('/japan'))).status).not.toBe(301);
+    expect((await run(makeRequest('/en-GBx'))).status).not.toBe(301);
   });
 
-  it('the matcher still routes legacy prefixes (incl. dotted paths) through the middleware', () => {
-    expect(config.matcher).toContain('/(en-GB|en-US|en-AU|ja)/:path*');
+  it('the matcher routes served and legacy prefixes (incl. dotted paths) through the middleware', () => {
+    expect(config.matcher).toContain('/(zh-CN|zh-TW|zh-HK|en-US|ko|ja|ru)/:path*');
+    expect(config.matcher).toContain('/(en-GB|en-AU)/:path*');
+  });
+
+  it('x-pathname strips a foreign locale prefix too', async () => {
+    const res = await run(makeRequest('/ko/install'));
+    expect(res.headers.get('x-middleware-request-x-pathname')).toBe('/install');
   });
 });
 
@@ -132,9 +138,15 @@ describe('root path locale pick', () => {
     ['zh-MO', 'zh-HK'],
     ['zh-SG', 'zh-CN'],
     ['zh', 'zh-CN'],
-    ['en-US,en;q=0.9', 'zh-CN'],
-    ['ja,en;q=0.5', 'zh-CN'],
-    ['en-GB,zh-TW;q=0.5', 'zh-TW'],
+    ['en-US,en;q=0.9', 'en-US'],
+    ['en-GB,zh-TW;q=0.5', 'en-US'],
+    ['ja,en;q=0.5', 'ja'],
+    ['ko-KR,ko;q=0.9', 'ko'],
+    ['ru-RU', 'ru'],
+    ['kk-KZ', 'ru'],
+    ['fr-FR,ko;q=0.5', 'ko'],
+    ['th-TH', 'en-US'],
+    ['zh-TW,en;q=0.5', 'zh-TW'],
   ])('Accept-Language %s → /%s', async (acceptLanguage, locale) => {
     const res = await run(makeRequest('/', { acceptLanguage }));
     expect(res.headers.get('location')).toBe(`https://example.test/${locale}`);

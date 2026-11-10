@@ -48,8 +48,8 @@ export function findCategory(locale: string, slug: string, brand: Brand = siteBr
   return {
     slug,
     name: pick(def.name) ?? slug,
-    description: description === undefined ? undefined : fillBrandTemplate(description, brand),
-    sections: (def.sections ?? []).map((sec) => ({ key: sec.key, name: fillBrandTemplate(pick(sec.name) ?? sec.key, brand) })),
+    description: description === undefined ? undefined : fillBrandTemplate(description, brand, locale),
+    sections: (def.sections ?? []).map((sec) => ({ key: sec.key, name: fillBrandTemplate(pick(sec.name) ?? sec.key, brand, locale) })),
   };
 }
 
@@ -150,9 +150,12 @@ export function categoryLocales(category: string, brand: Brand = siteBrand()): s
 }
 
 /**
- * List a category's posts for the given locale, newest first. A slug missing
- * in this locale falls back to the brand default locale's version, so the
- * list page never hides a post that the detail page would happily serve.
+ * List a category's posts for the given locale, newest first. In a Chinese
+ * locale a slug missing in this locale falls back to the brand default
+ * locale's version, so the list page never hides a post that the detail page
+ * would happily serve. A foreign-language list shows only its own posts: a
+ * list of Chinese titles is useless to that reader (the detail URL still
+ * serves the fallback, canonicalised to zh-CN).
  */
 export function listCategoryPosts(
   locale: string,
@@ -168,7 +171,7 @@ export function listCategoryPosts(
     if (post.locale === locale) {
       // Exact locale always wins, even over an earlier fallback entry.
       bySlug.set(post.slug, post);
-    } else if (post.locale === brand.defaultLocale) {
+    } else if (post.locale === brand.defaultLocale && locale.startsWith('zh')) {
       const existing = bySlug.get(post.slug);
       if (!existing || existing.locale !== locale) bySlug.set(post.slug, post);
     }

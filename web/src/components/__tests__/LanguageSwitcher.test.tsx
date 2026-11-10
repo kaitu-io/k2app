@@ -10,7 +10,7 @@ import { render, screen } from '@testing-library/react';
 // Mock i18n routing — the underlying next-intl/navigation chain fails to load in jsdom
 vi.mock('@/i18n/routing', () => ({
   routing: {
-    locales: ['zh-CN', 'zh-TW', 'zh-HK'],
+    locales: ['zh-CN', 'zh-TW', 'zh-HK', 'en-US', 'ko', 'ja', 'ru'],
     defaultLocale: 'zh-CN',
   },
   Link: ({ children, ...props }: { children: React.ReactNode }) => <a {...props}>{children}</a>,
@@ -52,13 +52,12 @@ beforeEach(() => {
 });
 
 describe('LanguageSwitcher', () => {
-  it('lists exactly zh-CN/zh-TW/zh-HK', () => {
+  it('lists exactly the seven served languages, each in its own script', () => {
     render(<LanguageSwitcher />);
-    expect(screen.getByText('简体中文')).toBeInTheDocument();
-    expect(screen.getByText('繁體中文 (台灣)')).toBeInTheDocument();
-    expect(screen.getByText('繁體中文 (香港)')).toBeInTheDocument();
-    expect(screen.queryByText('English (US)')).toBeNull();
-    expect(screen.queryByText('日本語')).toBeNull();
+    for (const name of ['简体中文', '繁體中文 (台灣)', '繁體中文 (香港)', 'English', '한국어', '日本語', 'Русский']) {
+      expect(screen.getByText(name)).toBeInTheDocument();
+    }
+    expect(screen.queryByText('English (UK)')).toBeNull();
   });
 
   it('renders the trigger button', () => {

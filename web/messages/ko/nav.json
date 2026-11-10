@@ -1,0 +1,82 @@
+{
+  "nav": {
+    "openSource": "보안 감사",
+    "welcome": "환영합니다",
+    "adminPanel": "관리자 페이지",
+    "login": "로그인",
+    "logout": "로그아웃",
+    "purchase": "지금 시작하기",
+    "home": "홈",
+    "backToHome": "홈으로 돌아가기",
+    "introGuide": "학부모 가이드",
+    "guides": "사용자 가이드",
+    "k2Protocol": "k2 프로토콜",
+    "routers": "라우터",
+    "download": "다운로드",
+    "quickstart": "빠른 자체 배포",
+    "productFeatures": "제품 기능",
+    "whyBrand": "{brand}를 선택하는 이유",
+    "freeDownload": "무료 다운로드",
+    "pricing": "요금",
+    "help": "도움말",
+    "useCases": "활용 사례",
+    "breakBarriers": "인터넷 차단 우회",
+    "familyProtection": "가족 모든 기기 보호",
+    "mobilePlusDesktop": "모바일 + 데스크톱",
+    "supportedPlatforms": "지원 플랫폼",
+    "whySpeed": "속도와 안정성",
+    "whyTech": "기술력",
+    "whyTestimonials": "사용자 후기",
+    "quickStart": "빠른 시작",
+    "faq": "자주 묻는 질문",
+    "contactUs": "문의하기",
+    "features": "기능",
+    "docs": "문서",
+    "routerEdition": "라우터 에디션",
+    "breadcrumb": "현재 위치",
+    "navigation": "사이트 내비게이션",
+    "menu": "메뉴"
+  },
+  "footer": {
+    "brandName": "开途 Kaitu",
+    "brandDescription": "안전하고 편리한 네트워크 프록시 솔루션",
+    "product": {
+      "title": "제품",
+      "clientDownload": "앱 다운로드",
+      "smartRouter": "스마트 라우터 제품",
+      "retailerProgram": "리셀러 프로그램",
+      "nodeStatus": "노드 상태"
+    },
+    "developer": {
+      "title": "개발자",
+      "apiDocs": "API 문서",
+      "openSource": "보안 감사",
+      "techBlog": "기술 블로그",
+      "k2Docs": "k2 프로토콜 문서",
+      "selfDeploy": "빠른 자체 배포",
+      "changelog": "업데이트 기록"
+    },
+    "support": {
+      "title": "지원",
+      "userGuide": "사용 가이드",
+      "faq": "자주 묻는 질문",
+      "contact": "문의하기",
+      "homeschoolGuide": "Homeschool 설치 가이드"
+    },
+    "legal": {
+      "title": "법적 고지"
+    },
+    "optOut": "방문 통계 참여 안 함",
+    "copyright": "All rights reserved.",
+    "copyrightSymbol": "©",
+    "period": ".",
+    "company": {
+      "title": "회사"
+    }
+  },
+  "languageDetection": {
+    "message": "브라우저 언어가 다음으로 감지되었습니다:",
+    "question": ". 전환하시겠습니까?",
+    "switchTo": "전환:"
+  }
+}

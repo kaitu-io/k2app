@@ -1,0 +1,12 @@
+{
+  "sections": {
+    "overview": "개요",
+    "getting-started": "시작하기",
+    "technical": "기술",
+    "comparison": "비교",
+    "uncategorized": "기타"
+  },
+  "mobileNav": {
+    "toggleLabel": "목차"
+  }
+}

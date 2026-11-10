@@ -2,7 +2,462 @@
 "use client";
 
 import { AlertCircle, CheckCircle, Copy } from 'lucide-react';
-import { siteBrand } from '@/lib/brands';
+import { useLocale } from 'next-intl';
+import { siteBrand, localizedWordmark } from '@/lib/brands';
+
+// ---------------------------------------------------------------------------
+// Per-locale copy for the guides. The srcdoc mockups imitate OS / browser UI,
+// so foreign locales show the labels that OS / browser actually shows in that
+// language. zh-CN / zh-TW / zh-HK (and anything unknown) use the `zh` entry,
+// which is the original Simplified copy verbatim. Values marked (html) are
+// injected into srcdoc HTML as-is.
+// ---------------------------------------------------------------------------
+
+type GuideLang = 'zh' | 'en-US' | 'ko' | 'ja' | 'ru';
+
+interface GuideText {
+  edge: {
+    title: string;
+    warn: (f: string) => string;
+    viewMore: string;
+    del: string;
+    keep: string;
+    reportSafe: string;
+    learnMore: string;
+    copyLink: string;
+    clickHere: string; // CSS content — no single quotes
+  };
+  chrome: { warn: (f: string) => string /* html */; keep: string; discard: string };
+  smartScreen: {
+    clickHere: string; // CSS content — no single quotes
+    title: string;
+    line1: string;
+    line2: string;
+    moreInfo: string;
+    dismiss: string;
+    app: string;
+    publisher: string;
+    dontRun: string;
+    runAnyway: string;
+    step1: string;
+    step2: string;
+  };
+  mac: {
+    search: string; // html
+    pane: string; // html
+    security: string;
+    allowFrom: string;
+    appStoreDevs: string;
+    blocked: (p: string) => string; // html
+    allow: string;
+    caption: string;
+  };
+  android: {
+    titles: [string, string, string, string, (w: string) => string];
+    descs: [string, string, string, string, string]; // html
+  };
+  usb: {
+    slogan: string;
+    edit: string;
+    myDevices: string;
+    otherDevices: string;
+    clickHere: string;
+    tabs: [string, string, string, string, string];
+    hint: string;
+    card: string;
+    experimental: string;
+    cardDesc: string;
+    wizardTitle: string;
+    wizardSub: string;
+    steps: [string, string, string]; // html
+    stepDescs: [string, string, (w: string) => string];
+    caption1Pre: string;
+    caption1Post: string;
+    caption2: string;
+  };
+}
+
+const GUIDE_TEXT: Record<GuideLang, GuideText> = {
+  zh: {
+    edge: {
+      title: '下载',
+      warn: (f) => `通常不会下载 ${f}。请在打开前信任 ${f}。`,
+      viewMore: '查看更多',
+      del: '删除',
+      keep: '保留',
+      reportSafe: '将此文件报告为安全',
+      learnMore: '了解更多信息',
+      copyLink: '复制下载链接',
+      clickHere: '← 点这里',
+    },
+    chrome: {
+      warn: (f) => `<strong>${f}</strong> 不是常见的下载文件，可能存在危险。`,
+      keep: '保留',
+      discard: '丢弃',
+    },
+    smartScreen: {
+      clickHere: ' 👈 点击这里',
+      title: 'Windows 已保护你的电脑',
+      line1: 'Microsoft Defender SmartScreen 已阻止一个未识别的应用启动。',
+      line2: '运行此应用可能会使你的电脑面临风险。',
+      moreInfo: '更多信息',
+      dismiss: '我知道了',
+      app: '应用: ',
+      publisher: '发布者: ',
+      dontRun: '不运行',
+      runAnyway: '仍要运行',
+      step1: '第 1 步：点击「更多信息」',
+      step2: '第 2 步：点击「仍要运行」',
+    },
+    mac: {
+      search: '隐私与安全',
+      pane: '隐私与安全性',
+      security: '安全性',
+      allowFrom: '允许从以下位置下载的应用程序',
+      appStoreDevs: 'App Store 和被认可的开发者',
+      blocked: (p) => `来自开发者 <strong>"${p}"</strong> 的系统软件已被阻止载入。`,
+      allow: '允许',
+      caption: '在系统设置中搜索「隐私与安全」，找到底部的安全性提示：',
+    },
+    android: {
+      titles: ['📥 下载 APK 安装包', '✈️ 开启飞行模式', '📲 安装 APK', '📶 关闭飞行模式', (w) => `🚀 打开${w}`],
+      descs: [
+        '浏览器可能提示「有害文件」，选择 <span class="hl">保留</span>',
+        '安装前开启飞行模式，避免手机安全中心联网云检测拦截安装',
+        '打开 APK → 允许「安装未知应用」→ 点击 <span class="hl">安装</span>',
+        '安装完成后关闭飞行模式，恢复网络',
+        '首次启动会请求 VPN 权限，点击 <span class="hl">允许</span> 即可',
+      ],
+    },
+    usb: {
+      slogan: '越拥堵，越从容',
+      edit: '修改',
+      myDevices: '我的设备',
+      otherDevices: '其他设备安装',
+      clickHere: '👈 点这里',
+      tabs: ['仪表板', '购买', '邀请', '发现', '账户'],
+      hint: '👇 点击进入安卓 USB 安装向导',
+      card: '安卓手机安装',
+      experimental: '实验性',
+      cardDesc: 'USB 连接电脑，保姆级引导，一键自动安装到手机',
+      wizardTitle: '安卓 USB 安装',
+      wizardSub: '通过 USB 数据线将应用安装到安卓手机',
+      steps: ['开启开发者选项和 USB 调试', 'USB 连接并授权', '自动安装'],
+      stepDescs: ['选择手机品牌，按图片指引操作', '用数据线连接手机和电脑', (w) => `${w}自动推送 APK 到手机`],
+      caption1Pre: '在电脑上打开',
+      caption1Post: '客户端，进入「账户」→「其他设备安装」：',
+      caption2: '点击「安卓手机安装」，按照向导用 USB 数据线一键安装：',
+    },
+  },
+  'en-US': {
+    edge: {
+      title: 'Downloads',
+      warn: (f) => `${f} isn't commonly downloaded. Make sure you trust ${f} before you open it.`,
+      viewMore: 'See more',
+      del: 'Delete',
+      keep: 'Keep',
+      reportSafe: 'Report this file as safe',
+      learnMore: 'Learn more',
+      copyLink: 'Copy download link',
+      clickHere: '← click here',
+    },
+    chrome: {
+      warn: (f) => `<strong>${f}</strong> is not commonly downloaded and may be dangerous.`,
+      keep: 'Keep',
+      discard: 'Discard',
+    },
+    smartScreen: {
+      clickHere: ' 👈 click here',
+      title: 'Windows protected your PC',
+      line1: 'Microsoft Defender SmartScreen prevented an unrecognized app from starting.',
+      line2: 'Running this app might put your PC at risk.',
+      moreInfo: 'More info',
+      dismiss: "Don't run",
+      app: 'App: ',
+      publisher: 'Publisher: ',
+      dontRun: "Don't run",
+      runAnyway: 'Run anyway',
+      step1: 'Step 1: click "More info"',
+      step2: 'Step 2: click "Run anyway"',
+    },
+    mac: {
+      search: 'Privacy &amp; Security',
+      pane: 'Privacy &amp; Security',
+      security: 'Security',
+      allowFrom: 'Allow applications from',
+      appStoreDevs: 'App Store and identified developers',
+      blocked: (p) => `System software from developer <strong>"${p}"</strong> was blocked from loading.`,
+      allow: 'Allow',
+      caption: 'In System Settings, search for "Privacy & Security" and find the security notice near the bottom:',
+    },
+    android: {
+      titles: ['📥 Download the APK', '✈️ Turn on Airplane mode', '📲 Install the APK', '📶 Turn off Airplane mode', (w) => `🚀 Open ${w}`],
+      descs: [
+        'Your browser may warn that the file is harmful — choose <span class="hl">Keep</span>',
+        "Turn on Airplane mode before installing, so the phone's security center can't run an online scan and block the install",
+        'Open the APK → allow "Install unknown apps" → tap <span class="hl">Install</span>',
+        'When the install finishes, turn Airplane mode off to get back online',
+        'On first launch it asks for VPN permission — tap <span class="hl">Allow</span>',
+      ],
+    },
+    usb: {
+      slogan: 'Smooth passage, even in congestion',
+      edit: 'Edit',
+      myDevices: 'My Devices',
+      otherDevices: 'Install on Other Devices',
+      clickHere: '👈 click here',
+      tabs: ['Dashboard', 'Purchase', 'Invite', 'Discover', 'Account'],
+      hint: '👇 Click to open the Android USB install wizard',
+      card: 'Android Phone Install',
+      experimental: 'Experimental',
+      cardDesc: 'Connect via USB, step-by-step guided, auto-install to your phone',
+      wizardTitle: 'Android USB Install',
+      wizardSub: 'Install the app to your Android phone via USB cable',
+      steps: ['Enable Developer Options &amp; USB Debugging', 'Connect USB &amp; Authorize', 'Auto Install'],
+      stepDescs: [
+        'Pick your phone brand and follow the pictures',
+        'Connect your phone to the computer with a cable',
+        (w) => `${w} pushes the APK to your phone automatically`,
+      ],
+      caption1Pre: 'Open the ',
+      caption1Post: ' app on your computer and go to "Account" → "Install on Other Devices":',
+      caption2: 'Click "Android Phone Install" and follow the wizard to install over a USB cable:',
+    },
+  },
+  ko: {
+    edge: {
+      title: '다운로드',
+      warn: (f) => `${f}은(는) 일반적으로 다운로드되지 않습니다. 열기 전에 ${f}을(를) 신뢰할 수 있는지 확인하세요.`,
+      viewMore: '더 보기',
+      del: '삭제',
+      keep: '유지',
+      reportSafe: '이 파일을 안전한 파일로 보고',
+      learnMore: '자세한 정보',
+      copyLink: '다운로드 링크 복사',
+      clickHere: '← 여기를 클릭',
+    },
+    chrome: {
+      warn: (f) => `<strong>${f}</strong> 파일은 일반적으로 다운로드되는 파일이 아니며 위험할 수 있습니다.`,
+      keep: '유지',
+      discard: '삭제',
+    },
+    smartScreen: {
+      clickHere: ' 👈 여기를 클릭',
+      title: 'Windows의 PC 보호',
+      line1: 'Microsoft Defender SmartScreen에서 인식할 수 없는 앱의 시작을 차단했습니다.',
+      line2: '이 앱을 실행하면 PC가 위험에 노출될 수 있습니다.',
+      moreInfo: '추가 정보',
+      dismiss: '실행 안 함',
+      app: '앱: ',
+      publisher: '게시자: ',
+      dontRun: '실행 안 함',
+      runAnyway: '실행',
+      step1: '1단계: "추가 정보" 클릭',
+      step2: '2단계: "실행" 클릭',
+    },
+    mac: {
+      search: '개인정보 보호 및 보안',
+      pane: '개인정보 보호 및 보안',
+      security: '보안',
+      allowFrom: '다음에서 다운로드한 응용 프로그램 허용',
+      appStoreDevs: 'App Store 및 확인된 개발자',
+      blocked: (p) => `<strong>"${p}"</strong> 개발자의 시스템 소프트웨어 로드가 차단되었습니다.`,
+      allow: '허용',
+      caption: '시스템 설정에서 "개인정보 보호 및 보안"을 검색한 뒤 아래쪽의 보안 알림을 찾으세요:',
+    },
+    android: {
+      titles: ['📥 APK 다운로드', '✈️ 비행기 탑승 모드 켜기', '📲 APK 설치', '📶 비행기 탑승 모드 끄기', (w) => `🚀 ${w} 열기`],
+      descs: [
+        '브라우저가 "유해한 파일"이라고 경고할 수 있습니다. <span class="hl">유지</span>를 선택하세요',
+        '설치 전에 비행기 탑승 모드를 켜서 휴대폰 보안 센터의 온라인 검사가 설치를 차단하지 않도록 하세요',
+        'APK 열기 → "출처를 알 수 없는 앱 설치" 허용 → <span class="hl">설치</span> 누르기',
+        '설치가 끝나면 비행기 탑승 모드를 꺼서 네트워크를 복구하세요',
+        '처음 실행하면 VPN 권한을 요청합니다. <span class="hl">허용</span>을 누르세요',
+      ],
+    },
+    usb: {
+      slogan: '붐빌수록, 더 여유롭게',
+      edit: '편집',
+      myDevices: '내 기기',
+      otherDevices: '다른 기기에 설치',
+      clickHere: '👈 여기를 클릭',
+      tabs: ['대시보드', '구매', '초대', '발견', '계정'],
+      hint: '👇 눌러서 Android USB 설치 마법사 열기',
+      card: 'Android 휴대폰 설치',
+      experimental: '실험적',
+      cardDesc: 'USB 연결, 단계별 가이드, 휴대폰에 자동 설치',
+      wizardTitle: 'Android USB 설치',
+      wizardSub: 'USB 케이블을 통해 Android 휴대폰에 앱 설치',
+      steps: ['개발자 옵션 및 USB 디버깅 활성화', 'USB 연결 및 인증', '자동 설치'],
+      stepDescs: [
+        '휴대폰 브랜드를 선택하고 그림 안내를 따르세요',
+        '케이블로 휴대폰과 컴퓨터를 연결하세요',
+        (w) => `${w}이(가) APK를 휴대폰에 자동으로 전송합니다`,
+      ],
+      caption1Pre: '컴퓨터에서 ',
+      caption1Post: ' 앱을 열고 "계정" → "다른 기기에 설치"로 이동하세요:',
+      caption2: '"Android 휴대폰 설치"를 누르고 마법사에 따라 USB 케이블로 설치하세요:',
+    },
+  },
+  ja: {
+    edge: {
+      title: 'ダウンロード',
+      warn: (f) => `${f} は一般的にダウンロードされていません。開く前に ${f} が信頼できることを確認してください。`,
+      viewMore: 'さらに表示',
+      del: '削除',
+      keep: '保存',
+      reportSafe: 'このファイルを安全であると報告する',
+      learnMore: '詳細情報',
+      copyLink: 'ダウンロード リンクのコピー',
+      clickHere: '← ここをクリック',
+    },
+    chrome: {
+      warn: (f) => `<strong>${f}</strong> は一般的にダウンロードされているファイルではなく、危険である可能性があります。`,
+      keep: '保存',
+      discard: '破棄',
+    },
+    smartScreen: {
+      clickHere: ' 👈 ここをクリック',
+      title: 'Windows によって PC が保護されました',
+      line1: 'Microsoft Defender SmartScreen は認識されないアプリの起動を停止しました。',
+      line2: 'このアプリを実行すると、PC に問題が起こる可能性があります。',
+      moreInfo: '詳細情報',
+      dismiss: '実行しない',
+      app: 'アプリ: ',
+      publisher: '発行元: ',
+      dontRun: '実行しない',
+      runAnyway: '実行',
+      step1: 'ステップ 1：「詳細情報」をクリック',
+      step2: 'ステップ 2：「実行」をクリック',
+    },
+    mac: {
+      search: 'プライバシーとセキュリティ',
+      pane: 'プライバシーとセキュリティ',
+      security: 'セキュリティ',
+      allowFrom: 'アプリケーションの実行許可',
+      appStoreDevs: 'App Storeと確認済みの開発元',
+      blocked: (p) => `開発元<strong>"${p}"</strong>のシステムソフトウェアの読み込みがブロックされました。`,
+      allow: '許可',
+      caption: 'システム設定で「プライバシーとセキュリティ」を検索し、下部のセキュリティの項目を確認してください：',
+    },
+    android: {
+      titles: ['📥 APK をダウンロード', '✈️ 機内モードをオン', '📲 APK をインストール', '📶 機内モードをオフ', (w) => `🚀 ${w} を開く`],
+      descs: [
+        'ブラウザに「有害なファイル」と表示されたら <span class="hl">保存</span> を選択',
+        'インストール前に機内モードをオンにして、スマホのセキュリティ機能のオンライン検査でブロックされるのを防ぎます',
+        'APK を開く →「不明なアプリのインストール」を許可 → <span class="hl">インストール</span> をタップ',
+        'インストール完了後、機内モードをオフにしてネットワークに戻ります',
+        '初回起動時に VPN の許可を求められたら <span class="hl">許可</span> をタップ',
+      ],
+    },
+    usb: {
+      slogan: '混雑の中でも、余裕を',
+      edit: '編集',
+      myDevices: 'マイデバイス',
+      otherDevices: '他のデバイスにインストール',
+      clickHere: '👈 ここをクリック',
+      tabs: ['ダッシュボード', '購入', '招待', '発見', 'アカウント'],
+      hint: '👇 クリックして Android USB インストールガイドへ',
+      card: 'Androidスマホへインストール',
+      experimental: '実験的',
+      cardDesc: 'USB接続で簡単ガイド付き、ワンタッチ自動インストール',
+      wizardTitle: 'Android USB インストール',
+      wizardSub: 'USBケーブルを使用してAndroidスマホにアプリをインストール',
+      steps: ['開発者オプションとUSBデバッグを有効にする', 'USB接続と認証', '自動インストール'],
+      stepDescs: [
+        'スマホのメーカーを選び、画像の案内に従って操作',
+        'ケーブルでスマホとパソコンを接続',
+        (w) => `${w} が APK をスマホへ自動転送`,
+      ],
+      caption1Pre: 'パソコンで ',
+      caption1Post: ' アプリを開き、「アカウント」→「他のデバイスにインストール」へ進みます：',
+      caption2: '「Androidスマホへインストール」をクリックし、ガイドに従って USB ケーブルでインストールします：',
+    },
+  },
+  ru: {
+    edge: {
+      title: 'Скачанные файлы',
+      warn: (f) => `Файл ${f} обычно не скачивают. Перед открытием убедитесь, что ${f} заслуживает доверия.`,
+      viewMore: 'Показать больше',
+      del: 'Удалить',
+      keep: 'Сохранить',
+      reportSafe: 'Сообщить, что этот файл безопасен',
+      learnMore: 'Подробнее',
+      copyLink: 'Копировать ссылку для скачивания',
+      clickHere: '← нажмите здесь',
+    },
+    chrome: {
+      warn: (f) => `Файл <strong>${f}</strong> редко скачивают, и он может быть опасен.`,
+      keep: 'Сохранить',
+      discard: 'Удалить',
+    },
+    smartScreen: {
+      clickHere: ' 👈 нажмите здесь',
+      title: 'Система Windows защитила ваш компьютер',
+      line1: 'Фильтр SmartScreen в Microsoft Defender предотвратил запуск неопознанного приложения.',
+      line2: 'Запуск этого приложения может подвергнуть ваш компьютер риску.',
+      moreInfo: 'Подробнее',
+      dismiss: 'Не выполнять',
+      app: 'Приложение: ',
+      publisher: 'Издатель: ',
+      dontRun: 'Не выполнять',
+      runAnyway: 'Выполнить в любом случае',
+      step1: 'Шаг 1: нажмите «Подробнее»',
+      step2: 'Шаг 2: нажмите «Выполнить в любом случае»',
+    },
+    mac: {
+      search: 'Конфиденциальность и безопасность',
+      pane: 'Конфиденциальность и безопасность',
+      security: 'Безопасность',
+      allowFrom: 'Разрешать использование приложений, загруженных из:',
+      appStoreDevs: 'App Store и от установленных разработчиков',
+      blocked: (p) => `Загрузка системного ПО разработчика <strong>«${p}»</strong> была заблокирована.`,
+      allow: 'Разрешить',
+      caption: 'В Системных настройках найдите «Конфиденциальность и безопасность» и прокрутите вниз до уведомления безопасности:',
+    },
+    android: {
+      titles: ['📥 Скачайте APK', '✈️ Включите авиарежим', '📲 Установите APK', '📶 Выключите авиарежим', (w) => `🚀 Откройте ${w}`],
+      descs: [
+        'Браузер может предупредить о «вредоносном файле» — выберите <span class="hl">Сохранить</span>',
+        'Перед установкой включите авиарежим, чтобы онлайн-проверка защиты телефона не заблокировала установку',
+        'Откройте APK → разрешите «Установку неизвестных приложений» → нажмите <span class="hl">Установить</span>',
+        'После установки выключите авиарежим, чтобы вернуть сеть',
+        'При первом запуске приложение запросит разрешение на VPN — нажмите <span class="hl">Разрешить</span>',
+      ],
+    },
+    usb: {
+      slogan: 'Чем больше пробок, тем спокойнее',
+      edit: 'Изменить',
+      myDevices: 'Мои устройства',
+      otherDevices: 'Установить на другие устройства',
+      clickHere: '👈 нажмите здесь',
+      tabs: ['Панель управления', 'Покупка', 'Приглашение', 'Обзор', 'Аккаунт'],
+      hint: '👇 Нажмите, чтобы открыть мастер установки на Android через USB',
+      card: 'Установка на Android телефон',
+      experimental: 'Экспериментальная функция',
+      cardDesc: 'Подключитесь через USB, пошаговое руководство, автоматическая установка на ваш телефон',
+      wizardTitle: 'Установка Android через USB',
+      wizardSub: 'Установите приложение на ваш Android телефон через USB кабель',
+      steps: ['Включить параметры разработчика и USB отладку', 'Подключить USB и авторизовать', 'Автоматическая установка'],
+      stepDescs: [
+        'Выберите марку телефона и следуйте подсказкам на картинках',
+        'Подключите телефон к компьютеру кабелем',
+        (w) => `${w} автоматически отправит APK на телефон`,
+      ],
+      caption1Pre: 'Откройте приложение ',
+      caption1Post: ' на компьютере и перейдите в «Аккаунт» → «Установить на другие устройства»:',
+      caption2: 'Нажмите «Установка на Android телефон» и следуйте мастеру, чтобы установить приложение по USB-кабелю:',
+    },
+  },
+};
+
+/** Guide copy + brand wordmark for the current locale (zh-* → original copy). */
+function useGuideText(): { s: GuideText; wordmark: string } {
+  const locale = useLocale();
+  const lang: GuideLang = Object.hasOwn(GUIDE_TEXT, locale) ? (locale as GuideLang) : 'zh';
+  const brand = siteBrand();
+  return { s: GUIDE_TEXT[lang], wordmark: lang === 'zh' ? brand.wordmark : localizedWordmark(brand, locale) };
+}
 
 // ---------------------------------------------------------------------------
 // Reusable wrapper for yellow warning tip cards
@@ -36,6 +491,7 @@ export function GuideIframe({ srcdoc, height }: { srcdoc: string; height: number
 }
 
 function EdgeBlockedGuide({ filename }: { filename: string }) {
+  const { s: { edge: t } } = useGuideText();
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#f0f0f0;padding:8px;font-family:'Segoe UI',sans-serif;position:relative;min-height:310px}
@@ -53,7 +509,7 @@ body{background:#f0f0f0;padding:8px;font-family:'Segoe UI',sans-serif;position:r
 .act-btn{width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:4px;color:#555;font-size:13px;cursor:pointer}
 .act-btn:hover{background:#eee}
 .dots-hl{border:2px solid #e94560;color:#e94560;position:relative}
-.dots-hl::after{content:'← 点这里';position:absolute;left:calc(100% + 4px);top:50%;transform:translateY(-50%);font-size:9px;color:#e94560;white-space:nowrap;font-weight:700}
+.dots-hl::after{content:'${t.clickHere}';position:absolute;left:calc(100% + 4px);top:50%;transform:translateY(-50%);font-size:9px;color:#e94560;white-space:nowrap;font-weight:700}
 /* View more */
 .view-more{padding:10px 14px;font-size:13px;color:#1a1a1a;font-weight:500;cursor:pointer}
 /* Floating context menu — overlapping right side */
@@ -69,34 +525,35 @@ body{background:#f0f0f0;padding:8px;font-family:'Segoe UI',sans-serif;position:r
 </style></head><body>
 <div class="panel">
   <div class="header">
-    <span class="htitle">下载</span>
+    <span class="htitle">${t.title}</span>
     <span class="hicons">📂&nbsp;&nbsp;🔍&nbsp;&nbsp;···</span>
   </div>
   <div class="warn-row">
     <div class="warn-ico"><svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg></div>
-    <div class="warn-text">通常不会下载 ${filename}。请在打开前信任 ${filename}。</div>
+    <div class="warn-text">${t.warn(filename)}</div>
     <div class="warn-actions">
       <div class="act-btn">🗑</div>
       <div class="act-btn dots-hl">···</div>
     </div>
   </div>
-  <div class="view-more">查看更多</div>
+  <div class="view-more">${t.viewMore}</div>
 </div>
 <div class="ctx-menu">
-  <div class="mi"><span class="ico">🗑</span>删除</div>
-  <div class="mi keep"><span class="ico">📂</span>保留<span class="keep-arrow">👈</span></div>
+  <div class="mi"><span class="ico">🗑</span>${t.del}</div>
+  <div class="mi keep"><span class="ico">📂</span>${t.keep}<span class="keep-arrow">👈</span></div>
   <div class="msep"></div>
-  <div class="mi"><span class="ico">🛡</span>将此文件报告为安全</div>
-  <div class="mi"><span class="ico">ℹ️</span>了解更多信息</div>
+  <div class="mi"><span class="ico">🛡</span>${t.reportSafe}</div>
+  <div class="mi"><span class="ico">ℹ️</span>${t.learnMore}</div>
   <div class="msep"></div>
-  <div class="mi-bottom"><span class="ico">🔗</span>复制下载链接</div>
+  <div class="mi-bottom"><span class="ico">🔗</span>${t.copyLink}</div>
 </div>
 </body></html>`;
   return <GuideIframe srcdoc={html} height={320} />;
 }
 
 function ChromeBlockedGuide({ filename }: { filename: string }) {
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#2b2b2b;padding:12px 12px 8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.bar{background:#3a3a3a;border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px}.icon{color:#fbbf24;font-size:16px;flex-shrink:0}.text{color:#ccc;font-size:11px;flex:1}strong{color:#fff;font-weight:600}.keep{background:#4285f4;color:#fff;padding:5px 14px;border-radius:4px;font-size:11px;font-weight:500;border:2px solid #ff4444;flex-shrink:0;white-space:nowrap}.keep::after{content:' 👈';font-size:12px}.discard{background:transparent;color:#888;padding:5px 14px;border-radius:4px;font-size:11px;border:1px solid #555;flex-shrink:0}</style></head><body><div class="bar"><span class="icon">⚠️</span><span class="text"><strong>${filename}</strong> 不是常见的下载文件，可能存在危险。</span><span class="keep">保留</span><span class="discard">丢弃</span></div></body></html>`;
+  const { s: { chrome: t } } = useGuideText();
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#2b2b2b;padding:12px 12px 8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.bar{background:#3a3a3a;border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px}.icon{color:#fbbf24;font-size:16px;flex-shrink:0}.text{color:#ccc;font-size:11px;flex:1}strong{color:#fff;font-weight:600}.keep{background:#4285f4;color:#fff;padding:5px 14px;border-radius:4px;font-size:11px;font-weight:500;border:2px solid #ff4444;flex-shrink:0;white-space:nowrap}.keep::after{content:' 👈';font-size:12px}.discard{background:transparent;color:#888;padding:5px 14px;border-radius:4px;font-size:11px;border:1px solid #555;flex-shrink:0}</style></head><body><div class="bar"><span class="icon">⚠️</span><span class="text">${t.warn(filename)}</span><span class="keep">${t.keep}</span><span class="discard">${t.discard}</span></div></body></html>`;
   return <GuideIframe srcdoc={html} height={70} />;
 }
 
@@ -117,17 +574,18 @@ export function BrowserBlockedGuide({ filename, browser }: { filename: string; b
 }
 
 export function SmartScreenGuide({ filename, publisher }: { filename: string; publisher: string }) {
-  const step1 = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0078d4;padding:24px 28px;font-family:'Segoe UI',sans-serif;color:#fff}h1{font-size:20px;font-weight:300;margin-bottom:14px}p{font-size:12px;color:rgba(255,255,255,0.8);line-height:1.6;margin-bottom:2px}a{color:rgba(255,255,255,0.9);font-size:12px;text-decoration:underline;display:inline-block;margin-top:8px;border:2px solid #ff4444;border-radius:3px;padding:1px 6px}a::after{content:' 👈 点击这里';color:#ffcc00;font-size:11px;font-weight:600;text-decoration:none}.spacer{height:60px}.row{text-align:right}.btn{background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.3);padding:5px 24px;font-size:12px}</style></head><body><h1>Windows 已保护你的电脑</h1><p>Microsoft Defender SmartScreen 已阻止一个未识别的应用启动。</p><p>运行此应用可能会使你的电脑面临风险。</p><a>更多信息</a><div class="spacer"></div><div class="row"><button class="btn">我知道了</button></div></body></html>`;
-  const step2 = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0078d4;padding:24px 28px;font-family:'Segoe UI',sans-serif;color:#fff}h1{font-size:20px;font-weight:300;margin-bottom:14px}p{font-size:12px;color:rgba(255,255,255,0.8);line-height:1.6;margin-bottom:2px}.info{font-size:11px;color:rgba(255,255,255,0.5);margin-top:10px}.spacer{height:30px}.row{display:flex;justify-content:flex-end;gap:8px}.btn{background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.3);padding:5px 24px;font-size:12px}.hl{border:2px solid #ff4444}.hl::after{content:' 👈';color:#ffcc00;font-size:11px;font-weight:600}</style></head><body><h1>Windows 已保护你的电脑</h1><p>Microsoft Defender SmartScreen 已阻止一个未识别的应用启动。</p><p>运行此应用可能会使你的电脑面临风险。</p><p class="info">应用: ${filename}</p><p class="info">发布者: ${publisher}</p><div class="spacer"></div><div class="row"><button class="btn">不运行</button><button class="btn hl">仍要运行</button></div></body></html>`;
+  const { s: { smartScreen: t } } = useGuideText();
+  const step1 = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0078d4;padding:24px 28px;font-family:'Segoe UI',sans-serif;color:#fff}h1{font-size:20px;font-weight:300;margin-bottom:14px}p{font-size:12px;color:rgba(255,255,255,0.8);line-height:1.6;margin-bottom:2px}a{color:rgba(255,255,255,0.9);font-size:12px;text-decoration:underline;display:inline-block;margin-top:8px;border:2px solid #ff4444;border-radius:3px;padding:1px 6px}a::after{content:'${t.clickHere}';color:#ffcc00;font-size:11px;font-weight:600;text-decoration:none}.spacer{height:60px}.row{text-align:right}.btn{background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.3);padding:5px 24px;font-size:12px}</style></head><body><h1>${t.title}</h1><p>${t.line1}</p><p>${t.line2}</p><a>${t.moreInfo}</a><div class="spacer"></div><div class="row"><button class="btn">${t.dismiss}</button></div></body></html>`;
+  const step2 = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0078d4;padding:24px 28px;font-family:'Segoe UI',sans-serif;color:#fff}h1{font-size:20px;font-weight:300;margin-bottom:14px}p{font-size:12px;color:rgba(255,255,255,0.8);line-height:1.6;margin-bottom:2px}.info{font-size:11px;color:rgba(255,255,255,0.5);margin-top:10px}.spacer{height:30px}.row{display:flex;justify-content:flex-end;gap:8px}.btn{background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.3);padding:5px 24px;font-size:12px}.hl{border:2px solid #ff4444}.hl::after{content:' 👈';color:#ffcc00;font-size:11px;font-weight:600}</style></head><body><h1>${t.title}</h1><p>${t.line1}</p><p>${t.line2}</p><p class="info">${t.app}${filename}</p><p class="info">${t.publisher}${publisher}</p><div class="spacer"></div><div class="row"><button class="btn">${t.dontRun}</button><button class="btn hl">${t.runAnyway}</button></div></body></html>`;
 
   return (
     <div className="space-y-3">
       <div>
-        <p className="text-sm text-muted-foreground mb-1.5">第 1 步：点击「更多信息」</p>
+        <p className="text-sm text-muted-foreground mb-1.5">{t.step1}</p>
         <GuideIframe srcdoc={step1} height={280} />
       </div>
       <div>
-        <p className="text-sm text-muted-foreground mb-1.5">第 2 步：点击「仍要运行」</p>
+        <p className="text-sm text-muted-foreground mb-1.5">{t.step2}</p>
         <GuideIframe srcdoc={step2} height={260} />
       </div>
     </div>
@@ -135,24 +593,26 @@ export function SmartScreenGuide({ filename, publisher }: { filename: string; pu
 }
 
 export function MacOSAllowGuide({ publisher }: { publisher: string }) {
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#1c1c1e;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:11px}.tb{background:#2c2c2e;padding:8px 12px;display:flex;align-items:center;gap:6px;border-bottom:1px solid #3a3a3c}.d{width:10px;height:10px;border-radius:50%}.r{background:#ff5f57}.y{background:#febc2e}.g{background:#28c840}.main{display:flex}.sb{width:150px;background:#262628;border-right:1px solid #3a3a3c;padding:10px}.search{background:#3a3a3c;border-radius:12px;padding:5px 8px;display:flex;align-items:center;gap:4px;margin-bottom:8px;border:2px solid #ff4444;box-shadow:0 0 6px rgba(255,68,68,0.4)}.search span{color:#98989d;font-size:9px}.search .t{color:#e5e5e7;flex:1}.si{background:#3478f6;border-radius:5px;padding:5px 8px;display:flex;align-items:center;gap:5px}.si span{font-size:9px;color:#fff}.ct{flex:1;padding:14px}.ch{padding:8px 0 10px;display:flex;align-items:center;gap:6px;border-bottom:1px solid #3a3a3c;margin-bottom:12px}.ch span{color:#3478f6;font-size:14px}.ch .t{flex:1;font-size:11px;font-weight:600;color:#e5e5e7}.st{font-size:10px;font-weight:600;color:#e5e5e7;margin-bottom:8px}.bx{background:#2c2c2e;border-radius:8px;padding:10px;margin-bottom:8px}.rl{color:#e5e5e7;font-size:10px;margin-bottom:6px}.rd{display:flex;align-items:center;gap:5px;margin-bottom:3px}.roff{width:12px;height:12px;border-radius:50%;border:1.5px solid #58585a}.ron{width:12px;height:12px;border-radius:50%;background:#3478f6;position:relative}.ron::after{content:'';position:absolute;top:3px;left:3px;width:6px;height:6px;border-radius:50%;background:#fff}.rl2{font-size:9px;color:#98989d}.rl2.sel{color:#e5e5e7}.at{color:#98989d;font-size:10px;line-height:1.5}strong{color:#e5e5e7}.ba{float:right;background:#48484a;color:#e5e5e7;border:none;padding:3px 12px;border-radius:5px;font-size:9px;margin-top:6px;border:2px solid #ff4444}.ba::after{content:' 👈';color:#ffcc00;font-size:9px;font-weight:600}.cf::after{content:'';display:table;clear:both}</style></head><body><div class="tb"><div class="d r"></div><div class="d y"></div><div class="d g"></div></div><div class="main"><div class="sb"><div class="search"><span>🔍</span><span class="t">隐私与安全</span></div><div class="si"><span>🤚</span><span>隐私与安全性</span></div></div><div class="ct"><div class="ch"><span>‹</span><span>›</span><span class="t">隐私与安全性</span></div><div class="st">安全性</div><div class="bx"><div class="rl">允许从以下位置下载的应用程序</div><div class="rd"><div class="roff"></div><span class="rl2">App Store</span></div><div class="rd"><div class="ron"></div><span class="rl2 sel">App Store 和被认可的开发者</span></div></div><div class="bx cf"><p class="at">来自开发者 <strong>"${publisher}"</strong> 的系统软件已被阻止载入。</p><button class="ba">允许</button></div></div></div></body></html>`;
+  const { s: { mac: t } } = useGuideText();
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#1c1c1e;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:11px}.tb{background:#2c2c2e;padding:8px 12px;display:flex;align-items:center;gap:6px;border-bottom:1px solid #3a3a3c}.d{width:10px;height:10px;border-radius:50%}.r{background:#ff5f57}.y{background:#febc2e}.g{background:#28c840}.main{display:flex}.sb{width:150px;background:#262628;border-right:1px solid #3a3a3c;padding:10px}.search{background:#3a3a3c;border-radius:12px;padding:5px 8px;display:flex;align-items:center;gap:4px;margin-bottom:8px;border:2px solid #ff4444;box-shadow:0 0 6px rgba(255,68,68,0.4)}.search span{color:#98989d;font-size:9px}.search .t{color:#e5e5e7;flex:1}.si{background:#3478f6;border-radius:5px;padding:5px 8px;display:flex;align-items:center;gap:5px}.si span{font-size:9px;color:#fff}.ct{flex:1;padding:14px}.ch{padding:8px 0 10px;display:flex;align-items:center;gap:6px;border-bottom:1px solid #3a3a3c;margin-bottom:12px}.ch span{color:#3478f6;font-size:14px}.ch .t{flex:1;font-size:11px;font-weight:600;color:#e5e5e7}.st{font-size:10px;font-weight:600;color:#e5e5e7;margin-bottom:8px}.bx{background:#2c2c2e;border-radius:8px;padding:10px;margin-bottom:8px}.rl{color:#e5e5e7;font-size:10px;margin-bottom:6px}.rd{display:flex;align-items:center;gap:5px;margin-bottom:3px}.roff{width:12px;height:12px;border-radius:50%;border:1.5px solid #58585a}.ron{width:12px;height:12px;border-radius:50%;background:#3478f6;position:relative}.ron::after{content:'';position:absolute;top:3px;left:3px;width:6px;height:6px;border-radius:50%;background:#fff}.rl2{font-size:9px;color:#98989d}.rl2.sel{color:#e5e5e7}.at{color:#98989d;font-size:10px;line-height:1.5}strong{color:#e5e5e7}.ba{float:right;background:#48484a;color:#e5e5e7;border:none;padding:3px 12px;border-radius:5px;font-size:9px;margin-top:6px;border:2px solid #ff4444}.ba::after{content:' 👈';color:#ffcc00;font-size:9px;font-weight:600}.cf::after{content:'';display:table;clear:both}</style></head><body><div class="tb"><div class="d r"></div><div class="d y"></div><div class="d g"></div></div><div class="main"><div class="sb"><div class="search"><span>🔍</span><span class="t">${t.search}</span></div><div class="si"><span>🤚</span><span>${t.pane}</span></div></div><div class="ct"><div class="ch"><span>‹</span><span>›</span><span class="t">${t.pane}</span></div><div class="st">${t.security}</div><div class="bx"><div class="rl">${t.allowFrom}</div><div class="rd"><div class="roff"></div><span class="rl2">App Store</span></div><div class="rd"><div class="ron"></div><span class="rl2 sel">${t.appStoreDevs}</span></div></div><div class="bx cf"><p class="at">${t.blocked(publisher)}</p><button class="ba">${t.allow}</button></div></div></div></body></html>`;
 
   return (
     <div>
-      <p className="text-sm text-muted-foreground mb-1.5">在系统设置中搜索「隐私与安全」，找到底部的安全性提示：</p>
+      <p className="text-sm text-muted-foreground mb-1.5">{t.caption}</p>
       <GuideIframe srcdoc={html} height={340} />
     </div>
   );
 }
 
 export function AndroidInstallGuide() {
-  const brand = siteBrand();
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#1a1a2e;padding:14px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#e0e0e0}.steps{display:flex;flex-direction:column;gap:10px}.step{display:flex;align-items:flex-start;gap:10px;background:#16213e;border-radius:8px;padding:10px 12px}.num{background:#0f3460;color:#e94560;font-weight:700;font-size:13px;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}.content{flex:1}.title{font-size:12px;font-weight:600;color:#fff;margin-bottom:2px}.desc{font-size:10px;color:#999;line-height:1.4}.hl{background:#e94560;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:600}</style></head><body><div class="steps"><div class="step"><div class="num">1</div><div class="content"><div class="title">📥 下载 APK 安装包</div><div class="desc">浏览器可能提示「有害文件」，选择 <span class="hl">保留</span></div></div></div><div class="step"><div class="num">2</div><div class="content"><div class="title">✈️ 开启飞行模式</div><div class="desc">安装前开启飞行模式，避免手机安全中心联网云检测拦截安装</div></div></div><div class="step"><div class="num">3</div><div class="content"><div class="title">📲 安装 APK</div><div class="desc">打开 APK → 允许「安装未知应用」→ 点击 <span class="hl">安装</span></div></div></div><div class="step"><div class="num">4</div><div class="content"><div class="title">📶 关闭飞行模式</div><div class="desc">安装完成后关闭飞行模式，恢复网络</div></div></div><div class="step"><div class="num">5</div><div class="content"><div class="title">🚀 打开${brand.wordmark}</div><div class="desc">首次启动会请求 VPN 权限，点击 <span class="hl">允许</span> 即可</div></div></div></div></body></html>`;
+  const { s: { android: t }, wordmark } = useGuideText();
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#1a1a2e;padding:14px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#e0e0e0}.steps{display:flex;flex-direction:column;gap:10px}.step{display:flex;align-items:flex-start;gap:10px;background:#16213e;border-radius:8px;padding:10px 12px}.num{background:#0f3460;color:#e94560;font-weight:700;font-size:13px;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}.content{flex:1}.title{font-size:12px;font-weight:600;color:#fff;margin-bottom:2px}.desc{font-size:10px;color:#999;line-height:1.4}.hl{background:#e94560;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:600}</style></head><body><div class="steps"><div class="step"><div class="num">1</div><div class="content"><div class="title">${t.titles[0]}</div><div class="desc">${t.descs[0]}</div></div></div><div class="step"><div class="num">2</div><div class="content"><div class="title">${t.titles[1]}</div><div class="desc">${t.descs[1]}</div></div></div><div class="step"><div class="num">3</div><div class="content"><div class="title">${t.titles[2]}</div><div class="desc">${t.descs[2]}</div></div></div><div class="step"><div class="num">4</div><div class="content"><div class="title">${t.titles[3]}</div><div class="desc">${t.descs[3]}</div></div></div><div class="step"><div class="num">5</div><div class="content"><div class="title">${t.titles[4](wordmark)}</div><div class="desc">${t.descs[4]}</div></div></div></div></body></html>`;
   return <GuideIframe srcdoc={html} height={310} />;
 }
 
 export function DesktopUsbInstallGuide() {
   const brand = siteBrand();
+  const { s: { usb: t }, wordmark } = useGuideText();
   // Step 1: Desktop app Account page → "其他设备安装"
   const step1 = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -180,19 +640,19 @@ body{background:#e8e8ec;padding:12px;font-family:-apple-system,BlinkMacSystemFon
 .tab.active .tab-ico{filter:none}
 </style></head><body>
 <div class="app">
-<div class="header"><h2>${brand.baseUrl.replace('https://', '')} ${brand.wordmark}</h2><p>越拥堵，越从容</p></div>
+<div class="header"><h2>${brand.baseUrl.replace('https://', '')} ${wordmark}</h2><p>${t.slogan}</p></div>
 <div class="menu">
-<div class="item"><span class="ico">✉️</span><span class="label">x***y@qq.com</span><span class="arrow" style="color:#4a7cba;font-size:11px;border:1px solid #4a7cba;padding:2px 8px;border-radius:4px">修改</span></div>
-<div class="item"><span class="ico">🖥</span><span class="label">我的设备</span><span class="arrow">›</span></div>
+<div class="item"><span class="ico">✉️</span><span class="label">x***y@qq.com</span><span class="arrow" style="color:#4a7cba;font-size:11px;border:1px solid #4a7cba;padding:2px 8px;border-radius:4px">${t.edit}</span></div>
+<div class="item"><span class="ico">🖥</span><span class="label">${t.myDevices}</span><span class="arrow">›</span></div>
 <div class="dots">···</div>
-<div class="item hl"><span class="ico">📱</span><span class="label">其他设备安装</span><span class="hl-hint">👈 点这里</span><span class="arrow">›</span></div>
+<div class="item hl"><span class="ico">📱</span><span class="label">${t.otherDevices}</span><span class="hl-hint">${t.clickHere}</span><span class="arrow">›</span></div>
 </div>
 <div class="tabbar">
-<div class="tab"><span class="tab-ico">📊</span><span class="tab-label">仪表板</span></div>
-<div class="tab"><span class="tab-ico">🛒</span><span class="tab-label">购买</span></div>
-<div class="tab"><span class="tab-ico">🎁</span><span class="tab-label">邀请</span></div>
-<div class="tab"><span class="tab-ico">🧭</span><span class="tab-label">发现</span></div>
-<div class="tab active"><span class="tab-ico">👤</span><span class="tab-label">账户</span></div>
+<div class="tab"><span class="tab-ico">📊</span><span class="tab-label">${t.tabs[0]}</span></div>
+<div class="tab"><span class="tab-ico">🛒</span><span class="tab-label">${t.tabs[1]}</span></div>
+<div class="tab"><span class="tab-ico">🎁</span><span class="tab-label">${t.tabs[2]}</span></div>
+<div class="tab"><span class="tab-ico">🧭</span><span class="tab-label">${t.tabs[3]}</span></div>
+<div class="tab active"><span class="tab-ico">👤</span><span class="tab-label">${t.tabs[4]}</span></div>
 </div>
 </div>
 </body></html>`;
@@ -224,23 +684,23 @@ body{background:#e8e8ec;padding:12px;font-family:-apple-system,BlinkMacSystemFon
 .line{width:2px;height:12px;background:#ddd;margin:2px 0 2px 10px}
 </style></head><body>
 <div class="page">
-<div class="hl-hint">👇 点击进入安卓 USB 安装向导</div>
+<div class="hl-hint">${t.hint}</div>
 <div class="usb-card">
   <div class="usb-ico"><svg viewBox="0 0 24 24"><path d="M15 7v4h1v2h-3V5h2l-3-4-3 4h2v8H8v-2.07A1.993 1.993 0 007 5a2 2 0 00-1 3.75V11c0 1.1.9 2 2 2h3v2.05A1.993 1.993 0 0012 21a2 2 0 001-3.75V13h3c1.1 0 2-.9 2-2V9h1V7h-4z"/></svg></div>
   <div class="usb-text">
-    <div class="usb-title">安卓手机安装 <span class="usb-badge">实验性</span></div>
-    <div class="usb-desc">USB 连接电脑，保姆级引导，一键自动安装到手机</div>
+    <div class="usb-title">${t.card} <span class="usb-badge">${t.experimental}</span></div>
+    <div class="usb-desc">${t.cardDesc}</div>
   </div>
   <div class="usb-arrow">›</div>
 </div>
 <div class="wizard">
-  <h3>安卓 USB 安装</h3>
-  <p>通过 USB 数据线将应用安装到安卓手机</p>
-  <div class="step"><div class="snum">1</div><div class="sinfo"><strong>开启开发者选项和 USB 调试</strong><span>选择手机品牌，按图片指引操作</span></div></div>
+  <h3>${t.wizardTitle}</h3>
+  <p>${t.wizardSub}</p>
+  <div class="step"><div class="snum">1</div><div class="sinfo"><strong>${t.steps[0]}</strong><span>${t.stepDescs[0]}</span></div></div>
   <div class="line"></div>
-  <div class="step"><div class="snum dim">2</div><div class="sinfo"><strong>USB 连接并授权</strong><span>用数据线连接手机和电脑</span></div></div>
+  <div class="step"><div class="snum dim">2</div><div class="sinfo"><strong>${t.steps[1]}</strong><span>${t.stepDescs[1]}</span></div></div>
   <div class="line"></div>
-  <div class="step"><div class="snum dim">3</div><div class="sinfo"><strong>自动安装</strong><span>${brand.wordmark}自动推送 APK 到手机</span></div></div>
+  <div class="step"><div class="snum dim">3</div><div class="sinfo"><strong>${t.steps[2]}</strong><span>${t.stepDescs[2](wordmark)}</span></div></div>
 </div>
 </div>
 </body></html>`;
@@ -248,11 +708,11 @@ body{background:#e8e8ec;padding:12px;font-family:-apple-system,BlinkMacSystemFon
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground mb-1">
-        在电脑上打开{brand.wordmark}客户端，进入「账户」→「其他设备安装」：
+        {t.caption1Pre}{wordmark}{t.caption1Post}
       </p>
       <GuideIframe srcdoc={step1} height={380} />
       <p className="text-sm text-muted-foreground mb-1">
-        点击「安卓手机安装」，按照向导用 USB 数据线一键安装：
+        {t.caption2}
       </p>
       <GuideIframe srcdoc={step2} height={420} />
     </div>

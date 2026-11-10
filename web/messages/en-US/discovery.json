@@ -1,0 +1,104 @@
+{
+  "discovery": {
+    "title": "Discover",
+    "subtitle": "Hand-picked websites, apps and content to make more of your internet",
+    "websites": {
+      "title": "Popular websites",
+      "description": "Top websites from around the world, one tap away"
+    },
+    "apps": {
+      "title": "Recommended apps",
+      "description": "Useful tools and entertainment apps"
+    },
+    "videos": {
+      "title": "Video collections",
+      "description": "Featured YouTube channels and playlists"
+    },
+    "categories": {
+      "social": "Social media",
+      "news": "News",
+      "entertainment": "Entertainment",
+      "education": "Education",
+      "technology": "Tech",
+      "lifestyle": "Lifestyle",
+      "shopping": "Shopping",
+      "tools": "Tools"
+    },
+    "sections": {
+      "news": {
+        "title": "News",
+        "description": "Curated conservative news sites from around the world"
+      },
+      "entertainment": {
+        "title": "Entertainment",
+        "description": "Quality streaming platforms and entertainment services"
+      },
+      "communication": {
+        "title": "Messaging",
+        "description": "Secure, reliable communication tools"
+      },
+      "applications": {
+        "title": "Recommended apps",
+        "description": "Practical tools to boost your productivity"
+      },
+      "christian": {
+        "title": "Gospel resources",
+        "description": "Quality evangelical Christian learning resources"
+      },
+      "aiTools": {
+        "title": "AI tools",
+        "description": "Cutting-edge AI platforms"
+      },
+      "tradeTools": {
+        "title": "Trade tools",
+        "description": "International trade and sourcing platforms"
+      },
+      "homeschool": {
+        "title": "Education resources",
+        "description": "Homeschooling and learning platforms"
+      },
+      "videoPlaylists": {
+        "title": "Video collections",
+        "description": "Featured YouTube channels and playlists",
+        "comingSoon": "Video collections coming soon",
+        "comingSoonDesc": "We're carefully curating quality YouTube channels and playlists. Stay tuned."
+      }
+    },
+    "footer": {
+      "title": "Explore more of the internet",
+      "description": "Use 开途 Kaitu to securely reach quality content from around the world and enjoy the internet without borders",
+      "backHome": "Back to home",
+      "learnRouters": "Learn about our routers"
+    }
+  },
+  "privacy": {
+    "title": "Privacy Policy",
+    "subtitle": "开途 Kaitu (kaitu.io) privacy statement",
+    "contact": {
+      "title": "Contact us",
+      "content": "If you have any questions about this Privacy Policy, please contact our privacy team",
+      "email": "privacy@kaitu.io"
+    }
+  },
+  "terms": {
+    "title": "Terms of Service",
+    "subtitle": "开途 Kaitu (kaitu.io) user service agreement",
+    "contact": {
+      "title": "Contact",
+      "content": "If you have any questions about these Terms of Service, please contact our legal team",
+      "email": "legal@kaitu.io"
+    }
+  },
+  "deleteAccount": {
+    "title": "Delete account",
+    "subtitle": "How to delete your 开途 Kaitu account, and what happens to your data afterwards"
+  },
+  "cookieConsent": {
+    "title": "About cookies",
+    "description": "We use cookies to improve your browsing experience, including basic features like saving your invite code. By continuing to use this site, you agree to our use of cookies.",
+    "details": "We use essential functional cookies (such as sign-in and invite code linking), plus one first-party cookie for aggregated visit and purchase-conversion stats; none are used for advertising. Click \"Decline\" or \"Opt out of analytics\" in the footer to opt out. You can also manage cookies in your browser settings at any time.",
+    "detailsThirdParty": "This site also uses a third-party web analytics service (Google Analytics), which sets its own cookies; you can block these cookies in your browser settings.",
+    "accept": "Accept",
+    "decline": "Decline"
+  }
+}

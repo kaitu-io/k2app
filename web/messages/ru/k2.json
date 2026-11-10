@@ -1,0 +1,12 @@
+{
+  "sections": {
+    "overview": "Обзор",
+    "getting-started": "Начало работы",
+    "technical": "Технические детали",
+    "comparison": "Сравнение",
+    "uncategorized": "Другое"
+  },
+  "mobileNav": {
+    "toggleLabel": "Содержание"
+  }
+}

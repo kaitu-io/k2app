@@ -1,4 +1,4 @@
-import { type Brand } from '../brands';
+import { type Brand, localizedWordmark } from '../brands';
 import { KAITU_SITE } from './kaitu';
 import type { SiteConfig } from './types';
 
@@ -11,6 +11,6 @@ export function siteConfig(): SiteConfig {
 }
 
 /** 填充 seo / 分类模板里的 `{wordmark}` / `{displayName}` 占位。 */
-export function fillBrandTemplate(template: string, brand: Brand): string {
-  return template.replaceAll('{wordmark}', brand.wordmark).replaceAll('{displayName}', brand.displayName);
+export function fillBrandTemplate(template: string, brand: Brand, locale: string = brand.defaultLocale): string {
+  return template.replaceAll('{wordmark}', localizedWordmark(brand, locale)).replaceAll('{displayName}', brand.displayName);
 }

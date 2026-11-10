@@ -1,7 +1,7 @@
 // Mirrors routing.locales in `src/i18n/routing.ts`. Kept inline to avoid pulling
 // `next-intl/navigation` (and transitively `next/navigation`) into vitest's module
 // graph when non-component code imports brand config.
-export const ALL_LOCALES = ['zh-CN', 'zh-TW', 'zh-HK'] as const;
+export const ALL_LOCALES = ['zh-CN', 'zh-TW', 'zh-HK', 'en-US', 'ko', 'ja', 'ru'] as const;
 type Locale = (typeof ALL_LOCALES)[number];
 
 /**
@@ -73,7 +73,7 @@ export const KAITU: Brand = {
   // canonical / sitemap / hreflang 必须指向不跳转的地址，否则搜索引擎拒收。
   baseUrl: 'https://www.kaitu.io',
   defaultLocale: 'zh-CN',
-  allowedLocales: ['zh-CN', 'zh-TW', 'zh-HK'],
+  allowedLocales: ['zh-CN', 'zh-TW', 'zh-HK', 'en-US', 'ko', 'ja', 'ru'],
   logoPath: '/kaitu-icon.png',
   contactEmail: 'support@kaitu.io',
   privacyEmail: 'privacy@kaitu.io',
@@ -113,6 +113,18 @@ export const OVERLEAP: BrandIdentity = {
   baseUrl: 'https://overleap.io',
   contactEmail: 'support@overleap.io',
 };
+
+/**
+ * The brand name as a reader of `locale` sees it. Chinese pages use the Chinese
+ * wordmark alone (root CLAUDE.md bans the bare latin word in Chinese copy);
+ * every other language pairs it with the latin name — "开途 Kaitu" — because the
+ * bare latin word gets spell-corrected by search engines and the Chinese mark is
+ * what foreigners in China see on the app icon.
+ */
+export function localizedWordmark(brand: BrandIdentity, locale: string): string {
+  if (locale.startsWith('zh') || brand.wordmark === brand.displayName) return brand.wordmark;
+  return `${brand.wordmark} ${brand.displayName}`;
+}
 
 /** Registry lookup for cross-brand surfaces (manager brand filter / badges). */
 export function brandById(id: BrandId): BrandIdentity {

@@ -1,0 +1,20 @@
+{
+  "inviteLanding": {
+    "loading": "読み込み中...",
+    "invalidCode": "招待コードが無効です",
+    "invalidCodeDesc": "招待コードが正しいかご確認いただくか、共有してくれた方に新しい招待リンクをお尋ねください。",
+    "backToHome": "ホームに戻る",
+    "friendInvite": "ご友人から、あなただけの特別な招待が届いています",
+    "friendGift": "ご友人からの特別なプレゼント",
+    "friendGiftDesc": "ご友人があなたのために、この貴重な招待枠を用意してくれました。招待されたあなたには、新規ユーザー限定のお得な特典をご用意しています！",
+    "purchaseReward": "初回購入で {months} か月以上のプランを選ぶとプレゼント",
+    "days": "日",
+    "membershipDuration": "会員期間",
+    "exclusiveBonus": "あなた専用の招待特典です",
+    "bonusHighlight": "招待されたユーザーだけが受け取れます",
+    "allPlatforms": "全プラットフォーム対応：Windows、macOS、iOS、Android、Linux",
+    "inviteCodeLabel": "あなた専用の招待コード：",
+    "activateNow": "今すぐ受け取る",
+    "autoRedirect": "{seconds} 秒後に購入ページへ自動的に移動します"
+  }
+}

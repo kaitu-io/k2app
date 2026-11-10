@@ -134,7 +134,9 @@ export function detectInitialLanguage(
   if (stored && (availableLanguages as readonly string[]).includes(stored)) {
     return stored as LanguageCode;
   }
-  return matchLocale(systemLanguages, availableLanguages, brandConfig.defaultLocale);
+  // A stored choice the brand no longer offers still says which language the
+  // user picked: en-GB / en-AU land on en-US rather than on the system language.
+  return matchLocale(stored ? [stored, ...systemLanguages] : systemLanguages, availableLanguages, brandConfig.defaultLocale);
 }
 
 function applyDocumentLanguage(lang: string) {

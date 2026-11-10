@@ -49,12 +49,8 @@ describe('brand registry', () => {
     expect(OVERLEAP_BRAND.features.multiCountryRouting).toBe(true); // serves all countries
   });
 
-  it('both brands expose the 7 original locales; only overleap adds more', () => {
-    for (const b of [KAITU_BRAND, OVERLEAP_BRAND]) {
-      expect(b.locales).toEqual(
-        expect.arrayContaining(['zh-CN', 'en-US', 'ja', 'zh-TW', 'zh-HK', 'en-AU', 'en-GB'])
-      );
-    }
+  it('kaitu offers 7 locales, all of which overleap also carries; overleap adds more', () => {
+    expect(OVERLEAP_BRAND.locales).toEqual(expect.arrayContaining([...KAITU_BRAND.locales]));
     expect(KAITU_BRAND.locales).toHaveLength(7);
     // Exact overleap membership is pinned to the language registry in
     // i18n/__tests__/locale-coverage.test.ts.

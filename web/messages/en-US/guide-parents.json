@@ -1,0 +1,134 @@
+{
+  "meta": {
+    "title": "User Guide | 开途 Kaitu",
+    "description": "Learn how to sign up for, install and use 开途 Kaitu, with a detailed video tutorial and FAQ. Works on macOS, Windows, iOS and Android."
+  },
+  "hero": {
+    "title": "开途 Kaitu User Guide",
+    "subtitle": "A stable, simple network tool designed for families",
+    "downloadButton": "Download now",
+    "guideButton": "View tutorial"
+  },
+  "video": {
+    "title": "Video tutorial",
+    "description": "Sign up, install and use 开途 Kaitu — all in 6 minutes"
+  },
+  "whyUseUs": {
+    "title": "Why choose 开途 Kaitu",
+    "stable": {
+      "title": "Stable and smooth",
+      "description": "Our own k2cc congestion control algorithm keeps you connected even during peak bandwidth hours"
+    },
+    "simple": {
+      "title": "Easy to use",
+      "description": "No complicated setup — just sign in and go"
+    },
+    "education": {
+      "title": "Designed for education",
+      "description": "Teen protection features are coming soon to help parents block harmful websites"
+    }
+  },
+  "quickStart": {
+    "title": "Quick start",
+    "step1": {
+      "title": "How to sign up",
+      "description": "Sign up through a referral link to get an extra 30 days. Open the link in your browser, enter your email, check for the verification code and confirm to sign in. Then choose a plan and complete payment.",
+      "tips": {
+        "verifyCode": "The verification code usually arrives within a minute — check your spam folder",
+        "payment": "Alipay, WeChat Pay and credit cards are accepted; Alipay is the easiest",
+        "wechatPay": "WeChat Pay needs two devices — you can't screenshot the QR code and scan it on the same device",
+        "safety": "Your payment isn't tracked — the bank can't see what you bought"
+      }
+    },
+    "step2": {
+      "title": "How to install",
+      "description": "On the device you want to install it on, open kaitu.io in a browser and tap \"Download the app\". The page detects your device's system automatically.",
+      "platforms": {
+        "macos": "macOS: You'll need to enter your password to authorize the install — this is required. If the system blocks the install, allow it under System Settings → Privacy & Security.",
+        "windows": "Windows: If a blue security prompt appears, click \"More info\" to continue. If your browser blocks the download, click \"Keep\".",
+        "ios": "iOS: Available directly from the App Store; you'll need your Apple ID password.",
+        "android": "Android: If it won't install directly, use \"Account → Install on other devices\" in the desktop app to help install it."
+      },
+      "downloadButton": "Go to downloads"
+    },
+    "step3": {
+      "title": "How to use it",
+      "description": "The mobile and desktop apps look exactly the same. After signing in, pick a server and tap Connect.",
+      "tips": {
+        "mode": "If a particular website won't load, switch to Global mode. Note that in Global mode, websites in China also go through the proxy.",
+        "feedback": "Use the floating icon on screen to send feedback at any time — logs are uploaded automatically so our engineers can find the problem fast.",
+        "devices": "One account supports 5 devices at the same time — intended for one household."
+      }
+    },
+    "step4": {
+      "title": "How to get help",
+      "description": "If you run into any problem, you can reach our support team in the following ways.",
+      "tips": {
+        "ai": "Support is AI-assisted — it can read your screenshots and walk you through the steps",
+        "video": "If needed, you can request a video call for one-on-one help",
+        "screenshot": "Upload a screenshot when something goes wrong and the AI support agent can quickly identify it and suggest a fix"
+      }
+    }
+  },
+  "faq": {
+    "title": "FAQ",
+    "items": {
+      "multiDevice": {
+        "question": "How many devices can use one account at the same time?",
+        "answer": "Each subscription supports up to 5 devices online at once — phones, tablets and computers — shared across the whole family."
+      },
+      "verifyCode": {
+        "question": "What if I don't get the verification code?",
+        "answer": "The verification code usually arrives within a minute. First check your spam folder; if it's still not there, resend it. We recommend an international email provider such as Gmail or Outlook."
+      },
+      "paymentSafety": {
+        "question": "Will my payment be tracked?",
+        "answer": "No. We've confirmed with the bank that transaction records don't show what was purchased. We do our best to hide users' personal information. If you're worried, you can enter any name when paying."
+      },
+      "wechatPay": {
+        "question": "Why did my WeChat Pay payment fail?",
+        "answer": "WeChat Pay requires two devices — you can't screenshot the QR code and scan it on the same device; this is a WeChat security restriction. We recommend Alipay instead: just scan the code and you're done."
+      },
+      "windowsBlueScreen": {
+        "question": "What if a blue security prompt appears when installing on Windows?",
+        "answer": "This is a normal Windows SmartScreen prompt. Click \"More info\", then \"Run anyway\". Our app is properly code-signed, and this prompt will go away on its own as our user base grows."
+      },
+      "macPassword": {
+        "question": "Why does macOS ask for my password during install?",
+        "answer": "macOS requires administrator authorization to install system-level network tools — this is an Apple security requirement. Just enter your Mac login password. Updates may also ask for your password; authorize them as usual."
+      },
+      "androidInstall": {
+        "question": "What if the app won't install on my Android phone?",
+        "answer": "There are many Android brands, and some phones block the install. You can try: 1. Upload a screenshot to support for tailored guidance; 2. Use \"Account → Install on other devices\" in the desktop app to install via a USB cable; 3. Request a video call for one-on-one help."
+      },
+      "globalMode": {
+        "question": "What's the difference between Smart mode and Global mode?",
+        "answer": "Smart mode only proxies websites outside China and connects to sites in China directly — recommended for everyday use. Global mode proxies all traffic and is handy as a temporary switch when a particular site won't load. In Global mode, Chinese apps like Baidu and WeChat also go through the proxy."
+      },
+      "connectionFailed": {
+        "question": "What if I can't connect?",
+        "answer": "Try: 1. Switching to a different server; 2. Restarting the app; 3. Checking that your network connection is working. If the problem persists, tap the feedback button in the app to submit logs and our engineers will quickly track it down."
+      },
+      "platforms": {
+        "question": "Which devices are supported?",
+        "answer": "iOS (iPhone/iPad), Android phones, macOS computers and Windows computers. One account works across all platforms."
+      }
+    }
+  },
+  "contact": {
+    "title": "Need help? Contact us",
+    "description": "Our support team is always here to help",
+    "liveChatButton": "Live chat",
+    "liveChatDescription": "Click to chat with support now",
+    "email": {
+      "title": "Email",
+      "description": "Send us an email"
+    },
+    "whatsapp": {
+      "title": "WhatsApp",
+      "description": "Contact support on WhatsApp",
+      "link": "https://wa.me/8613421418964"
+    }
+  },
+  "backToHome": "Back to home"
+}

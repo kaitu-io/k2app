@@ -18,9 +18,14 @@ export const KAITU_BRAND: WebappBrandConfig = {
     'zh-TW': '越擁堵，越從容',
     'zh-HK': '越擁堵，越從容',
     ja: '混雑の中でも、余裕を',
+    ko: '붐빌수록, 더 여유롭게',
+    ru: 'Чем больше пробок, тем спокойнее',
   },
   defaultLocale: 'zh-CN',
-  locales: ['zh-CN', 'en-US', 'ja', 'zh-TW', 'zh-HK', 'en-AU', 'en-GB'],
+  // Same set as the kaitu.io site (web/src/i18n/routing.ts): the three Chinese
+  // locales plus the languages of the largest foreign communities in China.
+  // en-GB / en-AU were folded into en-US (a stored en-GB/en-AU choice maps there).
+  locales: ['zh-CN', 'zh-TW', 'zh-HK', 'en-US', 'ko', 'ja', 'ru'],
   iapProductIds: ['io.kaitu.sub.basic.1y'],
   faqExtraKeys: ['allNationConnect', 'chinaAppStore'],
   // jsdelivr 镜像组（原 services/antiblock.ts CDN_SOURCES 原样搬移，随 main 的

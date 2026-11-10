@@ -1,0 +1,82 @@
+{
+  "nav": {
+    "openSource": "Security review",
+    "welcome": "Welcome",
+    "adminPanel": "Admin",
+    "login": "Sign in",
+    "logout": "Sign out",
+    "purchase": "Get started",
+    "home": "Home",
+    "backToHome": "Back to home",
+    "introGuide": "Parents' guide",
+    "guides": "Guides",
+    "k2Protocol": "k2 protocol",
+    "routers": "Routers",
+    "download": "Download",
+    "quickstart": "Self-host quickstart",
+    "productFeatures": "Features",
+    "whyBrand": "Why {brand}",
+    "freeDownload": "Free download",
+    "pricing": "Pricing",
+    "help": "Help",
+    "useCases": "Use cases",
+    "breakBarriers": "Get past network blocks",
+    "familyProtection": "Protect every device at home",
+    "mobilePlusDesktop": "Mobile + desktop",
+    "supportedPlatforms": "Supported platforms",
+    "whySpeed": "Speed and stability",
+    "whyTech": "Technology",
+    "whyTestimonials": "Reviews",
+    "quickStart": "Quick start",
+    "faq": "FAQ",
+    "contactUs": "Contact us",
+    "features": "Features",
+    "docs": "Docs",
+    "routerEdition": "Router Edition",
+    "breadcrumb": "You are here",
+    "navigation": "Site navigation",
+    "menu": "Menu"
+  },
+  "footer": {
+    "brandName": "开途 Kaitu",
+    "brandDescription": "Secure, easy-to-use network proxy",
+    "product": {
+      "title": "Product",
+      "clientDownload": "Download apps",
+      "smartRouter": "Smart routers",
+      "retailerProgram": "Reseller program",
+      "nodeStatus": "Server status"
+    },
+    "developer": {
+      "title": "Developers",
+      "apiDocs": "API docs",
+      "openSource": "Security review",
+      "techBlog": "Tech blog",
+      "k2Docs": "k2 protocol docs",
+      "selfDeploy": "Self-host quickstart",
+      "changelog": "Changelog"
+    },
+    "support": {
+      "title": "Support",
+      "userGuide": "User guide",
+      "faq": "FAQ",
+      "contact": "Contact us",
+      "homeschoolGuide": "Homeschool setup guide"
+    },
+    "legal": {
+      "title": "Legal"
+    },
+    "optOut": "Opt out of analytics",
+    "copyright": "All rights reserved.",
+    "copyrightSymbol": "©",
+    "period": ".",
+    "company": {
+      "title": "Company"
+    }
+  },
+  "languageDetection": {
+    "message": "Your browser language appears to be",
+    "question": ". Switch?",
+    "switchTo": "Switch to"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "title": "업데이트 기록",
+  "subtitle": "开途 Kaitu의 최신 기능 업데이트와 개선 사항을 확인하세요",
+  "sections": {
+    "newFeatures": "새 기능",
+    "bugFixes": "버그 수정",
+    "improvements": "개선 사항",
+    "breakingChanges": "주요 변경 사항"
+  },
+  "controls": {
+    "expandAll": "모두 펼치기",
+    "collapseAll": "모두 접기"
+  },
+  "noData": "업데이트 기록이 없습니다.",
+  "bullet": "•",
+  "cta": {
+    "title": "최신 버전을 사용해 보세요",
+    "description": "开途 Kaitu 최신 버전을 다운로드하고 더 나은 인터넷 환경을 누리세요",
+    "download": "앱 다운로드"
+  }
+}

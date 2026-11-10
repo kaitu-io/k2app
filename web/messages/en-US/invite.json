@@ -1,0 +1,20 @@
+{
+  "inviteLanding": {
+    "loading": "Loading...",
+    "invalidCode": "Invalid invite code",
+    "invalidCodeDesc": "Please check that the invite code is correct, or ask the person who shared it for a new invite link.",
+    "backToHome": "Back to home",
+    "friendInvite": "A good friend has shared this exclusive invitation with you",
+    "friendGift": "A gift from your friend",
+    "friendGiftDesc": "Your friend went out of their way to save this invitation for you. As an invited guest, you get a generous new-user bonus!",
+    "purchaseReward": "Get a bonus when your first purchase is a {months}-month plan or longer",
+    "days": "days",
+    "membershipDuration": "of membership",
+    "exclusiveBonus": "This invite reward is just for you",
+    "bonusHighlight": "Only available to invited users",
+    "allPlatforms": "Works on every platform: Windows, macOS, iOS, Android, Linux",
+    "inviteCodeLabel": "Your invite code: ",
+    "activateNow": "Claim now",
+    "autoRedirect": "Redirecting to the purchase page in {seconds} seconds"
+  }
+}

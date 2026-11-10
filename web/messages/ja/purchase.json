@@ -1,0 +1,215 @@
+{
+  "purchase": {
+    "loading": "読み込み中...",
+    "metaDescription": "开途 Kaitu k2cc プロ版を購入 — 複数デバイス対応、超高速のステルストンネル、パケットロスが多くてもフルスピード。安全なお支払いで、すぐに利用開始。",
+    "memberBenefits": "会員特典",
+    "features": {
+      "multiDevice": "{count} 台のデバイスで同時に利用",
+      "multiDeviceDesc": "1 つのアカウントを家族で共有",
+      "globalNodes": "世界各地のスマートノード",
+      "globalNodesDesc": "複数地域のノードから自動で最適なものを選択、いつでも切り替え可能",
+      "zeroMaintenance": "メンテナンス不要",
+      "zeroMaintenanceDesc": "自分でサーバーを構築する必要はなく、すぐに使えます",
+      "continuousOptimization": "継続的な改善",
+      "continuousOptimizationDesc": "ノードネットワークを継続的に更新・拡張",
+      "prioritySupport": "優先テクニカルサポート",
+      "prioritySupportDesc": "専任サポートがすばやく対応"
+    },
+    "authorizationExpired": "ライセンスの有効期限が切れています",
+    "selectPlanToRenew": "プランを選んでサービスを更新してください",
+    "completeFirstPurchase": "初回購入を完了",
+    "currentlyInTrial": "現在お試しモードです",
+    "bindEmail": "メールアドレスを登録",
+    "friendReferralBonus": "友人紹介特典：{days}日",
+    "friendReferralGift": "+{days}日プレゼント",
+    "selectPlan": "プランを選択",
+    "month": "か月",
+    "totalPrice": "合計",
+    "saveAmount": "${amount} お得",
+    "hotPlan": "人気",
+    "total": "合計",
+    "proAuthorization": "{months}か月のプロ版ライセンス",
+    "proAuthorizationMultiple": "{count}人分・{months}か月のプロ版ライセンス",
+    "havePromoCode": "クーポンコードをお持ちですか？",
+    "campaignCodePlaceholder": "クーポンコードを入力してください",
+    "clear": "クリア",
+    "includingTax": "税込",
+    "loadingPlans": "プランを読み込み中...",
+    "noPlans": "利用できるプランはありません",
+    "payNow": "今すぐ支払う",
+    "bindEmailToPayNow": "メールアドレスを登録してから支払う",
+    "noPlansAvailable": "利用できるプランはありません",
+    "createOrderFailed": "注文の作成に失敗しました",
+    "invalidCampaignCode": "無効なクーポンコードです",
+    "getPlansFailedRetry": "プランの取得に失敗しました。もう一度お試しください",
+    "paymentResultConfirm": "支払い結果の確認",
+    "orderNumber": "注文番号",
+    "paymentAmount": "支払い金額",
+    "paymentConfirmHint": "お支払いが完了したかご確認ください",
+    "paymentTabHint": "支払いページを新しいタブで開きました。表示されない場合やページが読み込めない場合は、下のボタンを押して再試行してください。",
+    "reopenPayment": "支払いページをもう一度開く",
+    "paymentSuccess": "支払いが完了しました",
+    "paymentFailed": "支払いに失敗しました",
+    "refreshUserProfileFailed": "ユーザー情報の更新に失敗しました",
+    "loginToGetStarted": "ログインして始める",
+    "loginHint": "購入を続けるにはログインまたは登録してください",
+    "loginRequired": "ログインが必要です",
+    "sendVerificationCode": "認証コードを送信",
+    "confirmBinding": "登録を確定",
+    "bindingEmail": "メールアドレスを登録中",
+    "bindEmailAboveToGetStarted": "上でメールアドレスを登録して利用を開始してください",
+    "confirmAndPay": "確認してお支払い",
+    "stepProgress": "{total} ステップ中 {current} ステップ目",
+    "previousStep": "前へ",
+    "nextStep": "次へ",
+    "step": "ステップ",
+    "of": "/",
+    "title": "プロ版プランを購入",
+    "subtitle": "3 つの簡単なステップで購入が完了します",
+    "instantActivation": "すぐに有効化",
+    "securePayment": "安全なお支払い",
+    "moneyBackGuarantee": "返金保証",
+    "moneyBackGuaranteeDetail": "返金はウォレット残高に戻り、更新に使うか、暗号資産ウォレットへ出金できます",
+    "support24x7": "24 時間 365 日サポート",
+    "processing": "処理中",
+    "mostPopular": "いちばん人気",
+    "bestValue": "最もお得",
+    "recommendedForMostUsers": "ほとんどのユーザーにおすすめ",
+    "savePercent": "{percent}% お得",
+    "priceSlash": "/",
+    "dash": "-",
+    "ellipsis": "...",
+    "colon": "：",
+    "dollarSign": "$",
+    "inviteRewardTitle": "新規ユーザー限定特典",
+    "inviteRewardDesc": "購入完了後、プロ版の利用期間がさらに {days} 日追加されます",
+    "tierLocked": "現在のプランは「{tier}」のため、このプランは購入できません。プランの変更はサポートにお問い合わせください。",
+    "proxyPurchaseDeprecated": "代理購入機能は終了しました。相手の方にご自身のアカウントで購入していただいてください。",
+    "delegatePay": {
+      "inlineTitle": "または友人に代理支払いを依頼",
+      "inlineHint": "その方に支払いリンクをお送りし、同時にあなたの代理支払い人として保存します。次回からはワンタップで依頼できます。",
+      "emailPlaceholder": "代理支払い人のメールアドレス friend@example.com",
+      "sendInviteButton": "代理支払いを依頼",
+      "chipLabel": "代理支払い人：{email}",
+      "chipChange": "変更",
+      "primaryCtaWithDelegate": "{email} に代理支払いを依頼",
+      "secondaryCtaSelfPay": "または自分で支払う",
+      "confirmationTitle": "{email} に代理支払いを依頼しました",
+      "confirmationBody": "{email} 宛てに支払いリンク付きのメールを送信しました。その方がお支払いを完了すると、すぐにあなたに会員期間が付与されます。",
+      "confirmationSpamHint": "メールが届かない場合は、迷惑メールフォルダを確認するようお伝えください。",
+      "confirmationResend": "メールを再送信",
+      "confirmationResentToast": "再送信しました",
+      "confirmationBackHome": "ホームに戻る",
+      "errorSelfInvite": "ご自身を代理支払い人に設定することはできません",
+      "errorOrderAlreadyPaid": "この注文は支払い済みのため、代理支払いは不要です",
+      "errorNoDelegate": "先に代理支払い人を設定してください"
+    }
+  },
+  "error403": {
+    "title": "アクセスが拒否されました",
+    "subtitle": "このページにアクセスする権限がありません",
+    "description": "申し訳ありませんが、このコンテンツを表示するために必要な権限がありません。管理者にアクセス権限をお問い合わせください。",
+    "errorCode": "エラーコード：403",
+    "suggestions": {
+      "title": "次のことをお試しください：",
+      "item1": "正しいアカウントでログインしているか確認する",
+      "item2": "管理者にアクセス権限を問い合わせる",
+      "item3": "前のページに戻る",
+      "item4": "ダッシュボードに戻る"
+    },
+    "actions": {
+      "goBack": "戻る",
+      "goToDashboard": "ダッシュボードへ",
+      "contactSupport": "サポートに連絡",
+      "retryLogin": "再ログイン"
+    }
+  },
+  "refund": {
+    "title": "返金ポリシー",
+    "subtitle": "返金の流れとウォレットからの出金についてご説明します",
+    "lastUpdated": "最終更新：{date}",
+    "sections": {
+      "overview": {
+        "title": "返金の概要",
+        "content": "私たちはユーザーの皆さまに質の高いサービス体験を提供することに努めています。ご購入いただいたサービスにご満足いただけない場合は、返金ポリシーに基づいて返金を申請できます。返金はウォレット残高としてお客様のアカウントに戻ります。"
+      },
+      "refundProcess": {
+        "title": "返金の流れ",
+        "content": "返金申請が承認されると、返金額は直ちにお客様のアカウントのウォレット残高に戻ります。ウォレット残高は引き続き当サービスの購入に使うことも、お客様の暗号資産ウォレットのアドレスへ出金を申請することもできます。"
+      },
+      "walletBalance": {
+        "title": "ウォレット残高について",
+        "content": "ウォレット残高は、开途 Kaitu プラットフォーム上のお客様の仮想口座の残高で、次の用途に使えます：1. 任意のプランの購入または更新；2. 対応する暗号資産ウォレットへの出金。ウォレットへの返金は待つことなくすぐに利用できます。"
+      },
+      "withdrawalMethods": {
+        "title": "出金方法",
+        "content": "ウォレット残高は主要な暗号資産ウォレットへ出金できます。対応している暗号資産は次のとおりです："
+      },
+      "supportedCryptos": {
+        "title": "対応している暗号資産",
+        "usdt": "USDT (Tether) - TRC20 および ERC20 ネットワークに対応",
+        "usdc": "USDC (USD Coin) - ERC20 ネットワークに対応",
+        "eth": "ETH (イーサリアム) - ERC20 ネットワーク",
+        "btc": "BTC (ビットコイン) - Bitcoin メインネット",
+        "other": "その他の主要なステーブルコインおよび暗号資産（サポートにご確認ください）"
+      },
+      "withdrawalProcess": {
+        "title": "出金の流れ",
+        "step1": "1. アカウントページで出金を申請",
+        "step2": "2. 暗号資産の種類とブロックチェーンネットワークを選択",
+        "step3": "3. ウォレットアドレスを入力",
+        "step4": "4. 出金額と手数料を確認",
+        "step5": "5. 申請を送信して審査を待つ",
+        "step6": "6. 審査通過後、1～3 営業日以内に着金"
+      },
+      "importantNotes": {
+        "title": "重要なお知らせ",
+        "note1": "• 入力したウォレットアドレスとブロックチェーンネットワークに誤りがないか必ずご確認ください",
+        "note2": "• ウォレットアドレスの誤りによる資金の損失は、ユーザーご自身の負担となります",
+        "note3": "• 出金手数料は暗号資産やネットワークによって異なる場合があります",
+        "note4": "• 出金申請は送信後に取り消すことができません。慎重に操作してください",
+        "note5": "• 初回の出金時には本人確認が必要になる場合があります",
+        "note6": "• 高額の出金には追加のセキュリティ審査が必要になる場合があります"
+      },
+      "withdrawalFees": {
+        "title": "出金手数料",
+        "content": "出金手数料は暗号資産とブロックチェーンネットワークによって異なります。具体的な手数料は出金申請時に表示されます。できる限り手数料の低いネットワークを選んで出金を処理します。"
+      },
+      "processingTime": {
+        "title": "処理時間",
+        "content": "出金申請は 1～3 営業日以内に処理されます。実際の着金時間はブロックチェーンネットワークの承認速度によります。ピーク時やネットワークの混雑時には、着金までに時間がかかる場合があります。"
+      },
+      "refundPolicy": {
+        "title": "返金の条件",
+        "content": "返金を申請するには次の条件を満たす必要があります：サービス開始から 7 日以内であること、大量のデータ通信をしていないこと、アカウントの状態が正常であることなど。具体的な返金条件は利用規約をご参照いただくか、サポートにお問い合わせください。"
+      },
+      "contact": {
+        "title": "サポートに連絡",
+        "content": "返金や出金についてご質問があれば、いつでもサポートチームまでお問い合わせください：support@kaitu.io"
+      }
+    }
+  },
+  "purchaseStep3": {
+    "priceSlash": "/"
+  },
+  "giftCodePrompt": "ライセンスコードをお持ちですか？",
+  "giftCodeLink": "こちらから引き換え",
+  "stripe": {
+    "title": "プランを選択",
+    "annualLabel": "年額",
+    "monthlyLabel": "月額",
+    "perMonthApprox": "≈ {price}/月",
+    "monthlyPrice": "{price}/月",
+    "cancelAnytime": "いつでも解約可能",
+    "savePercent": "{percent}% お得",
+    "currencyNote": "価格はユーロ (EUR) 表示です。米ドル (USD) および英ポンド (GBP) の換算額は決済時に自動で適用されます。",
+    "subscribe": "申し込む",
+    "redirecting": "安全な決済ページへ移動しています…",
+    "alreadySubscribed": "有効なサブスクリプションをすでにお持ちです。",
+    "manageInAccount": "サブスクリプションを管理",
+    "checkoutCancelled": "決済はキャンセルされました。いつでも再度お試しいただけます。",
+    "channelUnavailable": "このお支払い方法はお客様のアカウントではご利用いただけません。",
+    "genericError": "問題が発生しました。もう一度お試しください。",
+    "noPlans": "プランを準備中です。しばらくしてから再度ご確認ください。"
+  }
+}

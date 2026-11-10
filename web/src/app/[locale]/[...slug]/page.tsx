@@ -16,7 +16,7 @@ import { posts } from '#velite';
 import { Link } from '@/i18n/routing';
 import { routing } from '@/i18n/routing';
 import { getBrand } from '@/lib/brand-server';
-import { siteBrand } from '@/lib/brands';
+import { siteBrand, localizedWordmark } from '@/lib/brands';
 import { isPostVisibleToBrand } from '@/lib/k2-posts';
 import {
   categoryLocales,
@@ -77,6 +77,20 @@ export function generateStaticParams(): { locale: string; slug: string[] }[] {
   }
 
   return params;
+}
+
+/** Category-list chrome, per locale (the rest of the page is markdown content). */
+const LIST_COPY: Record<string, { comingSoon: string; more: string; count: (n: number) => string; startHere: string }> = {
+  'zh-CN': { comingSoon: '即将上线，敬请期待。', more: '更多', count: (n) => `${n} 篇`, startHere: '先看这篇' },
+  'zh-TW': { comingSoon: '即將上線，敬請期待。', more: '更多', count: (n) => `${n} 篇`, startHere: '先看這篇' },
+  'zh-HK': { comingSoon: '即將上線，敬請期待。', more: '更多', count: (n) => `${n} 篇`, startHere: '先看這篇' },
+  'en-US': { comingSoon: 'Coming soon.', more: 'More', count: (n) => `${n} ${n === 1 ? 'article' : 'articles'}`, startHere: 'Start here' },
+  ko: { comingSoon: '곧 공개됩니다.', more: '더 보기', count: (n) => `${n}편`, startHere: '먼저 읽어 보세요' },
+  ja: { comingSoon: '近日公開予定です。', more: 'その他', count: (n) => `${n} 件`, startHere: 'まずはこちら' },
+  ru: { comingSoon: 'Скоро появится.', more: 'Ещё', count: (n) => `Статей: ${n}`, startHere: 'Начните отсюда' },
+};
+function listCopy(locale: string) {
+  return LIST_COPY[locale] ?? LIST_COPY['zh-CN'];
 }
 
 export default async function CatchAll({ params }: Props) {
@@ -159,10 +173,10 @@ function CategoryListPage({
         <div className="mt-10">
           {posts.length === 0 ? (
             <p className="text-muted-foreground">
-              {locale.startsWith('zh') ? '即将上线，敬请期待。' : 'Coming soon.'}
+              {listCopy(locale).comingSoon}
             </p>
           ) : (
-            groupPostsBySection(posts, category.sections, '更多').map((group) => {
+            groupPostsBySection(posts, category.sections, listCopy(locale).more).map((group) => {
               const PostTitle = group.name ? 'h3' : 'h2';
               return (
                 <section key={group.key ?? 'other'} className="mb-14 last:mb-0">
@@ -170,7 +184,7 @@ function CategoryListPage({
                     <h2 className="mb-5 flex items-baseline gap-3 text-2xl font-bold">
                       {group.name}
                       <span className="text-sm font-normal text-muted-foreground">
-                        {group.posts.length} 篇
+                        {listCopy(locale).count(group.posts.length)}
                       </span>
                     </h2>
                   )}
@@ -187,7 +201,7 @@ function CategoryListPage({
                           >
                             {pinned && (
                               <span className="mb-2 w-fit rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-medium text-primary">
-                                {locale === 'zh-CN' ? '先看这篇' : '先看這篇'}
+                                {listCopy(locale).startHere}
                               </span>
                             )}
                             <PostTitle className="text-lg font-semibold leading-snug group-hover:text-primary">
@@ -265,7 +279,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       locale,
       pathname,
       {
-        title: `${category.name} | ${brand.wordmark}`,
+        title: `${category.name} | ${localizedWordmark(brand, locale)}`,
         description: category.description,
         availableLocales: categoryLocales(category.slug, brand),
       },
@@ -289,7 +303,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       locale,
       pathname,
       {
-        title: `${post.title} | ${brand.wordmark}`,
+        title: `${post.title} | ${localizedWordmark(brand, locale)}`,
         description: post.summary,
         ogType: 'article',
         ogImage: post.coverImage,

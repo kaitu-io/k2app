@@ -1,0 +1,29 @@
+{
+  "adLanding": {
+    "metaTitle": "开途 Kaitu — When the others drop, it stays connected",
+    "heroTitle": "When the others drop, it stays connected.",
+    "heroAlt": "A desk in morning sunlight: a laptop, a phone and a latte",
+    "subtitle": {
+      "stable": "开途 Kaitu connects in one tap and stays online.",
+      "compare": "No need to uninstall what you use now. Run both side by side for 7 days and see for yourself which is more stable."
+    },
+    "platforms": "One subscription, 5 devices · iPhone, Mac, Windows and Android",
+    "ctaAppStore": "Get it free on the App Store",
+    "ctaAndroid": "Download 开途 Kaitu",
+    "qrTitle": "Scan with your iPhone to start",
+    "qrHint": "Point your camera at the QR code → get it free on the App Store. Once installed, sign in with the same account on your Mac.",
+    "openOnPhone": "Already reading this on your iPhone? Open it directly",
+    "why": {
+      "title": "Why 开途 Kaitu",
+      "oneTapTitle": "Open it and you're connected",
+      "oneTapBody": "No servers, protocols or subscription links to figure out.",
+      "devicesTitle": "One subscription, 5 devices, every platform",
+      "devicesBody": "Works on iPhone, iPad, Mac, Windows, Android and Linux — your own devices, your family's, your work computer, all covered by one plan.",
+      "coexistTitle": "No need to uninstall your current one",
+      "coexistBody": "Install it and use both. You decide which is more stable."
+    },
+    "trialNote": "Starting with iOS app version 4.4.14, new users get a 7-day free trial, after which it auto-renews at the annual price shown in the App Store. Cancel in iPhone Settings before the trial ends and you won't be charged.",
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Service"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "title": "リリース",
+  "subtitle": "すべてのバージョンの更新内容とダウンロード",
+  "latestRelease": "最新バージョン",
+  "betaTag": "ベータ版",
+  "stableTag": "安定版",
+  "downloadWindows": "Windows 版",
+  "downloadMacOS": "Mac 版",
+  "downloadLinux": "Linux 版",
+  "downloadAndroid": "Android 版",
+  "downloadIOS": "App Store",
+  "downloadAssets": "ダウンロード",
+  "noDownloads": "このバージョンにはダウンロード可能なファイルがありません",
+  "viewAllReleases": "すべてのバージョンを見る",
+  "sections": {
+    "newFeatures": "新機能",
+    "bugFixes": "不具合の修正",
+    "improvements": "改善",
+    "infrastructure": "インフラ",
+    "breakingChanges": "重要な変更"
+  },
+  "controls": {
+    "expandAll": "すべて展開",
+    "collapseAll": "すべて折りたたむ"
+  },
+  "noData": "リリース情報はまだありません。",
+  "bullet": "•",
+  "comingSoon": "近日公開",
+  "backupDownload": "予備のダウンロード"
+}

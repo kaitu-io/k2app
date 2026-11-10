@@ -1,0 +1,29 @@
+{
+  "adLanding": {
+    "metaTitle": "开途 Kaitu — ほかがつながらなくても、これはつながる",
+    "heroTitle": "ほかがつながらなくても、これはつながる。",
+    "heroAlt": "朝日が差し込むデスク：ノートパソコン、スマートフォン、カフェラテ",
+    "subtitle": {
+      "stable": "开途 Kaitu はワンタップで接続、ずっとオンライン。",
+      "compare": "今お使いのものはアンインストール不要。7 日間並べて使って、どちらが安定しているかご自身で比べてください。"
+    },
+    "platforms": "1 つのサブスクリプションで 5 台まで · iPhone、Mac、Windows、Android すべてに対応",
+    "ctaAppStore": "App Store で無料入手",
+    "ctaAndroid": "开途 Kaitu をダウンロード",
+    "qrTitle": "iPhone で QR コードを読み取って開始",
+    "qrHint": "カメラを QR コードに向ける → App Store で無料入手。インストール後、Mac でも同じアカウントでログインするだけです",
+    "openOnPhone": "すでに iPhone でご覧ですか？そのまま開く",
+    "why": {
+      "title": "开途 Kaitu を選ぶ理由",
+      "oneTapTitle": "開けばすぐ接続",
+      "oneTapBody": "ノード、プロトコル、サブスクリプションリンクなどを調べる必要はありません。",
+      "devicesTitle": "1 つのサブスクリプションで 5 台、全プラットフォーム対応",
+      "devicesBody": "iPhone、iPad、Mac、Windows、Android、Linux で使えます。ご自身の端末も、ご家族の端末も、会社のパソコンも、これ 1 つでまとめてカバー。",
+      "coexistTitle": "今のものをアンインストールしなくて大丈夫",
+      "coexistBody": "まずはインストールして使ってみてください。どちらが安定しているかはご自身で判断を。"
+    },
+    "trialNote": "iOS 4.4.14 以降、新規ユーザーは 7 日間無料でお試しいただけます。その後は App Store に表示される年額で自動更新されます。トライアル終了前に iPhone の設定からキャンセルすれば、料金はかかりません。",
+    "privacy": "プライバシーポリシー",
+    "terms": "利用規約"
+  }
+}

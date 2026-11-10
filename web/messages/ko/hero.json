@@ -1,0 +1,489 @@
+{
+  "hero": {
+    "badge": "해외 네트워크 프록시 · 전 플랫폼 앱",
+    "title": "남들이 끊길 때, 당신은 최대 속도로.",
+    "subtitle": "중국 내 인터넷 환경에서도 해외 콘텐츠에 안정적으로 연결",
+    "description": "开途 Kaitu는 중국 내 인터넷 환경에 맞춰 최적화된 프록시 도구입니다. 다른 도구들이 통신사의 속도 제한으로 자주 끊길 때, k2 프로토콜이 안정적인 연결을 유지해 줍니다. Windows, macOS, iOS, Android를 지원하며, 가입 즉시 사용할 수 있고 기술 지식이 필요 없습니다.",
+    "cta_primary": "지금 시작하기",
+    "cta_secondary": "앱 다운로드",
+    "connected": "연결됨",
+    "nodeInfo": "홍콩 · 최적 노드",
+    "terminalTitle": "서버 자체 배포",
+    "downloadClient": "앱 다운로드",
+    "quickActivation": "빠른 가입",
+    "smartRouter": "스마트 라우터",
+    "onboarding": {
+      "title": "세 단계로 시작하기",
+      "step1": {
+        "label": "요금제를 선택하고 구매 완료",
+        "detail": "알리페이 · 위챗페이 · 신용카드 지원"
+      },
+      "step2": {
+        "label": "사용하는 플랫폼의 앱 다운로드",
+        "detail": "Windows · macOS · iOS · Android"
+      },
+      "step3": {
+        "label": "활성화 코드를 입력하고 바로 연결",
+        "detail": "설정 불필요, 가입 즉시 사용"
+      }
+    },
+    "features": {
+      "title": "다른 VPN이 끊길 때도 开途 Kaitu가 안정적인 이유는?",
+      "ech": {
+        "title": "연결이 식별되지 않아 안심",
+        "description": "암호화된 Client Hello로 SNI를 완전히 숨겨 TLS 핸드셰이크를 탐지할 수 없고, DPI(심층 패킷 검사)가 무력화됩니다",
+        "icon": "🛡️"
+      },
+      "zeroDeploy": {
+        "title": "기술 지식 없이, 사면 바로 사용",
+        "description": "curl 명령 한 줄로 서버와 클라이언트를 설치하고, k2:// 연결 URI가 자동 생성되며, 인증서를 직접 설정할 필요가 없습니다",
+        "icon": "⚡"
+      },
+      "transport": {
+        "title": "노선 자동 전환, 끊겨도 스스로 복구",
+        "description": "저지연 QUIC 전송을 우선 사용하고, 네트워크가 제한되면 TCP-WebSocket으로 자동 전환되어 끊김 없이 이어집니다",
+        "icon": "🔀"
+      },
+      "congestion": {
+        "title": "네트워크가 나빠도 속도는 안정적으로",
+        "description": "k2cc가 최적 속도를 자동으로 탐지하고, QoS 인식 메커니즘으로 통신사의 의도적 패킷 폐기와 혼잡 손실을 구분해, 패킷 손실이 많은 통신사 네트워크에서 BBR보다 훨씬 높은 처리량을 냅니다",
+        "icon": "📈"
+      },
+      "reverseProxy": {
+        "title": "트래픽 특징을 완전히 은닉",
+        "description": "내장 리버스 프록시가 k2가 아닌 트래픽을 실제 웹사이트로 전달하고, 능동 탐지에는 정상적인 HTTPS 응답을 돌려줍니다",
+        "icon": "🎭"
+      },
+      "selfSign": {
+        "title": "어떤 공개 기록에도 나타나지 않음",
+        "description": "자체 서명 인증서 + 인증서 고정(Pin)으로 CT 로그 노출 제로, 인증서 구매 불필요, 서버 도메인 완전 은닉",
+        "icon": "🔐"
+      }
+    },
+    "comparison": {
+      "title": "프로토콜 비교",
+      "subtitle": "k2와 주요 국경 간 가속 프로토콜의 핵심 항목 비교",
+      "dimensions": {
+        "ech": "ECH 스텔스",
+        "tlsFingerprint": "TLS 지문 위장",
+        "activeProbe": "능동 탐지 방어",
+        "quic": "QUIC 전송",
+        "tcpFallback": "TCP 폴백",
+        "congestion": "혼잡 제어 최적화",
+        "zeroDeploy": "무설정 배포",
+        "ctLog": "CT 로그 노출 제로",
+        "portReuse": "포트 재사용"
+      },
+      "protocols": [
+        {
+          "id": "k2",
+          "name": "k2",
+          "ech": true,
+          "tlsFingerprint": true,
+          "activeProbe": true,
+          "quic": true,
+          "tcpFallback": true,
+          "congestion": true,
+          "zeroDeploy": true,
+          "ctLog": true,
+          "portReuse": true
+        },
+        {
+          "id": "WireGuard",
+          "name": "WireGuard",
+          "ech": false,
+          "tlsFingerprint": false,
+          "activeProbe": false,
+          "quic": false,
+          "tcpFallback": false,
+          "congestion": false,
+          "zeroDeploy": false,
+          "ctLog": false,
+          "portReuse": false
+        },
+        {
+          "id": "VLESS",
+          "name": "VLESS+Reality",
+          "ech": false,
+          "tlsFingerprint": true,
+          "activeProbe": true,
+          "quic": false,
+          "tcpFallback": true,
+          "congestion": false,
+          "zeroDeploy": false,
+          "ctLog": false,
+          "portReuse": false
+        },
+        {
+          "id": "Hysteria2",
+          "name": "Hysteria2",
+          "ech": false,
+          "tlsFingerprint": false,
+          "activeProbe": false,
+          "quic": true,
+          "tcpFallback": false,
+          "congestion": true,
+          "zeroDeploy": false,
+          "ctLog": true,
+          "portReuse": false
+        },
+        {
+          "id": "Shadowsocks",
+          "name": "Shadowsocks",
+          "ech": false,
+          "tlsFingerprint": false,
+          "activeProbe": false,
+          "quic": false,
+          "tcpFallback": false,
+          "congestion": false,
+          "zeroDeploy": false,
+          "ctLog": false,
+          "portReuse": false
+        }
+      ],
+      "yes": "✓",
+      "no": "✗"
+    },
+    "downloadCta": {
+      "title": "앱 다운로드",
+      "subtitle": "Windows, macOS, Linux, iOS, Android 전 플랫폼 지원",
+      "button": "다운로드 페이지로 이동",
+      "platforms": "Windows · macOS · Linux · iOS · Android"
+    },
+    "quickstart": {
+      "title": "1분 초고속 배포",
+      "server": {
+        "title": "서버(1분)",
+        "step1": "# k2s 서버 설치",
+        "step2": "curl -fsSL https://kaitu.io/i/k2s | sudo sh",
+        "step3": "# 서비스 시작",
+        "step4": "k2s run",
+        "step5": "# 연결 URI 출력",
+        "step6": "k2://..."
+      },
+      "client": {
+        "title": "클라이언트(30초)",
+        "step1": "# k2 클라이언트 설치",
+        "step2": "curl -fsSL https://kaitu.io/i/k2 | sudo sh",
+        "step3": "# 연결(URI 붙여넣기)",
+        "step4": "k2 up k2://..."
+      }
+    },
+    "testimonials": {
+      "title": "실제 사용자 후기",
+      "item1": {
+        "quote": "X에서는 '요즘도 VPN이 잘 된다면 정말 운이 좋은 것'이라는 말이 여기저기서 보여요. 주변에서도 VPN을 몇 번씩 갈아탄 사람이 많아요. 제가 쓰는 开途 Kaitu는 계속 잘 되고 있어서, 오래 써 온 사용자로서 정말 기뻐요!",
+        "author": "X의 장기 사용자",
+        "tag": "소셜 미디어 후기"
+      },
+      "item2": {
+        "quote": "아내가 쓰던 콰이롄은 안 되는데, 제가 쓰는 开途 Kaitu는 여전히 되고 속도도 꽤 빨라요. 어떤 도구를 쓰느냐에 따라 차이가 정말 큽니다.",
+        "author": "익명 사용자",
+        "tag": "일반 사용자"
+      },
+      "item3": {
+        "quote": "저희는 중국에서 홈스쿨링을 하고 있는데, 많은 콘텐츠가 프록시 없이는 제대로 열리지 않아요. 开途 Kaitu는 매끄럽게 쓸 수 있어서 정말 큰 도움이 됐어요. 요즘 VPN들이 서비스를 접거나 불안정한데, 开途 Kaitu 화이팅!",
+        "author": "홈스쿨링 학부모",
+        "tag": "교육 분야 사용자"
+      }
+    }
+  },
+  "security": {
+    "title": "k2cc — QoS 대응을 위해 설계된 혼잡 제어",
+    "description": "k2cc 적응형 속도 제어 알고리즘은 통신사의 QoS 속도 제한과 확률적 패킷 손실에 맞서도록 설계되었습니다. 혼잡으로 인한 손실과 통신사의 의도적 폐기를 자동으로 구분해, 패킷 손실이 많은 통신사 네트워크(손실률 26%)에서도 유효한 전송을 유지합니다. ECH 스텔스 + 저지연 QUIC 전송과 결합해 은닉성과 속도를 모두 잡았습니다.",
+    "icon": "🛡️",
+    "caTech": {
+      "title": "k2cc QoS 대응 혼잡 제어",
+      "description": "k2cc는 네트워크 혼잡으로 인한 패킷 손실과 통신사 트래픽 관리 장비가 의도적으로 폐기한 패킷을 자동으로 구분해, QoS 속도 제한과 확률적 패킷 손실 환경에서도 유효한 처리량을 유지합니다. 설정이 필요 없고 대역폭을 직접 지정할 필요도 없습니다 — 패킷 손실이 많은 통신사 네트워크의 대부분 테스트 시나리오에서 BBR과 Brutal보다 높은 처리량을 보였습니다.",
+      "advantages": {
+        "title": "핵심 특징",
+        "item1": "ECH로 SNI 암호화, TLS 핸드셰이크 탐지 불가",
+        "item2": "QUIC 우선 전송, 저지연·고처리량",
+        "item3": "k2cc 적응형 속도 제어, 패킷 손실이 많은 네트워크에서 BBR보다 훨씬 높은 처리량",
+        "item4": "리버스 프록시 위장, 능동 탐지 방어",
+        "bullet": "•"
+      },
+      "adaptive": {
+        "title": "적응형 전송 계층",
+        "item1": "QUIC가 막히면 TCP-WebSocket으로 자동 전환",
+        "item2": "자체 서명 인증서 + Pin, CT 로그 노출 제로",
+        "item3": "포트 재사용, 443 포트에서 일반 웹사이트와 공존",
+        "item4": "명령 한 줄로 배포, k2:// URI 자동 생성",
+        "bullet": "•"
+      }
+    },
+    "features": {
+      "title": "프로토콜 핵심 강점",
+      "multipath": {
+        "title": "ECH 암호화 핸드셰이크",
+        "description": "암호화된 Client Hello로 SNI를 숨겨 TLS 핸드셰이크를 전혀 탐지할 수 없고, DPI 식별이 무력화됩니다",
+        "icon": "🛡️"
+      },
+      "encryption": {
+        "title": "듀얼 스택 전송",
+        "description": "저지연 QUIC 전송을 우선 사용하고, TCP-WebSocket으로 자동 전환되는 백업을 갖춰 끊김 없이 이어집니다",
+        "icon": "🔀"
+      },
+      "smartRouting": {
+        "title": "k2cc 적응형 속도 제어",
+        "description": "k2cc가 최적 전송 속도를 자동으로 탐지하고, QoS 인식 메커니즘으로 통신사의 의도적 폐기를 구분해, 패킷 손실이 많은 네트워크에서 BBR보다 훨씬 높은 처리량을 냅니다",
+        "icon": "📈"
+      },
+      "disguise": {
+        "title": "리버스 프록시 위장",
+        "description": "내장 리버스 프록시가 터널이 아닌 트래픽을 실제 웹사이트로 전달하고, 능동 탐지에는 정상적인 HTTPS 응답을 돌려줍니다",
+        "icon": "🎭"
+      },
+      "failover": {
+        "title": "무설정 배포",
+        "description": "curl 명령 한 줄로 설치하고 k2:// 연결 URI가 자동 생성되어, 10분이면 전체 배포가 끝납니다",
+        "icon": "⚡"
+      },
+      "performance": {
+        "title": "CT 로그 노출 제로",
+        "description": "자체 서명 인증서 + 인증서 Pin으로 CT 로그 모니터링을 완전히 우회하며, 서버 도메인이 전혀 노출되지 않습니다",
+        "icon": "🔐"
+      }
+    },
+    "techSpecs": {
+      "title": "기술 사양",
+      "encryption": "핸드셰이크 암호화",
+      "encryptionValue": "ECH(Encrypted Client Hello)",
+      "keyDerivation": "전송 프로토콜",
+      "keyDerivationValue": "QUIC / TCP-WebSocket 듀얼 스택",
+      "transport": "혼잡 제어",
+      "transportValue": "k2cc 적응형 속도 제어 알고리즘",
+      "multiplexing": "인증서 정책",
+      "multiplexingValue": "자체 서명 + 인증서 Pin(CT 로그 노출 제로)",
+      "heartbeat": "배포 방식",
+      "heartbeatValue": "curl 명령 한 줄, URI 자동 생성",
+      "concurrent": "포트 정책",
+      "concurrentValue": "포트 재사용 + 리버스 프록시 위장"
+    },
+    "comparison": {
+      "title": "프로토콜 비교",
+      "dimensions": {
+        "ech": "ECH 스텔스",
+        "tlsFingerprint": "TLS 지문 위장",
+        "activeProbe": "능동 탐지 방어",
+        "quic": "QUIC 전송",
+        "tcpFallback": "TCP 폴백",
+        "congestion": "혼잡 제어 최적화",
+        "zeroDeploy": "무설정 배포",
+        "ctLog": "CT 로그 노출 제로",
+        "portReuse": "포트 재사용"
+      },
+      "trojan": {
+        "letter": "W",
+        "name": "WireGuard",
+        "tech": "UDP 암호화 터널, TLS 위장 없음"
+      },
+      "v2ray": {
+        "letter": "V",
+        "name": "VLESS+Reality",
+        "tech": "TLS 지문 위장 + 리버스 프록시, ECH 없음"
+      },
+      "shadowsocks": {
+        "letter": "S",
+        "name": "Shadowsocks",
+        "tech": "AEAD 암호화 + 경량 프록시, 위장 없음"
+      },
+      "hysteria": {
+        "letter": "H",
+        "name": "Hysteria2",
+        "tech": "QUIC 전송 + 자체 개발 혼잡 제어, ECH 없음"
+      }
+    },
+    "visualization": {
+      "title": "k2 스텔스 터널 아키텍처",
+      "subtitle": "ECH 암호화 핸드셰이크 + QUIC/TCP-WS 듀얼 스택 전송, DPI 완전 무력화",
+      "client": "클라이언트",
+      "target": "대상 서버",
+      "relayNodes": "k2 터널 노드",
+      "nodes": {
+        "hongkong": "홍콩 노드",
+        "japan": "일본 노드",
+        "singapore": "싱가포르 노드"
+      },
+      "rtt": "RTT",
+      "ms": "ms",
+      "status": {
+        "optimal": "최적",
+        "good": "양호",
+        "slow": "느림",
+        "failed": "장애"
+      },
+      "legend": {
+        "title": "범례",
+        "dataPacket": "데이터 패킷",
+        "activePath": "활성 경로",
+        "failedPath": "폴백 경로",
+        "optimalNode": "최적 노드"
+      },
+      "description": "k2는 TLS 핸드셰이크 단계에서 ECH로 SNI를 암호화해, 네트워크 중간 장비가 대상 도메인을 식별할 수 없습니다. 데이터는 QUIC(우선) 또는 TCP-WebSocket(폴백)으로 전송되며, k2cc가 패킷 손실이 많은 환경에서도 안정적인 처리량을 유지합니다. 서버에는 리버스 프록시가 내장되어 k2가 아닌 트래픽은 실제 웹사이트로 전달되므로, 능동 탐지로는 구별할 수 없습니다."
+    }
+  },
+  "download": {
+    "title": "앱 다운로드",
+    "subtitle": "기기에 맞는 앱을 선택하고 스텔스 인터넷을 시작하세요",
+    "platforms": {
+      "ios": "iPhone 및 iPad 지원",
+      "iosLabel": "iPhone / iPad",
+      "android": "Android 휴대폰 및 태블릿 지원",
+      "androidLabel": "Android",
+      "windows": "Windows 10/11 지원",
+      "windowsLabel": "Windows",
+      "macos": "Mac(macOS 12+) 지원",
+      "macosLabel": "Mac"
+    },
+    "downloadButton": "다운로드",
+    "comingSoon": "출시 예정"
+  },
+  "routers": {
+    "title": "스마트 네트워크 라우터",
+    "subtitle": "보안 프록시를 내장한 전문가급 라우터 솔루션으로, 온 가족이 쉽게 사용할 수 있습니다",
+    "presaleTag": "사전 판매 중",
+    "benefits": {
+      "title": "왜 라우터 솔루션인가요?",
+      "subtitle": "안전한 인터넷 사용을 간단하고 쉽게 만드는 종합 네트워크 프록시 솔루션",
+      "items": {
+        "easySetup": {
+          "title": "원클릭 설정",
+          "description": "꽂기만 하면 바로 사용, 기술적 설정 불필요"
+        },
+        "familyFriendly": {
+          "title": "온 가족이 함께",
+          "description": "집 안 모든 기기가 자동으로 연결되어 남녀노소 누구나 사용 가능"
+        },
+        "alwaysOn": {
+          "title": "언제든 사용 가능",
+          "description": "24시간 중단 없는 서비스, 전원을 켜면 자동 연결"
+        },
+        "multiDevice": {
+          "title": "여러 기기 지원",
+          "description": "스마트 TV, 게임기 등 모든 네트워크 기기 지원"
+        },
+        "techSupport": {
+          "title": "전문 지원",
+          "description": "전문 기술팀이 포괄적인 사후 서비스를 제공합니다"
+        },
+        "costEffective": {
+          "title": "경제성",
+          "description": "한 번 구매로 오래 사용, 구독보다 경제적"
+        }
+      }
+    },
+    "backToHome": "홈으로 돌아가기",
+    "welcome": "환영합니다",
+    "adminPanel": "관리자 페이지",
+    "login": "로그인",
+    "comma": ", ",
+    "productFeatures": "제품 특징",
+    "contactInquiry": "문의하기",
+    "presalePriceConsult": "사전 판매 가격은 고객센터에 문의 • 1년 보증",
+    "presalePriceConsultFull": "사전 판매 가격은 고객센터에 문의 • 1년 보증 • 서비스 활성화 코드 증정",
+    "routerVsClient": "라우터 vs 앱 비교",
+    "whyChooseRouter": "왜 라우터 솔루션을 선택해야 할까요?",
+    "smartRouter": "스마트 라우터",
+    "recommended": "추천 방식",
+    "clientSoftware": "앱 소프트웨어",
+    "traditional": "기존 방식",
+    "bullet": "•",
+    "autoConnect": "가족의 모든 기기가 자동 연결, 개별 설정 불필요",
+    "alwaysRunning": "24시간 중단 없이 작동, 언제든 사용 가능",
+    "allDevices": "스마트 TV, 게임기 등 모든 기기 지원",
+    "easyUse": "어르신과 아이들도 쉽게 사용",
+    "onePurchase": "한 번 구매로 오래 사용",
+    "individualSetup": "기기마다 따로 설치하고 설정해야 함",
+    "manualStart": "직접 실행해야 해서 잊기 쉬움",
+    "deviceLimits": "스마트 TV, 게임기 미지원",
+    "complexConfig": "설정이 복잡하고 익히기 어려움",
+    "ongoing": "구독료를 계속 내야 함",
+    "contactUsMore": "자세한 내용은 문의해 주세요",
+    "teamDescription": "전문 팀이 제품 특징을 자세히 소개하고, 가장 알맞은 라우터 솔루션을 고르도록 도와드립니다",
+    "emailConsult": "이메일 문의",
+    "productDetailsTech": "제품 상세 정보, 기술 지원",
+    "onlineService": "실시간 상담",
+    "realTimeResponse": "실시간 상담, 빠른 응답",
+    "startOnlineService": "실시간 상담 시작",
+    "warranty": "모든 라우터 제품 1년 보증 • 무료 기술 지원 • 7일 무조건 반품"
+  },
+  "faq": {
+    "title": "자주 묻는 질문",
+    "subtitle": "开途 Kaitu의 기술 원리, 지원 플랫폼, 결제 방법, 개인정보 정책에 대한 모든 답변",
+    "items": {
+      "whatIsK2cc": {
+        "question": "k2cc란 무엇인가요?",
+        "answer": "k2cc는 开途 Kaitu가 자체 개발한 혼잡 제어 알고리즘으로, 패킷 손실이 많은 통신사 네트워크에 대응하도록 설계되었습니다. QoS 인식 메커니즘으로 \"통신사 트래픽 관리 장비의 의도적 폐기\"와 \"일반적인 네트워크 혼잡 손실\"을 구분해, 패킷 손실이 많은 통신사 네트워크(손실률 26%) 환경에서도 안정적인 처리량을 유지합니다. 开途 Kaitu의 벤치마크 테스트에서 패킷 손실이 많은 대부분의 시나리오에서 k2cc의 처리량이 BBR과 Brutal보다 높았습니다. k2cc는 설정이 필요 없으며, 대역폭 상한을 직접 지정할 필요도 없습니다."
+      },
+      "whatIsK2v5": {
+        "question": "k2 프로토콜이란 무엇인가요?",
+        "answer": "k2는 开途 Kaitu의 복합 스텔스 터널 프로토콜로, 핵심은 세 부분으로 이루어져 있습니다: (1) ECH로 Client Hello를 암호화해 TLS 핸드셰이크를 전혀 탐지할 수 없게 함; (2) QUIC/H3를 우선 전송 방식으로 사용하고 TCP-WebSocket으로 자동 전환되는 백업을 둠; (3) k2cc QoS 인식 혼잡 제어 알고리즘. QUIC와 TCP-WS는 같은 포트를 공유하며 프로토콜 감지로 구분합니다 — 포트 하나로 UDP 간섭과 DPI(심층 패킷 검사)에 동시에 대응합니다."
+      },
+      "howDoesEchWork": {
+        "question": "ECH란 무엇이며, 왜 네트워크 중간 장비의 탐지를 피할 수 있나요?",
+        "answer": "ECH(Encrypted Client Hello)는 TLS 1.3의 확장 표준으로, ClientHello의 SNI 필드를 암호화해서 보냅니다. 기존 TLS 핸드셰이크에서는 SNI가 평문으로 대상 도메인을 드러내므로, DPI 장비가 이를 보고 연결을 식별해 차단합니다. ECH를 사용하면 DPI는 실제 SNI를 볼 수 없고 연결 대상도 판단할 수 없습니다. 开途 Kaitu 서버는 ECH 구성을 위장해 실제 Cloudflare ECH 트래픽과 구별할 수 없게 만들어 은닉 효과를 한층 높입니다."
+      },
+      "networkThrottlingSpeed": {
+        "question": "속도 제한이 심한 네트워크에서 开途 Kaitu는 얼마나 빠른가요?",
+        "answer": "开途 Kaitu는 자체 벤치마크 테스트에서 패킷 손실이 많은 통신사 네트워크(손실률 26%)와 일반적인 중국 ISP 조건(손실률 5-15%)을 시뮬레이션했습니다. 그 결과 패킷 손실이 많은 대부분의 시나리오에서 k2cc의 처리량이 BBR과 Brutal보다 높았고, 손실이 적은 시나리오에서는 Brutal이 더 빠른 경우도 있었습니다. 실제 속도는 현지 네트워크 품질, 인터넷 회선 통신사의 해외 트래픽 속도 제한 여부, 선택한 노드에 따라 달라집니다."
+      },
+      "platforms": {
+        "question": "开途 Kaitu는 어떤 기기를 지원하나요?",
+        "answer": "开途 Kaitu는 전 플랫폼을 지원합니다: Windows 10/11, macOS 12+(Intel + Apple Silicon 유니버설 바이너리), Linux(Ubuntu/Debian 및 주요 배포판), iOS(iPhone/iPad, 중국 App Store에서 바로 다운로드 가능), Android, 그리고 온 가족이 함께 쓰는 开途 Kaitu 라우터 에디션. 계정 하나로 최대 5대의 기기가 동시에 접속할 수 있습니다. 또한 k2s 서버를 제공해 어떤 VPS에든 자체 배포할 수 있습니다."
+      },
+      "selfHosting": {
+        "question": "开途 Kaitu 서버를 직접 배포할 수 있나요?",
+        "answer": "가능합니다. 开途 Kaitu는 k2s 서버 바이너리를 제공하며, AWS, Aliyun, Tencent Cloud, Bandwagon 등 어떤 VPS에든 자체 배포할 수 있습니다. 배포는 명령 한 줄이면 됩니다: curl -fsSL https://kaitu.io/i/k2s | sudo sh, 이어서 k2s run을 실행하면 k2:// 연결 URI가 자동 생성되며, 이를 클라이언트에 붙여 넣으면 바로 사용할 수 있습니다. k2s는 무설정 자동 배포를 지원하며, k2s setup 대화형 마법사와 여러 사용자의 인증 정보를 관리하는 k2s user add도 제공합니다."
+      },
+      "routerSupport": {
+        "question": "开途 Kaitu는 스마트 라우터를 지원하나요?",
+        "answer": "지원합니다. 开途 Kaitu 라우터 에디션은 미리 설정된 라우터와 전용 회선을 제공하며, 전원과 인터넷만 연결하면 바로 쓸 수 있고 펌웨어 설치나 명령줄 작업이 필요 없습니다 — 집 안의 모든 기기(컴퓨터, 휴대폰, 태블릿, 스마트 TV, 게임기, IoT 기기)가 연결되면 자동으로 암호화 채널을 거치므로, 기기마다 앱을 설치할 필요가 없습니다. 온 가족이 함께 쓰거나 기기가 많은 경우에 적합하며, 자세한 내용은 라우터 에디션 페이지를 참고하세요."
+      },
+      "chinaAccess": {
+        "question": "开途 Kaitu는 중국 본토에서 사용할 수 있나요?",
+        "answer": "사용할 수 있으며, 이것이 바로 开途 Kaitu의 핵심 설계 목표입니다. 기술적으로 k2 프로토콜은 ECH SNI 암호화 + QUIC/TCP-WS 듀얼 스택 + k2cc QoS 인식 혼잡 제어를 결합해, 패킷 손실이 많은 네트워크에서도 안정적인 연결을 유지합니다. 진입점 확인에는 Happy Eyeballs 전략으로 CDN 미러 진입점 6곳을 동시에 탐지해, 중국 지역에서 흔한 10초 타임아웃 문제를 피합니다. iOS 앱은 중국 App Store에서 바로 다운로드할 수 있습니다."
+      },
+      "chinaAppStore": {
+        "question": "开途 Kaitu는 중국 App Store에서 바로 다운로드할 수 있나요?",
+        "answer": "가능합니다. 开途 Kaitu iOS 앱은 중국 App Store에 정식으로 출시되어 있어, \"开途\"를 검색해 바로 설치할 수 있으며, 해외 Apple ID로 전환하거나 어떤 제한을 우회할 필요도 없습니다."
+      },
+      "pricing": {
+        "question": "开途 Kaitu 요금은 어떻게 되나요?",
+        "answer": "开途 Kaitu는 미국 달러로 가격을 책정하며, 1년, 2년, 3년, 5년 네 가지 구독 요금제를 제공합니다. 기간이 길수록 월평균 가격이 낮아집니다. 모든 요금제는 프로 버전 전체 기능을 포함하며, 기기 5대 동시 접속과 데이터 무제한을 지원합니다. 알리페이, 위챗페이, 유니온페이, 신용카드, 암호화폐 결제를 지원하며 구매 즉시 적용됩니다. 자세한 내용은 kaitu.io/purchase를 방문하세요"
+      },
+      "trial": {
+        "question": "무료 체험이 있나요?",
+        "answer": "현재는 무료 체험이 없습니다. 구매 후 만족하지 못하시면 첫 구매 후 7일 이내(사용 데이터 1GB 이하)에 환불을 신청할 수 있으며, 환불액은 계정 지갑 잔액으로 반환되어 연장이나 출금에 사용할 수 있습니다."
+      },
+      "refund": {
+        "question": "환불이 가능한가요?",
+        "answer": "첫 구매 후 7일 이내, 사용 데이터가 1GB를 넘지 않았다면 환불을 신청할 수 있습니다. 환불액은 계정 지갑 잔액으로 반환되며, 연장에 사용하거나 암호화폐 지갑으로 출금할 수 있습니다."
+      },
+      "deviceLimit": {
+        "question": "왜 제 기기가 로그아웃되나요?",
+        "answer": "계정 하나로 최대 5대의 기기에 동시에 로그인할 수 있습니다. 6번째 기기에서 로그인하면 시스템이 가장 먼저 로그인한 기기를 자동으로 제거합니다. 5대를 넘지 않았는데도 로그아웃된다면 피드백 티켓을 제출해 주세요. 계정 연결 기록을 확인해 드리겠습니다."
+      },
+      "privacy": {
+        "question": "开途 Kaitu는 제 인터넷 사용 기록을 저장하나요?",
+        "answer": "아닙니다. 开途 Kaitu는 엄격한 무로그 정책을 시행하며, 방문한 웹사이트, DNS 조회, 다운로드 내용 등 어떤 네트워크 활동도 기록하지 않습니다. 서비스 최적화와 장애 분석을 위해 최근 7일간의 연결 타임스탬프만 보관하며, 기간이 지나면 자동으로 삭제됩니다. 모든 전송은 TLS 1.3으로 암호화되고, VPN 터널은 AES-256-GCM으로 암호화됩니다."
+      },
+      "ctLog": {
+        "question": "开途 Kaitu는 왜 Let's Encrypt 대신 자체 서명 인증서를 쓰나요?",
+        "answer": "开途 Kaitu 서버는 자체 서명 인증서를 사용하고 클라이언트에서 인증서 Pin을 구현해, CT(Certificate Transparency) 로그 노출을 완전히 없앱니다. 공개 CA가 발급한 인증서는 모두 CT 로그에 의무적으로 기록되므로, 공격자는 CT 로그를 스캔해 국경 간 접속 서버를 모두 찾아낼 수 있습니다. 开途 Kaitu의 자체 서명 + Pin 전략은 서버 도메인이 어떤 공개 로그에도 나타나지 않게 해, 노드를 더 철저히 숨깁니다."
+      },
+      "portReuse": {
+        "question": "开途 Kaitu의 포트 재사용은 무슨 뜻인가요?",
+        "answer": "k2 서버는 프로토콜 감지를 통해 같은 포트(보통 443)에서 QUIC, TCP-WebSocket, 실제 HTTPS 요청을 동시에 처리합니다. k2가 아닌 트래픽은 내장 리버스 프록시가 실제 웹사이트로 전달하고, 능동 탐지에는 정상적인 HTTPS 응답을 돌려줍니다. 그 결과 외부에서 보면 开途 Kaitu 서버는 Cloudflare에 호스팅된 일반 HTTPS 웹사이트와 완전히 똑같이 동작하며, 포트 지문이나 응답 특징으로 식별할 수 없습니다."
+      },
+      "wifiSwitch": {
+        "question": "Wi-Fi나 4G/5G로 전환하면 자동으로 다시 연결되나요?",
+        "answer": "네. 开途 Kaitu에는 netCoordinator 네트워크 상태 조정기가 내장되어 있어, 시스템 네트워크 인터페이스 신호와 내부 탐지를 결합해 \"네트워크 끊김\", \"네트워크 복구\", \"인터페이스 전환\" 세 가지 상황을 자동으로 구분하고, 네트워크가 복구되거나 인터페이스가 전환되면 자동으로 다시 연결합니다. 자동 재연결에는 몇 초에서 십여 초의 지연이 있으며, 즉시 복구하려면 직접 연결을 끊었다가 다시 연결하면 됩니다."
+      },
+      "androidInstall": {
+        "question": "Android 휴대폰에 开途 Kaitu를 설치할 때 안전하지 않다는 경고가 나오면 어떻게 하나요?",
+        "answer": "중국 제조사 휴대폰의 시스템(MIUI, ColorOS, HyperOS, EMUI 등)은 앱스토어 외부에서 설치하는 APK에 보안 검사를 하며, 이것이 앱에 문제가 있다는 뜻은 아닙니다. 시스템 안내에 따라 직접 설치를 허용하거나, 컴퓨터를 이용한 USB 설치로 모든 제한을 우회할 수 있습니다. 자세한 단계는 kaitu.io/install을 참고하세요"
+      }
+    }
+  }
+}
