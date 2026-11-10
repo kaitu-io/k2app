@@ -45,7 +45,7 @@ Instagram 官方建议用这几款浏览器的最新版：<strong>Google Chrome�
 1. <strong>域名解析被污染</strong>：国内 DNS 给 Instagram 的域名返回随机的、和 Meta 无关的地址，而且每次查询结果都不一样，所以浏览器连向了错误的服务器。
 2. <strong>真实地址也被拦</strong>：绕开 DNS、直接用 Meta 的真实服务器地址，连接同样超时。
 
-这就是为什么网上流传的<strong>“改 DNS”“改 hosts 文件”对 Instagram 无效</strong>：它们最多解决第一层，解决不了第二层。第三方监测网站 GreatFire 的记录也显示，instagram.com 在中国大陆被屏蔽的记录始于 <strong>2014 年 11 月 30 日</strong>（[记录](https://zh.greatfire.org/instagram.com)），不是临时故障，等一等也不会恢复。
+这就是为什么网上流传的<strong>“改 DNS”“改 hosts 文件”对 Instagram 无效</strong>：它们最多解决第一层，解决不了第二层。Instagram 从 <strong>2014 年 9 月底</strong>起在中国大陆就无法访问（当时多家媒体报道，例如 [Engadget](https://www.engadget.com/2014/09/28/china-blocks-instagram/)），第三方监测网站 GreatFire 2026 年 10 月的测试结果仍是屏蔽（[记录](https://zh.greatfire.org/instagram.com)）。这不是临时故障，等一等也不会恢复。
 
 ## Instagram App 怎么下载
 
