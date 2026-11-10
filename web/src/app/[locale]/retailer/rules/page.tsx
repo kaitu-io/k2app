@@ -2,7 +2,6 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
 import { routing, Link } from '@/i18n/routing';
 import { generateMetadata as generateBaseMetadata } from '../../metadata';
-import { getBrand } from '@/lib/brand-server';
 import path from 'path';
 import { Button } from '@/components/ui/button';
 import Header from '@/components/Header';
@@ -22,13 +21,11 @@ export async function generateMetadata({
   const { locale: rawLocale } = await params;
   const locale = rawLocale as Locale;
   const t = await getTranslations({ locale, namespace: 'admin' });
-  const brand = await getBrand();
   // Self-canonical: without `alternates` the page inherited the root layout's canonical (the homepage).
   return generateBaseMetadata(
     locale,
     '/retailer/rules',
-    { title: t('retailerRules.title'), description: t('retailerRules.subtitle') },
-    brand
+    { title: t('retailerRules.title'), description: t('retailerRules.subtitle') }
   );
 }
 
