@@ -10,6 +10,7 @@ if (!process.env.VELITE_STARTED && (isDev || isBuild)) {
 import createNextIntlPlugin from 'next-intl/plugin';
 import { withSentryConfig } from '@sentry/nextjs';
 import type { NextConfig } from 'next';
+import { ROUTER_EDITION_ON_SALE } from './src/lib/router-edition';
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 
@@ -61,6 +62,22 @@ const nextConfig: NextConfig = {
         destination: '/install',
         permanent: false,
       },
+      // Router edition off sale: a real 307 at the edge. The pages' own redirect() runs at build time
+      // for these static pages and only emits a 200 shell with <meta refresh> (still titled as the router page).
+      ...(ROUTER_EDITION_ON_SALE
+        ? []
+        : [
+            {
+              source: '/:locale(zh-CN|zh-TW|zh-HK|en-US|ko|ja|ru)/routers',
+              destination: '/:locale/pricing',
+              permanent: false,
+            },
+            {
+              source: '/:locale(zh-CN|zh-TW|zh-HK|en-US|ko|ja|ru)/purchase/router',
+              destination: '/:locale/pricing',
+              permanent: false,
+            },
+          ]),
     ];
   },
 

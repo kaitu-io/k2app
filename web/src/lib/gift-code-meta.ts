@@ -15,5 +15,6 @@ const GIFT_META: Record<string, { title: string; description: (brand: string) =>
 export function giftCodeMetadata(locale: string): Metadata {
   const m = GIFT_META[locale] ?? GIFT_META['zh-CN'];
   const brand = localizedWordmark(siteBrand(), locale);
-  return { title: `${m.title} | ${brand}`, description: m.description(brand) };
+  // Redeem pages carry a license key in the URL and have no search value: keep them out of the index.
+  return { title: `${m.title} | ${brand}`, description: m.description(brand), robots: { index: false, follow: false } };
 }
