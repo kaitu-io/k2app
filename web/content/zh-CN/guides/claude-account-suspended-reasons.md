@@ -4,7 +4,7 @@ date: 2026-11-10
 summary: "Anthropic 官方列出三类封号原因：反复违反使用政策、从不支持的地区创建账号、违反服务条款。具体判断规则不公开，是多个因素的综合判断。本文按官方原文整理封号原因、可能参考的因素、申诉入口、数据导出和退款规定。"
 tags: ["claude封号", "claude 封号", "claude封号原因", "claude账号被封", "claude 申诉"]
 brand: kaitu
-draft: true
+draft: false
 section: kaitu
 ---
 
@@ -74,7 +74,7 @@ Anthropic 帮助中心的原文是：
 
 ## 网络在其中的位置
 
-网络是上面诸多因素中的一项：页面能不能打开、连接稳不稳定。开途是网络工具，只负责这一项，让境外网站连得上、连得稳；账号、手机号、付款和使用行为由平台自己判断，不在网络工具的范围内。想先分清“打不开”和“被限制”，可以看[国内能用 ChatGPT 和 Claude 吗](/guides/chatgpt-claude-china)里的报错对照表。
+网络是上面诸多因素中的一项：页面能不能打开、连接稳不稳定。开途是网络工具，只负责这一项，让境外网站连得上、连得稳；账号、手机号、付款和使用行为由平台自己判断，不在网络工具的范围内。电脑版和手机版都在[下载页](/install?utm_source=guide&utm_medium=content&utm_campaign=claude-account-suspended-reasons)。想先分清“打不开”和“被限制”，可以看[国内能用 ChatGPT 和 Claude 吗](/guides/chatgpt-claude-china)里的报错对照表。
 
 ## 常见问题
 
