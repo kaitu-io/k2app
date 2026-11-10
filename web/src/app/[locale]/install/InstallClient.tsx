@@ -18,6 +18,10 @@ import { WindowsPanel, MacOSPanel, LinuxPanel, IOSPanel, AndroidPanel } from './
 import { ArrowRight } from 'lucide-react';
 import { Link, useRouter } from '@/i18n/routing';
 import { track } from '@/lib/funnel';
+import { ROUTER_EDITION_ON_SALE } from '@/lib/router-edition';
+
+// 路由器版下架时不出「路由器」磁贴（它只是指向 /routers 的外链）。
+const VISIBLE_PLATFORM_IDS = PLATFORM_IDS.filter((id) => ROUTER_EDITION_ON_SALE || id !== 'router');
 
 const AUTO_DOWNLOAD_SECONDS = 5;
 
@@ -79,8 +83,8 @@ function PlatformTabBar({
     }`;
 
   return (
-    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-8">
-      {PLATFORM_IDS.map((id) => {
+    <div className={`grid grid-cols-3 ${VISIBLE_PLATFORM_IDS.length === 6 ? 'sm:grid-cols-6' : 'sm:grid-cols-5'} gap-2 mb-8`}>
+      {VISIBLE_PLATFORM_IDS.map((id) => {
         if (id === 'router') {
           return (
             <Link
@@ -196,7 +200,8 @@ export default function InstallClient({
     const noAutoDownload = params.get('nodownload') !== null;
     const validPlatforms: PlatformId[] = ['windows', 'macos', 'linux', 'ios', 'android'];
 
-    if (platformParam === 'router') {
+    // 下架期间 ?platform=router 不再跳走，按设备检测正常渲染安装页。
+    if (ROUTER_EDITION_ON_SALE && platformParam === 'router') {
       router.replace('/routers');
       return;
     }

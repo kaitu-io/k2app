@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createElement } from 'react';
 import { render } from '@testing-library/react';
+import { ROUTER_EDITION_ON_SALE } from '../src/lib/router-edition';
 
 // Mock radix-ui (transitive dependency of accordion)
 vi.mock('radix-ui', () => ({
@@ -183,8 +184,9 @@ describe('InstallClient funnel install_view', () => {
     expect(viewsFor('?nodownload=1')).toBe(1);
   });
 
-  it('does not fire install_view for a visit redirected to /routers', () => {
-    expect(viewsFor('?platform=router')).toBe(0);
+  // 在售时 ?platform=router 跳 /routers、不算安装页浏览；下架时忽略该参数，正常渲染安装页。
+  it('?platform=router: redirected (no install_view) only while the router edition is on sale', () => {
+    expect(viewsFor('?platform=router')).toBe(ROUTER_EDITION_ON_SALE ? 0 : 1);
   });
 
   it('Windows panel uses the Windows version when it lags the desktop version', async () => {

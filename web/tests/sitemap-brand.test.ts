@@ -21,6 +21,7 @@ vi.mock('#velite', () => ({
 }));
 
 import sitemap from '../src/app/sitemap';
+import { ROUTER_EDITION_ON_SALE } from '../src/lib/router-edition';
 
 describe('sitemap', () => {
   it('only kaitu.io URLs, never under a retired locale', async () => {
@@ -85,9 +86,15 @@ describe('sitemap', () => {
     }
   });
 
-  it.each(['/guides', '/routers', '/releases', '/pricing'])('%s is present', async (route) => {
+  it.each(['/guides', '/releases', '/pricing'])('%s is present', async (route) => {
     const entries = await sitemap();
     expect(entries.some((e) => e.url.endsWith(route))).toBe(true);
+  });
+
+  // 路由器版两页只在在售时进 sitemap（下架期间它们 307 到 /pricing）。
+  it.each(['/routers', '/purchase/router'])('%s is listed iff the router edition is on sale', async (route) => {
+    const entries = await sitemap();
+    expect(entries.some((e) => e.url.endsWith(route))).toBe(ROUTER_EDITION_ON_SALE);
   });
 
   describe('locale fallback is not advertised', () => {

@@ -1,4 +1,9 @@
 import type { SiteConfig } from './types';
+import { ROUTER_EDITION_ON_SALE } from '../router-edition';
+
+// 路由器版下架期间（ROUTER_EDITION_ON_SALE=false）顶栏、页脚、sitemap 都不列它的两页。
+const ROUTER_NAV = ROUTER_EDITION_ON_SALE ? [{ labelKey: 'nav.nav.routerEdition', href: '/routers' }] : [];
+const routerRoute = (path: string) => (ROUTER_EDITION_ON_SALE ? [path] : []);
 
 /**
  * kaitu 站结构。
@@ -20,7 +25,7 @@ export const KAITU_SITE: SiteConfig = {
         ],
       },
       { labelKey: 'nav.nav.pricing', href: '/pricing' },
-      { labelKey: 'nav.nav.routerEdition', href: '/routers' },
+      ...ROUTER_NAV,
       {
         labelKey: 'nav.nav.help',
         href: '/guides',
@@ -49,7 +54,7 @@ export const KAITU_SITE: SiteConfig = {
       items: [
         { labelKey: 'nav.footer.product.clientDownload', href: '/install' },
         { labelKey: 'nav.nav.pricing', href: '/pricing' },
-        { labelKey: 'nav.nav.routerEdition', href: '/routers' },
+        ...ROUTER_NAV,
         { labelKey: 'nav.footer.product.retailerProgram', href: '/retailer/rules' },
         { labelKey: 'nav.footer.developer.changelog', href: '/releases' },
       ],
@@ -91,9 +96,9 @@ export const KAITU_SITE: SiteConfig = {
     '/pricing',
     '/privacy',
     '/purchase',
-    '/purchase/router',
+    ...routerRoute('/purchase/router'),
     '/releases',
-    '/routers',
+    ...routerRoute('/routers'),
     '/support',
     '/terms',
   ],

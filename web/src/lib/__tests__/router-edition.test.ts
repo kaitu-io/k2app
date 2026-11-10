@@ -13,7 +13,9 @@ import {
   isRouterPresale,
   presaleEndsAt,
   formatShipsFrom,
+  ROUTER_EDITION_ON_SALE,
 } from '../router-edition';
+import { KAITU_SITE } from '../site/kaitu';
 import type { UserRouterFulfillment } from '../api';
 
 function f(partial: Partial<UserRouterFulfillment>): UserRouterFulfillment {
@@ -156,5 +158,21 @@ describe('routerOffer (presale window)', () => {
   it('formatShipsFrom renders the calendar day without timezone drift', () => {
     expect(formatShipsFrom('2026-11-11', 'zh-CN')).toBe('11月11日');
     expect(formatShipsFrom('2026-11-11', 'en-GB')).toBe('11 November');
+  });
+});
+
+// 2026-11-10 起路由器版暂停销售（后台套餐 id 15/16 已停用）。重新上架时改常量并同步改这里。
+describe('ROUTER_EDITION_ON_SALE', () => {
+  it('当前下架', () => {
+    expect(ROUTER_EDITION_ON_SALE).toBe(false);
+  });
+
+  it('下架时顶栏、页脚、sitemap 静态路由都不含路由器版两页', () => {
+    const navHrefs = KAITU_SITE.nav.primary.flatMap((i) => [i.href, ...(i.children ?? []).map((c) => c.href)]);
+    const footerHrefs = KAITU_SITE.footer.flatMap((col) => col.items.map((i) => i.href));
+    const routerPaths = (hrefs: string[]) => hrefs.filter((h) => h === '/routers' || h.startsWith('/purchase/router'));
+    expect(routerPaths(navHrefs)).toEqual(ROUTER_EDITION_ON_SALE ? ['/routers'] : []);
+    expect(routerPaths(footerHrefs)).toEqual(ROUTER_EDITION_ON_SALE ? ['/routers'] : []);
+    expect(routerPaths(KAITU_SITE.staticRoutes)).toEqual(ROUTER_EDITION_ON_SALE ? ['/purchase/router', '/routers'] : []);
   });
 });

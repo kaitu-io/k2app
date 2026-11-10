@@ -13,6 +13,7 @@ import DownloadCTA from '@/components/home/DownloadCTA';
 import HomeClient from './HomeClient';
 import { generateMetadata as generateBaseMetadata } from './metadata';
 import { getBrand } from '@/lib/brand-server';
+import { ROUTER_EDITION_ON_SALE } from '@/lib/router-edition';
 
 type Locale = (typeof routing.locales)[number];
 
@@ -84,10 +85,14 @@ export default async function Home({
     'androidInstall',
   ] as const;
 
-  const faqItems = FAQ_ITEMS.map((key) => ({
+  // 路由器版下架时：整条 routerSupport 不出，platforms 用不提路由器版的答案。
+  const faqItems = FAQ_ITEMS.filter((key) => ROUTER_EDITION_ON_SALE || key !== 'routerSupport').map((key) => ({
     key,
     question: t(`faq.items.${key}.question`),
-    answer: t(`faq.items.${key}.answer`),
+    answer:
+      !ROUTER_EDITION_ON_SALE && key === 'platforms'
+        ? t('faq.items.platforms.answerNoRouter')
+        : t(`faq.items.${key}.answer`),
   }));
 
   const TESTIMONIAL_KEYS = ['item1', 'item2', 'item3'] as const;
@@ -145,12 +150,12 @@ export default async function Home({
   const faqPageJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
-    mainEntity: FAQ_ITEMS.map((item) => ({
+    mainEntity: faqItems.map((item) => ({
       '@type': 'Question',
-      name: t(`faq.items.${item}.question`),
+      name: item.question,
       acceptedAnswer: {
         '@type': 'Answer',
-        text: t(`faq.items.${item}.answer`),
+        text: item.answer,
       },
     })),
   };

@@ -33,6 +33,7 @@ import {
   formatBytes,
   formatShipsFrom,
   routerOffer,
+  ROUTER_EDITION_ON_SALE,
 } from '@/lib/router-edition';
 
 // stage 落在这些值时开通链路仍在异步推进（付款确认 / 开线路 / 发货），30 秒轮询一次；
@@ -180,9 +181,11 @@ function RouterAccountBody() {
         <CardContent className="flex flex-col items-center gap-4 py-10 text-center" data-testid="router-empty">
           <h2 className="text-lg font-semibold">{t('routers.edition.account.emptyTitle')}</h2>
           <p className="text-muted-foreground">{t('routers.edition.account.emptyBody')}</p>
-          <Button asChild>
-            <Link href="/routers">{t('routers.edition.account.emptyCta')}</Link>
-          </Button>
+          {ROUTER_EDITION_ON_SALE && (
+            <Button asChild>
+              <Link href="/routers">{t('routers.edition.account.emptyCta')}</Link>
+            </Button>
+          )}
         </CardContent>
       </Card>
     );
@@ -349,7 +352,8 @@ function RouterAccountBody() {
             {(line.status === 'grace' || line.status === 'suspended') && (
               <p className="text-sm text-destructive">{t('routers.edition.account.overdue')}</p>
             )}
-            {renewPlanPid && (
+            {/* 下架期间续费套餐 router-svc-1y 已停用，按钮只会把人带到定价页。 */}
+            {renewPlanPid && ROUTER_EDITION_ON_SALE && (
               <Button asChild>
                 <Link href="/purchase/router?plan=svc">{t('routers.edition.account.renew')}</Link>
               </Button>

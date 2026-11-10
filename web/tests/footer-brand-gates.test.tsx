@@ -12,6 +12,7 @@ import { render } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import fs from 'fs';
 import path from 'path';
+import { ROUTER_EDITION_ON_SALE } from '../src/lib/router-edition';
 
 function loadMessages(locale: string): Record<string, unknown> {
   const dir = path.resolve(__dirname, '../messages', locale);
@@ -48,7 +49,9 @@ async function renderChrome(component: 'Footer' | 'Header', locale: 'zh-CN'): Pr
   return container.innerHTML;
 }
 
-const PRODUCT_HREFS = ['href="/routers"', 'href="/releases"', 'href="/retailer/rules"', 'href="/guides"', 'href="/opensource"'];
+// 路由器版下架（ROUTER_EDITION_ON_SALE=false）时页脚与顶栏都不链 /routers。
+const ROUTERS_HREF = 'href="/routers"';
+const PRODUCT_HREFS = [...(ROUTER_EDITION_ON_SALE ? [ROUTERS_HREF] : []), 'href="/releases"', 'href="/retailer/rules"', 'href="/guides"', 'href="/opensource"'];
 // /routers 是路由器版产品页，由产品栏链接；已下线的自备教程 /routers/diy 不得再出现在页脚。
 // /changelog 只是到 /releases 的兼容跳转，页脚不再链它（同一目标只出现一次）。
 // 「定价」是真实页面 /pricing（购买页由定价页的 CTA 进入，不再直接挂在导航上）。
@@ -62,6 +65,7 @@ describe('footer links only existing pages', () => {
     for (const href of KAITU_FOOTER) expect(html, href).toContain(href);
     expect(html).toContain(OPT_OUT);
     expect(html).not.toContain('href="/routers/diy"');
+    if (!ROUTER_EDITION_ON_SALE) expect(html).not.toContain(ROUTERS_HREF);
     expect(html).not.toContain('href="/changelog"');
     expect(html).not.toContain('mailto:');
     expect(html).not.toContain('github.com');
@@ -73,9 +77,10 @@ describe('footer links only existing pages', () => {
 describe('header links only existing pages', () => {
   it('kaitu: Features / Pricing / Router Edition / Help / Developers as links, Free Download CTA', async () => {
     const html = await renderChrome('Header', 'zh-CN');
-    for (const href of ['href="/#features"', 'href="/pricing"', 'href="/routers"', 'href="/guides"', 'href="/k2"', 'href="/install"']) {
+    for (const href of ['href="/#features"', 'href="/pricing"', ...(ROUTER_EDITION_ON_SALE ? [ROUTERS_HREF] : []), 'href="/guides"', 'href="/k2"', 'href="/install"']) {
       expect(html, href).toContain(href);
     }
+    if (!ROUTER_EDITION_ON_SALE) expect(html).not.toContain(ROUTERS_HREF);
     // 首页锚点不再是一级项：只允许作为"功能"分组的父项出现一次。
     expect(html.match(/href="\/#/g)?.length ?? 0).toBe(1);
   });

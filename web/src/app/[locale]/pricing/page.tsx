@@ -10,7 +10,7 @@ import RouterPlanCard from '@/components/pricing/RouterPlanCard';
 import FunnelEvent from '@/components/FunnelEvent';
 import { getBrand } from '@/lib/brand-server';
 import { siteConfig } from '@/lib/site';
-import { formatUsd, routerOffer } from '@/lib/router-edition';
+import { formatUsd, routerOffer, ROUTER_EDITION_ON_SALE } from '@/lib/router-edition';
 import { generateMetadata as generateBaseMetadata } from '../metadata';
 
 type Locale = (typeof routing.locales)[number];
@@ -21,6 +21,10 @@ export const revalidate = 3600;
 interface FaqItem {
   q: string;
   a: string;
+  /** 路由器版下架时替换 a 的版本（a 里提到了路由器版）。 */
+  aAppOnly?: string;
+  /** 只讲路由器版的条目，下架时整条不出。 */
+  routerOnly?: boolean;
 }
 
 function appEntryPrice(): number {
@@ -43,16 +47,18 @@ export async function generateMetadata({
     {
       // wordmark：中文用户面用中文品牌名，不用 displayName 的拉丁写法。
       title: `${t('pricing.metaTitle')} | ${localizedWordmark(brand, locale)}`,
-      description: t('pricing.metaDescription', {
-        app1y: formatUsd(appEntryPrice()),
-        router: formatUsd(routerOffer().firstYear),
-      }),
+      description: ROUTER_EDITION_ON_SALE
+        ? t('pricing.metaDescription', {
+            app1y: formatUsd(appEntryPrice()),
+            router: formatUsd(routerOffer().firstYear),
+          })
+        : t('pricing.metaDescriptionAppOnly', { app1y: formatUsd(appEntryPrice()) }),
     },
     brand,
   );
 }
 
-// 定价页：App 版四档 + 路由器版一张卡 + 定价 FAQ。
+// 定价页：App 版四档 + 路由器版一张卡（ROUTER_EDITION_ON_SALE 时）+ 定价 FAQ。
 export default async function PricingPage({
   params,
 }: {
@@ -77,11 +83,13 @@ export default async function PricingPage({
     cta: t('pricing.app.cta'),
     includes: t.raw('pricing.app.includes') as string[],
   };
-  const faqItems = (t.raw('pricing.faq.items') as FaqItem[]).map((item, i) => ({
-    key: `faq-${i}`,
-    question: item.q,
-    answer: item.a,
-  }));
+  const faqItems = (t.raw('pricing.faq.items') as FaqItem[])
+    .filter((item) => ROUTER_EDITION_ON_SALE || !item.routerOnly)
+    .map((item, i) => ({
+      key: `faq-${i}`,
+      question: item.q,
+      answer: !ROUTER_EDITION_ON_SALE && item.aAppOnly ? item.aAppOnly : item.a,
+    }));
 
   const faqPageJsonLd = {
     '@context': 'https://schema.org',
@@ -107,7 +115,7 @@ export default async function PricingPage({
       <section className="pt-16 pb-8 px-4 sm:px-6 lg:px-8">
         <div className="max-w-5xl mx-auto text-center">
           <h1 className="text-4xl sm:text-5xl font-bold text-foreground mb-4">{t('pricing.title')}</h1>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">{t('pricing.subtitle')}</p>
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">{t(ROUTER_EDITION_ON_SALE ? 'pricing.subtitle' : 'pricing.subtitleAppOnly')}</p>
         </div>
       </section>
 
@@ -121,12 +129,14 @@ export default async function PricingPage({
         </div>
       </section>
 
-      <section id="router" className="py-10 px-4 sm:px-6 lg:px-8 scroll-mt-20 bg-muted/40" aria-labelledby="pricing-router-heading">
-        <div className="max-w-5xl mx-auto">
-          <h2 id="pricing-router-heading" className="sr-only">{t('pricing.router.title')}</h2>
-          <RouterPlanCard t={t} locale={locale} />
-        </div>
-      </section>
+      {ROUTER_EDITION_ON_SALE && (
+        <section id="router" className="py-10 px-4 sm:px-6 lg:px-8 scroll-mt-20 bg-muted/40" aria-labelledby="pricing-router-heading">
+          <div className="max-w-5xl mx-auto">
+            <h2 id="pricing-router-heading" className="sr-only">{t('pricing.router.title')}</h2>
+            <RouterPlanCard t={t} locale={locale} />
+          </div>
+        </section>
+      )}
 
       <FAQSection sectionTitle={t('pricing.faq.title')} sectionSubtitle="" items={faqItems} />
 
