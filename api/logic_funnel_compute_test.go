@@ -718,6 +718,8 @@ func TestCompute_JSONShape(t *testing.T) {
 			{"label":"发起支付","count":0,"rateFromPrev":0,"rateFromFirst":0,"medianSecFromPrev":null}
 		],
 		"daily": [{"date":"2026-09-01","entered":1,"completed":0}],
+		"paidCents": 0,
+		"listCents": 0,
 		"groups": []
 	}`, string(raw))
 
@@ -725,7 +727,7 @@ func TestCompute_JSONShape(t *testing.T) {
 	require.NoError(t, err)
 	var got map[string]any
 	require.NoError(t, json.Unmarshal(raw, &got))
-	assert.Equal(t, []any{map[string]any{"key": "direct", "steps": []any{1.0, 1.0, 0.0}}}, got["groups"])
+	assert.Equal(t, []any{map[string]any{"key": "direct", "steps": []any{1.0, 1.0, 0.0}, "paidCents": 0.0, "listCents": 0.0}}, got["groups"])
 
 	// 空输入、空区间：三个数组都是 [] 而不是 null。
 	raw, err = json.Marshal(computeFunnel(p, nil, nil, funnelT0, funnelT0, ""))
@@ -840,6 +842,13 @@ func genFunnelFixture(seed int64, p funnelPath) funnelFixture {
 			paths = []string{"/go/xa1", "/go/xb1", "/go/xa1q", "/go/xb1", "/go/xb1q", ""}
 		}
 		r.Path = paths[off%6]
+		// 金额与站外平台同样由偏移派生、不消耗 rng。
+		if ev == "purchase" || ev == "renewal" {
+			r.PaidCents, r.ListCents = int64(off%7)*100, int64(off%5)*1000
+		}
+		if off%13 == 0 && r.UtmSource == "" {
+			r.UtmSource = "zhihu"
+		}
 		if funnelEventKind(ev) != FunnelKindFact && rng.Intn(4) == 0 {
 			r.Surface = pick(FunnelSurfaceWeb, FunnelSurfaceApp)
 		}
@@ -1017,6 +1026,7 @@ type fnOracleResult struct {
 	medians []*int64
 	daily   map[string][2]int // date → entered, completed
 	groups  map[string][]int
+	amounts map[string][2]int64 // 组 → paid, list；"" = 总额
 }
 
 func fnOracleMatches(st funnelStep, r funnelRecord) bool {
@@ -1071,6 +1081,17 @@ func fnOracleGroupKey(groupBy string, entry, last funnelRecord) string {
 		v = last.Plan
 	case "channel":
 		v = last.Channel
+	case "content":
+		for _, pf := range []string{"zhihu", "xiaohongshu", "v2ex", "weibo", "wechat", "x", "reddit", "other"} {
+			if entry.UtmSource == pf {
+				c := entry.UtmCampaign
+				if c == "" {
+					c = "unknown"
+				}
+				return pf + "/" + c
+			}
+		}
+		v = entry.Path
 	}
 	if v == "" {
 		return "unknown"
@@ -1080,7 +1101,14 @@ func fnOracleGroupKey(groupBy string, entry, last funnelRecord) string {
 
 func fnOracle(p funnelPath, recs []funnelRecord, ids map[string]uint64, from, to time.Time, groupBy string) fnOracleResult {
 	n := len(p.Steps)
-	out := fnOracleResult{counts: make([]int, n), medians: make([]*int64, n), daily: map[string][2]int{}, groups: map[string][]int{}}
+	out := fnOracleResult{counts: make([]int, n), medians: make([]*int64, n), daily: map[string][2]int{}, groups: map[string][]int{}, amounts: map[string][2]int64{}}
+	// 末步只由付款事实构成的路径才算金额。
+	paidPath := true
+	for _, e := range p.Steps[n-1].Events {
+		if e != "purchase" && e != "renewal" {
+			paidPath = false
+		}
+	}
 	gaps := make([][]int64, n)
 
 	// 归人：记录在输入里的下标按人分开。
@@ -1155,6 +1183,19 @@ func fnOracle(p funnelPath, recs []funnelRecord, ids map[string]uint64, from, to
 			d[1]++
 		}
 		out.daily[day] = d
+		var amt [2]int64
+		if paidPath && len(best) == n {
+			start := recs[bestEntry].At
+			for _, i := range mine {
+				r := recs[i]
+				if (r.Event == "purchase" || r.Event == "renewal") && !r.At.Before(start) && !r.At.After(start.Add(p.Window)) {
+					amt[0] += r.PaidCents
+					amt[1] += r.ListCents
+				}
+			}
+		}
+		tot := out.amounts[""]
+		out.amounts[""] = [2]int64{tot[0] + amt[0], tot[1] + amt[1]}
 		if groupBy != "" {
 			key := fnOracleGroupKey(groupBy, recs[bestEntry], recs[best[len(best)-1]])
 			if out.groups[key] == nil {
@@ -1163,6 +1204,8 @@ func fnOracle(p funnelPath, recs []funnelRecord, ids map[string]uint64, from, to
 			for s := range best {
 				out.groups[key][s]++
 			}
+			ga := out.amounts[key]
+			out.amounts[key] = [2]int64{ga[0] + amt[0], ga[1] + amt[1]}
 		}
 	}
 	for s := 1; s < n; s++ {
@@ -1192,11 +1235,24 @@ func fnAssertMatchesOracle(t *testing.T, p funnelPath, fx funnelFixture, groupBy
 	}
 	require.Equal(t, want.daily, gotDaily, "daily, groupBy=%q", groupBy)
 	gotGroups := map[string][]int{}
+	gotAmounts := map[string][2]int64{"": {got.PaidCents, got.ListCents}}
 	for _, g := range got.Groups {
 		require.NotContains(t, gotGroups, g.Key)
 		gotGroups[g.Key] = g.Steps
+		gotAmounts[g.Key] = [2]int64{g.PaidCents, g.ListCents}
 	}
 	require.Equal(t, want.groups, gotGroups, "groups, groupBy=%q", groupBy)
+	for k := range gotAmounts { // 没人进入 / 金额为 0 的组在 oracle 里可能没有键
+		if _, ok := want.amounts[k]; !ok {
+			want.amounts[k] = [2]int64{}
+		}
+	}
+	for k := range gotGroups {
+		if _, ok := want.amounts[k]; !ok {
+			want.amounts[k] = [2]int64{}
+		}
+	}
+	require.Equal(t, want.amounts, gotAmounts, "amounts, groupBy=%q", groupBy)
 }
 
 func TestComputeOracle_RandomFixtures(t *testing.T) {
@@ -1301,4 +1357,128 @@ func TestCompute_AppToWebEntersOnlyOnAppTaggedVisit(t *testing.T) {
 	assert.Equal(t, []int{1, 1, 1, 1}, fnStepCounts(res))
 	require.Len(t, res.Groups, 1)
 	assert.Equal(t, "account", res.Groups[0].Key)
+}
+
+// ---------- 内容转化 + content 分组 + 金额（spec 2026-11-10 内容收益统计） ----------
+
+func fnWithAmount(paid, list int64) fnRecOpt {
+	return func(r *funnelRecord) { r.PaidCents, r.ListCents = paid, list }
+}
+
+// 站外平台带来的进站归 平台/话题，即使落在有自己路径的指南上；站内标记（utm_source=guide）不算平台。
+func TestCompute_ContentDimPlatformBeatsPath(t *testing.T) {
+	recs := []funnelRecord{
+		fnRec("sid:A", "page_view", 0, fnWithPath("/guides/a"), fnWithUtmSource("zhihu"), fnWithUtmCampaign("claude-ban")),
+		fnRec("sid:B", "page_view", 0, fnWithPath("/guides/a"), fnWithUtmSource("guide"), fnWithUtmCampaign("x")),
+		fnRec("sid:C", "page_view", 0, fnWithPath("/guides/a"), fnWithUtmSource("zhihu")),
+		fnRec("sid:D", "page_view", 0),
+	}
+	res := fnCompute30d(t, "content_conversion", recs, nil, "content")
+	assert.Equal(t, []FunnelGroup{
+		{Key: "/guides/a", Steps: []int{1, 0, 0}},
+		{Key: "unknown", Steps: []int{1, 0, 0}},
+		{Key: "zhihu/claude-ban", Steps: []int{1, 0, 0}},
+		{Key: "zhihu/unknown", Steps: []int{1, 0, 0}},
+	}, res.Groups)
+}
+
+// 只算拉新：老账号登录后续费不进第 2 步，也不计金额。
+func TestCompute_ContentConversionIgnoresLoginOfOldAccount(t *testing.T) {
+	recs := []funnelRecord{
+		fnRec("sid:A", "page_view", 0, fnWithPath("/guides/a")),
+		fnRec("sid:A", "auth_done", 2),
+		fnRec("u:8", "renewal", 4, fnWithAmount(990, 0)),
+	}
+	res := fnCompute30d(t, "content_conversion", recs, map[string]uint64{"sid:A": 8}, "content")
+	assert.Equal(t, []int{1, 0, 0}, fnStepCounts(res))
+	assert.Equal(t, int64(0), res.PaidCents)
+	assert.Equal(t, []FunnelGroup{{Key: "/guides/a", Steps: []int{1, 0, 0}}}, res.Groups)
+}
+
+// 金额 = 走完全程的人在 [进入, 进入+窗口] 内的全部付款；窗口外的续费不算。
+func TestCompute_AmountOnlyWithinWindow(t *testing.T) {
+	recs := []funnelRecord{
+		fnRec("sid:A", "page_view", 0, fnWithPath("/guides/a")),
+		fnRec("u:7", "signup", 5),
+		fnRec("u:7", "purchase", 9, fnWithAmount(990, 0)),
+		fnRec("u:7", "renewal", 10*fnMinPerDay, fnWithAmount(500, 0)),
+		fnRec("u:7", "renewal", 15*fnMinPerDay, fnWithAmount(990, 0)), // 窗口 14 天之外
+	}
+	res := fnCompute30d(t, "content_conversion", recs, map[string]uint64{"sid:A": 7}, "content")
+	assert.Equal(t, []int{1, 1, 1}, fnStepCounts(res))
+	assert.Equal(t, int64(1490), res.PaidCents)
+	require.Len(t, res.Groups, 1)
+	assert.Equal(t, int64(1490), res.Groups[0].PaidCents)
+}
+
+// 两种口径分开累计，不相加。
+func TestCompute_AmountSplitsPaidAndList(t *testing.T) {
+	recs := []funnelRecord{
+		fnRec("sid:A", "page_view", 0),
+		fnRec("u:7", "signup", 5),
+		fnRec("u:7", "purchase", 9, fnWithAmount(990, 0)),
+		fnRec("u:7", "renewal", 20, fnWithAmount(0, 3990)),
+	}
+	res := fnCompute30d(t, "content_conversion", recs, map[string]uint64{"sid:A": 7}, "content")
+	assert.Equal(t, int64(990), res.PaidCents)
+	assert.Equal(t, int64(3990), res.ListCents)
+	assert.Equal(t, FunnelGroup{Key: "unknown", Steps: []int{1, 1, 1}, PaidCents: 990, ListCents: 3990}, res.Groups[0])
+}
+
+// 没走完全程的人不计金额；不以付款结尾的路径金额恒为 0。
+func TestCompute_NonPaidPathHasZeroAmount(t *testing.T) {
+	recs := []funnelRecord{
+		fnRec("sid:A", "page_view", 0),
+		fnRec("sid:A", "install_view", 1),
+		fnRec("sid:A", "install_click", 2),
+		fnRec("u:7", "purchase", 3, fnWithAmount(990, 0)),
+		fnRec("sid:B", "page_view", 0),
+		fnRec("u:8", "purchase", 3, fnWithAmount(990, 0)), // 没有新注册：没走完
+	}
+	ids := map[string]uint64{"sid:A": 7, "sid:B": 8}
+	res := fnCompute30d(t, "web_install", recs, ids, "content")
+	assert.Equal(t, int64(0), res.PaidCents)
+	res = fnCompute30d(t, "content_conversion", recs, ids, "content")
+	assert.Equal(t, int64(0), res.PaidCents)
+}
+
+// 按 content 分组时上限更高：60 个进站路径不折叠。其它维度仍是 50。
+func TestCompute_ContentDimHasHigherGroupCap(t *testing.T) {
+	var recs []funnelRecord
+	for i := 0; i < 60; i++ {
+		recs = append(recs, fnRec(fmt.Sprintf("sid:P%d", i), "page_view", 0, fnWithPath(fmt.Sprintf("/guides/g%02d", i))))
+	}
+	res := fnCompute30d(t, "content_conversion", recs, nil, "content")
+	assert.Len(t, res.Groups, 60)
+	for _, g := range res.Groups {
+		assert.NotEqual(t, funnelGroupOther, g.Key)
+	}
+	assert.Len(t, fnCompute30d(t, "content_conversion", recs, nil, "landing_path").Groups, 51)
+}
+
+// 折叠进 "(other)" 时金额一起并入，各组金额相加 = 总额。
+func TestCompute_GroupAmountsSumToTotal(t *testing.T) {
+	var recs []funnelRecord
+	ids := map[string]uint64{}
+	for i := 0; i < 55; i++ {
+		sid := fmt.Sprintf("sid:S%d", i)
+		uid := uint64(100 + i)
+		ids[sid] = uid
+		u := fmt.Sprintf("u:%d", uid)
+		recs = append(recs,
+			fnRec(sid, "page_view", 0, fnWithPath(fmt.Sprintf("/p%02d", i))),
+			fnRec(u, "signup", 1),
+			fnRec(u, "purchase", 2, fnWithAmount(int64(i+1), int64(2*i))),
+		)
+	}
+	res := fnCompute30d(t, "content_conversion", recs, ids, "landing_path")
+	require.Len(t, res.Groups, 51)
+	var paid, list int64
+	for _, g := range res.Groups {
+		paid += g.PaidCents
+		list += g.ListCents
+	}
+	assert.Equal(t, int64(55*56/2), res.PaidCents)
+	assert.Equal(t, res.PaidCents, paid)
+	assert.Equal(t, res.ListCents, list)
 }

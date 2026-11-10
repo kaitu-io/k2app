@@ -34,6 +34,7 @@ const DIM_LABELS: Record<string, string> = {
   paywall_source: "付费墙入口",
   plan: "套餐",
   channel: "渠道",
+  content: "内容（站外平台/话题，否则落地页）",
 };
 
 // 服务端把第 50 名之后的分组合并成这一行；它不是一个真实的分组值，排序时始终垫底。
@@ -42,7 +43,7 @@ const OTHER_GROUP = "(other)";
 const GROUP_KEY_LABELS: Record<string, string> = {
   direct: "直接访问",
   unknown: "未知",
-  [OTHER_GROUP]: "其他（第 50 名之后合并）",
+  [OTHER_GROUP]: "其他（超出分组上限后合并）",
 };
 
 type RetentionState<T> = { data: T | null; loading: boolean; error: string | null };
