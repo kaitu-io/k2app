@@ -684,3 +684,109 @@ func TestFunnelFacts_TrialNotCountedAsPurchase(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, factsOf(recs, u.ID))
 }
+
+// ---- 金额（内容收益统计 spec 2026-11-10）----
+
+func factsAmountPlan(t *testing.T, brand Brand, price uint64, apple, stripe string) *Plan {
+	t.Helper()
+	p := &Plan{
+		PID: generateId("ff-amt"), Label: "funnel-facts-amount", Price: price, OriginPrice: price, Month: 1,
+		Product: "app", IsActive: BoolPtr(true), Brand: string(brand), AppleProductID: apple, StripePriceID: stripe,
+	}
+	require.NoError(t, db.Get().Create(p).Error)
+	t.Cleanup(func() { factsCleanup(t, db.Get().Unscoped().Delete(p).Error) })
+	return p
+}
+
+func factsSub(t *testing.T, userID uint64, provider, subID, productID string) {
+	t.Helper()
+	s := &Subscription{UserID: userID, Provider: provider, ProviderSubscriptionID: subID, ProductID: productID}
+	require.NoError(t, db.Get().Create(s).Error)
+	t.Cleanup(func() { factsCleanup(t, db.Get().Unscoped().Delete(s).Error) })
+}
+
+func TestFacts_OrderAmountNetOfRefund(t *testing.T) {
+	skipIfNoConfig(t)
+	from, to := factsWindow(t)
+	u := factsUser(t, BrandKaitu, from.Add(-time.Hour))
+	at := from.Add(time.Hour)
+	factsOrder(t, u.ID, "nextpay", factsPaid(at), factsRefunded(at.Add(time.Minute)), func(o *Order) {
+		o.PayAmount = 990
+		o.RefundAmount = 300
+	})
+	u2 := factsUser(t, BrandKaitu, from.Add(-time.Hour))
+	factsOrder(t, u2.ID, "nextpay", factsPaid(at), func(o *Order) { o.PayAmount = 990 })
+
+	recs, err := loadFunnelFacts(context.Background(), BrandKaitu, false, from, to, factsPay)
+	require.NoError(t, err)
+	got := factsOf(recs, u.ID)
+	require.Len(t, got, 1)
+	assert.Equal(t, int64(690), got[0].PaidCents)
+	assert.Equal(t, int64(0), got[0].ListCents)
+	got2 := factsOf(recs, u2.ID)
+	require.Len(t, got2, 1)
+	assert.Equal(t, int64(990), got2[0].PaidCents, "not refunded → full amount")
+}
+
+func TestFacts_CreditAmountIsPlanListPrice(t *testing.T) {
+	skipIfNoConfig(t)
+	from, to := factsWindow(t)
+	u := factsUser(t, BrandKaitu, from.Add(-time.Hour))
+	product := generateId("ff-apple-prod")
+	factsAmountPlan(t, BrandKaitu, 3990, product, "")
+	orig := generateId("ff-orig")
+	factsSub(t, u.ID, SubscriptionProviderApple, orig, product)
+	factsCredit(t, u.ID, SubscriptionProviderApple, "purchase", orig, from.Add(time.Hour))
+
+	recs, err := loadFunnelFacts(context.Background(), BrandKaitu, false, from, to, factsPay)
+	require.NoError(t, err)
+	got := factsOf(recs, u.ID)
+	require.Len(t, got, 1)
+	assert.Equal(t, int64(3990), got[0].ListCents)
+	assert.Equal(t, int64(0), got[0].PaidCents)
+}
+
+func TestFacts_AppleCreditRefundedIsZero(t *testing.T) {
+	skipIfNoConfig(t)
+	from, to := factsWindow(t)
+	product := generateId("ff-apple-prod")
+	factsAmountPlan(t, BrandKaitu, 3990, product, "")
+
+	mk := func(active bool) uint64 {
+		u := factsUser(t, BrandKaitu, from.Add(-time.Hour))
+		orig := generateId("ff-orig")
+		factsSub(t, u.ID, SubscriptionProviderApple, orig, product)
+		c := factsCredit(t, u.ID, SubscriptionProviderApple, "purchase", orig, from.Add(time.Hour))
+		r := &AppleRefund{UserID: u.ID, OriginalTransactionID: orig, TransactionID: c.TransactionID, Active: active}
+		require.NoError(t, db.Get().Create(r).Error)
+		t.Cleanup(func() { factsCleanup(t, db.Get().Unscoped().Delete(r).Error) })
+		return u.ID
+	}
+	refunded, reversed := mk(true), mk(false)
+
+	recs, err := loadFunnelFacts(context.Background(), BrandKaitu, false, from, to, factsPay)
+	require.NoError(t, err)
+	got := factsOf(recs, refunded)
+	require.Len(t, got, 1)
+	assert.Equal(t, int64(0), got[0].ListCents, "active Apple refund → 0")
+	got = factsOf(recs, reversed)
+	require.Len(t, got, 1)
+	assert.Equal(t, int64(3990), got[0].ListCents, "refund reversed → list price again")
+}
+
+func TestFacts_StripeCreditAmount(t *testing.T) {
+	skipIfNoConfig(t)
+	from, to := factsWindow(t)
+	u := factsUser(t, BrandOverleap, from.Add(-time.Hour))
+	price := generateId("price_ff")
+	factsAmountPlan(t, BrandOverleap, 1290, "", price)
+	subID := generateId("sub_ff")
+	factsSub(t, u.ID, SubscriptionProviderStripe, subID, price)
+	factsCredit(t, u.ID, SubscriptionProviderStripe, "purchase", subID, from.Add(time.Hour))
+
+	recs, err := loadFunnelFacts(context.Background(), BrandOverleap, true, from, to, factsPay)
+	require.NoError(t, err)
+	got := factsOf(recs, u.ID)
+	require.Len(t, got, 1)
+	assert.Equal(t, int64(1290), got[0].ListCents)
+}
