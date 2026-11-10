@@ -11,7 +11,7 @@
  *   3. EDITION_PRICE_CENTS matches the plan prices in
  *      docs/router-edition-prod-deploy.md (single source of truth for price).
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -34,12 +34,50 @@ vi.mock('@/i18n/routing', () => ({
     locales: ['zh-CN', 'zh-TW', 'zh-HK'],
   },
   Link: ({ children }: { children: React.ReactNode }) => children,
+  redirect: (...a: unknown[]) => mockRedirect(...a),
 }));
+const mockRedirect = vi.hoisted(() => vi.fn());
+vi.mock('../src/app/[locale]/purchase/router/RouterPurchaseClient', () => ({ default: () => null }));
+
+// 路由器版在售开关的替身：默认按「在售」渲染，锁住重新上架（只改 ROUTER_EDITION_ON_SALE）时的样子；
+// 下架用例把 sale.on 置 false。getter 让每次读取都取当前值。
+const sale = vi.hoisted(() => ({ on: true }));
+vi.mock('@/lib/router-edition', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/router-edition')>();
+  return {
+    ...actual,
+    get ROUTER_EDITION_ON_SALE() {
+      return sale.on;
+    },
+  };
+});
 
 vi.mock('@/components/Header', () => ({ default: () => null }));
 vi.mock('@/components/Footer', () => ({ default: () => null }));
 
 describe('routers/page (edition product page)', () => {
+  afterEach(() => {
+    sale.on = true;
+    mockRedirect.mockClear();
+  });
+
+  it('下架时 /routers 与 /purchase/router 都 307 到 /pricing；在售时不跳', async () => {
+    const { default: RoutersEditionPage } = await import('../src/app/[locale]/routers/page');
+    const { default: RouterPurchasePage } = await import('../src/app/[locale]/purchase/router/page');
+
+    await RoutersEditionPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
+    await RouterPurchasePage({ params: Promise.resolve({ locale: 'zh-CN' }) });
+    expect(mockRedirect).not.toHaveBeenCalled();
+
+    sale.on = false;
+    await RoutersEditionPage({ params: Promise.resolve({ locale: 'zh-TW' }) });
+    await RouterPurchasePage({ params: Promise.resolve({ locale: 'zh-HK' }) });
+    expect(mockRedirect.mock.calls).toEqual([
+      [{ href: '/pricing', locale: 'zh-TW' }],
+      [{ href: '/pricing', locale: 'zh-HK' }],
+    ]);
+  });
+
   it('default export is an async function returning a Promise', async () => {
     const { default: RoutersEditionPage } = await import('../src/app/[locale]/routers/page');
 

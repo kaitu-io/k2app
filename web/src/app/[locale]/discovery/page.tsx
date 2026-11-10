@@ -17,6 +17,7 @@ import {
   Newspaper
 } from 'lucide-react';
 import DiscoveryClient from './DiscoveryClient';
+import { ROUTER_EDITION_ON_SALE } from '@/lib/router-edition';
 
 type Locale = (typeof routing.locales)[number];
 
@@ -1053,11 +1054,13 @@ export default async function DiscoveryPage({
                   {t('discovery.discovery.footer.backHome')}
                 </Button>
               </Link>
-              <Link href="/routers">
-                <Button variant="outline" size="lg">
-                  {t('discovery.discovery.footer.learnRouters')}
-                </Button>
-              </Link>
+              {ROUTER_EDITION_ON_SALE && (
+                <Link href="/routers">
+                  <Button variant="outline" size="lg">
+                    {t('discovery.discovery.footer.learnRouters')}
+                  </Button>
+                </Link>
+              )}
             </div>
           </div>
         </section>

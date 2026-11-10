@@ -11,6 +11,7 @@
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
+import { ROUTER_EDITION_ON_SALE } from '../src/lib/router-edition';
 
 const pathnameRef = { current: '/' };
 
@@ -83,7 +84,8 @@ describe('Header current-page highlight', () => {
     expect(current).toEqual(['/k2']);
   });
 
-  it('kaitu: /routers marks the Router Edition link only', async () => {
+  // 路由器版下架时顶栏没有这一项（/routers 本身 307 到 /pricing）。
+  it.runIf(ROUTER_EDITION_ON_SALE)('kaitu: /routers marks the Router Edition link only', async () => {
     const { container } = await renderHeader('/routers');
     const current = [...container.querySelectorAll('a[aria-current="page"]')].map((a) => a.getAttribute('href'));
     expect(current).toEqual(['/routers']);

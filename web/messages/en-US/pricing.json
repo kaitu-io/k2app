@@ -2,8 +2,10 @@
   "pricing": {
     "metaTitle": "Pricing",
     "metaDescription": "开途 Kaitu App Edition from {app1y} for 1 year: 5 devices, unlimited data. Router Edition {router} for the first year, router included — every device at home works once it's plugged in.",
+    "metaDescriptionAppOnly": "开途 Kaitu App Edition from {app1y} for 1 year: 5 devices online at once, unlimited data, on Windows, macOS, iOS, Android and Linux.",
     "title": "Simple, transparent pricing",
     "subtitle": "The App Edition is billed yearly — the longer the term, the better the deal. One Router Edition covers your whole home.",
+    "subtitleAppOnly": "Billed yearly — the longer the term, the better the deal.",
     "app": {
       "title": "App Edition",
       "subtitle": "Install the 开途 Kaitu app on each device — one account, 5 devices online at once",
@@ -49,15 +51,18 @@
         },
         {
           "q": "How many devices can one account use?",
-          "a": "The App Edition allows 5 devices online at once; the Router Edition supports unlimited devices connected to the router."
+          "a": "The App Edition allows 5 devices online at once; the Router Edition supports unlimited devices connected to the router.",
+          "aAppOnly": "The App Edition allows 5 devices online at once per account."
         },
         {
           "q": "App Edition or Router Edition — which should I choose?",
-          "a": "If it's just your own phone and computer, choose the App Edition. If you have TVs, game consoles or smart speakers at home that need it too, or you don't want to install software device by device, choose the Router Edition. You can have both."
+          "a": "If it's just your own phone and computer, choose the App Edition. If you have TVs, game consoles or smart speakers at home that need it too, or you don't want to install software device by device, choose the Router Edition. You can have both.",
+          "routerOnly": true
         },
         {
           "q": "When does Router Edition service start?",
-          "a": "One year counted from the day your router ships. The wait between payment and shipping doesn't count against your service period."
+          "a": "One year counted from the day your router ships. The wait between payment and shipping doesn't count against your service period.",
+          "routerOnly": true
         }
       ]
     }

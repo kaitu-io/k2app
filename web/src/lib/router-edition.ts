@@ -10,6 +10,16 @@ export function formatUsd(cents: number): string {
   return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
 }
 
+/**
+ * 路由器版是否在售。false = 网站下架全部公开入口：顶栏/页脚/sitemap 不列 /routers 与
+ * /purchase/router，两页 307 到 /pricing；定价页不出路由器卡与路由器 FAQ；首页 FAQ、
+ * 发现页、安装页、App 版购买页、「我的路由器」空状态/续费按钮都不再指向它。
+ *
+ * 2026-11-10：原定 11-11 的发售无限期取消（后台套餐 router-std-1y / router-svc-1y 已 is_active=false）。
+ * 重新上架 = 改回 true + 后台重新激活套餐；代码与文案都还在，只是被这个开关挡住。
+ */
+export const ROUTER_EDITION_ON_SALE: boolean = false;
+
 // 与 docs/router-edition-prod-deploy.md 的套餐 SQL 同源（测试锁定）。改价 = 改 SQL + 改这里。
 // firstYear 是标价（发售后价）；预售期实际售价在 ROUTER_PRESALE。
 export const EDITION_PRICE_CENTS = { firstYear: 39900, renewal: 29900 } as const;

@@ -68,6 +68,19 @@ vi.mock('@/lib/api', async (importOriginal) => {
   return { ...actual, api: { ...actual.api, getPlans: () => new Promise(() => {}) } };
 });
 
+// 路由器版在售开关的替身：默认按「在售」渲染，锁住重新上架（只改 ROUTER_EDITION_ON_SALE）时的样子；
+// 下架用例把 sale.on 置 false。getter 让每次读取都取当前值。
+const sale = vi.hoisted(() => ({ on: true }));
+vi.mock('@/lib/router-edition', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/router-edition')>();
+  return {
+    ...actual,
+    get ROUTER_EDITION_ON_SALE() {
+      return sale.on;
+    },
+  };
+});
+
 const OVERLEAP_WORDS = /Overleap|overleap\.io/;
 const PRESALE_NOW = new Date('2026-10-01T12:00:00+08:00');
 const AFTER_LAUNCH = new Date('2026-11-12T12:00:00+08:00');
@@ -78,6 +91,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.useRealTimers();
+  sale.on = true;
 });
 
 type Locale = 'zh-CN' | 'zh-TW' | 'zh-HK';
@@ -137,6 +151,32 @@ describe('/pricing', () => {
     expect(String(meta.title)).toMatch(/定价 \| 开途/);
     expect(String(meta.description)).toContain('$49');
     expect(String(meta.description)).toContain('$359');
+    expect(String(meta.description)).not.toMatch(/\{(app1y|router)\}/);
+  });
+});
+
+describe('/pricing 路由器版下架（ROUTER_EDITION_ON_SALE=false）', () => {
+  for (const locale of ['zh-CN', 'zh-TW', 'zh-HK'] as const) {
+    it(`${locale}: 无路由器卡、无路由器 FAQ、无 /routers 链接，整页不提路由器`, async () => {
+      sale.on = false;
+      vi.setSystemTime(PRESALE_NOW);
+      const html = await renderPage('../src/app/[locale]/pricing/page', locale);
+      expect(html.match(/data-pid="/g)).toHaveLength(4);
+      expect(html).not.toContain('data-testid="router-plan"');
+      expect(html).not.toContain('href="/routers"');
+      expect(html).not.toContain('href="/purchase/router"');
+      expect(html).not.toContain('路由器');
+      expect(html).toContain('"@type":"FAQPage"');
+      expect(html).not.toMatch(/pricing\.pricing\./);
+    });
+  }
+
+  it('metadata 描述不提路由器版', async () => {
+    sale.on = false;
+    const { generateMetadata } = await import('../src/app/[locale]/pricing/page');
+    const meta = await generateMetadata({ params: Promise.resolve({ locale: 'zh-CN' }) });
+    expect(String(meta.description)).toContain('$49');
+    expect(String(meta.description)).not.toContain('路由器');
     expect(String(meta.description)).not.toMatch(/\{(app1y|router)\}/);
   });
 });

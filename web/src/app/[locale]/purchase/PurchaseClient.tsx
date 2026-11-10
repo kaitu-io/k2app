@@ -27,6 +27,7 @@ import PurchaseStep1 from "@/components/PurchaseStep1";
 import PurchaseStep2 from "@/components/PurchaseStep2";
 import PurchaseStep3 from "@/components/PurchaseStep3";
 import { track } from "@/lib/funnel";
+import { ROUTER_EDITION_ON_SALE } from "@/lib/router-edition";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import {
@@ -655,8 +656,8 @@ export default function PurchaseClient() {
           </div>
         )}
 
-        {/* App 版 / 路由器版 切换 —— 只对未嵌入的独立页展示，embed 模式下宿主自己决定导航。 */}
-        {showNavigation && (
+        {/* App 版 / 路由器版 切换 —— 只对未嵌入的独立页展示，embed 模式下宿主自己决定导航；路由器版下架时不出。 */}
+        {showNavigation && ROUTER_EDITION_ON_SALE && (
           <div className="flex justify-center">
             <div className="inline-flex rounded-lg border border-border bg-muted p-1">
               <span className="px-4 py-1.5 rounded-md text-sm font-medium bg-background text-foreground shadow-sm">
@@ -764,8 +765,8 @@ export default function PurchaseClient() {
           onFail={handlePayFail}
         />
 
-        {/* 路由器版 cross-sell —— 同上，embed 模式下隐藏 */}
-        {showNavigation && (
+        {/* 路由器版 cross-sell —— 同上，embed 模式下与下架时隐藏 */}
+        {showNavigation && ROUTER_EDITION_ON_SALE && (
           <p className="text-sm text-muted-foreground text-center">
             <Link href="/routers" className="underline underline-offset-4 hover:text-foreground">
               {t('routers.edition.switch.crossSell')}

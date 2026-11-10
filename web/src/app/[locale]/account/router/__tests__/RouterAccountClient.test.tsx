@@ -33,6 +33,19 @@ vi.mock('@/i18n/routing', () => ({
 }));
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
+// 路由器版在售开关的替身：默认按「在售」渲染，锁住重新上架（只改 ROUTER_EDITION_ON_SALE）时的样子；
+// 下架用例把 sale.on 置 false。getter 让每次读取都取当前值。
+const sale = vi.hoisted(() => ({ on: true }));
+vi.mock('@/lib/router-edition', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/router-edition')>();
+  return {
+    ...actual,
+    get ROUTER_EDITION_ON_SALE() {
+      return sale.on;
+    },
+  };
+});
+
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
@@ -104,6 +117,7 @@ describe('RouterAccountClient', () => {
   });
   afterEach(() => {
     vi.useRealTimers();
+    sale.on = true;
   });
 
   it('页面标题在加载中与加载完成后都显示（routers.edition.account.title）', async () => {
@@ -123,6 +137,20 @@ describe('RouterAccountClient', () => {
     await screen.findByText('routers.edition.account.emptyTitle');
     const link = screen.getByRole('link', { name: 'routers.edition.account.emptyCta' });
     expect(link).toHaveAttribute('href', '/routers');
+  });
+
+  it('路由器版下架：空状态卡不出去 /routers 的按钮，续费按钮也不出', async () => {
+    sale.on = false;
+    mockGetUserRouter.mockResolvedValueOnce({ hasRouter: false });
+    const { unmount } = render(<RouterAccountClient />);
+    await screen.findByText('routers.edition.account.emptyTitle');
+    expect(screen.queryByRole('link', { name: 'routers.edition.account.emptyCta' })).toBeNull();
+    unmount();
+
+    mockGetUserRouter.mockResolvedValueOnce({ hasRouter: true, line: LINE_NORMAL, renewPlanPid: 'router-svc-1y' });
+    render(<RouterAccountClient />);
+    await screen.findByText(/routers\.edition\.account\.expiresAt/);
+    expect(screen.queryByRole('link', { name: 'routers.edition.account.renew' })).toBeNull();
   });
 
   it('成品 shipped：展示物流信息，不渲染安装卡', async () => {

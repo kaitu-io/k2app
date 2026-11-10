@@ -3,8 +3,8 @@ import type { Metadata } from 'next';
 import { generateMetadata as generateBaseMetadata } from '../metadata';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
-import { routing } from '@/i18n/routing';
-import { formatUsd, routerOffer } from '@/lib/router-edition';
+import { redirect, routing } from '@/i18n/routing';
+import { formatUsd, routerOffer, ROUTER_EDITION_ON_SALE } from '@/lib/router-edition';
 import { EditionHero } from './_components/EditionHero';
 import { EditionHowItWorks } from './_components/EditionHowItWorks';
 import { EditionPricing } from './_components/EditionPricing';
@@ -39,6 +39,9 @@ export default async function RoutersEditionPage({
 }) {
   const { locale: rawLocale } = await params;
   const locale = rawLocale as Locale;
+
+  // 下架期间旧链接（外部收录、App 内旧入口）落到定价页；307，上架后无需清缓存。
+  if (!ROUTER_EDITION_ON_SALE) redirect({ href: '/pricing', locale });
 
   setRequestLocale(locale);
   const t = await getTranslations({ locale, namespace: 'routers' });
