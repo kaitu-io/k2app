@@ -308,12 +308,31 @@ func syncAccount(ctx context.Context, database *gorm.DB, account CloudInstanceAc
 		syncAccountPool(ctx, account, poolProvider)
 	}
 
+	// An empty list is almost always a broken config or a failed lookup, not an
+	// account that lost every instance: marking them all deleted would hide the
+	// whole account from the admin pages until the next good sync.
+	var active int64
+	if len(syncedIDs) == 0 {
+		db.Get().Model(&CloudInstance{}).
+			Where("provider = ? AND account_name = ?", account.Provider, account.Name).
+			Count(&active)
+	}
+	if skipOrphanCleanup(len(syncedIDs), active) {
+		return fmt.Errorf("provider returned 0 instances but %d active records exist for account %s: orphan cleanup skipped, check the account config", active, account.Name)
+	}
+
 	// Orphan detection: mark instances that no longer exist as deleted
 	if err := markOrphanedInstances(ctx, account, syncedIDs); err != nil {
 		log.Errorf(ctx, "[CLOUD] Failed to mark orphaned instances: %v", err)
 	}
 
 	return nil
+}
+
+// skipOrphanCleanup reports whether orphan cleanup must not run: the provider
+// returned nothing while records for the account are still active.
+func skipOrphanCleanup(synced int, active int64) bool {
+	return synced == 0 && active > 0
 }
 
 // syncAccountPool records an account-wide traffic pool once per sync and checks its
