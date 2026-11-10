@@ -123,6 +123,7 @@
 - **LetsVPN in mainland China（快连英文名）**：letsvpn 8,111；写给在华外国人，按英文读者的处境原创，不直译中文版。
 - **Astrill alternative**：astrill vpn 10,599；与中文版 `astrill-vs-kaitu` 不同读者，单独调研。
 - 量小，但和我们的产品最贴近；排在中文前 3 篇之后。
+- **外语发布规则（k2app-6e，11-10；路由在本地 main `1437311e5`，未部署）**：路径 `content/<en-US|ko|ja|ru>/guides/<slug>.md`，frontmatter 写 `section: living-in-china`（不写会归到「More」）；外语列表页只列本语言文章；品牌写「开途 Kaitu」，标题后缀由代码自动加。**敏感词禁令同样适用**：不用 firewall / Great Firewall / censorship / circumvention / GFW（及韩、日、俄对应词），改用 "blocked sites"、"restricted network"、"access ... from China"。"great firewall vpn" 一类英文高量词能不能用，先问 David。
 
 ### 盯公告（不写，事件触发）
 
