@@ -12,7 +12,7 @@ vi.mock('#velite', () => ({
   posts: [
     { slug: 'guides/cn-guide', locale: 'zh-CN', date: '2026-01-01', draft: false, brand: 'kaitu' },
     { slug: 'k2/protocol', locale: 'zh-CN', date: '2026-01-01', draft: false, brand: 'both' },
-    { slug: 'k2/en-only', locale: 'en-US', date: '2026-01-01', draft: false, brand: 'both' },
+    { slug: 'k2/fr-only', locale: 'fr', date: '2026-01-01', draft: false, brand: 'both' },
     { slug: 'k2/other-brand', locale: 'zh-CN', date: '2026-01-01', draft: false, brand: 'overleap' },
     // Translated into zh-TW only: zh-HK would render the zh-CN text as a fallback.
     { slug: 'guides/tw-too', locale: 'zh-CN', date: '2026-01-01', draft: false, brand: 'kaitu' },
@@ -23,12 +23,12 @@ vi.mock('#velite', () => ({
 import sitemap from '../src/app/sitemap';
 
 describe('sitemap', () => {
-  it('only kaitu.io URLs under the served zh locales', async () => {
+  it('only kaitu.io URLs, never under a retired locale', async () => {
     const entries = await sitemap();
     expect(entries.length).toBeGreaterThan(0);
     for (const e of entries) {
       expect(e.url).toMatch(/^https:\/\/www\.kaitu\.io/);
-      expect(e.url).not.toMatch(/\/(en-US|en-GB|en-AU|ja)(\/|$)/);
+      expect(e.url).not.toMatch(/\/(en-GB|en-AU|fr)(\/|$)/);
     }
   });
 
@@ -40,14 +40,21 @@ describe('sitemap', () => {
 
   it('a doc that exists only in an unserved locale is not advertised', async () => {
     // Slugs are harvested across all locales, so without the locale filter this
-    // en-US-only doc would be emitted under a zh URL that 404s.
+    // fr-only doc would be emitted under a served-locale URL that 404s.
     const entries = await sitemap();
-    expect(entries.some((e) => e.url.includes('/k2/en-only'))).toBe(false);
+    expect(entries.some((e) => e.url.includes('/k2/fr-only'))).toBe(false);
   });
 
   it('a post marked for the other brand is not advertised', async () => {
     const entries = await sitemap();
     expect(entries.some((e) => e.url.includes('/k2/other-brand'))).toBe(false);
+  });
+
+  it('static pages are advertised in every served language, foreign ones included', async () => {
+    const entries = await sitemap();
+    for (const l of ['zh-CN', 'en-US', 'ko', 'ja', 'ru']) {
+      expect(entries.some((e) => e.url === `https://www.kaitu.io/${l}/pricing`)).toBe(true);
+    }
   });
 
   it.each(['/guides', '/routers', '/releases', '/pricing'])('%s is present', async (route) => {

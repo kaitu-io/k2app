@@ -104,8 +104,10 @@ describe('test_sitemap_includes_content', () => {
     // Must NOT include draft post
     expect(urls).not.toContain('https://www.kaitu.io/zh-CN/blog/draft-post');
 
-    // Only the served zh locales are advertised.
-    expect(urls.every((u: string) => !/\/(en-US|en-GB|en-AU|ja)\//.test(u))).toBe(true);
+    // Retired locales are never advertised, and a zh-CN-only post is not
+    // advertised under a foreign locale either (it would render Chinese there).
+    expect(urls.every((u: string) => !/\/(en-GB|en-AU)\//.test(u))).toBe(true);
+    expect(urls).not.toContain('https://www.kaitu.io/en-US/guides/getting-started');
   });
 
   it('sitemap content entries have correct metadata', async () => {

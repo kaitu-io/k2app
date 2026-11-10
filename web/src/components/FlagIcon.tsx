@@ -43,10 +43,14 @@ const FlagIcon: React.FC<FlagIconProps> = ({ locale, className = "w-4 h-4" }) =>
             </g>
           </svg>
         );
+      // Foreign-language locales get a language-code badge, not a flag: a
+      // language is not a country (English / Russian readers come from many).
       default:
         return (
           <div className={`${className} bg-muted rounded-sm flex items-center justify-center`}>
-            <span className="text-xs text-muted-foreground">{"?"}</span>
+            <span className="text-[8px] font-semibold leading-none text-muted-foreground">
+              {locale.slice(0, 2).toUpperCase()}
+            </span>
           </div>
         );
     }

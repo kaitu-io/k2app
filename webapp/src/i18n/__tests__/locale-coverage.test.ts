@@ -43,8 +43,8 @@ describe('brand language whitelists', () => {
     expect([...OVERLEAP_BRAND.locales].sort()).toEqual([...ALL].sort());
   });
 
-  it('kaitu offers its seven languages', () => {
-    expect([...KAITU_BRAND.locales].sort()).toEqual(['en-AU', 'en-GB', 'en-US', 'ja', 'zh-CN', 'zh-HK', 'zh-TW']);
+  it('kaitu offers its seven languages (same set as the kaitu.io site)', () => {
+    expect([...KAITU_BRAND.locales].sort()).toEqual(['en-US', 'ja', 'ko', 'ru', 'zh-CN', 'zh-HK', 'zh-TW']);
   });
 
   it.each([KAITU_BRAND, OVERLEAP_BRAND])('$id lists no duplicates and includes its default', (brand) => {

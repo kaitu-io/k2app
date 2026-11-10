@@ -1,0 +1,489 @@
+{
+  "hero": {
+    "badge": "Access the global internet from China · Apps for every platform",
+    "title": "Others drop. You stay at full speed.",
+    "subtitle": "A stable connection to the outside internet, from inside China",
+    "description": "开途 Kaitu is a proxy tool optimized for China's networks. When other tools keep dropping under carrier throttling, the k2 protocol keeps you connected. Works on Windows, macOS, iOS and Android — ready the moment you sign up, no technical background needed.",
+    "cta_primary": "Get started",
+    "cta_secondary": "Download the app",
+    "connected": "Connected",
+    "nodeInfo": "Hong Kong · Best server",
+    "terminalTitle": "Self-host the server",
+    "downloadClient": "Download the app",
+    "quickActivation": "Quick sign-up",
+    "smartRouter": "Smart router",
+    "onboarding": {
+      "title": "Get started in three steps",
+      "step1": {
+        "label": "Choose a plan and check out",
+        "detail": "Alipay · WeChat Pay · credit card"
+      },
+      "step2": {
+        "label": "Download the app for your platform",
+        "detail": "Windows · macOS · iOS · Android"
+      },
+      "step3": {
+        "label": "Enter your activation code and connect",
+        "detail": "No setup — works as soon as you sign up"
+      }
+    },
+    "features": {
+      "title": "Why does 开途 Kaitu stay stable when others drop?",
+      "ech": {
+        "title": "Your connection can't be identified",
+        "description": "Encrypted Client Hello hides the SNI completely, the TLS handshake is undetectable and deep packet inspection (DPI) has nothing to go on",
+        "icon": "🛡️"
+      },
+      "zeroDeploy": {
+        "title": "No tech skills needed — buy it and use it",
+        "description": "Install the server and client with a single curl command; a k2:// connection URI is generated automatically, no manual certificate setup",
+        "icon": "⚡"
+      },
+      "transport": {
+        "title": "Automatic route switching that heals itself",
+        "description": "Prefers low-latency QUIC transport and falls back to TCP-WebSocket automatically when the network is restricted — a seamless switch you won't notice",
+        "icon": "🔀"
+      },
+      "congestion": {
+        "title": "Steady speed even on bad networks",
+        "description": "k2cc automatically probes for the best rate; its QoS awareness tells carrier-initiated drops apart from congestion loss, delivering far higher throughput than BBR on high-loss carrier networks",
+        "icon": "📈"
+      },
+      "reverseProxy": {
+        "title": "Traffic patterns fully concealed",
+        "description": "A built-in reverse proxy forwards non-k2 traffic to a real website, so active probes get a legitimate HTTPS response",
+        "icon": "🎭"
+      },
+      "selfSign": {
+        "title": "Never appears in any public record",
+        "description": "Self-signed certificate + certificate pinning: zero exposure in CT logs, no certificate to buy, and the server domain stays completely hidden",
+        "icon": "🔐"
+      }
+    },
+    "comparison": {
+      "title": "Protocol comparison",
+      "subtitle": "How k2 compares with mainstream cross-border protocols on key dimensions",
+      "dimensions": {
+        "ech": "ECH stealth",
+        "tlsFingerprint": "TLS fingerprint masking",
+        "activeProbe": "Active-probe defense",
+        "quic": "QUIC transport",
+        "tcpFallback": "TCP fallback",
+        "congestion": "Optimized congestion control",
+        "zeroDeploy": "Zero-config deployment",
+        "ctLog": "Zero CT log exposure",
+        "portReuse": "Port sharing"
+      },
+      "protocols": [
+        {
+          "id": "k2",
+          "name": "k2",
+          "ech": true,
+          "tlsFingerprint": true,
+          "activeProbe": true,
+          "quic": true,
+          "tcpFallback": true,
+          "congestion": true,
+          "zeroDeploy": true,
+          "ctLog": true,
+          "portReuse": true
+        },
+        {
+          "id": "WireGuard",
+          "name": "WireGuard",
+          "ech": false,
+          "tlsFingerprint": false,
+          "activeProbe": false,
+          "quic": false,
+          "tcpFallback": false,
+          "congestion": false,
+          "zeroDeploy": false,
+          "ctLog": false,
+          "portReuse": false
+        },
+        {
+          "id": "VLESS",
+          "name": "VLESS+Reality",
+          "ech": false,
+          "tlsFingerprint": true,
+          "activeProbe": true,
+          "quic": false,
+          "tcpFallback": true,
+          "congestion": false,
+          "zeroDeploy": false,
+          "ctLog": false,
+          "portReuse": false
+        },
+        {
+          "id": "Hysteria2",
+          "name": "Hysteria2",
+          "ech": false,
+          "tlsFingerprint": false,
+          "activeProbe": false,
+          "quic": true,
+          "tcpFallback": false,
+          "congestion": true,
+          "zeroDeploy": false,
+          "ctLog": true,
+          "portReuse": false
+        },
+        {
+          "id": "Shadowsocks",
+          "name": "Shadowsocks",
+          "ech": false,
+          "tlsFingerprint": false,
+          "activeProbe": false,
+          "quic": false,
+          "tcpFallback": false,
+          "congestion": false,
+          "zeroDeploy": false,
+          "ctLog": false,
+          "portReuse": false
+        }
+      ],
+      "yes": "✓",
+      "no": "✗"
+    },
+    "downloadCta": {
+      "title": "Download the app",
+      "subtitle": "Available for Windows, macOS, Linux, iOS and Android",
+      "button": "Go to downloads",
+      "platforms": "Windows · macOS · Linux · iOS · Android"
+    },
+    "quickstart": {
+      "title": "Deploy in one minute",
+      "server": {
+        "title": "Server (1 minute)",
+        "step1": "# Install the k2s server",
+        "step2": "curl -fsSL https://kaitu.io/i/k2s | sudo sh",
+        "step3": "# Start the service",
+        "step4": "k2s run",
+        "step5": "# Prints the connection URI",
+        "step6": "k2://..."
+      },
+      "client": {
+        "title": "Client (30 seconds)",
+        "step1": "# Install the k2 client",
+        "step2": "curl -fsSL https://kaitu.io/i/k2 | sudo sh",
+        "step3": "# Connect (paste the URI)",
+        "step4": "k2 up k2://..."
+      }
+    },
+    "testimonials": {
+      "title": "What our users say",
+      "item1": {
+        "quote": "All over X people are saying 'if your VPN still works these days, you're really lucky'. Lots of people I know have gone through one after another. My 开途 Kaitu has kept working the whole time — as a long-time user I'm so happy!",
+        "author": "Long-time user on X",
+        "tag": "Social media review"
+      },
+      "item2": {
+        "quote": "My wife's LetsVPN stopped working, but my 开途 Kaitu still works, and it's pretty fast too. Different tools really make a big difference.",
+        "author": "Anonymous user",
+        "tag": "Everyday user"
+      },
+      "item3": {
+        "quote": "We homeschool in China, and a lot of the material needs a proxy to load properly. 开途 Kaitu runs smoothly and has been a huge help. With so many VPNs shutting down or getting unstable these days — keep it up, 开途 Kaitu!",
+        "author": "Homeschool parent",
+        "tag": "Education user"
+      }
+    }
+  },
+  "security": {
+    "title": "k2cc — congestion control built to beat QoS",
+    "description": "The k2cc adaptive rate control algorithm is designed specifically to counter carrier QoS throttling and probabilistic packet loss. It automatically tells congestion loss apart from carrier-initiated drops and keeps data flowing even on high-loss carrier networks (26% packet loss). Combined with ECH stealth and low-latency QUIC transport, you get both stealth and speed.",
+    "icon": "🛡️",
+    "caTech": {
+      "title": "k2cc anti-QoS congestion control",
+      "description": "k2cc automatically distinguishes packets lost to network congestion from packets deliberately dropped by carrier traffic-management equipment, maintaining effective throughput under QoS throttling and probabilistic loss. Zero configuration, no manual bandwidth settings — on high-loss carrier networks, its throughput beats BBR and Brutal in most test scenarios.",
+      "advantages": {
+        "title": "Core features",
+        "item1": "ECH-encrypted SNI makes the TLS handshake undetectable",
+        "item2": "QUIC-first transport for low latency and high throughput",
+        "item3": "k2cc adaptive rate control, with far higher throughput than BBR on high-loss networks",
+        "item4": "Reverse-proxy camouflage and active-probe defense",
+        "bullet": "•"
+      },
+      "adaptive": {
+        "title": "Adaptive transport layer",
+        "item1": "Falls back to TCP-WebSocket automatically when QUIC is blocked",
+        "item2": "Self-signed certificate + pinning, zero CT log exposure",
+        "item3": "Port sharing: coexists with a normal website on port 443",
+        "item4": "One-command deployment that generates a k2:// URI automatically",
+        "bullet": "•"
+      }
+    },
+    "features": {
+      "title": "Core protocol advantages",
+      "multipath": {
+        "title": "ECH-encrypted handshake",
+        "description": "Encrypted Client Hello hides the SNI, making the TLS handshake fully undetectable and defeating DPI identification",
+        "icon": "🛡️"
+      },
+      "encryption": {
+        "title": "Dual-stack transport",
+        "description": "QUIC-first for low latency, with automatic TCP-WebSocket fallback — a seamless switch you won't notice",
+        "icon": "🔀"
+      },
+      "smartRouting": {
+        "title": "k2cc adaptive rate control",
+        "description": "k2cc automatically finds the best sending rate; its QoS awareness identifies carrier-initiated drops, delivering far higher throughput than BBR on high-loss networks",
+        "icon": "📈"
+      },
+      "disguise": {
+        "title": "Reverse-proxy camouflage",
+        "description": "A built-in reverse proxy forwards non-tunnel traffic to a real website, so active probes get a legitimate HTTPS response",
+        "icon": "🎭"
+      },
+      "failover": {
+        "title": "Zero-config deployment",
+        "description": "Install with a single curl command, get a k2:// connection URI automatically, and finish a full deployment in 10 minutes",
+        "icon": "⚡"
+      },
+      "performance": {
+        "title": "Zero CT log exposure",
+        "description": "Self-signed certificate + certificate pinning completely sidesteps CT log monitoring, so the server domain is never exposed",
+        "icon": "🔐"
+      }
+    },
+    "techSpecs": {
+      "title": "Technical specifications",
+      "encryption": "Handshake encryption",
+      "encryptionValue": "ECH (Encrypted Client Hello)",
+      "keyDerivation": "Transport protocol",
+      "keyDerivationValue": "QUIC / TCP-WebSocket dual stack",
+      "transport": "Congestion control",
+      "transportValue": "k2cc adaptive rate control algorithm",
+      "multiplexing": "Certificate strategy",
+      "multiplexingValue": "Self-signed + certificate pinning (zero CT log exposure)",
+      "heartbeat": "Deployment",
+      "heartbeatValue": "Single curl command, URI generated automatically",
+      "concurrent": "Port strategy",
+      "concurrentValue": "Port sharing + reverse-proxy camouflage"
+    },
+    "comparison": {
+      "title": "Protocol comparison",
+      "dimensions": {
+        "ech": "ECH stealth",
+        "tlsFingerprint": "TLS fingerprint masking",
+        "activeProbe": "Active-probe defense",
+        "quic": "QUIC transport",
+        "tcpFallback": "TCP fallback",
+        "congestion": "Optimized congestion control",
+        "zeroDeploy": "Zero-config deployment",
+        "ctLog": "Zero CT log exposure",
+        "portReuse": "Port sharing"
+      },
+      "trojan": {
+        "letter": "W",
+        "name": "WireGuard",
+        "tech": "Encrypted UDP tunnel, no TLS camouflage"
+      },
+      "v2ray": {
+        "letter": "V",
+        "name": "VLESS+Reality",
+        "tech": "TLS fingerprint masking + reverse proxy, no ECH"
+      },
+      "shadowsocks": {
+        "letter": "S",
+        "name": "Shadowsocks",
+        "tech": "AEAD encryption + lightweight proxy, no camouflage"
+      },
+      "hysteria": {
+        "letter": "H",
+        "name": "Hysteria2",
+        "tech": "QUIC transport + custom congestion control, no ECH"
+      }
+    },
+    "visualization": {
+      "title": "k2 stealth tunnel architecture",
+      "subtitle": "ECH-encrypted handshake + QUIC/TCP-WS dual-stack transport — DPI is rendered useless",
+      "client": "Client",
+      "target": "Destination server",
+      "relayNodes": "k2 tunnel servers",
+      "nodes": {
+        "hongkong": "Hong Kong server",
+        "japan": "Japan server",
+        "singapore": "Singapore server"
+      },
+      "rtt": "RTT",
+      "ms": "ms",
+      "status": {
+        "optimal": "Best",
+        "good": "Good",
+        "slow": "Slow",
+        "failed": "Down"
+      },
+      "legend": {
+        "title": "Legend",
+        "dataPacket": "Data packet",
+        "activePath": "Active path",
+        "failedPath": "Fallback path",
+        "optimalNode": "Best server"
+      },
+      "description": "During the TLS handshake, k2 uses ECH to encrypt the SNI, so network middleboxes can't see the destination domain. Data travels over QUIC (preferred) or TCP-WebSocket (fallback), with k2cc keeping throughput steady in high-loss conditions. The server's built-in reverse proxy forwards non-k2 traffic to a real website, so active probes can't tell the difference."
+    }
+  },
+  "download": {
+    "title": "Download the app",
+    "subtitle": "Choose the app for your device and start browsing invisibly",
+    "platforms": {
+      "ios": "For iPhone and iPad",
+      "iosLabel": "iPhone / iPad",
+      "android": "For Android phones and tablets",
+      "androidLabel": "Android",
+      "windows": "For Windows 10/11",
+      "windowsLabel": "Windows",
+      "macos": "For Mac, macOS 12+",
+      "macosLabel": "Mac"
+    },
+    "downloadButton": "Download",
+    "comingSoon": "Coming soon"
+  },
+  "routers": {
+    "title": "Smart network routers",
+    "subtitle": "A professional-grade router solution with a built-in secure proxy that the whole family can use with ease",
+    "presaleTag": "Pre-order",
+    "benefits": {
+      "title": "Why choose a router?",
+      "subtitle": "An all-in-one network proxy solution that makes secure browsing simple",
+      "items": {
+        "easySetup": {
+          "title": "One-step setup",
+          "description": "Plug and play, no technical setup"
+        },
+        "familyFriendly": {
+          "title": "For the whole family",
+          "description": "Every device at home connects automatically — easy for all ages"
+        },
+        "alwaysOn": {
+          "title": "Always available",
+          "description": "Runs 24/7 and connects automatically on power-up"
+        },
+        "multiDevice": {
+          "title": "Multi-device support",
+          "description": "Works with smart TVs, game consoles and every other networked device"
+        },
+        "techSupport": {
+          "title": "Professional support",
+          "description": "Full after-sales service from our professional technical team"
+        },
+        "costEffective": {
+          "title": "Cost-effective",
+          "description": "Buy once, use for the long term — cheaper than a subscription"
+        }
+      }
+    },
+    "backToHome": "Back to home",
+    "welcome": "Welcome",
+    "adminPanel": "Admin",
+    "login": "Sign in",
+    "comma": ", ",
+    "productFeatures": "Product highlights",
+    "contactInquiry": "Contact us",
+    "presalePriceConsult": "Contact support for pre-order pricing • 1-year warranty",
+    "presalePriceConsultFull": "Contact support for pre-order pricing • 1-year warranty • Free service activation code",
+    "routerVsClient": "Router vs. app comparison",
+    "whyChooseRouter": "Why choose a router solution?",
+    "smartRouter": "Smart router",
+    "recommended": "Recommended",
+    "clientSoftware": "App",
+    "traditional": "Traditional",
+    "bullet": "•",
+    "autoConnect": "Every device at home connects automatically — no per-device setup",
+    "alwaysRunning": "Runs 24/7, always ready",
+    "allDevices": "Works with smart TVs, game consoles and every other device",
+    "easyUse": "Easy for kids and grandparents alike",
+    "onePurchase": "Buy once, use for the long term",
+    "individualSetup": "Each device needs its own install and setup",
+    "manualStart": "Must be started manually — easy to forget",
+    "deviceLimits": "Smart TVs and game consoles not supported",
+    "complexConfig": "Complicated setup with a steep learning curve",
+    "ongoing": "Requires an ongoing paid subscription",
+    "contactUsMore": "Contact us to learn more",
+    "teamDescription": "Our team will walk you through the product features and help you choose the router solution that suits you best",
+    "emailConsult": "Email us",
+    "productDetailsTech": "Product details and technical support",
+    "onlineService": "Live chat",
+    "realTimeResponse": "Real-time answers, fast responses",
+    "startOnlineService": "Start live chat",
+    "warranty": "All routers come with a 1-year warranty • Free technical support • 7-day no-questions-asked returns"
+  },
+  "faq": {
+    "title": "FAQ",
+    "subtitle": "Complete answers about how 开途 Kaitu works, supported platforms, payment and privacy",
+    "items": {
+      "whatIsK2cc": {
+        "question": "What is k2cc?",
+        "answer": "k2cc is 开途 Kaitu's in-house congestion control algorithm, designed to counter high-loss carrier networks. Its QoS awareness distinguishes \"packets deliberately dropped by carrier traffic-management equipment\" from \"ordinary congestion loss\", keeping throughput steady even on high-loss carrier networks (26% packet loss). In 开途 Kaitu's benchmarks, k2cc's throughput beats BBR and Brutal in most high-loss scenarios. k2cc needs zero configuration — no manual bandwidth cap."
+      },
+      "whatIsK2v5": {
+        "question": "What is the k2 protocol?",
+        "answer": "k2 is 开途 Kaitu's composite stealth tunnel protocol, built from three parts: (1) ECH-encrypted Client Hello, making the TLS handshake fully undetectable; (2) QUIC/H3 as the preferred transport, with automatic TCP-WebSocket fallback; (3) the k2cc QoS-aware congestion control algorithm. QUIC and TCP-WS share the same port and are told apart by protocol detection — a single port that resists both UDP interference and deep packet inspection (DPI)."
+      },
+      "howDoesEchWork": {
+        "question": "What is ECH, and why does it get past network middlebox inspection?",
+        "answer": "ECH (Encrypted Client Hello) is a TLS 1.3 extension standard that encrypts the SNI field in the ClientHello before sending it. In a traditional TLS handshake, the SNI exposes the destination domain in plaintext, and DPI equipment uses it to identify and block connections. With ECH enabled, DPI can't see the real SNI or tell where the connection is going. The 开途 Kaitu server also forges its ECH configuration so it's indistinguishable from real Cloudflare ECH traffic, for even better stealth."
+      },
+      "networkThrottlingSpeed": {
+        "question": "How fast is 开途 Kaitu on heavily throttled networks?",
+        "answer": "In its own benchmarks, 开途 Kaitu simulated high-loss carrier networks (26% packet loss) and typical Chinese ISP conditions (5-15% packet loss). The results show k2cc's throughput beats BBR and Brutal in most high-loss scenarios; in low-loss scenarios, Brutal is sometimes faster. Real-world speed depends on your local network quality, whether your broadband carrier throttles international traffic, and the server you choose."
+      },
+      "platforms": {
+        "question": "Which devices does 开途 Kaitu support?",
+        "answer": "开途 Kaitu runs on every platform: Windows 10/11, macOS 12+ (universal binary for Intel + Apple Silicon), Linux (Ubuntu/Debian and other major distros), iOS (iPhone/iPad, downloadable directly from the China App Store), Android, plus the 开途 Kaitu Router Edition for the whole household. One account allows up to 5 devices online at once. We also offer the k2s server for self-hosting on any VPS."
+      },
+      "selfHosting": {
+        "question": "Can I host my own 开途 Kaitu server?",
+        "answer": "Yes. 开途 Kaitu provides the k2s server binary, which you can self-host on any VPS — AWS, Aliyun, Tencent Cloud, Bandwagon and more. Deployment takes one command: curl -fsSL https://kaitu.io/i/k2s | sudo sh, then run k2s run to generate a k2:// connection URI automatically and paste it into the client. k2s supports zero-config automatic deployment, and also offers the k2s setup interactive wizard and k2s user add for managing multiple users' credentials."
+      },
+      "routerSupport": {
+        "question": "Does 开途 Kaitu support smart routers?",
+        "answer": "Yes. The 开途 Kaitu Router Edition comes with a pre-configured router and a dedicated line — just plug it in and connect, no firmware flashing or command line needed. Every device at home (computers, phones, tablets, smart TVs, game consoles, IoT devices) automatically goes through the encrypted tunnel once connected, with no app to install on each one. Ideal for families sharing many devices; see the Router Edition page for details."
+      },
+      "chinaAccess": {
+        "question": "Does 开途 Kaitu work in mainland China?",
+        "answer": "Yes — that's exactly what 开途 Kaitu is designed for. Technically, the k2 protocol combines ECH-encrypted SNI, QUIC/TCP-WS dual stack and k2cc QoS-aware congestion control to stay connected even on high-loss networks. Entry-point resolution uses a Happy Eyeballs strategy to probe 6 CDN mirror entry points in parallel, avoiding the 10-second timeout problem in China. The iOS app can be downloaded directly from the China App Store."
+      },
+      "chinaAppStore": {
+        "question": "Can I download 开途 Kaitu directly from the China App Store?",
+        "answer": "Yes. The 开途 Kaitu iOS app is listed normally on the China App Store. Just search for \"开途\" to download and install it — no need to switch to an overseas Apple ID or get around any restrictions."
+      },
+      "pricing": {
+        "question": "How much does 开途 Kaitu cost?",
+        "answer": "开途 Kaitu is priced in US dollars, with four subscription plans: 1, 2, 3 and 5 years — the longer the term, the lower the monthly price. Every plan is full-featured Pro, with 5 devices online at once and unlimited data. We accept Alipay, WeChat Pay, UnionPay, credit cards and cryptocurrency, and your plan takes effect immediately after purchase. Details at kaitu.io/purchase"
+      },
+      "trial": {
+        "question": "Is there a free trial?",
+        "answer": "Not at the moment. If you're not satisfied after purchasing, you can request a refund within 7 days of your first purchase (with no more than 1 GB of data used). Refunds go to your account wallet balance, which you can use to renew or withdraw."
+      },
+      "refund": {
+        "question": "Can I get a refund?",
+        "answer": "For a first purchase, you can request a refund within 7 days if you've used no more than 1 GB of data. The refund goes to your account wallet balance, which you can use to renew or withdraw to a crypto wallet."
+      },
+      "deviceLimit": {
+        "question": "Why was my device signed out?",
+        "answer": "Each account can be signed in on up to 5 devices at the same time. When you sign in on a 6th device, the system automatically removes the device that signed in earliest. If you're sure you haven't exceeded 5 devices but still get signed out, please submit a feedback ticket and we'll check your account's device records."
+      },
+      "privacy": {
+        "question": "Does 开途 Kaitu log my browsing activity?",
+        "answer": "No. 开途 Kaitu enforces a strict no-logs policy: we don't record the websites you visit, your DNS queries, your downloads or any other network activity. We keep only connection timestamps from the last 7 days for service optimization and troubleshooting, and they're deleted automatically after that. All transport is encrypted with TLS 1.3, and the VPN tunnel uses AES-256-GCM encryption."
+      },
+      "ctLog": {
+        "question": "Why does 开途 Kaitu use self-signed certificates instead of Let's Encrypt?",
+        "answer": "The 开途 Kaitu server uses self-signed certificates with certificate pinning in the client, so there is zero CT (Certificate Transparency) log exposure. Every certificate issued by a public CA is required to be written to CT logs, and attackers can scan CT logs to find every cross-border access server. 开途 Kaitu's self-signed + pinning strategy keeps server domains out of every public log, hiding servers far more thoroughly."
+      },
+      "portReuse": {
+        "question": "What does port sharing mean in 开途 Kaitu?",
+        "answer": "Using protocol detection, the k2 server handles QUIC, TCP-WebSocket and real HTTPS requests on the same port (usually 443). Non-k2 traffic is forwarded by the built-in reverse proxy to a real website, so active probes get a legitimate HTTPS response. The result: from the outside, a 开途 Kaitu server behaves exactly like a normal Cloudflare-hosted HTTPS website and can't be identified by port fingerprinting or response characteristics."
+      },
+      "wifiSwitch": {
+        "question": "Will it reconnect automatically when I switch between Wi-Fi and 4G/5G?",
+        "answer": "Yes. 开途 Kaitu has a built-in netCoordinator that combines system network-interface signals with internal probing to distinguish \"network down\", \"network restored\" and \"interface switched\", and reconnects automatically when the network comes back or the interface changes. Automatic reconnection takes a few seconds to a dozen or so seconds; to recover immediately, disconnect and reconnect manually."
+      },
+      "androidInstall": {
+        "question": "What if my Android phone warns that 开途 Kaitu is unsafe during install?",
+        "answer": "Chinese Android skins (MIUI, ColorOS, HyperOS, EMUI and others) run security checks on APKs installed from outside an app store — this doesn't mean anything is wrong with the app. You can allow the install manually when prompted, or use USB-assisted install from a computer to get around all restrictions. Detailed steps at kaitu.io/install"
+      }
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
+import { localizedWordmark } from '@/lib/brands';
 import type { Metadata } from 'next';
 import { routing } from '@/i18n/routing';
 import Header from '@/components/Header';
@@ -30,7 +31,7 @@ export async function generateMetadata({
   const base = generateBaseMetadata(locale, '', {}, brand);
   const t = await getTranslations({ locale, namespace: 'hero' });
 
-  const title = `${t('hero.title')} | ${brand.wordmark} k2cc`;
+  const title = `${t('hero.title')} | ${localizedWordmark(brand, locale)} k2cc`;
   const description = t('hero.description');
 
   return {

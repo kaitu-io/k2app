@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { namespaces } from '../messages/namespaces';
+import { KAITU } from '../src/lib/brands';
 
 const MESSAGES_DIR = path.resolve(__dirname, '../messages');
 
 const ZH_LOCALES = ['zh-CN', 'zh-TW', 'zh-HK'] as const;
-const HERO_LOCALES = ZH_LOCALES;
+// The political-token rule binds every served language: the foreign locales
+// (2026-11-10, foreigners living in China) are read inside China too.
+const HERO_LOCALES = KAITU.allowedLocales;
 
 // Forbidden political/legacy tokens. Each has a `matcher` (regex) so we can express
 // exceptions (e.g. 安全审查 = "security audit", a legitimate non-political term).
@@ -31,7 +34,20 @@ const FORBIDDEN_TERMS: ForbiddenTerm[] = [
   { term: 'censorship', matcher: /censorship/i },
   { term: 'circumvention', matcher: /circumvention/i },
   { term: 'anti-censorship', matcher: /anti-censorship/i },
+  { term: 'firewall', matcher: /firewall/i },
+  // ko / ja / ru
+  { term: '방화벽', matcher: /방화벽/ },
+  { term: '검열', matcher: /검열/ },
+  { term: 'ファイアウォール', matcher: /ファイアウォール/ },
+  { term: 'файрвол', matcher: /файрвол|фаервол|брандмауэр/i },
+  { term: 'цензура', matcher: /цензур/i },
 ];
+
+describe('messages-integrity: the rule covers every served locale', () => {
+  it('includes the foreign locales', () => {
+    expect(HERO_LOCALES).toEqual(expect.arrayContaining(['en-US', 'ko', 'ja', 'ru']));
+  });
+});
 
 // For zh-* content: "Kaitu" must never appear as a standalone token (only inside
 // "Kaitu by Overleap", "Kaitu LLC", "Kaitu.io" wordmark).

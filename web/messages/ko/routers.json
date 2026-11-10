@@ -1,0 +1,179 @@
+{
+  "edition": {
+    "regions": {
+      "ap-tokyo": "일본(도쿄)",
+      "ap-seoul": "한국(서울)",
+      "ap-singapore": "싱가포르",
+      "cn-hongkong": "홍콩",
+      "cn-taiwan": "대만(타이베이)",
+      "us-siliconvalley": "미국(실리콘밸리)",
+      "us-oregon": "미국(오리건)",
+      "us-virginia": "미국(버지니아)",
+      "eu-frankfurt": "독일(프랑크푸르트)",
+      "eu-london": "영국(런던)"
+    },
+    "purchase": {
+      "metaTitle": "开途 Kaitu 라우터 에디션 구매",
+      "metaDescription": "세팅을 마친 라우터와 1년 서비스. 랜선만 꽂으면 집 안의 TV, 게임기, 스피커 모두 사용할 수 있습니다. 첫해 {price}(라우터 포함), 2년 차부터 연 {renewal}.",
+      "title": "开途 Kaitu 라우터 에디션 구매",
+      "subtitle": "랜선만 꽂으면 바로 사용, 가족의 모든 기기에 설정 불필요",
+      "renewTitle": "开途 Kaitu 라우터 에디션 연장",
+      "renewSubtitle": "연장하면 만료일이 자동으로 늘어나며, 라우터에서는 아무것도 할 필요가 없습니다",
+      "renewName": "开途 Kaitu 라우터 에디션 · 1년 연장",
+      "renewDesc": "전용 출구, 월 2TB, 기존 만료일에서 1년 연장",
+      "stepSelect": "플랜 선택",
+      "stepPay": "확인 및 결제",
+      "hardwareName": "开途 Kaitu 라우터(세팅 완료, 개봉 즉시 사용)",
+      "hardwareDesc": "라우터, 펌웨어 설치, 배송, 1년 서비스 포함. 전용 출구, 월 2TB",
+      "regionLabel": "출구 지역",
+      "shippingTitle": "배송 정보",
+      "shippingName": "받는 분 이름",
+      "shippingPhone": "휴대폰 번호",
+      "shippingAddress": "상세 주소",
+      "lineHardware": "开途 Kaitu 라우터 에디션·첫해(라우터 포함)",
+      "lineService": "开途 Kaitu 라우터 에디션·1년 연장",
+      "renewNote": "2년 차부터 연 {price}로 갱신",
+      "payAmount": "결제 금액",
+      "campaignToggle": "프로모션 코드 사용",
+      "campaignPlaceholder": "프로모션 코드 입력",
+      "invalidCampaignCode": "유효하지 않은 프로모션 코드입니다",
+      "loginFirst": "먼저 위에서 로그인해 주세요",
+      "payButton": "결제하기",
+      "paying": "주문을 생성하는 중…",
+      "plansLoadFailed": "요금제를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요",
+      "noPlans": "라우터 에디션은 아직 판매 전입니다",
+      "createOrderFailed": "주문 생성에 실패했습니다. 다시 시도해 주세요",
+      "alreadyHasRouter": "이 계정에는 이미 开途 Kaitu 라우터가 있습니다. 연장 요금제를 구매해 주세요",
+      "goMyRouter": "내 라우터로 이동",
+      "oneAccountOneRouter": "계정 하나에는 라우터 한 대만 연결할 수 있습니다. 두 번째 라우터가 필요하면 다른 계정으로 구매해 주세요.",
+      "payResultTitle": "결제를 완료하셨나요?",
+      "payResultBody": "결제가 완료되면 「내 라우터」에서 개통 진행 상황을 확인할 수 있습니다.",
+      "paySuccess": "결제 완료",
+      "payFailed": "결제에 문제가 있음",
+      "presaleNotice": "사전 판매 주문: {date}부터 주문 순서대로 발송되며, 서비스 기간은 발송일부터 계산됩니다.",
+      "preorderButton": "예약하고 결제하기",
+      "originPrice": "정가 {price}"
+    },
+    "account": {
+      "navTitle": "내 라우터",
+      "metaTitle": "내 라우터",
+      "title": "내 라우터",
+      "loadFailed": "불러오지 못했습니다",
+      "retry": "다시 시도",
+      "emptyTitle": "아직 开途 Kaitu 라우터가 없습니다",
+      "emptyBody": "开途 Kaitu 라우터 에디션: 랜선만 꽂으면 집 안의 TV, 게임기, 스피커 모두 사용할 수 있습니다.",
+      "emptyCta": "라우터 에디션 알아보기",
+      "online": "라우터 온라인",
+      "offline": "라우터 오프라인",
+      "version": "k2r 버전",
+      "lastSeen": "최근 접속",
+      "neverConnected": "아직 연결되지 않음",
+      "region": "출구 지역",
+      "progressTitle": "개통 진행 상황",
+      "stage": {
+        "paid": "결제 완료",
+        "provisioning": "회선 개통 중",
+        "ready": "회선 준비 완료",
+        "shipped": "발송됨",
+        "online": "온라인"
+      },
+      "tracking": "택배: {carrier} {trackingNo}",
+      "hardwareHint": "라우터는 발송 전에 설정이 끝나 있으니, 받으시면 랜선만 꽂으면 됩니다.",
+      "expired": "서비스가 만료되었습니다. 연장하시면 서비스를 다시 복구해 드립니다.",
+      "usageTitle": "이번 달 사용량",
+      "usageText": "이번 달 {used} / {total} 사용",
+      "quotaExhausted": "이번 달 데이터를 모두 사용했습니다. {date}에 복구됩니다.",
+      "subscriptionTitle": "서비스 기간",
+      "expiresAt": "만료일 {date}",
+      "renew": "1년 연장",
+      "overdue": "서비스가 만료되었습니다. 빨리 연장해 주세요.",
+      "installTitle": "내 라우터에 설치",
+      "installPending": "회선을 개통하는 중입니다. 완료되면 여기에 설치 명령이 표시됩니다.",
+      "generate": "설치 명령 생성",
+      "regenerate": "인증 정보 다시 생성",
+      "regenerateHint": "설치 명령은 한 번만 표시됩니다. 저장하지 못했다면 다시 생성할 수 있으며, 기존 라우터는 연결이 끊어집니다.",
+      "regenerateConfirmTitle": "인증 정보를 다시 생성할까요?",
+      "regenerateConfirmBody": "이미 설치된 라우터는 즉시 연결이 끊어지며, 새 명령으로 다시 설치해야 합니다.",
+      "confirm": "다시 생성 확인",
+      "cancel": "취소",
+      "commandHint": "라우터의 SSH 터미널에 붙여 넣어 실행하세요. 설치 후 약 1분 안에 여기에 온라인으로 표시됩니다.",
+      "copy": "복사",
+      "copied": "복사됨",
+      "expiresAfterShip": "서비스 기간은 발송일부터 계산되며, 발송 후 여기에 만료일이 표시됩니다.",
+      "presaleShipping": "사전 판매 주문은 {date}부터 주문 순서대로 발송됩니다."
+    },
+    "product": {
+      "metaTitle": "开途 Kaitu 라우터 에디션: 랜선만 꽂으면 가족의 모든 기기에서 사용",
+      "metaDescription": "세팅을 마친 라우터와 1년 서비스. TV, 게임기, 스마트 스피커도 설정 없이 연결되며, 전용 출구로 월 2TB. 첫해 {price}(라우터 포함).",
+      "heroTitle": "가족의 모든 기기, 랜선만 꽂으면 바로 사용",
+      "heroSubtitle": "TV, 게임기, 스마트 스피커에 어떤 소프트웨어도 설치할 필요가 없습니다. 开途 Kaitu 라우터는 받자마자 바로 쓸 수 있고, 전용 출구라 붐비지 않고 안정적입니다.",
+      "buyNow": "지금 구매",
+      "howItWorksCta": "사용 방법 알아보기",
+      "howTitle": "세 단계면 끝",
+      "how1Title": "라우터 받기",
+      "how1Body": "시스템 설치와 회원님 전용 설정까지 마친 라우터를 바로 보내 드립니다.",
+      "how2Title": "랜선 연결",
+      "how2Body": "라우터를 집의 모뎀이나 메인 공유기에 연결하고 전원을 켜면 됩니다.",
+      "how3Title": "온 가족 연결",
+      "how3Body": "모든 기기를 이 라우터의 Wi-Fi나 랜선에 연결하면 자동으로 적용됩니다.",
+      "pricingTitle": "가격 하나에 모두 포함",
+      "firstYear": "첫해 {price}",
+      "firstYearIncludes": "开途 Kaitu 라우터 1대 포함",
+      "renewal": "2년 차부터 연 {price}로 갱신",
+      "includes1": "세팅된 라우터와 배송",
+      "includes2": "전용 출구, 월 2TB, 중국 내 직접 연결 트래픽은 미포함",
+      "includes3": "가족 기기 수 제한 없음",
+      "includes4": "1년 서비스, 만료 후 연장 가능",
+      "compareTitle": "앱 버전과 무엇이 다른가요",
+      "compareApp": "앱 버전: 기기마다 앱 설치, 1인당 연 약 $40, 최대 기기 5대",
+      "compareRouter": "라우터 에디션: 라우터 한 대로 온 가족 커버, 기기 수 제한 없음, TV와 게임기에서도 사용 가능",
+      "faqTitle": "자주 묻는 질문",
+      "faq": [
+        {
+          "q": "라우터는 어디에서 발송되며, 얼마나 걸리나요?",
+          "a": "라우터는 해외에서 펌웨어 설치를 마친 뒤 발송되며, 보통 7~15일 안에 도착합니다. 발송 후 「내 라우터」에서 운송장 번호를 확인할 수 있습니다."
+        },
+        {
+          "q": "라우터가 고장 나면 어떻게 하나요?",
+          "a": "서비스 기간 중 고의로 인한 파손이 아니라면 고객센터에 연락해 새 제품으로 교환받을 수 있습니다."
+        },
+        {
+          "q": "월 2TB를 다 쓰면 어떻게 되나요?",
+          "a": "해당 월에는 일시 중지되고 다음 결제 주기에 자동으로 복구되며, 「내 라우터」에 복구 날짜가 표시됩니다."
+        },
+        {
+          "q": "출구 지역을 선택할 수 있나요?",
+          "a": "주문할 때 선택할 수 있으며, 기본값은 일본입니다."
+        },
+        {
+          "q": "계정 하나로 몇 대를 살 수 있나요?",
+          "a": "계정 하나에 라우터 한 대가 연결됩니다. 두 번째 라우터가 필요하면 다른 계정으로 구매해 주세요."
+        },
+        {
+          "q": "2년 차에는 어떻게 연장하나요?",
+          "a": "「내 라우터」에서 「1년 연장」을 누르면 만료일이 자동으로 늘어납니다. 서비스가 이미 중지된 경우 복구에 다소 시간이 걸릴 수 있습니다."
+        },
+        {
+          "q": "서비스 기간은 언제부터 계산되나요?",
+          "a": "라우터가 발송된 날부터 1년이 계산되며, 결제부터 발송까지의 대기 기간은 서비스 기간에 포함되지 않습니다."
+        }
+      ],
+      "presaleBadge": "사전 판매 중 · {date}부터 발송",
+      "presaleCta": "사전 판매가 {price}로 지금 예약",
+      "presaleNote": "사전 판매가입니다. {date}부터 주문 순서대로 발송되며, 서비스 기간은 발송일부터 계산됩니다.",
+      "originPrice": "정가 {price}",
+      "serviceStartsNote": "서비스 기간은 발송일부터 계산되며, 결제부터 발송까지의 대기 기간은 서비스 기간에 포함되지 않습니다.",
+      "presaleFaq": [
+        {
+          "q": "사전 판매 제품은 언제 발송되나요?",
+          "a": "사전 판매 주문은 {date}부터 주문 순서대로 차례로 발송되며, 발송 후 「내 라우터」에서 운송장 번호를 확인할 수 있습니다."
+        }
+      ]
+    },
+    "switch": {
+      "app": "앱 버전",
+      "router": "라우터 에디션",
+      "crossSell": "TV나 게임기에서도 쓰고 싶으신가요? 라우터 에디션을 확인해 보세요"
+    }
+  }
+}

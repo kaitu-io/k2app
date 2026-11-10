@@ -1,0 +1,82 @@
+{
+  "account": {
+    "title": "My account",
+    "subtitle": "Manage your account settings and membership benefits",
+    "renew": {
+      "title": "Renew",
+      "description": "Manage your membership and renewals"
+    },
+    "delegate": {
+      "title": "Payer management",
+      "description": "Manage the people who pay for your account",
+      "noDelegate": "You don't have a payer. You're using your own membership.",
+      "payerEmail": "Payer's email",
+      "info": "Someone is currently paying for your account. You can use the membership they provide.",
+      "rejectWarning": "If you decline, you'll lose the membership this person provides and will need to pay yourself or find another payer.",
+      "rejectButton": "Decline payer",
+      "rejectSuccess": {
+        "title": "Declined",
+        "description": "You have declined the payer relationship"
+      },
+      "rejectFailed": "Failed to decline payer"
+    },
+    "wallet": {
+      "title": "My wallet",
+      "description": "Manage your wallet balance and withdrawals"
+    },
+    "password": {
+      "setPassword": "Set password",
+      "changePassword": "Change password",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm password",
+      "requirements": "At least {length} characters. Avoid common words, keyboard sequences and repeated characters.",
+      "tooShort": "Password is too short",
+      "tooWeak": "Password is too weak. Use a longer or more random combination (avoid common words, keyboard sequences and repeated characters).",
+      "mismatch": "The passwords don't match",
+      "setFailed": "Failed to set password",
+      "setSuccess": "Password set",
+      "strength": {
+        "label": "Password strength",
+        "veryWeak": "Very weak",
+        "weak": "Weak",
+        "fair": "Fair",
+        "good": "Strong",
+        "strong": "Very strong"
+      }
+    },
+    "security": {
+      "title": "Account security",
+      "description": "Manage your login password",
+      "passwordSet": "Set a password to sign in with it. You can still sign in with a verification code.",
+      "passwordChange": "You've already set a password. You can change it here."
+    }
+  },
+  "retailer": {
+    "title": "Reseller"
+  },
+  "retailerRules": {
+    "title": "Reseller rules",
+    "subtitle": "Learn the rules and rewards of the 开途 Kaitu reseller program",
+    "contact": {
+      "title": "Contact us",
+      "content": "If you have any questions about the reseller program, please contact our partner team",
+      "email": "partner@kaitu.io"
+    }
+  },
+  "tasks": {
+    "migrated": {
+      "title": "Task system has moved",
+      "description": "Async tasks are now managed in the Asynqmon dashboard, where you can view task queues, execution status and history. Email send logs are available on the EDM send log page.",
+      "goToAsynqmon": "Go to Asynqmon",
+      "viewSendLogs": "View email send logs"
+    }
+  },
+  "users": {
+    "title": "User management",
+    "selection": {
+      "selected": "Selected",
+      "users": "users",
+      "sendMarketingEmail": "Send marketing email"
+    }
+  }
+}

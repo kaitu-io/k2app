@@ -1,0 +1,56 @@
+{
+  "account": {
+    "delegate": {
+      "pageTitle": "Плательщик за вас",
+      "emptyTitle": "Назначить плательщика",
+      "emptyDescription": "После этого при оплате вы сможете в один клик попросить этого человека оплатить за вас.",
+      "emptyHint": "Сразу после сохранения уведомление не отправляется: первое письмо этот человек получит, когда вы действительно запросите оплату.",
+      "emailLabel": "Email плательщика",
+      "emailPlaceholder": "friend@example.com",
+      "saveButton": "Сохранить",
+      "currentTitle": "Текущий плательщик",
+      "setAtLabel": "Назначен {date}",
+      "modifyButton": "Изменить",
+      "cancelButton": "Отмена",
+      "removeButton": "Удалить плательщика",
+      "removeConfirm": "Удалить? У ваших оплат больше не будет заранее назначенного плательщика.",
+      "currentHint": "При оплате можно выбрать «Попросить {email} оплатить» — мы отправим этому человеку письмо.",
+      "savedToast": "Сохранено"
+    }
+  },
+  "stripe": {
+    "navSubscription": "Подписка",
+    "activating": "Активируем вашу подписку…",
+    "activationDelayed": "Оплата получена. Подписка заработает в течение нескольких минут — обновите эту страницу, чтобы проверить.",
+    "subscriptionTitle": "Ваша подписка",
+    "renewsOn": "Продление {date}",
+    "expiresOn": "Действует до {date}",
+    "manage": "Управление подпиской",
+    "opening": "Открываем…",
+    "noSubscription": "Активной подписки пока нет.",
+    "choosePlan": "Посмотреть тарифы",
+    "downloadTitle": "Всё готово — установите приложения",
+    "downloadCta": "Скачать приложения",
+    "genericError": "Что-то пошло не так. Попробуйте ещё раз."
+  },
+  "subscription": {
+    "accountTitle": "Данные аккаунта",
+    "activeUntil": "Действует до {date}",
+    "choosePlan": "Выбрать тариф",
+    "daysLeft": "Осталось дней: {days}",
+    "devicesLabel": "Привязанные устройства",
+    "emailLabel": "Email для входа",
+    "expiredOn": "Истекла {date}",
+    "historyDays": "+{days} дн.",
+    "historyEmpty": "Покупок пока нет",
+    "historyRecharge": "Покупка",
+    "historyReward": "Подарок",
+    "historyTitle": "История покупок",
+    "loadFailed": "Не удалось загрузить, попробуйте позже",
+    "navTitle": "Моя подписка",
+    "never": "Подписки пока нет",
+    "renew": "Продлить",
+    "tierLabel": "Текущий тариф",
+    "title": "Статус подписки"
+  }
+}

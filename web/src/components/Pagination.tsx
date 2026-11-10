@@ -1,18 +1,33 @@
 import { Button } from "@/components/ui/button";
 
+// Today only the manager (Chinese-only, no next-intl provider — useLocale()
+// would throw there) uses this, so the locale is an optional prop rather than
+// read from context. Unknown / absent locale → the original Simplified labels.
+const LABELS: Record<string, { prev: string; next: string }> = {
+  "zh-CN": { prev: "上一页", next: "下一页" },
+  "en-US": { prev: "Previous", next: "Next" },
+  ko: { prev: "이전", next: "다음" },
+  ja: { prev: "前へ", next: "次へ" },
+  ru: { prev: "Назад", next: "Далее" },
+};
+
 interface PaginationProps {
   currentPage: number;
   totalPages: number;
   onPageChange: (page: number) => void;
   className?: string;
+  /** Page locale (public `[locale]` pages); defaults to zh-CN. */
+  locale?: string;
 }
 
 export function Pagination({
   currentPage,
   totalPages,
   onPageChange,
-  className = ""
+  className = "",
+  locale,
 }: PaginationProps) {
+  const labels = (locale && LABELS[locale]) || LABELS["zh-CN"];
   // 生成页码数组，显示当前页前后各2页
   const getPageNumbers = () => {
     const pages: (number | string)[] = [];
@@ -67,7 +82,7 @@ export function Pagination({
         onClick={() => onPageChange(currentPage - 1)}
         disabled={currentPage === 1}
       >
-        {"上一页"}
+        {labels.prev}
       </Button>
 
       {getPageNumbers().map((page, index) => {
@@ -99,7 +114,7 @@ export function Pagination({
         onClick={() => onPageChange(currentPage + 1)}
         disabled={currentPage === totalPages}
       >
-        {"下一页"}
+        {labels.next}
       </Button>
     </div>
   );

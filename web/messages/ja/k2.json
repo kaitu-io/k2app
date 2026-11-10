@@ -1,0 +1,12 @@
+{
+  "sections": {
+    "overview": "概要",
+    "getting-started": "はじめに",
+    "technical": "技術",
+    "comparison": "比較",
+    "uncategorized": "その他"
+  },
+  "mobileNav": {
+    "toggleLabel": "目次"
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "gift": {
+    "title": "{name} さんからプレゼントが届きました",
+    "subtitle": "开途 Kaitu VPN 特別会員",
+    "planDays": "{days} 日間の会員",
+    "expires": "有効期限まであと {days} 日",
+    "cta": "今すぐ受け取る",
+    "used": "このプレゼントはすでに受け取られています",
+    "expired": "このプレゼントは有効期限が切れています",
+    "fallback": "新規ユーザー限定特典を見る",
+    "loading": "引き換え中...",
+    "successTitle": "引き換えが完了しました！",
+    "successBody": "会員期間を {days} 日延長しました",
+    "viewAccount": "マイアカウントを見る",
+    "notEligible": "ご利用条件を満たしていません",
+    "redeemFailed": "引き換えに失敗しました。もう一度お試しください",
+    "titleAnonymous": "プレゼントが届きました",
+    "alreadyRedeemed": "ライセンスコードはすでにご利用済みです",
+    "signInToRedeem": "ログインして受け取る"
+  },
+  "landing": {
+    "title": "ライセンスコードを引き換える",
+    "subtitle": "ライセンスコードを入力して、会員権を無料で入手",
+    "placeholder": "8 桁のライセンスコードを入力",
+    "notFound": "ライセンスコードが存在しません",
+    "reenter": "入力し直す"
+  },
+  "admin": {
+    "title": "ライセンスコード管理",
+    "columns": {
+      "uuid": "固有コード",
+      "planDays": "日数",
+      "status": "状態",
+      "expires": "有効期限",
+      "campaign": "関連キャンペーン",
+      "createdAt": "作成日時"
+    },
+    "status": {
+      "unused": "未使用",
+      "used": "使用済み",
+      "expired": "期限切れ"
+    },
+    "filters": {
+      "all": "すべて",
+      "used": "使用済み",
+      "unused": "未使用"
+    }
+  },
+  "campaigns": {
+    "matcherParams": {
+      "beforeDate": "初回支払いの期限日"
+    },
+    "shareable": {
+      "label": "紹介プログラムを有効にする",
+      "sharesPerUser": "1 人あたりの共有可能数",
+      "issueKeys": "今すぐライセンスコードを発行",
+      "dryRun": "対象人数を見積もる",
+      "confirmIssue": "{count} 人のユーザーにそれぞれ {n} 個のライセンスコード（合計 {total} 個）を発行しますか？",
+      "issueSuccess": "{total} 個のライセンスコードを発行しました"
+    },
+    "matchers": {
+      "paid_before": "{date} より前に初回支払いをしたユーザー",
+      "paid_before_active": "{date} より前に初回支払いをし、プランが有効なユーザー"
+    }
+  }
+}

@@ -57,7 +57,7 @@ export function generateMetadata(
   // 默认 title / description 来自站点结构（lib/site/kaitu.ts seo），locale 缺失时回落默认语言。
   const seo = siteConfig().seo;
   const pickSeo = (m: Partial<Record<string, string>>) =>
-    fillBrandTemplate(m[locale] ?? m[brand.defaultLocale] ?? Object.values(m)[0] ?? '', brand);
+    fillBrandTemplate(m[locale] ?? m[brand.defaultLocale] ?? Object.values(m)[0] ?? '', brand, locale);
   const title = overrides.title || pickSeo(seo.defaultTitle);
   const description = overrides.description || pickSeo(seo.defaultDescription);
   // overrides.ogImage may be an absolute CDN URL (a post coverImage from

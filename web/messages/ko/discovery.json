@@ -1,0 +1,104 @@
+{
+  "discovery": {
+    "title": "둘러보기",
+    "subtitle": "엄선한 웹사이트, 앱, 콘텐츠로 인터넷을 더 풍성하게 즐기세요",
+    "websites": {
+      "title": "인기 웹사이트",
+      "description": "전 세계 우수 웹사이트를 엄선해 한 번에 바로 연결합니다"
+    },
+    "apps": {
+      "title": "추천 앱",
+      "description": "실용 도구와 엔터테인먼트 앱 모음"
+    },
+    "videos": {
+      "title": "동영상 컬렉션",
+      "description": "엄선한 YouTube 채널과 재생목록"
+    },
+    "categories": {
+      "social": "소셜 미디어",
+      "news": "뉴스",
+      "entertainment": "엔터테인먼트",
+      "education": "교육·학습",
+      "technology": "IT·디지털",
+      "lifestyle": "생활 서비스",
+      "shopping": "쇼핑",
+      "tools": "실용 도구"
+    },
+    "sections": {
+      "news": {
+        "title": "뉴스",
+        "description": "전 세계 보수 성향 뉴스 사이트 모음"
+      },
+      "entertainment": {
+        "title": "영상·엔터테인먼트",
+        "description": "우수한 스트리밍 플랫폼과 엔터테인먼트 서비스"
+      },
+      "communication": {
+        "title": "메신저 앱",
+        "description": "안전하고 믿을 수 있는 커뮤니케이션 도구"
+      },
+      "applications": {
+        "title": "추천 앱",
+        "description": "업무 효율을 높여 주는 실용 도구"
+      },
+      "christian": {
+        "title": "복음 자료",
+        "description": "양질의 복음주의 기독교 학습 자료"
+      },
+      "aiTools": {
+        "title": "AI 도구",
+        "description": "최첨단 인공지능 애플리케이션 플랫폼"
+      },
+      "tradeTools": {
+        "title": "무역 도구",
+        "description": "국제 무역 및 구매 플랫폼"
+      },
+      "homeschool": {
+        "title": "교육 자료",
+        "description": "홈스쿨링 및 학습 플랫폼"
+      },
+      "videoPlaylists": {
+        "title": "동영상 컬렉션",
+        "description": "엄선한 YouTube 채널 및 재생목록 모음",
+        "comingSoon": "동영상 컬렉션이 곧 공개됩니다",
+        "comingSoonDesc": "우수한 YouTube 채널과 재생목록을 정성껏 정리하고 있습니다. 조금만 기다려 주세요"
+      }
+    },
+    "footer": {
+      "title": "더 넓은 인터넷 세상을 탐험하세요",
+      "description": "开途 Kaitu 네트워크 프록시로 전 세계 우수 콘텐츠에 안전하게 접속하고, 경계 없는 인터넷을 누리세요",
+      "backHome": "홈으로 돌아가기",
+      "learnRouters": "라우터 제품 알아보기"
+    }
+  },
+  "privacy": {
+    "title": "개인정보 처리방침",
+    "subtitle": "开途 Kaitu(kaitu.io) 개인정보 보호 고지",
+    "contact": {
+      "title": "문의하기",
+      "content": "본 개인정보 처리방침에 관해 궁금한 점이 있으시면 개인정보 보호팀으로 연락해 주세요",
+      "email": "privacy@kaitu.io"
+    }
+  },
+  "terms": {
+    "title": "서비스 약관",
+    "subtitle": "开途 Kaitu(kaitu.io) 이용자 서비스 약관",
+    "contact": {
+      "title": "연락처",
+      "content": "본 서비스 약관에 관해 궁금한 점이 있으시면 법무팀으로 연락해 주세요",
+      "email": "legal@kaitu.io"
+    }
+  },
+  "deleteAccount": {
+    "title": "계정 탈퇴",
+    "subtitle": "开途 Kaitu 계정을 삭제하는 방법과 삭제 후 데이터 처리 방식"
+  },
+  "cookieConsent": {
+    "title": "쿠키 사용 안내",
+    "description": "저희는 초대 코드 저장 등 기본 기능을 포함해 브라우징 경험을 개선하기 위해 쿠키를 사용합니다. 이 웹사이트를 계속 이용하시면 쿠키 사용에 동의하는 것으로 간주됩니다.",
+    "details": "저희는 로그인, 초대 코드 연결 등 필수 기능 쿠키와, 방문 및 구매 전환을 집계하는 통계용 퍼스트 파티 쿠키 하나를 사용하며, 광고에는 사용하지 않습니다. “거부”를 누르거나 페이지 하단의 “방문 통계 참여 안 함”을 누르면 통계에서 제외됩니다. 브라우저 설정에서 언제든지 쿠키를 관리할 수도 있습니다.",
+    "detailsThirdParty": "이 웹사이트는 서드파티 웹 분석 서비스(Google Analytics)도 사용하며, 해당 서비스는 자체 쿠키를 설정합니다. 브라우저 설정에서 이러한 쿠키를 거부할 수 있습니다.",
+    "accept": "동의",
+    "decline": "거부"
+  }
+}

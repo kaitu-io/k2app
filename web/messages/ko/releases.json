@@ -1,0 +1,30 @@
+{
+  "title": "버전 릴리스",
+  "subtitle": "모든 버전의 업데이트 내용과 다운로드를 확인하세요",
+  "latestRelease": "최신 버전",
+  "betaTag": "베타",
+  "stableTag": "정식 버전",
+  "downloadWindows": "Windows용",
+  "downloadMacOS": "Mac용",
+  "downloadLinux": "Linux용",
+  "downloadAndroid": "Android용",
+  "downloadIOS": "App Store",
+  "downloadAssets": "다운로드",
+  "noDownloads": "이 버전에는 다운로드할 파일이 없습니다",
+  "viewAllReleases": "모든 버전 보기",
+  "sections": {
+    "newFeatures": "새 기능",
+    "bugFixes": "버그 수정",
+    "improvements": "개선 사항",
+    "infrastructure": "인프라",
+    "breakingChanges": "주요 변경 사항"
+  },
+  "controls": {
+    "expandAll": "모두 펼치기",
+    "collapseAll": "모두 접기"
+  },
+  "noData": "버전 릴리스 데이터가 없습니다.",
+  "bullet": "•",
+  "comingSoon": "출시 예정",
+  "backupDownload": "예비 다운로드"
+}

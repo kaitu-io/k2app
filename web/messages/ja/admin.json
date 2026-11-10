@@ -1,0 +1,82 @@
+{
+  "account": {
+    "title": "マイアカウント",
+    "subtitle": "アカウント設定と会員特典を管理します",
+    "renew": {
+      "title": "更新",
+      "description": "会員サービスと更新を管理します"
+    },
+    "delegate": {
+      "title": "代理支払い人の管理",
+      "description": "あなたのアカウントの料金を支払っているユーザーを管理します",
+      "noDelegate": "現在、代理支払い人はいません。ご自身の会員特典を利用しています",
+      "payerEmail": "代理支払い人のメールアドレス",
+      "info": "現在、あなたのアカウントの料金を支払っているユーザーがいます。そのユーザーの会員特典をご利用いただけます。",
+      "rejectWarning": "代理支払いを拒否すると、そのユーザーから提供されている会員特典を失います。ご自身でお支払いいただくか、別の代理支払い人を探す必要があります。",
+      "rejectButton": "代理支払いを拒否",
+      "rejectSuccess": {
+        "title": "拒否しました",
+        "description": "代理支払いの関係を解除しました"
+      },
+      "rejectFailed": "代理支払いの拒否に失敗しました"
+    },
+    "wallet": {
+      "title": "マイウォレット",
+      "description": "ウォレット残高と出金を管理します"
+    },
+    "password": {
+      "setPassword": "パスワードを設定",
+      "changePassword": "パスワードを変更",
+      "newPassword": "新しいパスワード",
+      "confirmPassword": "パスワード（確認）",
+      "requirements": "{length} 文字以上。よく使われる単語、キーボードの並び順、同じ文字の繰り返しは避けてください",
+      "tooShort": "パスワードが短すぎます",
+      "tooWeak": "パスワードが弱すぎます。より長い、またはランダムな組み合わせにしてください（よく使われる単語、キーボードの並び順、同じ文字の繰り返しは避けてください）",
+      "mismatch": "入力した 2 つのパスワードが一致しません",
+      "setFailed": "パスワードの設定に失敗しました",
+      "setSuccess": "パスワードを設定しました",
+      "strength": {
+        "label": "パスワードの強度",
+        "veryWeak": "非常に弱い",
+        "weak": "弱い",
+        "fair": "普通",
+        "good": "強い",
+        "strong": "非常に強い"
+      }
+    },
+    "security": {
+      "title": "アカウントのセキュリティ",
+      "description": "ログインパスワードを管理します",
+      "passwordSet": "パスワードを設定するとパスワードでログインできます。認証コードでのログインも引き続き利用できます",
+      "passwordChange": "パスワードは設定済みです。ここで変更できます"
+    }
+  },
+  "retailer": {
+    "title": "販売代理店"
+  },
+  "retailerRules": {
+    "title": "販売代理店ルール",
+    "subtitle": "开途 Kaitu 販売代理店プログラムのルールと報酬の仕組みについて",
+    "contact": {
+      "title": "お問い合わせ",
+      "content": "販売代理店プログラムについてご質問があれば、パートナーチームまでお気軽にお問い合わせください",
+      "email": "partner@kaitu.io"
+    }
+  },
+  "tasks": {
+    "migrated": {
+      "title": "タスクシステムは移行されました",
+      "description": "非同期タスクは現在 Asynqmon の監視ダッシュボードで管理されています。Asynqmon でタスクキュー、実行状況、履歴を確認できます。メール送信ログは EDM 送信ログのページで確認できます。",
+      "goToAsynqmon": "Asynqmon へ移動",
+      "viewSendLogs": "メール送信ログを見る"
+    }
+  },
+  "users": {
+    "title": "ユーザー管理",
+    "selection": {
+      "selected": "選択中",
+      "users": "人のユーザー",
+      "sendMarketingEmail": "マーケティングメールを送信"
+    }
+  }
+}

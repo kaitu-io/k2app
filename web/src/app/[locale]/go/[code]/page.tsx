@@ -1,4 +1,5 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
+import { localizedWordmark } from '@/lib/brands';
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import QRCode from 'qrcode';
@@ -65,7 +66,7 @@ export default async function AdLandingPage({
     >
       <header className="mx-auto flex w-full max-w-[1180px] items-center gap-2 px-5 py-4 lg:px-16 lg:py-6">
         <Image src={brand.logoPath} alt="" width={28} height={28} className="rounded-[8px]" />
-        <span className="text-[17px] font-bold">{brand.wordmark}</span>
+        <span className="text-[17px] font-bold">{localizedWordmark(brand, locale)}</span>
       </header>
       <AdLandingClient
         code={code}

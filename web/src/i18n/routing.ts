@@ -2,9 +2,11 @@ import {defineRouting} from 'next-intl/routing';
 import {createNavigation} from 'next-intl/navigation';
  
 export const routing = defineRouting({
-  // This site (kaitu) serves Chinese only. The en-* / ja locales left with the
-  // overleap site (sites/overleap/); src/middleware.ts 301s their old URLs to zh-CN.
-  locales: ['zh-CN', 'zh-TW', 'zh-HK'],
+  // Chinese for the mainland market, plus the languages of the largest foreign
+  // communities in China (2026-11-10: kaitu serves foreigners living in China —
+  // it is still a China product, not an overseas one). Same set as the kaitu app
+  // (webapp/src/brands/kaitu/index.ts). Old en-GB / en-AU URLs 301 to en-US.
+  locales: ['zh-CN', 'zh-TW', 'zh-HK', 'en-US', 'ko', 'ja', 'ru'],
 
   defaultLocale: 'zh-CN',
 

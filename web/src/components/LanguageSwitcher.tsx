@@ -20,12 +20,20 @@ const localeNames = {
   'zh-CN': '简体中文',
   'zh-TW': '繁體中文 (台灣)',
   'zh-HK': '繁體中文 (香港)',
+  'en-US': 'English',
+  'ko': '한국어',
+  'ja': '日本語',
+  'ru': 'Русский',
 } as const;
 
 const localeShortNames = {
   'zh-CN': '简',
   'zh-TW': '繁TW',
   'zh-HK': '繁HK',
+  'en-US': 'EN',
+  'ko': '한',
+  'ja': '日',
+  'ru': 'RU',
 } as const;
 
 export default function LanguageSwitcher() {

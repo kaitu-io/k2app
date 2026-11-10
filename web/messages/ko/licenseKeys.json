@@ -1,0 +1,66 @@
+{
+  "gift": {
+    "title": "{name} 님이 선물을 보냈습니다",
+    "subtitle": "开途 Kaitu VPN 전용 멤버십",
+    "planDays": "{days}일 멤버십",
+    "expires": "만료까지 {days}일 남음",
+    "cta": "지금 받기",
+    "used": "이미 수령된 선물입니다",
+    "expired": "만료된 선물입니다",
+    "fallback": "신규 사용자 전용 혜택 보기",
+    "loading": "교환 중...",
+    "successTitle": "교환 완료!",
+    "successBody": "멤버십이 {days}일 연장되었습니다",
+    "viewAccount": "내 계정 보기",
+    "notEligible": "사용 조건에 해당하지 않습니다",
+    "redeemFailed": "교환에 실패했습니다. 다시 시도해 주세요",
+    "titleAnonymous": "선물이 도착했습니다",
+    "alreadyRedeemed": "이미 라이선스 코드를 사용하셨습니다",
+    "signInToRedeem": "로그인 후 받기"
+  },
+  "landing": {
+    "title": "라이선스 코드 교환",
+    "subtitle": "라이선스 코드를 입력하고 무료로 멤버십을 받으세요",
+    "placeholder": "8자리 라이선스 코드 입력",
+    "notFound": "존재하지 않는 라이선스 코드입니다",
+    "reenter": "다시 입력"
+  },
+  "admin": {
+    "title": "라이선스 코드 관리",
+    "columns": {
+      "uuid": "고유 코드",
+      "planDays": "일수",
+      "status": "상태",
+      "expires": "만료 시간",
+      "campaign": "연결된 캠페인",
+      "createdAt": "생성 시간"
+    },
+    "status": {
+      "unused": "미사용",
+      "used": "사용됨",
+      "expired": "만료됨"
+    },
+    "filters": {
+      "all": "전체",
+      "used": "사용됨",
+      "unused": "미사용"
+    }
+  },
+  "campaigns": {
+    "matcherParams": {
+      "beforeDate": "첫 결제 마감일"
+    },
+    "shareable": {
+      "label": "기존 회원 추천 활성화",
+      "sharesPerUser": "1인당 공유 가능 수량",
+      "issueKeys": "지금 라이선스 코드 발급",
+      "dryRun": "대상 인원 예상",
+      "confirmIssue": "사용자 {count}명에게 각각 라이선스 코드 {n}개(총 {total}개)를 발급하시겠습니까?",
+      "issueSuccess": "라이선스 코드 {total}개를 발급했습니다"
+    },
+    "matchers": {
+      "paid_before": "{date} 이전에 첫 결제한 사용자",
+      "paid_before_active": "{date} 이전에 첫 결제했고 요금제가 유효한 사용자"
+    }
+  }
+}

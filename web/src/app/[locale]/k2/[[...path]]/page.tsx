@@ -16,7 +16,7 @@ import { posts } from '#velite';
 import { routing } from '@/i18n/routing';
 import { type K2Post, isPostVisibleToBrand, findK2Post, k2PostLocales } from '@/lib/k2-posts';
 import { getBrand } from '@/lib/brand-server';
-import { siteBrand } from '@/lib/brands';
+import { siteBrand, localizedWordmark } from '@/lib/brands';
 import { generateMetadata as generateBaseMetadata } from '../../metadata';
 
 /** Resolve a slug from the optional catch-all path param. */
@@ -46,6 +46,12 @@ function resolvePathname(path: string[] | undefined): string {
  * Chinese prose lives in the Velite markdown, and AI engines primarily consume
  * JSON-LD for Q&A schema extraction rather than surface rendering. If Traditional
  * Chinese variants become necessary, split into zh-Hant vs zh-Hans maps here.
+ *
+ * Foreign locales (en-US / ko / ja / ru) deliberately also use these Chinese
+ * Q&As: k2 docs exist only under content/zh-*, so findK2Post falls back to the
+ * zh-CN post and the visible page is Chinese. The FAQ JSON-LD must describe the
+ * visible content, so it stays Chinese too. When a foreign comparison.md is
+ * written, add a matching Q&A list here and select it by post.locale.
  */
 type ComparisonQA = { question: string; answer: string };
 
@@ -125,7 +131,7 @@ export async function generateMetadata({
     locale,
     pathname,
     {
-      title: `k2 | ${brand.wordmark}`,
+      title: `k2 | ${localizedWordmark(brand, locale)}`,
     },
     brand
   );
@@ -205,7 +211,9 @@ export default async function K2Page({
     url: `${brand.baseUrl}/${locale}${pathname}`,
     datePublished: post.date,
     dateModified: post.date,
-    inLanguage: locale,
+    // The served post's language, not the URL's: foreign locales render the
+    // zh-CN fallback post, and the structured data must match what is shown.
+    inLanguage: post.locale,
     wordCount: post.metadata?.wordCount,
     author: { '@type': 'Organization', name: brand.displayName, url: brand.baseUrl },
     publisher: { '@type': 'Organization', name: brand.displayName, url: brand.baseUrl },

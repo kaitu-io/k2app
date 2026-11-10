@@ -37,7 +37,8 @@ describe('generateMetadata', () => {
     const generateMetadata = await loadMetadata();
     const meta = generateMetadata('zh-CN', '/install', {}, KAITU);
     const langs = meta.alternates!.languages as Record<string, string>;
-    expect(Object.keys(langs).sort()).toEqual(['x-default', 'zh-cn', 'zh-hk', 'zh-tw']);
+    expect(Object.keys(langs).sort()).toEqual(['en-us', 'ja', 'ko', 'ru', 'x-default', 'zh-cn', 'zh-hk', 'zh-tw']);
+    expect(langs['ko']).toBe('https://www.kaitu.io/ko/install');
     expect(langs['zh-tw']).toBe('https://www.kaitu.io/zh-TW/install');
     expect(langs['x-default']).toBe('https://www.kaitu.io/zh-CN/install');
     expect(JSON.stringify(meta)).not.toContain('overleap');

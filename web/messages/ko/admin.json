@@ -1,0 +1,82 @@
+{
+  "account": {
+    "title": "내 계정",
+    "subtitle": "계정 설정과 멤버십 혜택을 관리합니다",
+    "renew": {
+      "title": "연장",
+      "description": "멤버십 서비스와 연장을 관리합니다"
+    },
+    "delegate": {
+      "title": "대리 결제자 관리",
+      "description": "회원님의 계정 요금을 대신 결제하는 사용자를 관리합니다",
+      "noDelegate": "현재 대리 결제자가 없으며, 본인의 멤버십 혜택을 이용 중입니다",
+      "payerEmail": "대리 결제자 이메일",
+      "info": "현재 다른 사용자가 회원님의 계정 요금을 결제하고 있습니다. 해당 사용자의 멤버십 혜택을 이용할 수 있습니다.",
+      "rejectWarning": "대리 결제를 거절하면 해당 사용자가 제공하던 멤버십 혜택을 잃게 되며, 직접 결제하거나 다른 대리 결제자를 찾아야 합니다.",
+      "rejectButton": "대리 결제 거절",
+      "rejectSuccess": {
+        "title": "거절 완료",
+        "description": "대리 결제 관계를 거절했습니다"
+      },
+      "rejectFailed": "대리 결제 거절에 실패했습니다"
+    },
+    "wallet": {
+      "title": "내 지갑",
+      "description": "지갑 잔액과 출금을 관리합니다"
+    },
+    "password": {
+      "setPassword": "비밀번호 설정",
+      "changePassword": "비밀번호 변경",
+      "newPassword": "새 비밀번호",
+      "confirmPassword": "비밀번호 확인",
+      "requirements": "{length}자 이상, 흔한 단어·키보드 배열 순서·반복 문자는 피해 주세요",
+      "tooShort": "비밀번호가 너무 짧습니다",
+      "tooWeak": "비밀번호가 너무 약합니다. 더 길거나 무작위인 조합을 사용해 주세요(흔한 단어·키보드 배열 순서·반복 문자 피하기)",
+      "mismatch": "두 번 입력한 비밀번호가 일치하지 않습니다",
+      "setFailed": "비밀번호 설정에 실패했습니다",
+      "setSuccess": "비밀번호가 설정되었습니다",
+      "strength": {
+        "label": "비밀번호 강도",
+        "veryWeak": "매우 약함",
+        "weak": "약함",
+        "fair": "보통",
+        "good": "강함",
+        "strong": "매우 강함"
+      }
+    },
+    "security": {
+      "title": "계정 보안",
+      "description": "로그인 비밀번호를 관리합니다",
+      "passwordSet": "비밀번호를 설정하면 비밀번호로 로그인할 수 있으며, 인증 코드 로그인도 계속 사용할 수 있습니다",
+      "passwordChange": "이미 비밀번호를 설정했습니다. 여기에서 변경할 수 있습니다"
+    }
+  },
+  "retailer": {
+    "title": "리셀러"
+  },
+  "retailerRules": {
+    "title": "리셀러 규정",
+    "subtitle": "开途 Kaitu 리셀러 프로그램의 규정과 보상 방식을 알아보세요",
+    "contact": {
+      "title": "문의하기",
+      "content": "리셀러 프로그램에 관한 문의는 언제든 파트너 팀으로 연락해 주세요",
+      "email": "partner@kaitu.io"
+    }
+  },
+  "tasks": {
+    "migrated": {
+      "title": "작업 시스템이 이전되었습니다",
+      "description": "비동기 작업은 이제 Asynqmon 모니터링 대시보드에서 관리합니다. Asynqmon에서 작업 대기열, 실행 상태, 기록을 확인할 수 있습니다. 이메일 발송 로그는 EDM 발송 로그 페이지에서 확인할 수 있습니다.",
+      "goToAsynqmon": "Asynqmon으로 이동",
+      "viewSendLogs": "이메일 발송 로그 보기"
+    }
+  },
+  "users": {
+    "title": "사용자 관리",
+    "selection": {
+      "selected": "선택됨",
+      "users": "명의 사용자",
+      "sendMarketingEmail": "마케팅 이메일 발송"
+    }
+  }
+}

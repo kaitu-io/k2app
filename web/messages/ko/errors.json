@@ -1,0 +1,23 @@
+{
+  "badRequest": "요청 매개변수가 올바르지 않습니다",
+  "unauthorized": "먼저 로그인해 주세요",
+  "paymentRequired": "멤버십이 만료되었습니다. 연장해 주세요",
+  "forbidden": "이 작업을 수행할 권한이 없습니다",
+  "notFound": "요청한 리소스가 존재하지 않습니다",
+  "notSupported": "지원하지 않는 기능입니다",
+  "upgradeRequired": "최신 버전으로 업데이트해 주세요",
+  "conflict": "작업이 충돌했습니다. 다시 시도해 주세요",
+  "invalidArgument": "매개변수 오류",
+  "tooEarly": "잠시 후 다시 시도해 주세요",
+  "tooManyRequests": "요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요",
+  "serverError": "서버 오류입니다. 잠시 후 다시 시도해 주세요",
+  "serviceUnavailable": "서버를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요",
+  "invalidCampaignCode": "유효하지 않은 프로모션 코드입니다",
+  "invalidClock": "기기 시간이 올바르지 않습니다. 시스템 시간을 맞춰 주세요",
+  "invalidVerificationCode": "인증 코드가 올바르지 않습니다. 확인 후 다시 시도해 주세요",
+  "verificationCodeExpired": "인증 코드가 만료되었거나 발송되지 않았습니다. 다시 보내기를 눌러 주세요",
+  "invalidInviteCode": "초대 코드가 올바르지 않습니다",
+  "selfInvitation": "본인의 초대 코드는 사용할 수 없습니다",
+  "invalidCredentials": "로그인 정보가 유효하지 않습니다",
+  "unknown": "작업에 실패했습니다. 다시 시도해 주세요"
+}

@@ -17,6 +17,11 @@ import { getBrandName } from '../../brands/i18n-vars';
 // pins that contract under either brand instead of hardcoding zh-CN.
 const FALLBACK = brandConfig.defaultLocale;
 
+// Regional English the brand may not offer (kaitu folds en-GB / en-AU into en-US).
+const offers = (code: string) => (brandConfig.locales as readonly string[]).includes(code);
+const EN_AU = offers('en-AU') ? 'en-AU' : 'en-US';
+const EN_GB = offers('en-GB') ? 'en-GB' : 'en-US';
+
 describe('normalizeLanguageCode', () => {
   describe('supported languages', () => {
     it('should return the same code for already supported languages', () => {
@@ -24,9 +29,8 @@ describe('normalizeLanguageCode', () => {
       expect(normalizeLanguageCode('zh-TW')).toBe('zh-TW');
       expect(normalizeLanguageCode('zh-HK')).toBe('zh-HK');
       expect(normalizeLanguageCode('en-US')).toBe('en-US');
-      expect(normalizeLanguageCode('en-GB')).toBe('en-GB');
-      expect(normalizeLanguageCode('en-AU')).toBe('en-AU');
       expect(normalizeLanguageCode('ja')).toBe('ja');
+      for (const code of brandConfig.locales) expect(normalizeLanguageCode(code)).toBe(code);
     });
   });
 
@@ -65,16 +69,16 @@ describe('normalizeLanguageCode', () => {
       expect(normalizeLanguageCode('en-CA')).toBe('en-US');
     });
 
-    it('should map en-NZ to en-AU (New Zealand English -> Australian English)', () => {
-      expect(normalizeLanguageCode('en-NZ')).toBe('en-AU');
+    it('should map en-NZ to en-AU when offered, else en-US', () => {
+      expect(normalizeLanguageCode('en-NZ')).toBe(EN_AU);
     });
 
-    it('should map en-ZA to en-GB (South African English -> UK English)', () => {
-      expect(normalizeLanguageCode('en-ZA')).toBe('en-GB');
+    it('should map en-ZA to en-GB when offered, else en-US', () => {
+      expect(normalizeLanguageCode('en-ZA')).toBe(EN_GB);
     });
 
-    it('should map en-IE to en-GB (Irish English -> UK English)', () => {
-      expect(normalizeLanguageCode('en-IE')).toBe('en-GB');
+    it('should map en-IE to en-GB when offered, else en-US', () => {
+      expect(normalizeLanguageCode('en-IE')).toBe(EN_GB);
     });
   });
 
@@ -204,8 +208,13 @@ describe('detectInitialLanguage', () => {
 
   it('ignores a stored value this brand does not offer and matches the system instead', () => {
     expect(offered).not.toContain(notOffered);
-    expect(detectInitialLanguage(notOffered, ['en-GB'])).toBe('en-GB');
+    expect(detectInitialLanguage(notOffered, ['ja-JP'])).toBe('ja');
     expect(detectInitialLanguage('garbage', ['ja-JP'])).toBe('ja');
+  });
+
+  it.runIf(brandConfig.id === 'kaitu')('kaitu: a stored en-GB / en-AU choice (no longer offered) lands on en-US, not the system language', () => {
+    expect(detectInitialLanguage('en-GB', ['zh-CN'])).toBe('en-US');
+    expect(detectInitialLanguage('en-AU', ['ja-JP'])).toBe('en-US');
   });
 
   it('walks the whole system preference list, not just its first entry', () => {

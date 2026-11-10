@@ -30,8 +30,8 @@ describe('siteBrand', () => {
 });
 
 describe('brand configs', () => {
-  it('KAITU is Chinese-only', () => {
-    expect(KAITU.allowedLocales).toEqual(['zh-CN', 'zh-TW', 'zh-HK']);
+  it('KAITU serves Chinese plus the languages of foreigners in China', () => {
+    expect(KAITU.allowedLocales).toEqual(['zh-CN', 'zh-TW', 'zh-HK', 'en-US', 'ko', 'ja', 'ru']);
     expect(KAITU.defaultLocale).toBe('zh-CN');
     expect(KAITU.taglineZh).toBe('愿上帝为你开路');
   });
@@ -64,5 +64,16 @@ describe('brand configs', () => {
 
   it('productName drives user-facing product badges', () => {
     expect(KAITU.productName).toBe('开途 VPN');
+  });
+});
+
+describe('localizedWordmark', () => {
+  it('Chinese locales use the Chinese wordmark alone; others pair it with the latin name', async () => {
+    const { localizedWordmark } = await import('../brands');
+    expect(localizedWordmark(KAITU, 'zh-CN')).toBe(KAITU.wordmark);
+    expect(localizedWordmark(KAITU, 'zh-HK')).toBe(KAITU.wordmark);
+    for (const l of ['en-US', 'ko', 'ja', 'ru']) {
+      expect(localizedWordmark(KAITU, l)).toBe(`${KAITU.wordmark} ${KAITU.displayName}`);
+    }
   });
 });

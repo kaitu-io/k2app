@@ -4,12 +4,13 @@ import type { Metadata } from 'next';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import RedeemClient from './RedeemClient';
-import { siteBrand } from '@/lib/brands';
+import { giftCodeMetadata } from '@/lib/gift-code-meta';
 
 type Locale = (typeof routing.locales)[number];
 
-export async function generateMetadata(): Promise<Metadata> {
-  return { title: `兑换授权码 | ${siteBrand().wordmark}` };
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
+  const { locale } = await params;
+  return { title: giftCodeMetadata(locale).title };
 }
 
 export default async function GiftCodeDirectPage({

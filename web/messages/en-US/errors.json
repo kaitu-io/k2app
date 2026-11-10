@@ -1,0 +1,23 @@
+{
+  "badRequest": "Invalid request parameters",
+  "unauthorized": "Please sign in first",
+  "paymentRequired": "Your membership has expired. Please renew.",
+  "forbidden": "You don't have permission to do this",
+  "notFound": "The requested resource doesn't exist",
+  "notSupported": "Not supported",
+  "upgradeRequired": "Please update to the latest version",
+  "conflict": "Operation conflict. Please try again.",
+  "invalidArgument": "Invalid parameter",
+  "tooEarly": "Please try again later",
+  "tooManyRequests": "Too many requests. Please try again later.",
+  "serverError": "Server error. Please try again later.",
+  "serviceUnavailable": "Server unavailable. Please try again later.",
+  "invalidCampaignCode": "Invalid campaign code",
+  "invalidClock": "Your device time is incorrect. Please correct your system clock.",
+  "invalidVerificationCode": "Incorrect verification code. Please check and try again.",
+  "verificationCodeExpired": "The verification code has expired or wasn't sent. Tap resend.",
+  "invalidInviteCode": "Incorrect invite code",
+  "selfInvitation": "You can't use your own invite code",
+  "invalidCredentials": "Invalid login credentials",
+  "unknown": "Something went wrong. Please try again."
+}

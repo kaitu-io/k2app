@@ -1,0 +1,29 @@
+{
+  "adLanding": {
+    "metaTitle": "开途 Kaitu — 다른 건 끊겨도, 이건 연결됩니다",
+    "heroTitle": "다른 건 끊겨도, 이건 연결됩니다.",
+    "heroAlt": "아침 햇살이 드는 책상 위의 노트북, 휴대폰, 라테 한 잔",
+    "subtitle": {
+      "stable": "开途 Kaitu는 한 번 탭으로 연결되고, 계속 연결된 상태를 유지합니다.",
+      "compare": "지금 쓰는 VPN을 지울 필요 없습니다. 7일 동안 나란히 써 보고 어느 쪽이 더 안정적인지 직접 비교해 보세요."
+    },
+    "platforms": "구독 하나로 기기 5대 · iPhone, Mac, Windows, Android 전 플랫폼 지원",
+    "ctaAppStore": "App Store에서 무료로 받기",
+    "ctaAndroid": "开途 Kaitu 다운로드",
+    "qrTitle": "iPhone으로 QR 코드를 스캔해 시작하세요",
+    "qrHint": "카메라를 열어 QR 코드에 비추기 → App Store에서 무료로 받기. 설치 후 Mac에서 같은 계정으로 로그인하면 됩니다",
+    "openOnPhone": "이미 iPhone으로 보고 계신가요? 바로 열기",
+    "why": {
+      "title": "왜 开途 Kaitu인가",
+      "oneTapTitle": "열면 바로 연결",
+      "oneTapBody": "노드, 프로토콜, 구독 링크를 공부할 필요가 없습니다.",
+      "devicesTitle": "구독 하나로 기기 5대, 전 플랫폼",
+      "devicesBody": "iPhone, iPad, Mac, Windows, Android, Linux 모두 사용 가능 — 내 기기, 가족 기기, 회사 컴퓨터까지 구독 하나로 해결됩니다.",
+      "coexistTitle": "지금 쓰는 것을 먼저 지울 필요 없음",
+      "coexistBody": "일단 설치해서 써 보고, 어느 쪽이 더 안정적인지 직접 판단하세요."
+    },
+    "trialNote": "iOS 4.4.14부터 신규 사용자는 7일 무료 체험이 가능하며, 체험 후에는 App Store에 표시된 연간 요금으로 자동 갱신됩니다. 체험 종료 전에 iPhone 설정에서 취소하면 요금이 청구되지 않습니다.",
+    "privacy": "개인정보 처리방침",
+    "terms": "서비스 약관"
+  }
+}

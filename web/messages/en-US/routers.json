@@ -1,0 +1,179 @@
+{
+  "edition": {
+    "regions": {
+      "ap-tokyo": "Japan (Tokyo)",
+      "ap-seoul": "South Korea (Seoul)",
+      "ap-singapore": "Singapore",
+      "cn-hongkong": "Hong Kong",
+      "cn-taiwan": "Taiwan (Taipei)",
+      "us-siliconvalley": "United States (Silicon Valley)",
+      "us-oregon": "United States (Oregon)",
+      "us-virginia": "United States (Virginia)",
+      "eu-frankfurt": "Germany (Frankfurt)",
+      "eu-london": "United Kingdom (London)"
+    },
+    "purchase": {
+      "metaTitle": "Buy the 开途 Kaitu Router Edition",
+      "metaDescription": "A pre-configured router plus one year of service. Plug in the network cable and every TV, game console and smart speaker at home is covered. First year {price} with the router included, then {renewal}/year.",
+      "title": "Buy the 开途 Kaitu Router Edition",
+      "subtitle": "Just plug in the network cable — zero setup for every device at home",
+      "renewTitle": "Renew the 开途 Kaitu Router Edition",
+      "renewSubtitle": "Your expiry date extends automatically after renewal — nothing to do on the router",
+      "renewName": "开途 Kaitu Router Edition · 1-year renewal",
+      "renewDesc": "Dedicated exit, 2 TB per month; your expiry date is extended by one year",
+      "stepSelect": "Choose a plan",
+      "stepPay": "Confirm and pay",
+      "hardwareName": "开途 Kaitu Router (pre-configured, ready out of the box)",
+      "hardwareDesc": "Includes the router, setup, shipping and one year of service; dedicated exit, 2 TB per month",
+      "regionLabel": "Exit region",
+      "shippingTitle": "Shipping details",
+      "shippingName": "Recipient name",
+      "shippingPhone": "Mobile number",
+      "shippingAddress": "Full address",
+      "lineHardware": "开途 Kaitu Router Edition · First year (router included)",
+      "lineService": "开途 Kaitu Router Edition · 1-year renewal",
+      "renewNote": "Renews at {price}/year from year two",
+      "payAmount": "Amount due",
+      "campaignToggle": "Use a campaign code",
+      "campaignPlaceholder": "Enter campaign code",
+      "invalidCampaignCode": "Invalid campaign code",
+      "loginFirst": "Please sign in above first",
+      "payButton": "Pay",
+      "paying": "Creating order…",
+      "plansLoadFailed": "Failed to load plans. Please refresh and try again.",
+      "noPlans": "The Router Edition isn't on sale yet",
+      "createOrderFailed": "Failed to create order. Please try again.",
+      "alreadyHasRouter": "This account already has a 开途 Kaitu router. Please buy a renewal plan instead.",
+      "goMyRouter": "Go to My Router",
+      "oneAccountOneRouter": "Each account can be linked to one router only; to get a second one, purchase with a different account.",
+      "payResultTitle": "Did your payment go through?",
+      "payResultBody": "Once payment is complete, you can track setup progress under My Router.",
+      "paySuccess": "Payment complete",
+      "payFailed": "I had a problem paying",
+      "presaleNotice": "Pre-order: ships in order of purchase from {date}. Service starts on the day your router ships.",
+      "preorderButton": "Pre-order and pay",
+      "originPrice": "Regular price {price}"
+    },
+    "account": {
+      "navTitle": "My Router",
+      "metaTitle": "My Router",
+      "title": "My Router",
+      "loadFailed": "Failed to load",
+      "retry": "Retry",
+      "emptyTitle": "You don't have a 开途 Kaitu router yet",
+      "emptyBody": "开途 Kaitu Router Edition: plug in the network cable and every TV, game console and smart speaker at home is covered.",
+      "emptyCta": "Learn about the Router Edition",
+      "online": "Router online",
+      "offline": "Router offline",
+      "version": "k2r version",
+      "lastSeen": "Last online",
+      "neverConnected": "Not connected yet",
+      "region": "Exit region",
+      "progressTitle": "Setup progress",
+      "stage": {
+        "paid": "Paid",
+        "provisioning": "Setting up your line",
+        "ready": "Line ready",
+        "shipped": "Shipped",
+        "online": "Online"
+      },
+      "tracking": "Courier: {carrier} {trackingNo}",
+      "hardwareHint": "Your router is fully set up before it ships — just plug in the network cable when it arrives.",
+      "expired": "Your service has expired. Renew and we'll restore it for you.",
+      "usageTitle": "Usage this month",
+      "usageText": "{used} of {total} used this month",
+      "quotaExhausted": "You've used this month's data. It resets on {date}.",
+      "subscriptionTitle": "Service period",
+      "expiresAt": "Expires {date}",
+      "renew": "Renew for a year",
+      "overdue": "Your service has expired. Please renew soon.",
+      "installTitle": "Install on your router",
+      "installPending": "Your line is being set up. The install command will appear here when it's ready.",
+      "generate": "Generate install command",
+      "regenerate": "Regenerate credentials",
+      "regenerateHint": "The install command is shown only once. If you didn't save it, you can regenerate it — the old router will be disconnected.",
+      "regenerateConfirmTitle": "Regenerate credentials?",
+      "regenerateConfirmBody": "Any router already installed will disconnect immediately and must be reinstalled with the new command.",
+      "confirm": "Regenerate",
+      "cancel": "Cancel",
+      "commandHint": "Paste and run it in your router's SSH terminal. About 1 minute after installation, it will show as online here.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "expiresAfterShip": "Service starts on the day your router ships; the expiry date will appear here after shipping.",
+      "presaleShipping": "Pre-orders ship in order of purchase from {date}."
+    },
+    "product": {
+      "metaTitle": "开途 Kaitu Router Edition: every device at home, just plug in",
+      "metaDescription": "A pre-configured router plus one year of service. TVs, game consoles and smart speakers get online with zero setup, with a dedicated exit and 2 TB per month. First year {price}, router included.",
+      "heroTitle": "Every device at home — just plug in the network cable",
+      "heroSubtitle": "No software to install on TVs, game consoles or smart speakers. The 开途 Kaitu router works out of the box, with a dedicated exit that's stable and never crowded.",
+      "buyNow": "Buy now",
+      "howItWorksCta": "See how it works",
+      "howTitle": "Up and running in three steps",
+      "how1Title": "Receive your router",
+      "how1Body": "We install the system and write your personal settings in advance, then ship it straight to you.",
+      "how2Title": "Plug in the network cable",
+      "how2Body": "Connect the router to your home fiber modem or main router and power it on.",
+      "how3Title": "The whole home is online",
+      "how3Body": "Every device connected to this router by Wi-Fi or cable is covered automatically.",
+      "pricingTitle": "One price, everything included",
+      "firstYear": "First year {price}",
+      "firstYearIncludes": "Includes one 开途 Kaitu router",
+      "renewal": "Renews at {price}/year from year two",
+      "includes1": "Pre-configured router and shipping",
+      "includes2": "Dedicated exit, 2 TB per month; direct traffic to sites in China doesn't count",
+      "includes3": "Unlimited devices at home",
+      "includes4": "One year of service, renewable",
+      "compareTitle": "How it differs from the App Edition",
+      "compareApp": "App Edition: install the app on each device, about $40 per person per year, up to 5 devices",
+      "compareRouter": "Router Edition: one router covers the whole home, unlimited devices, including TVs and game consoles",
+      "faqTitle": "FAQ",
+      "faq": [
+        {
+          "q": "Where does the router ship from, and how long does it take?",
+          "a": "Routers are configured overseas and shipped from there, usually arriving in 7 to 15 days. Once shipped, you can see the tracking number under My Router."
+        },
+        {
+          "q": "What if the router breaks?",
+          "a": "During your service period, contact support for a free replacement if the damage wasn't caused by misuse."
+        },
+        {
+          "q": "What happens if I use up the 2 TB for the month?",
+          "a": "Service pauses for the rest of that month and resumes automatically at the next billing cycle. My Router shows the date it resumes."
+        },
+        {
+          "q": "Can I choose the exit region?",
+          "a": "Yes, when you order. The default is Japan."
+        },
+        {
+          "q": "How many routers can one account buy?",
+          "a": "Each account is linked to one router; to get a second one, purchase with a different account."
+        },
+        {
+          "q": "How do I renew for the second year?",
+          "a": "Tap \"Renew for a year\" under My Router and your expiry date extends automatically. If your service has already been paused, restoring it may take a little time."
+        },
+        {
+          "q": "When does the service period start?",
+          "a": "One year counted from the day your router ships. The wait between payment and shipping doesn't count against your service period."
+        }
+      ],
+      "presaleBadge": "Pre-order · ships from {date}",
+      "presaleCta": "Pre-order now at {price}",
+      "presaleNote": "Pre-order price. Ships in order of purchase from {date}; service starts on the day your router ships.",
+      "originPrice": "Regular price {price}",
+      "serviceStartsNote": "Service starts on the day your router ships; the wait between payment and shipping doesn't count against it.",
+      "presaleFaq": [
+        {
+          "q": "When do pre-orders ship?",
+          "a": "Pre-orders ship in order of purchase starting {date}. Once shipped, you can see the tracking number under My Router."
+        }
+      ]
+    },
+    "switch": {
+      "app": "App Edition",
+      "router": "Router Edition",
+      "crossSell": "Want it on your TV and game console too? Check out the Router Edition"
+    }
+  }
+}

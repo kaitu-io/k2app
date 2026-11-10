@@ -1,4 +1,5 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
+import { localizedWordmark } from '@/lib/brands';
 import type { Metadata } from 'next';
 import { routing } from '@/i18n/routing';
 import Header from '@/components/Header';
@@ -41,7 +42,7 @@ export async function generateMetadata({
     '/pricing',
     {
       // wordmark：中文用户面用中文品牌名，不用 displayName 的拉丁写法。
-      title: `${t('pricing.metaTitle')} | ${brand.wordmark}`,
+      title: `${t('pricing.metaTitle')} | ${localizedWordmark(brand, locale)}`,
       description: t('pricing.metaDescription', {
         app1y: formatUsd(appEntryPrice()),
         router: formatUsd(routerOffer().firstYear),

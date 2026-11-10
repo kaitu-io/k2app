@@ -1,0 +1,215 @@
+{
+  "purchase": {
+    "loading": "Loading...",
+    "metaDescription": "Buy 开途 Kaitu k2cc Pro — multi-device support and a fast stealth tunnel that keeps full speed under heavy packet loss. Secure payment, instant activation.",
+    "memberBenefits": "Membership benefits",
+    "features": {
+      "multiDevice": "{count} devices at the same time",
+      "multiDeviceDesc": "One account, shared with the whole family",
+      "globalNodes": "Smart servers worldwide",
+      "globalNodesDesc": "Servers in many regions, auto-selected for the best one; switch anytime",
+      "zeroMaintenance": "Zero maintenance",
+      "zeroMaintenanceDesc": "No need to run your own server — works out of the box",
+      "continuousOptimization": "Continuous optimization",
+      "continuousOptimizationDesc": "Our server network is constantly updated and expanded",
+      "prioritySupport": "Priority support",
+      "prioritySupportDesc": "Dedicated support with fast responses"
+    },
+    "authorizationExpired": "Your plan has expired",
+    "selectPlanToRenew": "Choose a plan to renew your service",
+    "completeFirstPurchase": "Complete your first purchase",
+    "currentlyInTrial": "You're currently on a trial",
+    "bindEmail": "Link email",
+    "friendReferralBonus": "Friend referral bonus: {days} days",
+    "friendReferralGift": "+{days} days free",
+    "selectPlan": "Choose a plan",
+    "month": "months",
+    "totalPrice": "Total",
+    "saveAmount": "Save ${amount}",
+    "hotPlan": "Popular",
+    "total": "Total",
+    "proAuthorization": "{months}-month Pro license",
+    "proAuthorizationMultiple": "{months}-month Pro license for {count} users",
+    "havePromoCode": "Have a promo code?",
+    "campaignCodePlaceholder": "Enter promo code",
+    "clear": "Clear",
+    "includingTax": "Tax included",
+    "loadingPlans": "Loading plans...",
+    "noPlans": "No plans available",
+    "payNow": "Pay now",
+    "bindEmailToPayNow": "Link your email to pay",
+    "noPlansAvailable": "No plans available",
+    "createOrderFailed": "Failed to create order",
+    "invalidCampaignCode": "Invalid promo code",
+    "getPlansFailedRetry": "Failed to load plans. Please try again.",
+    "paymentResultConfirm": "Confirm payment result",
+    "orderNumber": "Order number",
+    "paymentAmount": "Amount paid",
+    "paymentConfirmHint": "Please confirm whether your payment succeeded",
+    "paymentTabHint": "The payment page has opened in a new tab. If you don't see it, or it won't load, tap the button below to try again.",
+    "reopenPayment": "Reopen payment page",
+    "paymentSuccess": "Payment succeeded",
+    "paymentFailed": "Payment failed",
+    "refreshUserProfileFailed": "Failed to refresh your profile",
+    "loginToGetStarted": "Sign in to get started",
+    "loginHint": "Sign in or sign up to continue your purchase",
+    "loginRequired": "Sign-in required",
+    "sendVerificationCode": "Send verification code",
+    "confirmBinding": "Confirm",
+    "bindingEmail": "Linking email",
+    "bindEmailAboveToGetStarted": "Link your email above to get started",
+    "confirmAndPay": "Confirm and pay",
+    "stepProgress": "Step {current} of {total}",
+    "previousStep": "Previous",
+    "nextStep": "Next",
+    "step": "Step",
+    "of": "of",
+    "title": "Buy a Pro plan",
+    "subtitle": "Complete your purchase in three simple steps",
+    "instantActivation": "Instant activation",
+    "securePayment": "Secure payment",
+    "moneyBackGuarantee": "Money-back guarantee",
+    "moneyBackGuaranteeDetail": "Refunds go to your wallet balance, which you can use to renew or withdraw to a crypto wallet",
+    "support24x7": "24/7 support",
+    "processing": "Processing",
+    "mostPopular": "Most popular",
+    "bestValue": "Best value",
+    "recommendedForMostUsers": "Recommended for most users",
+    "savePercent": "Save {percent}%",
+    "priceSlash": "/",
+    "dash": "-",
+    "ellipsis": "...",
+    "colon": ": ",
+    "dollarSign": "$",
+    "inviteRewardTitle": "New-user bonus",
+    "inviteRewardDesc": "After your purchase, you'll get an extra {days} days of Pro",
+    "tierLocked": "You're on the \"{tier}\" tier and can't buy plans from this tier. To change tiers, please contact support.",
+    "proxyPurchaseDeprecated": "Buying on behalf of others has been discontinued. Please ask them to purchase with their own account.",
+    "delegatePay": {
+      "inlineTitle": "Or ask a friend to pay",
+      "inlineHint": "We'll send them a payment link and save them as your payer, so next time it's one tap.",
+      "emailPlaceholder": "Payer's email friend@example.com",
+      "sendInviteButton": "Send payment request",
+      "chipLabel": "Payer: {email}",
+      "chipChange": "Change",
+      "primaryCtaWithDelegate": "Ask {email} to pay",
+      "secondaryCtaSelfPay": "Or pay yourself",
+      "confirmationTitle": "Payment request sent to {email}",
+      "confirmationBody": "We've emailed {email} a payment link. As soon as they pay, your membership time is added.",
+      "confirmationSpamHint": "If they don't get the email, ask them to check their spam folder.",
+      "confirmationResend": "Resend email",
+      "confirmationResentToast": "Sent again",
+      "confirmationBackHome": "Back to home",
+      "errorSelfInvite": "You can't set yourself as your payer",
+      "errorOrderAlreadyPaid": "This order is already paid",
+      "errorNoDelegate": "Please set up a payer first"
+    }
+  },
+  "error403": {
+    "title": "Access denied",
+    "subtitle": "You don't have permission to view this page",
+    "description": "Sorry, you don't have the permissions needed to view this content. Please contact your administrator for access.",
+    "errorCode": "Error code: 403",
+    "suggestions": {
+      "title": "You can:",
+      "item1": "Check that you're signed in with the right account",
+      "item2": "Contact your administrator for access",
+      "item3": "Go back to the previous page",
+      "item4": "Return to the dashboard"
+    },
+    "actions": {
+      "goBack": "Go back",
+      "goToDashboard": "Go to dashboard",
+      "contactSupport": "Contact support",
+      "retryLogin": "Sign in again"
+    }
+  },
+  "refund": {
+    "title": "Refund Policy",
+    "subtitle": "How refunds work and how to withdraw from your wallet",
+    "lastUpdated": "Last updated: {date}",
+    "sections": {
+      "overview": {
+        "title": "Refund overview",
+        "content": "We're committed to giving you a great service experience. If you're not satisfied with a purchase, you can request a refund under our refund policy. Refunds are returned to your account as wallet balance."
+      },
+      "refundProcess": {
+        "title": "Refund process",
+        "content": "Once your refund request is approved, the amount is immediately credited to your account wallet balance. You can use the wallet balance to keep buying our service, or request a withdrawal to your crypto wallet address."
+      },
+      "walletBalance": {
+        "title": "About wallet balance",
+        "content": "Your wallet balance is a virtual account balance on the 开途 Kaitu platform and can be used to: 1. Buy or renew any plan; 2. Withdraw to a supported crypto wallet. Refunds to your wallet are available immediately — no waiting."
+      },
+      "withdrawalMethods": {
+        "title": "Withdrawal methods",
+        "content": "You can withdraw your wallet balance to major crypto wallets. Supported cryptocurrencies include:"
+      },
+      "supportedCryptos": {
+        "title": "Supported cryptocurrencies",
+        "usdt": "USDT (Tether) - TRC20 and ERC20 networks",
+        "usdc": "USDC (USD Coin) - ERC20 network",
+        "eth": "ETH (Ethereum) - ERC20 network",
+        "btc": "BTC (Bitcoin) - Bitcoin mainnet",
+        "other": "Other major stablecoins and cryptocurrencies (please check with support)"
+      },
+      "withdrawalProcess": {
+        "title": "Withdrawal process",
+        "step1": "1. Request a withdrawal on your account page",
+        "step2": "2. Choose the cryptocurrency and blockchain network",
+        "step3": "3. Enter your wallet address",
+        "step4": "4. Confirm the withdrawal amount and fee",
+        "step5": "5. Submit the request and wait for review",
+        "step6": "6. Funds arrive within 1-3 business days after approval"
+      },
+      "importantNotes": {
+        "title": "Important notes",
+        "note1": "• Make absolutely sure the wallet address and blockchain network you provide are correct",
+        "note2": "• Any loss of funds caused by an incorrect wallet address is the user's responsibility",
+        "note3": "• Withdrawal fees may differ by cryptocurrency and network",
+        "note4": "• Withdrawal requests can't be cancelled once submitted, so please be careful",
+        "note5": "• Your first withdrawal may require identity verification",
+        "note6": "• Large withdrawals may require an additional security review"
+      },
+      "withdrawalFees": {
+        "title": "Withdrawal fees",
+        "content": "Withdrawal fees vary by cryptocurrency and blockchain network. The exact fee is shown when you request a withdrawal. We try to process withdrawals on lower-fee networks whenever possible."
+      },
+      "processingTime": {
+        "title": "Processing time",
+        "content": "Withdrawal requests are processed within 1-3 business days. The exact arrival time depends on the blockchain network's confirmation speed and may take longer during peak times or network congestion."
+      },
+      "refundPolicy": {
+        "title": "Refund eligibility",
+        "content": "Refund requests must meet the following conditions: no more than 7 days of service, no heavy data usage, account in good standing, etc. For full refund conditions, see the Terms of Service or contact support."
+      },
+      "contact": {
+        "title": "Contact support",
+        "content": "If you have any questions about refunds or withdrawals, feel free to contact our support team: support@kaitu.io"
+      }
+    }
+  },
+  "purchaseStep3": {
+    "priceSlash": "/"
+  },
+  "giftCodePrompt": "Already have a license key?",
+  "giftCodeLink": "Redeem it here",
+  "stripe": {
+    "title": "Choose your plan",
+    "annualLabel": "Annual",
+    "monthlyLabel": "Monthly",
+    "perMonthApprox": "≈ {price}/mo",
+    "monthlyPrice": "{price}/mo",
+    "cancelAnytime": "Cancel anytime",
+    "savePercent": "Save {percent}%",
+    "currencyNote": "Prices in EUR. USD and GBP equivalents are applied automatically at checkout.",
+    "subscribe": "Subscribe",
+    "redirecting": "Redirecting to secure checkout…",
+    "alreadySubscribed": "You already have an active subscription.",
+    "manageInAccount": "Manage subscription",
+    "checkoutCancelled": "Checkout was cancelled — you can try again anytime.",
+    "channelUnavailable": "This payment method is not available for your account.",
+    "genericError": "Something went wrong. Please try again.",
+    "noPlans": "Plans are being prepared. Please check back soon."
+  }
+}
