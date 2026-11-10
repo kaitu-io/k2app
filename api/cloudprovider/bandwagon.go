@@ -277,12 +277,16 @@ func NewMultiBandwagonProvider(configs []BandwagonInstanceConfig) *MultiBandwago
 		instances: make([]*BandwagonProvider, 0, len(configs)),
 		veidMap:   make(map[string]*BandwagonProvider),
 	}
-	for _, cfg := range configs {
-		if cfg.VEID != "" && cfg.APIKey != "" {
-			p := NewBandwagonProvider(cfg.VEID, cfg.APIKey)
-			mp.instances = append(mp.instances, p)
-			mp.veidMap[cfg.VEID] = p
+	for i, cfg := range configs {
+		if cfg.VEID == "" || cfg.APIKey == "" {
+			// Skipped entries used to vanish without a trace: a misformatted veid
+			// then read as "no instances" and the sync marked everything deleted.
+			log.Warnf(context.Background(), "[BANDWAGON] Skipping instances[%d]: veid or api_key is empty (check quoting and indentation in config)", i)
+			continue
 		}
+		p := NewBandwagonProvider(cfg.VEID, cfg.APIKey)
+		mp.instances = append(mp.instances, p)
+		mp.veidMap[cfg.VEID] = p
 	}
 	return mp
 }
