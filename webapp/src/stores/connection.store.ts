@@ -70,15 +70,10 @@ interface ConnectionState {
   /** Last k2v5 URL sent to the daemon (persisted, used for cold-start restore). */
   lastServerUrl: string | null;
   lastServerUrlLoaded: boolean;
-  /** Server selection mode: 'manual' picks a specific cloud server; 'self_hosted' uses user's own node;
-   *  'k2sub' (gateway only) lets the daemon resolve a `k2subs://` subscription URL. */
-  serverMode: 'manual' | 'self_hosted' | 'k2sub';
+  /** Server selection mode: 'manual' picks a specific cloud server; 'self_hosted' uses user's own node. */
+  serverMode: 'manual' | 'self_hosted';
   /** True once persisted serverMode has been loaded from storage. */
   serverModeLoaded: boolean;
-  /** ISO 3166-1 alpha-2 country filter for k2subs subscription (lowercase), or null for auto. */
-  subsCountry: string | null;
-  /** True once persisted subsCountry has been loaded from storage. */
-  subsCountryLoaded: boolean;
   /** ISO 3166-1 alpha-2 codes (lowercase, deduped, sorted) excluded from Auto pick. */
   excludedCountries: string[];
   /** True once persisted excludedCountries has been loaded from storage. */
@@ -103,7 +98,6 @@ interface ConnectionState {
 // ClientConfig mirrors the Go wire contract, which has no `server` field.
 const LAST_SERVER_URL_STORAGE_KEY = 'k2.vpn.last_server_url';
 const SERVER_MODE_STORAGE_KEY = 'k2.vpn.server_mode';
-const SUBS_COUNTRY_STORAGE_KEY = 'k2.connection.subsCountry';
 const EXCLUDED_COUNTRIES_STORAGE_KEY = 'k2.connection.excludedCountries';
 const SELECTED_DOMAIN_STORAGE_KEY = 'k2.connection.selectedDomain';
 
@@ -207,7 +201,7 @@ async function persistLastServerUrl(url: string | null): Promise<void> {
   }
 }
 
-async function persistServerMode(mode: 'manual' | 'self_hosted' | 'k2sub'): Promise<void> {
+async function persistServerMode(mode: 'manual' | 'self_hosted'): Promise<void> {
   try {
     await window._platform.storage.set(SERVER_MODE_STORAGE_KEY, mode);
   } catch (err) {
@@ -244,10 +238,8 @@ interface ConnectionActions {
   disconnect: () => Promise<void>;
   clearPendingFeedback: () => void;
   enrichFromTunnelList: (tunnels: Tunnel[]) => void;
-  setServerMode: (mode: 'manual' | 'self_hosted' | 'k2sub') => Promise<void>;
+  setServerMode: (mode: 'manual' | 'self_hosted') => Promise<void>;
   loadServerMode: () => Promise<void>;
-  setSubsCountry: (country: string | null) => Promise<void>;
-  loadSubsCountry: () => Promise<void>;
   setExcludedCountries: (countries: string[]) => Promise<void>;
   loadExcludedCountries: () => Promise<void>;
   loadSelectedDomain: () => Promise<void>;
@@ -312,8 +304,6 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   lastServerUrlLoaded: false,
   serverMode: 'manual',
   serverModeLoaded: false,
-  subsCountry: null,
-  subsCountryLoaded: false,
   excludedCountries: [],
   excludedCountriesLoaded: false,
   cloudAccessRevoked: false,
@@ -431,7 +421,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     void persistSelectedDomain(null);
   },
 
-  setServerMode: async (mode: 'manual' | 'self_hosted' | 'k2sub') => {
+  setServerMode: async (mode: 'manual' | 'self_hosted') => {
     if (mode === 'self_hosted') {
       const tunnel = computeSelfHostedActiveTunnel();
       set({ serverMode: mode, activeTunnel: tunnel });
@@ -447,13 +437,12 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   loadServerMode: async () => {
     try {
       const stored = await window._platform.storage.get<string>(SERVER_MODE_STORAGE_KEY);
-      let resolved: 'manual' | 'self_hosted' | 'k2sub';
+      let resolved: 'manual' | 'self_hosted';
       if (stored === 'self_hosted') {
         resolved = 'self_hosted';
       } else {
-        // 'k2sub' is set explicitly via setServerMode (SmartServerSelector's k2sub tab) —
-        // never a load-time default. Coerce any other stored value (incl. legacy
-        // 'manual', 'smart') to manual.
+        // Coerce any other stored value (incl. legacy 'manual', 'smart', 'k2sub')
+        // to manual.
         resolved = 'manual';
       }
       useConnectionStore.setState({
@@ -466,32 +455,6 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     } catch (err) {
       console.warn('[Connection] Failed to load serverMode:', err);
       useConnectionStore.setState({ serverModeLoaded: true });
-    }
-  },
-
-  setSubsCountry: async (country: string | null) => {
-    set({ subsCountry: country });
-    try {
-      if (country === null) {
-        await window._platform.storage.remove(SUBS_COUNTRY_STORAGE_KEY);
-      } else {
-        await window._platform.storage.set(SUBS_COUNTRY_STORAGE_KEY, country);
-      }
-    } catch (err) {
-      console.warn('[Connection] Failed to persist subsCountry:', err);
-    }
-  },
-
-  loadSubsCountry: async () => {
-    try {
-      const v = await window._platform.storage.get<string>(SUBS_COUNTRY_STORAGE_KEY);
-      useConnectionStore.setState({
-        subsCountry: typeof v === 'string' && v ? v : null,
-        subsCountryLoaded: true,
-      });
-    } catch (err) {
-      console.warn('[Connection] Failed to load subsCountry:', err);
-      useConnectionStore.setState({ subsCountryLoaded: true });
     }
   },
 
@@ -631,16 +594,6 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     if (serverMode === 'self_hosted') {
       connectedTunnelSnapshot = selfHostedSnap
         ?? { source: 'self_hosted', domain: 'self_hosted', name: '自部署', country: '', serverUrl: '', ipv4: '' };
-    } else if (serverMode === 'k2sub') {
-      const { subsCountry } = get();
-      connectedTunnelSnapshot = {
-        source: 'cloud',
-        domain: 'k2sub',
-        name: subsCountry ? subsCountry.toUpperCase() : 'Auto',
-        country: subsCountry ?? '',
-        serverUrl: '',
-        ipv4: '',
-      };
     } else {
       connectedTunnelSnapshot = resolvedTunnel ? computeCloudActiveTunnel(resolvedTunnel) : null;
     }
@@ -664,9 +617,6 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     let fallbackUrls: string[] = [];
     if (serverMode === 'self_hosted') {
       serverUrl = useSelfHostedStore.getState().tunnel?.uri;
-    } else if (serverMode === 'k2sub') {
-      const { subsCountry } = get();
-      serverUrl = await authService.buildSubsUrl(subsCountry);
     } else if (resolvedTunnel?.serverUrl) {
       // Fallbacks start building before the primary is awaited (concurrent). A
       // fallback that fails to build is dropped; it never fails the connect.
@@ -1029,9 +979,6 @@ export function initializeConnectionStore(): () => void {
   // When done, triggers tryRestoreConnectedTunnel via Trigger 2.
   const serverModeLoad = useConnectionStore.getState().loadServerMode();
 
-  // Load persisted subsCountry (fire-and-forget). Independent of cold-start restore.
-  useConnectionStore.getState().loadSubsCountry();
-
   // Load persisted excludedCountries (fire-and-forget). Independent of cold-start restore.
   useConnectionStore.getState().loadExcludedCountries();
 
@@ -1128,14 +1075,11 @@ export function useEffectiveCloudSelection(): Tunnel | null {
  *   - manual: Auto is the always-fallback. Ready when a concrete tunnel is
  *     active OR no concrete pick (Auto sentinel default).
  *   - self_hosted: requires a configured tunnel (activeTunnel set).
- *   - k2sub: subsCountry===null is the always-fallback (Auto). The daemon
- *     resolves the k2subs:// URL on connect, so the UI is always ready.
  */
 export function hasConnectableSelection(
   s: Pick<ConnectionState, 'serverMode' | 'activeTunnel' | 'selectedCloudTunnel' | 'cloudAccessRevoked'>,
 ): boolean {
   if (s.serverMode === 'self_hosted') return !!s.activeTunnel;
-  if (s.serverMode === 'k2sub') return true;
   // Manual mode draws on cloud tunnels — if membership lapsed (402), there is
   // nothing to connect to, so the Auto fallback is no longer connectable.
   if (s.cloudAccessRevoked) return false;

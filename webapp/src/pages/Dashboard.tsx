@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useRef, lazy, Suspense, useMemo } from "react";
+import { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import {
   Box,
   Typography,
@@ -48,12 +48,11 @@ import RoutingModeSelector, { useRoutingSummary } from '../components/RoutingMod
 import { AlwaysOnToggle } from '../components/AlwaysOnToggle';
 import { useDashboard } from '../stores/dashboard.store';
 import { CloudTunnelList, type CloudTunnelListHandle } from '../components/CloudTunnelList';
-import { getFlagIcon, getCountryName } from '../utils/country';
+import { getFlagIcon } from '../utils/country';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
 import { cacheStore } from '../services/cache-store';
 import { SmartServerSelector } from '../components/SmartServerSelector';
 import { SelfHostedTunnelItem } from '../components/SelfHostedTunnelItem';
-import { K2subConfig } from '../components/K2subConfig';
 import ConnectedSettingsLock from '../components/ConnectedSettingsLock';
 
 // Styled Components for Modern Design
@@ -68,11 +67,6 @@ const DashboardContainer = styled(Box)(({ theme }) => ({
     ? theme.palette.grey[900]
     : theme.palette.grey[50],
 }));
-
-// Gateway-only: lazy load upgrade banner
-const GatewayUpgradeBanner = window._platform?.platformType === 'gateway'
-  ? lazy(() => import('../components/GatewayUpgradeBanner'))
-  : null;
 
 export default function Dashboard() {
   const { t } = useTranslation();
@@ -209,14 +203,8 @@ export default function Dashboard() {
     }
   }, [location.pathname]);
 
-  // Tunnels list for K2subConfig country derivation. CloudTunnelList loads
-  // these regardless of which tab is active; we mirror them into local state
-  // so K2subConfig (gateway tab) can show the country list without re-fetching.
-  const [loadedTunnels, setLoadedTunnels] = useState<Tunnel[]>([]);
-
   // Handle cloud tunnels loaded — feed enrichment + reconcile selection
   const handleTunnelsLoaded = useCallback((tunnels: Tunnel[]) => {
-    setLoadedTunnels(tunnels);
     enrichFromTunnelList(tunnels);
     useConnectionStore.getState().reconcileSelection(tunnels);
   }, [enrichFromTunnelList]);
@@ -225,7 +213,7 @@ export default function Dashboard() {
   const effectiveCloudSelection = useEffectiveCloudSelection();
 
   // Single source of truth: ready to initiate connect across all server modes
-  // (manual / self_hosted / k2sub). Drives both the connect-button enable
+  // (manual / self_hosted). Drives both the connect-button enable
   // state and the click handler's pre-connect guard.
   const hasTunnelSelected = useHasConnectableSelection();
 
@@ -302,20 +290,6 @@ export default function Dashboard() {
       hideHeader
       neverSubscribed={neverSubscribed}
       onLoginExisting={zeroIdentity ? handleLoginExisting : undefined}
-    />
-  );
-
-  // K2sub (gateway-only) tab content. CloudTunnelList in manualTabContent
-  // is what populates loadedTunnels — on gateway it stays mounted invisibly
-  // so the country list here keeps refreshing on the same cadence.
-  const subsCountry = useConnectionStore((s) => s.subsCountry);
-  const setSubsCountry = useConnectionStore((s) => s.setSubsCountry);
-  const k2subTabContent = (
-    <K2subConfig
-      tunnels={loadedTunnels}
-      subsCountry={subsCountry}
-      setSubsCountry={(c) => { void setSubsCountry(c); }}
-      isInteractive={!isInteractive}
     />
   );
 
@@ -450,15 +424,6 @@ export default function Dashboard() {
         }),
       }}
     >
-      {/* Gateway OTA upgrade banner */}
-      {GatewayUpgradeBanner && (
-        <Suspense fallback={null}>
-          <Box sx={{ px: 2, pt: 1 }}>
-            <GatewayUpgradeBanner />
-          </Box>
-        </Suspense>
-      )}
-
       {/* 路由器接管横幅:本机未连接但流量已被 k2r 网关保护——消除「未保护」误读 */}
       <RouterTakeoverBanner />
 
@@ -489,20 +454,14 @@ export default function Dashboard() {
         dormant={!isAuthenticated && !selfHostedTunnel}
         upsellHint={upsellHint}
         tunnelName={
-          serverMode === 'k2sub'
-            ? (subsCountry === null
-                ? `⚡ ${t('dashboard:auto.title')}`
-                : getCountryName(subsCountry))
-            : isAutoSelection(effectiveCloudSelection)
-              ? `⚡ ${t('dashboard:auto.title')}${connectedTunnel ? ` · ${connectedTunnel.name || connectedTunnel.domain}` : ''}`
-              : displayTunnel?.name
+          isAutoSelection(effectiveCloudSelection)
+            ? `⚡ ${t('dashboard:auto.title')}${connectedTunnel ? ` · ${connectedTunnel.name || connectedTunnel.domain}` : ''}`
+            : displayTunnel?.name
         }
         tunnelCountry={
-          serverMode === 'k2sub'
-            ? (subsCountry ?? undefined)
-            : isAutoSelection(effectiveCloudSelection)
-              ? connectedTunnel?.country
-              : displayTunnel?.country
+          isAutoSelection(effectiveCloudSelection)
+            ? connectedTunnel?.country
+            : displayTunnel?.country
         }
         onToggle={handleToggleConnection}
         error={error}
@@ -552,7 +511,6 @@ export default function Dashboard() {
             isInteractive={!isInteractive}
             manualContent={manualTabContent}
             selfHostedContent={selfHostedTabContent}
-            k2subContent={k2subTabContent}
             onManualRefresh={() => { void handleManualRefresh(); }}
             manualRefreshing={manualRefreshing}
           />

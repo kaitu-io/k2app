@@ -20,7 +20,6 @@ vi.mock('../../services/auth-service', () => ({
     getTunnelToken: vi.fn().mockResolvedValue(null),
     setTunnelToken: vi.fn().mockResolvedValue(undefined),
     buildTunnelUrl: vi.fn(async (u: string) => u),
-    buildSubsUrl: vi.fn(),
   },
 }));
 
