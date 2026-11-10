@@ -3,6 +3,7 @@ package center
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 
 	"github.com/spf13/viper"
@@ -338,10 +339,27 @@ func ConfigCloudInstanceAccountByName(name string) *CloudInstanceAccount {
 }
 
 // getString is a helper to get string from map
+// getString reads a config value as a string. YAML writes an all-digit scalar
+// (a Bandwagon veid) as a number unless it is quoted, and an editor that
+// re-saves the file drops the quotes: accept numbers too, or the entry reads as
+// empty and is silently skipped.
 func getString(m map[string]interface{}, key string) string {
-	if v, ok := m[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
+	v, ok := m[key]
+	if !ok {
+		return ""
+	}
+	switch n := v.(type) {
+	case string:
+		return n
+	case int:
+		return strconv.FormatInt(int64(n), 10)
+	case int64:
+		return strconv.FormatInt(n, 10)
+	case uint64:
+		return strconv.FormatUint(n, 10)
+	case float64:
+		if n == float64(int64(n)) {
+			return strconv.FormatInt(int64(n), 10)
 		}
 	}
 	return ""
