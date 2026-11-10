@@ -47,7 +47,11 @@ func isDeadlockError(err error) bool {
 		return false
 	}
 	errStr := err.Error()
+	// 1020 = MariaDB ≥11.6 默认 innodb_snapshot_isolation=ON 时，加锁读发现行在本事务快照之后被别的
+	// 事务改过（"Record has changed since last read"）。与死锁同属"整事务重来即可"的冲突：重试拿到
+	// 新快照。线上 RDS 10.6 不会报它，CI 的新版 MariaDB 会——同一交易并发 verify 正是这种冲突。
 	return strings.Contains(errStr, "1213") ||
+		strings.Contains(errStr, "Error 1020") ||
 		strings.Contains(errStr, "Deadlock") ||
 		strings.Contains(errStr, "deadlock")
 }

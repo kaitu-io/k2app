@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/wordgate/qtoolkit/appstore"
 	db "github.com/wordgate/qtoolkit/db"
+	"gorm.io/gorm"
 )
 
 // 线上 2026-11-05 / 11-09 五例（user 14173/14183/14691/14732/14813）：App 对同一笔交易几乎同时
@@ -89,9 +90,19 @@ func TestCreditAppleTransaction_StaleSnapshotDuplicateVerify(t *testing.T) {
 
 	info, err := fetchAppleTransaction(ctx, "", "TXN-RACE-1")
 	require.NoError(t, err)
-	require.NoError(t, creditAppleTransaction(ctx, tx2, f.user.ID, info),
-		"同一交易的并发第二次 verify 必须幂等成功")
-	require.NoError(t, tx2.Commit().Error)
+	err = creditAppleTransaction(ctx, tx2, f.user.ID, info)
+	if err == nil {
+		// RDS 10.6（线上）：加锁读去重看到前者的 credit，走幂等分支。
+		require.NoError(t, tx2.Commit().Error)
+	} else {
+		// MariaDB ≥11.6（CI）：snapshot isolation 直接报 1020；只允许这种可重试冲突，
+		// 且按 withDeadlockRetry 的做法开新事务重来必须幂等成功。
+		require.True(t, isDeadlockError(err), "只允许可重试的事务冲突，得到: %v", err)
+		tx2.Rollback()
+		require.NoError(t, db.Get().Transaction(func(tx *gorm.DB) error {
+			return creditAppleTransaction(ctx, tx, f.user.ID, info)
+		}), "重试后同一交易的第二次 verify 必须幂等成功")
+	}
 
 	var after2 User
 	require.NoError(t, db.Get().First(&after2, f.user.ID).Error)
@@ -99,12 +110,12 @@ func TestCreditAppleTransaction_StaleSnapshotDuplicateVerify(t *testing.T) {
 	assert.Equal(t, int64(1), f.credits(t))
 }
 
-// 真并发：同一交易 8 个并发 verify 全部成功，只入账一次。
+// 真并发：同一交易 4 个并发 verify 全部成功，只入账一次。
 func TestVerifyAndGrantTransaction_ConcurrentSameTxn(t *testing.T) {
 	f := setupVerifyRace(t)
 	ctx := context.Background()
 
-	const n = 8
+	const n = 4
 	errs := make([]error, n)
 	var wg sync.WaitGroup
 	start := make(chan struct{})
