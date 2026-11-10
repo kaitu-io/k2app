@@ -35,6 +35,7 @@ import Footer from '@/components/Footer';
 import Breadcrumb from '@/components/Breadcrumb';
 import { faqPageJsonLd } from '@/lib/content-faq';
 import type { Brand } from '@/lib/brands';
+import { prerenderLocales } from '@/lib/prerender-locales';
 
 type Props = {
   params: Promise<{ locale: string; slug: string[] }>;
@@ -68,9 +69,12 @@ export function generateStaticParams(): { locale: string; slug: string[] }[] {
     );
     if (categoryPosts.length === 0) continue;
 
-    for (const locale of brand.allowedLocales) {
-      push(locale, [category]);
-      for (const post of categoryPosts) {
+    for (const locale of brand.allowedLocales) push(locale, [category]);
+    // Posts: only versions worth prerendering (lib/prerender-locales.ts) — a
+    // foreign-language fallback of a Chinese post renders on demand.
+    for (const post of categoryPosts) {
+      const postSlug = post.slug.slice(category.length + 1);
+      for (const locale of prerenderLocales(contentPostLocales(category, postSlug, brand), brand)) {
         push(locale, post.slug.split('/'));
       }
     }

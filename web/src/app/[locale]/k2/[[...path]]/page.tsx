@@ -18,6 +18,7 @@ import { type K2Post, isPostVisibleToBrand, findK2Post, k2PostLocales } from '@/
 import { getBrand } from '@/lib/brand-server';
 import { siteBrand, localizedWordmark } from '@/lib/brands';
 import { generateMetadata as generateBaseMetadata } from '../../metadata';
+import { prerenderLocales } from '@/lib/prerender-locales';
 
 /** Resolve a slug from the optional catch-all path param. */
 function resolveSlug(path: string[] | undefined): string {
@@ -166,7 +167,9 @@ export function generateStaticParams(): { locale: string; path: string[] | undef
     // Strip "k2/" prefix to get the path segments
     const pathSegments = post.slug.slice('k2/'.length).split('/');
 
-    for (const locale of brand.allowedLocales) {
+    // Only versions worth prerendering (lib/prerender-locales.ts) — a
+    // foreign-language fallback of a Chinese doc renders on demand.
+    for (const locale of prerenderLocales(k2PostLocales(post.slug, brand.id), brand)) {
       push(locale, pathSegments);
     }
   }
