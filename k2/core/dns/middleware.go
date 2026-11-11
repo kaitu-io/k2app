@@ -3,7 +3,6 @@ package dns
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -12,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kaitu-io/k2/core/packet"
 	"github.com/kaitu-io/k2/rule"
 	"github.com/miekg/dns"
 )
@@ -81,9 +79,6 @@ type Middleware struct {
 	// — the meta-less pipeline is byte-identical to the pre-R2 behavior.
 	matchDNSMeta func(rule.ConnMeta) (rule.Target, bool)
 
-	// Writer for sending raw IP packet responses (L3 mode, nil for L4)
-	writer io.Writer
-
 	// Engine root context for background prefresh (nil disables prefresh)
 	engineCtx context.Context
 
@@ -113,7 +108,6 @@ type MiddlewareConfig struct {
 	DNSRouter     func(rule.Target) bool // true = proxy DNS, false = direct DNS
 	RejectTarget  rule.Target            // outbound index for reject (engine provides)
 	MatchDNSMeta  func(rule.ConnMeta) (rule.Target, bool) // per-process resolver view (nil = off)
-	Writer        io.Writer              // nil for L4-only usage
 	EngineCtx     context.Context        // engine root context for background prefresh (nil disables)
 }
 
@@ -135,7 +129,6 @@ func NewMiddleware(cfg MiddlewareConfig) *Middleware {
 		dnsRouter:    cfg.DNSRouter,
 		rejectTarget: rejectTarget,
 		matchDNSMeta: cfg.MatchDNSMeta,
-		writer:       cfg.Writer,
 		engineCtx:    cfg.EngineCtx,
 		querySem:     make(chan struct{}, maxConcurrentUpstream),
 	}
@@ -550,43 +543,6 @@ func (m *Middleware) queryUpstream(ctx context.Context, domain string, action ru
 	}
 	slog.Debug("DNS routed direct", "domain", domain)
 	return resp, nil
-}
-
-// HandleDNSQuery processes a DNS query from L3 packets (TUN device).
-// Extracts UDP payload, runs the pipeline via HandleQuery, wraps response in IP packet.
-func (m *Middleware) HandleDNSQuery(ctx context.Context, pkt []byte, info packet.Info) error {
-	// 1. Extract UDP payload
-	udpPayload, err := packet.ExtractUDPPayload(pkt)
-	if err != nil {
-		m.metrics.IncrTotal()
-		m.metrics.IncrError()
-		return fmt.Errorf("extract UDP payload: %w", err)
-	}
-
-	// 2-12. Run full pipeline via HandleQuery
-	respBytes, err := m.HandleQuery(ctx, udpPayload)
-	if err != nil {
-		return err
-	}
-
-	// 13. Build UDP/IP response packet (swap src/dst)
-	respPacket, err := packet.BuildUDPIP(
-		info.DstIP,   // DNS server IP becomes source
-		info.SrcIP,   // Client IP becomes destination
-		info.DstPort, // Port 53
-		info.SrcPort, // Client's source port
-		respBytes,
-	)
-	if err != nil {
-		return fmt.Errorf("build DNS response packet: %w", err)
-	}
-
-	// Write response back to TUN device
-	if _, err := m.writer.Write(respPacket); err != nil {
-		return fmt.Errorf("write DNS response: %w", err)
-	}
-
-	return nil
 }
 
 // createHostsResponse creates a DNS response from hosts file IPs

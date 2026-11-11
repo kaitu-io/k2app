@@ -4,9 +4,7 @@
 
 ## Pipeline (middleware.go)
 
-Two entry points:
-- **L3 (desktop TUN)**: `HandleDNSQuery(ctx, pkt []byte, info packet.Info) error` — writes response back via provider
-- **L4 (all modes)**: `HandleQuery(ctx, query []byte) ([]byte, error)` — pure bytes in/out, used by `engine.dnsHandler`
+One entry point: `HandleQuery(ctx, query []byte) ([]byte, error)` — pure bytes in/out, used by `engine.dnsHandler` (the old L3 `HandleDNSQuery` + raw-packet `core/packet` package were dead code and are removed).
 
 All entry points require `context.Context`. The engine context propagates through the entire pipeline, enabling cancellation on shutdown/reconnect.
 
