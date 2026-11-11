@@ -99,6 +99,19 @@ section: apple-id
 
 此后想下载美区应用，只要保持 App Store 登录的是这个美区 ID 即可；日常用 iCloud 仍然登你原来的国区 / 本地 ID，两者互不影响。
 
+## 账号建好之后：下载只是第一步
+
+<strong>美区 ID 解决的是「能下载」，不解决「能用」。</strong> 账号设好之后，日常下载美区免费应用一般不需要特别的网络；但下载完打开，是另一回事。
+
+- <strong>按地区限制的服务</strong>：比如 ChatGPT，OpenAI 公布的支持地区不含中国大陆（见 [OpenAI 支持的国家和地区](https://platform.openai.com/docs/supported-countries)），在国内网络下注册或登录可能被拒。
+- <strong>本身就连不上的境外服务</strong>：有些应用装好了，在国内网络下根本打不开或一直转圈。
+
+所以多数人注册美区 ID 是为了下某个具体的应用，之后要看那个应用能不能在你的网络下正常用：
+
+- 只想下载、离线使用：到上一步就够了，不需要别的。
+- 要用 ChatGPT、Claude 这类 AI 工具：先看[《国内能用 ChatGPT 和 Claude 吗？》](/guides/chatgpt-claude-china)，了解平台怎么判断账号可用性。
+- 需要稳定的境外网络：到 [开途下载页](/install) 按你的设备选版本；套餐和价格见 [购买页](/purchase)。
+
 ## 美国免税州地址速查
 
 填账单地址时，强烈建议用「免税州」的地址。美国有 <strong>5 个州不征收州销售税</strong>，用这些州的地址，将来买付费 App 或充值时能省下约 <strong>6%–10%</strong> 的税费。
@@ -158,7 +171,7 @@ section: apple-id
 ## 下一步阅读
 
 - 已经有国区 Apple ID，想直接改成美区？看[《国区 Apple ID 转美区：官方条件与步骤》](/guides/change-apple-id-region-to-us)。
-- 还没装客户端？前往 [开途下载页面](/install) 获取 macOS / Windows / 安卓客户端，注册中途需要美国网络时随时可用。
+- 美区应用下载好了，打开却用不了？看[《国内能用 ChatGPT 和 Claude 吗？》](/guides/chatgpt-claude-china)；需要境外网络时，前往 [开途下载页面](/install) 获取 macOS / Windows / 安卓客户端，注册中途需要美国网络时也随时可用。
 - [开途使用指南：k2cc 慢启动原理 + 网络问题 3 步排查](/guides/using-kaitu-and-troubleshooting)——连不上 / 慢的时候照着排查。
 - 想了解开途的协议与拥塞控制原理，看 [k2cc](/k2/k2cc)。
 - 想了解订阅与节点：[购买订阅](/purchase)。
