@@ -9,6 +9,7 @@ Server-side listener orchestration, auto-provisioning, and TCP/UDP proxy handler
 - `device_traffic.go` — Per-device traffic accumulator (UDID-keyed delta map, Rx/Tx counts)
 - `device_traffic_reporter.go` — Immutable-batch uploader (boot_id + batch_seq idempotency, retry-safe to Center)
 - `device_traffic_contract_test.go` — Wire-shape tripwire for `DeviceTrafficRequest` JSON contract
+- `pprof.go` — opt-in Go profiler. `K2_PPROF=1` starts `net/http/pprof` on **127.0.0.1:6060 only** (fixed constant, non-loopback refused, failure never fatal); default off = no listener. In the node container reach it with `docker exec k2s wget -qO /tmp/cpu.prof 'http://127.0.0.1:6060/debug/pprof/profile?seconds=30'` then `docker cp k2s:/tmp/cpu.prof .` (needs `K2_PPROF=1` in `/apps/k2s/.env` + `docker compose up -d`; `docker restart` does not re-read `.env`)
 - `*_test.go` — unit tests for TLS peek, handlers, auto-provisioning
 
 ## Server DNS Cache

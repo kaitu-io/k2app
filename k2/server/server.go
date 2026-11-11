@@ -497,6 +497,11 @@ func (s *Server) Run(ctx context.Context) error {
 	// Feed QUIC listener into wire server.
 	s.quicSrv.Listen(quicLn)
 
+	// Opt-in CPU/heap profiler (K2_PPROF=1). Loopback-only, off by default; see pprof.go.
+	if pprofEnabled() {
+		startPProf(ctx, pprofListenAddr)
+	}
+
 	var wg sync.WaitGroup
 
 	// DIAG: auth-rollout — one INFO summary every 5 minutes (spec §7.2).
