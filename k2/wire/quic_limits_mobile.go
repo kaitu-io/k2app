@@ -8,18 +8,21 @@ package wire
 // 8 MB supports ~4 concurrent video streams (YouTube Shorts prefetch)
 // while staying under iOS NE jetsam (~50 MB total, Go runtime ~20-30 MB).
 //
-// THESE NO LONGER APPLY TO THE FINGERPRINTED CLIENT QUIC LEG. kuic makes the
-// ClientHelloSpec's transport parameters authoritative for the wire, so what
-// that leg advertises is what buildChromeH3Spec sends — Chrome's 6 MB stream /
-// 15 MB connection. The values here still govern the server side and any
-// unfingerprinted dial.
-//
-// That roughly doubles the worst-case buffered-data cap on iOS NE against a
-// jetsam limit these numbers were chosen for. It was accepted deliberately, to
-// keep the transport parameters indistinguishable from Chrome's, and it is the
-// first thing to measure on a real device. If jetsam kills show up, the
-// narrowest fix is to give buildChromeH3Spec these windows instead of Chrome's
-// — losing fidelity on three parameters while keeping the rest.
+// The fingerprinted client QUIC leg advertises quicSpec* below, not the values
+// above, because kuic makes the ClientHelloSpec's transport parameters
+// authoritative for the wire. Chrome's 6 MB stream / 15 MB connection would
+// hand the server more credit than our local flow controller accepts (2 MB /
+// 8 MB), so a server burst past 2 MB unread was rejected locally with
+// "FLOW_CONTROL_ERROR (local): received N bytes on stream S, allowed 2097152"
+// and killed the whole connection (every proxy stream and the UDP mux).
+// Mobile therefore advertises exactly what it enforces — this loses fidelity
+// on three transport parameters (initial_max_stream_data_*, initial_max_data)
+// and keeps the rest of the Chrome parrot.
+const (
+	quicSpecStreamWindow     = quicStreamWindow
+	quicSpecConnectionWindow = quicConnectionWindow
+)
+
 const (
 	quicStreamWindow     = 2 << 20 // 2 MB per stream
 	quicConnectionWindow = 8 << 20 // 8 MB aggregate (worst-case memory cap)

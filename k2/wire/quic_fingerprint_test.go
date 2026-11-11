@@ -229,3 +229,45 @@ func TestChromeH3InitialPacketSpec(t *testing.T) {
 		t.Errorf("QUICRandomFrames = %+v, want %+v", *rf, want)
 	}
 }
+
+// TestChromeH3Spec_AdvertisedWindowsFitLocalWindows pins the invariant behind
+// "FLOW_CONTROL_ERROR (local): received N bytes on stream S, allowed 2097152":
+// kuic puts the spec's flow-control parameters on the wire, so each must be
+// <= the receive window the local flow controller enforces (quic.go). A larger
+// advertisement lets the peer legitimately send more than we accept, and the
+// connection is closed. Runs under every build tag, so `GOOS=ios`/android
+// cross-vet and desktop test runs both check their own constants.
+func TestChromeH3Spec_AdvertisedWindowsFitLocalWindows(t *testing.T) {
+	spec, err := buildChromeH3Spec()
+	if err != nil {
+		t.Fatalf("buildChromeH3Spec: %v", err)
+	}
+	var streamParams, connParams int
+	for _, p := range quicTransportParametersExtension(t, spec).TransportParameters {
+		switch v := p.(type) {
+		case tls.InitialMaxStreamDataBidiLocal:
+			streamParams++
+			if uint64(v) > quicStreamWindow {
+				t.Errorf("advertises initial_max_stream_data_bidi_local=%d > local stream window %d", uint64(v), uint64(quicStreamWindow))
+			}
+		case tls.InitialMaxStreamDataBidiRemote:
+			streamParams++
+			if uint64(v) > quicStreamWindow {
+				t.Errorf("advertises initial_max_stream_data_bidi_remote=%d > local stream window %d", uint64(v), uint64(quicStreamWindow))
+			}
+		case tls.InitialMaxStreamDataUni:
+			streamParams++
+			if uint64(v) > quicStreamWindow {
+				t.Errorf("advertises initial_max_stream_data_uni=%d > local stream window %d", uint64(v), uint64(quicStreamWindow))
+			}
+		case tls.InitialMaxData:
+			connParams++
+			if uint64(v) > quicConnectionWindow {
+				t.Errorf("advertises initial_max_data=%d > local connection window %d", uint64(v), uint64(quicConnectionWindow))
+			}
+		}
+	}
+	if streamParams != 3 || connParams != 1 {
+		t.Fatalf("found %d stream-window and %d connection-window params, want 3 and 1 — the switch above no longer sees them, so the check is vacuous", streamParams, connParams)
+	}
+}

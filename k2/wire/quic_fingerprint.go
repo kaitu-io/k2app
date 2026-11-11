@@ -74,7 +74,7 @@ func buildChromeH3Spec() (*tls.ClientHelloSpec, error) {
 	// fixed order would itself be the discriminator.
 	tpExt := shuffleQUICTransportParameters(&tls.QUICTransportParametersExtension{
 		TransportParameters: tls.TransportParameters{
-			tls.InitialMaxStreamDataBidiRemote(6291456),
+			tls.InitialMaxStreamDataBidiRemote(quicSpecStreamWindow),
 			tls.MaxDatagramFrameSize(65536),
 			&tls.VersionInformation{
 				ChoosenVersion:    tls.VERSION_1,
@@ -84,15 +84,15 @@ func buildChromeH3Spec() (*tls.ClientHelloSpec, error) {
 			tls.MaxUDPPayloadSize(1472),
 			tls.MaxIdleTimeout(30000),
 			initialRTT, // 0x3127 google_initial_rtt, new in Chrome 146
-			tls.InitialMaxData(15728640),
-			tls.InitialMaxStreamDataUni(6291456),
+			tls.InitialMaxData(quicSpecConnectionWindow),
+			tls.InitialMaxStreamDataUni(quicSpecStreamWindow),
 			tls.InitialSourceConnectionID([]byte{}),
 			greaseQTP,
 			&tls.FakeQUICTransportParameter{ // 0x3128 google_connection_options
 				Id:  0x3128,
 				Val: []byte{0x31, 0x30, 0x41, 0x46}, // "10AF"; was "RVCM" through Chrome 115
 			},
-			tls.InitialMaxStreamDataBidiLocal(6291456),
+			tls.InitialMaxStreamDataBidiLocal(quicSpecStreamWindow),
 			tls.InitialMaxStreamsBidi(100),
 			tls.InitialMaxStreamsUni(103),
 		},
