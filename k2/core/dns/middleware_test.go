@@ -253,8 +253,8 @@ func TestHandleQuery_InvalidBytes(t *testing.T) {
 	}
 }
 
-func TestHandleQuery_NilWriter(t *testing.T) {
-	// Middleware with nil Writer (L4 mode) -- HandleQuery works fine
+func TestHandleQuery_L4(t *testing.T) {
+	// HandleQuery is pure bytes-in/bytes-out; no writer involved
 	directQ := &mockQuerier{
 		resp: buildAResponse("l4.example.com", net.ParseIP("1.2.3.4")),
 	}
@@ -264,7 +264,6 @@ func TestHandleQuery_NilWriter(t *testing.T) {
 		ProxyDNS:   &mockQuerier{resp: buildAResponse("l4.example.com", net.ParseIP("5.6.7.8"))},
 		MatchRule:  alwaysDirect,
 		SetTmpRule: nopSetTmp,
-		Writer:     nil, // L4 mode -- no writer
 	})
 
 	query := buildAQuery("l4.example.com")

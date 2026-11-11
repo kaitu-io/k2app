@@ -1,7 +1,6 @@
 package core
 
 import (
-	"github.com/kaitu-io/k2/core/packet"
 	"github.com/kaitu-io/k2/rule"
 )
 
@@ -13,11 +12,6 @@ type Router struct {
 // NewRouter creates a new router backed by the given rule engine.
 func NewRouter(engine *rule.Engine) *Router {
 	return &Router{engine: engine}
-}
-
-// Route makes a routing decision for a packet.
-func (r *Router) Route(info packet.Info) rule.Target {
-	return r.engine.Match(info.DstIP)
 }
 
 // RouteAddr makes a routing decision for a host address (IP or domain).

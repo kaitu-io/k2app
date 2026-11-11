@@ -95,11 +95,3 @@ Routes traffic using in-tree `rule.Engine` (domain/IP → `rule.Target` opaque i
 ```bash
 go test ./core/...    # Tunnel + router + outbound tests
 ```
-
-## Packet (packet/)
-
-IP packet parsing for gVisor integration.
-
-- `packet.go` — Parse IPv4/IPv6 headers, extract protocol/IPs/ports
-- `packet.Info` struct: `Protocol`, `SrcIP`, `DstIP`, `SrcPort`, `DstPort` (no methods)
-- **Vestigial**: `Info` only appears in the signatures of `Router.Route` and `dns.Middleware.HandleDNSQuery`, and neither (nor `packet.Parse`) has a non-test caller — the tunnel routes from gVisor L4 connections and never parses raw packets. Candidate for removal.
