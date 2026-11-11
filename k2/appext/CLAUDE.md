@@ -17,15 +17,16 @@ adding a Go HTTPS client + JSON cache + background refresher inflates binary
 size and complexity. It also keeps the platform shell stateless — engine
 receives an already-resolved configuration.
 
-Subscription URL resolution on mobile happens **in the main App webapp**
-(`webapp/src/services/subs-resolver.ts`) before `_k2.run('up', config)`.
+Mobile has **no `k2subs://` resolution at all** (the webapp resolver was deleted;
+see `mobile/CLAUDE.md`): the user picks a tunnel and the webapp passes that single
+`k2v5://` URL as `_k2.run('up', {routes:[{via:'k2v5://...'}]})`.
 Engine receives `routes:[{via:'k2v5://...'}]` like any other connection.
 
 If a `k2subs://` route reaches engine here, `engine.Start` step 6.5 builds
 transports only for `k2v5://` routes (`buildOutboundMap` gives the k2subs route a
 target index but nothing dials it) → 0 wire outbounds → TUN mode fails with
 "no k2v5 outbound configured — TUN mode requires at least one" (unclassified → 570).
-This is the symptom of a webapp bug (smart mode missing the resolver), not an engine bug.
+This is the symptom of a webapp bug (a `k2subs://` route leaked into a mobile config), not an engine bug.
 
 ## API Surface
 

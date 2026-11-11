@@ -101,5 +101,5 @@ go test ./core/...    # Tunnel + router + outbound tests
 IP packet parsing for gVisor integration.
 
 - `packet.go` — Parse IPv4/IPv6 headers, extract protocol/IPs/ports
-- `packet.Info` struct with `IsDNS()`, `Protocol`, `SrcIP`, `DstIP`, `SrcPort`, `DstPort`
-- Used by Provider layer for diagnostics, not by tunnel (gVisor delivers L4 connections)
+- `packet.Info` struct: `Protocol`, `SrcIP`, `DstIP`, `SrcPort`, `DstPort` (no methods)
+- **Vestigial**: `Info` only appears in the signatures of `Router.Route` and `dns.Middleware.HandleDNSQuery`, and neither (nor `packet.Parse`) has a non-test caller — the tunnel routes from gVisor L4 connections and never parses raw packets. Candidate for removal.

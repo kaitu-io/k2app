@@ -142,7 +142,7 @@ export async function resolveEntries(): Promise<string[]> {
   return entries;
 }
 
-/** 主（最佳）entry —— 向后兼容的单串 API（buildSubsUrl 用）。 */
+/** 主（最佳）entry —— 向后兼容的单串 API。 */
 export async function resolveEntry(): Promise<string> {
   return (await resolveEntries())[0] ?? DEFAULT_ENTRY;
 }

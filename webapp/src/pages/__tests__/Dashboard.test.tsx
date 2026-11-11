@@ -118,7 +118,7 @@ const createMockConnectionStore = (overrides = {}) => ({
   feedbackRequested: false,
   pendingFeedback: false,
   lastConnectionInfo: null,
-  serverMode: 'manual' as 'manual' | 'self_hosted' | 'k2sub',
+  serverMode: 'manual' as 'manual' | 'self_hosted',
   serverModeLoaded: true,
   setServerMode: vi.fn().mockResolvedValue(undefined),
   selectCloudTunnel: mockSelectCloudTunnel,
@@ -241,8 +241,7 @@ describe('Dashboard', () => {
   describe('隧道选择状态', () => {
     it('未选择隧道时应该显示 hasTunnelSelected=no', async () => {
       // Only legitimately-unselected production state: self_hosted mode with
-      // no configured tunnel. (Manual mode always has Auto fallback; k2sub
-      // always has subsCountry=null fallback — neither can be "unselected".)
+      // no configured tunnel. (Manual mode always has Auto fallback and cannot be "unselected".)
       vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
         const state = createMockConnectionStore({
           serverMode: 'self_hosted' as const,
@@ -633,63 +632,6 @@ describe('Dashboard', () => {
         return selector ? selector(state) : state;
       });
       (useConnectionStore as any).getState = vi.fn(() => state);
-
-      render(<Dashboard />);
-
-      const toggleBtn = screen.getByTestId('toggle-btn');
-      fireEvent.click(toggleBtn);
-
-      await waitFor(() => {
-        expect(mockConnect).toHaveBeenCalled();
-      });
-    });
-  });
-
-  describe('serverMode = k2sub (gateway)', () => {
-    // Regression: picking a k2subs:// link (gateway K2sub tab) used to leave
-    // the connect button disabled because the old hasTunnelSelected check
-    // only recognized manual + Auto sentinel and self_hosted's activeTunnel.
-    // The daemon resolves k2subs:// itself, so the UI is always ready.
-
-    it('connect button enabled in k2sub mode + disconnected (Auto/no country)', async () => {
-      vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine({
-        state: 'idle',
-        isDisconnected: true,
-      }) as any);
-      const state = createMockConnectionStore({
-        serverMode: 'k2sub' as const,
-        selectedCloudTunnel: null,
-        activeTunnel: null,
-      });
-      vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
-        return selector ? selector(state) : state;
-      });
-      (useConnectionStore as any).getState = vi.fn(() => state);
-      // useEffectiveCloudSelection returns null for non-manual modes
-      vi.mocked(useEffectiveCloudSelection).mockReturnValue(null as any);
-
-      render(<Dashboard />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('tunnel-selected')).toHaveTextContent('yes');
-      });
-    });
-
-    it('clicking connect in k2sub+disconnected calls connect() (does not abort)', async () => {
-      vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine({
-        state: 'idle',
-        isDisconnected: true,
-      }) as any);
-      const state = createMockConnectionStore({
-        serverMode: 'k2sub' as const,
-        selectedCloudTunnel: null,
-        activeTunnel: null,
-      });
-      vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
-        return selector ? selector(state) : state;
-      });
-      (useConnectionStore as any).getState = vi.fn(() => state);
-      vi.mocked(useEffectiveCloudSelection).mockReturnValue(null as any);
 
       render(<Dashboard />);
 

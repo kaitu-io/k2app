@@ -9,8 +9,7 @@ export interface CountryEntry {
 
 /**
  * Derive the unique country list from a tunnel list, sorted by tunnel count
- * desc. Shared by K2subConfig (gateway country picker) and
- * CountryFilterDialog (auto-pick exclusion filter).
+ * desc. Used by CountryFilterDialog (auto-pick exclusion filter).
  */
 export function buildCountryList(tunnels: Tunnel[]): CountryEntry[] {
   const counts: Record<string, number> = {};
