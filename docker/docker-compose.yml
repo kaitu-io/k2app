@@ -115,6 +115,10 @@ services:
     environment:
       - TZ=Asia/Singapore
       - K2_LOG_LEVEL=${K2V5_LOG_LEVEL:-info}
+      # Opt-in Go profiler, loopback-only inside the container (127.0.0.1:6060),
+      # so it is reachable only via `docker exec k2s wget -qO- http://127.0.0.1:6060/...`.
+      # Unset/0 (the default) = no listener at all. Set K2_PPROF=1 in .env to collect.
+      - K2_PPROF=${K2_PPROF:-0}
       # Per-device traffic accounting (per-user-traffic-accounting spec §9):
       # k2s's in-process deviceTrafficReporter starts only when BOTH are set
       # (config.go: UsageReportURL + NodeSecret are env-only, yaml:"-"). Pass

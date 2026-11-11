@@ -3,12 +3,26 @@
 # Build and push kaitu slave Docker images to ECR
 #
 # Usage: make publish-docker
+#        scripts/publish-docker.sh --no-latest   # push ONLY the pinned :vX.Y.Z-<commit> tag
 #
-# Images (each with :latest + :vX.Y.Z-<commit>):
+# --no-latest matters: nodes without a pinned K2_VERSION run :latest, and
+# docker/scripts/auto-update.sh pulls it nightly, so pushing :latest is itself a
+# fleet rollout. Use --no-latest for any build that must wait for a deliberate,
+# staged rollout (canary / diagnostic builds).
+#
+# Images (each with :latest + :vX.Y.Z-<commit>, unless --no-latest):
 #   - public.ecr.aws/d6n9t2r2/k2s
 #   - public.ecr.aws/d6n9t2r2/k2-sidecar
 #
 set -e
+
+PUSH_LATEST=1
+for arg in "$@"; do
+    case "$arg" in
+        --no-latest) PUSH_LATEST=0 ;;
+        *) echo "Unknown argument: $arg" >&2; exit 1 ;;
+    esac
+done
 
 ECR_REGISTRY="public.ecr.aws/d6n9t2r2"
 
@@ -48,12 +62,16 @@ echo "  -> docker/sidecar/k2-sidecar"
 # 2. Docker build (alpine)
 echo ""
 echo "[2/4] Building Docker images (alpine)..."
+LATEST_K2S=(); LATEST_SIDECAR=()
+if [ "$PUSH_LATEST" = 1 ]; then
+    LATEST_K2S=(-t "${K2V5_IMAGE}:latest"); LATEST_SIDECAR=(-t "${SIDECAR_IMAGE}:latest")
+fi
 docker build --progress=plain --platform linux/amd64 \
-    -t "${K2V5_IMAGE}:latest" \
+    "${LATEST_K2S[@]}" \
     -t "${K2V5_IMAGE}:${TAG}" \
     docker/k2s/
 docker build --progress=plain --platform linux/amd64 \
-    -t "${SIDECAR_IMAGE}:latest" \
+    "${LATEST_SIDECAR[@]}" \
     -t "${SIDECAR_IMAGE}:${TAG}" \
     docker/sidecar/
 
@@ -71,17 +89,19 @@ echo "[4/4] Pushing to ECR..."
 aws ecr-public get-login-password --region us-east-1 | \
     docker login --username AWS --password-stdin public.ecr.aws
 
-docker push "${K2V5_IMAGE}:latest"
+if [ "$PUSH_LATEST" = 1 ]; then
+    docker push "${K2V5_IMAGE}:latest"
+    docker push "${SIDECAR_IMAGE}:latest"
+fi
 docker push "${K2V5_IMAGE}:${TAG}"
-docker push "${SIDECAR_IMAGE}:latest"
 docker push "${SIDECAR_IMAGE}:${TAG}"
 
 echo ""
 echo "================================================"
 echo "  Done! Images pushed to ECR."
 echo "================================================"
-echo "  ${K2V5_IMAGE}:latest"
+[ "$PUSH_LATEST" = 1 ] && echo "  ${K2V5_IMAGE}:latest"
 echo "  ${K2V5_IMAGE}:${TAG}"
-echo "  ${SIDECAR_IMAGE}:latest"
+[ "$PUSH_LATEST" = 1 ] && echo "  ${SIDECAR_IMAGE}:latest"
 echo "  ${SIDECAR_IMAGE}:${TAG}"
 echo ""

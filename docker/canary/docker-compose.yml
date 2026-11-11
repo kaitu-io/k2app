@@ -16,6 +16,11 @@ services:
     volumes:
       - ./server.yml:/etc/canary/server.yml:ro
       - k2v5-data:/etc/k2v5
+    environment:
+      # Opt-in profiler (loopback 127.0.0.1:6060 inside the container). Set
+      # K2_PPROF=1 in .env, then: sudo docker exec k2s wget -qO /tmp/cpu.prof
+      # 'http://127.0.0.1:6060/debug/pprof/profile?seconds=30'
+      - K2_PPROF=${K2_PPROF:-0}
     restart: unless-stopped
 volumes:
   k2v5-data:
