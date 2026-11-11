@@ -55,6 +55,12 @@ vi.mock('../../hooks/useUser', () => ({
   useUser: vi.fn(),
 }));
 
+// Hook under test elsewhere (hooks/__tests__/useRefreshTunnelsOnMembership.test.tsx);
+// here we only pin that Dashboard wires it to the user's expiredAt.
+vi.mock('../../hooks/useRefreshTunnelsOnMembership', () => ({
+  useRefreshTunnelsOnMembership: vi.fn(),
+}));
+
 // Mock CloudTunnelList component
 vi.mock('../../components/CloudTunnelList', () => ({
   CloudTunnelList: vi.fn(() => null),
@@ -79,6 +85,7 @@ import { useDashboard } from '../../stores/dashboard.store';
 import { useVPNMachine } from '../../stores/vpn-machine.store';
 import { useConnectionStore, useEffectiveCloudSelection, useHasConnectableSelection, hasConnectableSelection, AUTO_TUNNEL_SENTINEL } from '../../stores/connection.store';
 import { useUser } from '../../hooks/useUser';
+import { useRefreshTunnelsOnMembership } from '../../hooks/useRefreshTunnelsOnMembership';
 import Dashboard from '../Dashboard';
 import { getCurrentAppConfig } from '../../config/apps';
 
@@ -188,6 +195,19 @@ describe('Dashboard', () => {
 
       await waitFor(() => {
         expect(screen.getByTestId('connection-section')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('会员入账后刷新隧道', () => {
+    it('把 user.expiredAt 接给 useRefreshTunnelsOnMembership', async () => {
+      const expiredAt = Math.floor(Date.now() / 1000) + 86400;
+      vi.mocked(useUser).mockReturnValue({ user: { expiredAt }, loading: false } as any);
+
+      render(<Dashboard />);
+
+      await waitFor(() => {
+        expect(useRefreshTunnelsOnMembership).toHaveBeenCalledWith(expect.anything(), expiredAt);
       });
     });
   });

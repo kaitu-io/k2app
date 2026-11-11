@@ -48,6 +48,7 @@ import RoutingModeSelector, { useRoutingSummary } from '../components/RoutingMod
 import { AlwaysOnToggle } from '../components/AlwaysOnToggle';
 import { useDashboard } from '../stores/dashboard.store';
 import { CloudTunnelList, type CloudTunnelListHandle } from '../components/CloudTunnelList';
+import { useRefreshTunnelsOnMembership } from '../hooks/useRefreshTunnelsOnMembership';
 import { getFlagIcon } from '../utils/country';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
 import { cacheStore } from '../services/cache-store';
@@ -262,6 +263,8 @@ export default function Dashboard() {
   // round-trip, and surface failures via a transient Snackbar rather than
   // letting them bubble up as alarming inline errors.
   const cloudTunnelListRef = useRef<CloudTunnelListHandle>(null);
+  // 购买/恢复/兑换等让会员由无到有后重拉隧道列表（否则 cloudAccessRevoked 一直不放下）
+  useRefreshTunnelsOnMembership(cloudTunnelListRef, user?.expiredAt);
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [refreshFailSnack, setRefreshFailSnack] = useState(false);
 
