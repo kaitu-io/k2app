@@ -17,6 +17,8 @@
 # Knobs (env): BIN (k2 client binary, e.g. an older build as the known-bad control), MOBILE (K2_MOBILE_POWER_SAVING), BIG, BIG_PROB, LOSS, DELAY, JITTER,
 #   HASHLIMIT_RATE, HASHLIMIT_BURST, PAD (bytes of X-Pad header), TARGET (http url), TRAFFIC_INTERVAL,
 #   BASELINE, SOAK, RECOVERY, PAUSE_AT, RESUME_AT, REMOVE_AT, REINJECT_AT (seconds after injection), TAG,
+#   RECONNECT_AT="60 150" (seconds after injection: user-style disconnect + connect through the daemon API, the
+#   daemon process stays up — what carries engine/path_memory.go from one session to the next), RECONNECT_GAP,
 #   SHORT_ONLY=1 (BIG applies only to QUIC short-header packets: 1-RTT data dies, handshake Initials pass —
 #   the "handshake + echo fine, requests time out" fingerprint of #3757)
 set -uo pipefail
@@ -27,6 +29,7 @@ BIN="${BIN:-$BUILD/k2}"; K2S="${K2S:-$BUILD/k2s}"; GEN="${GEN:-$BUILD/gen-config
 UPLINK="${UPLINK:-$(ip route show default | awk '/default/ {print $5; exit}')}"
 : "${MOBILE:=1}" "${BIG:=0}" "${BIG_PROB:=1}" "${LOSS:=0}" "${DELAY:=0}" "${JITTER:=0}" "${HASHLIMIT_RATE:=}" "${HASHLIMIT_BURST:=6kb}"
 : "${SHORT_ONLY:=0}" "${PAD:=0}" "${TARGET:=http://44.44.44.44:8080/}" "${TRAFFIC_INTERVAL:=0.5}" "${SERVER_BLACKHOLE:=0}"
+: "${RECONNECT_AT:=}" "${RECONNECT_GAP:=3}"
 : "${BASELINE:=30}" "${SOAK:=240}" "${RECOVERY:=90}" "${PAUSE_AT:=0}" "${RESUME_AT:=0}" "${REMOVE_AT:=0}" "${REINJECT_AT:=0}" "${TAG:=run}"
 OUT="$LAB/results/$TAG"; mkdir -p "$OUT"; : > "$OUT/driver.log"
 [[ -x "$BIN" && -x "$K2S" && -x "$GEN" ]] || { echo "missing binaries: $BIN $K2S $GEN"; exit 1; }
@@ -117,6 +120,9 @@ mkdir -p "$LAB/etc" "$LAB/www" /var/log/kaitu; : > /var/log/kaitu/k2.log
 echo "hello" > "$LAB/www/index.html"
 (cd "$LAB/www" && exec python3 -m http.server 8080 --bind 44.44.44.44 >/dev/null 2>&1) & HTTP_PID=$!
 "$GEN" -out "$LAB/etc" -host 10.200.1.2 -port 443 -listen 0.0.0.0:1777 >"$OUT/gen.log" 2>&1 || { log "gen-config failed"; exit 1; }
+# k2s refuses to start without an auth validator; gen-config's client URL carries the fixed lab credential.
+echo "docker-device:docker-token" > "$LAB/etc/users"
+grep -q '^auth:' "$LAB/etc/server.yaml" || printf 'auth:\n  users_file: "%s"\n' "$LAB/etc/users" >> "$LAB/etc/server.yaml"
 $SRV "$K2S" run -c "$LAB/etc/server.yaml" >"$OUT/k2s.log" 2>&1 </dev/null & K2S_PID=$!
 for i in $(seq 1 20); do $SRV ss -ulnp 2>/dev/null | grep -q ':443 ' && break; sleep 1; done
 $SRV ss -ulnp 2>/dev/null | grep -q ':443 ' || { log "k2s not listening"; cat "$OUT/k2s.log" | tail -20; exit 1; }
@@ -142,6 +148,17 @@ log "connected"
 # traffic loop must run inside ns cli: wrap start_traffic
 start_traffic_ns() { OUT="$OUT" SOCKS="$SOCKS" TARGET="$TARGET" PAD_HDR="$PAD_HDR" TRAFFIC_INTERVAL="$TRAFFIC_INTERVAL" $CLI bash -c "$(declare -f start_traffic); start_traffic; wait" >/dev/null 2>&1 </dev/null & TRAFFIC_PID=$!; }
 stop_traffic_ns() { [[ -n "${TRAFFIC_PID:-}" ]] && pkill -P "$TRAFFIC_PID" 2>/dev/null; kill "$TRAFFIC_PID" 2>/dev/null; wait "$TRAFFIC_PID" 2>/dev/null; TRAFFIC_PID=""; pkill -f "curl -s -o /dev/null -w" 2>/dev/null; }
+core_state() { $CLI curl -sf -X POST "$API/api/core" -H 'Content-Type: application/json' -d '{"action":"status"}' 2>/dev/null | jq -r '.data.state // empty'; }
+reconnect_session() {
+  log "session: DOWN (t=+${1}s)"
+  $CLI "$BIN" down >>"$OUT/ctl-up.log" 2>&1
+  for i in $(seq 1 15); do [[ "$(core_state)" == "disconnected" ]] && break; sleep 1; done
+  sleep "$RECONNECT_GAP"
+  $CLI "$BIN" up "$LAB/etc/client.yaml" >>"$OUT/ctl-up.log" 2>&1 &
+  local st=""
+  for i in $(seq 1 40); do st=$(core_state); [[ "$st" == "connected" ]] && break; sleep 1; done
+  log "session: UP state=$st"
+}
 start_traffic_ns
 log "traffic started; baseline ${BASELINE}s"; sleep "$BASELINE"
 inject; T_INJECT=$(ts); log "injected at $T_INJECT; soak ${SOAK}s"
@@ -152,6 +169,7 @@ while (( elapsed < SOAK )); do
   (( RESUME_AT > 0 && elapsed == RESUME_AT )) && { start_traffic_ns; log "traffic RESUMED (t=+${elapsed}s)"; }
   (( REMOVE_AT > 0 && elapsed == REMOVE_AT )) && { remove; log "shaping REMOVED mid-soak (t=+${elapsed}s)"; }
   (( REINJECT_AT > 0 && elapsed == REINJECT_AT )) && { inject; log "shaping RE-INJECTED (t=+${elapsed}s)"; }
+  for r in $RECONNECT_AT; do (( elapsed == r )) && reconnect_session "$elapsed"; done
 done
 remove; T_REMOVE=$(ts); log "removed at $T_REMOVE; recovery ${RECOVERY}s"
 [[ -z "${TRAFFIC_PID:-}" ]] && start_traffic_ns
