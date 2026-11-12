@@ -177,6 +177,11 @@ type healthMonitor struct {
 	smoothWireLoss  float64
 	ewmaInitialized bool
 
+	// lastActiveChannel is the serving channel ("quic" | "tcpws") seen by
+	// the previous sample; "" before the first one. See
+	// noteActiveChannelLocked.
+	lastActiveChannel string
+
 	ring     [ringSize]HealthSnapshot
 	ringIdx  int
 	ringFull bool
@@ -354,6 +359,7 @@ func (hm *healthMonitor) sample() {
 	_, wakeReconnect := hm.wake.checkWake(now, hm.health, ws.Transport,
 		int(time.Since(hm.connectedAt).Seconds()))
 
+	hm.noteActiveChannelLocked(activeChannel)
 	hm.updateSmoothLossLocked(ws)
 
 	// Assess health from smoothed metrics.
@@ -542,6 +548,33 @@ func (hm *healthMonitor) updateSmoothLossLocked(ws wire.WireStats) {
 		return
 	}
 	hm.smoothWireLoss = ewmaAlpha*ws.PacketLossRate + (1-ewmaAlpha)*hm.smoothWireLoss
+}
+
+// noteActiveChannelLocked restarts the health grade when the serving channel
+// changed since the previous sample. Caller holds hm.mu.
+//
+// smoothWireLoss is an EWMA of the QUIC congestion controller's loss, and
+// tcpws reports none (see assess). Right after the selector moves an outbound
+// to tcpws, the EWMA still carries QUIC's last readings and needs several
+// samples to decay under the critical line — and for those samples a clean
+// tcpws is graded critical on QUIC's history, so maybeAct can fire a full
+// reconnect that closes the channel that just took over (ticket #4055:
+// transport-switch at 11:29:44.8, "full reconnect" at 11:29:45.8). The other
+// direction is the same statement mirrored: a QUIC that just resumed serving
+// must be graded on what it does now. The reconnect backoff (lastAction /
+// actionRepeats) is left alone, as in resetCounters.
+func (hm *healthMonitor) noteActiveChannelLocked(active string) {
+	prev := hm.lastActiveChannel
+	hm.lastActiveChannel = active
+	if prev == "" || active == "" || prev == active {
+		return
+	}
+	hm.health = HealthHealthy
+	hm.degradedStreak = 0
+	hm.criticalStreak = 0
+	hm.healthyStreak = 0
+	hm.smoothWireLoss = 0
+	hm.ewmaInitialized = false
 }
 
 // transition updates health state and streaks.
