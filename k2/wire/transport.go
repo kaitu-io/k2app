@@ -257,6 +257,13 @@ type selectorState struct {
 	// later. Both get the same escalation as a failure 20s after rollback.
 	trialProven     bool
 	firstAnsweredAt time.Time
+
+	// pathEvidence is set once the selector has left QUIC for a quality or
+	// data-path reason (never for a handshake streak or a lost race). It is
+	// what makes this state worth carrying to the next TransportManager on
+	// the same network — see PathVerdict. Path-scoped: survives
+	// ReplacePrimary, cleared by Reset.
+	pathEvidence bool
 }
 
 // selectorInput is one evaluation's observations. All scores are ChannelScore.Value.
@@ -863,6 +870,9 @@ func (tm *TransportManager) evaluateSelector(now time.Time) channelDecision {
 		dataPathDistressed: distressed,
 	}
 	newState, decision := selectorStep(tm.selState, in)
+	if decision == channelSwitchToTCPWS && in.consecConnFails < quicConnFailThreshold {
+		newState.pathEvidence = true
+	}
 	tm.selState = newState
 	if decision == channelSwitchToQUIC {
 		// The trial starts with a clean slate: the timeouts that sent us to
@@ -1028,6 +1038,7 @@ func (tm *TransportManager) ReplacePrimary(d Dialer, transportType string) {
 		rollbackAt:      prev.rollbackAt,
 		trialProven:     prev.trialProven,
 		firstAnsweredAt: prev.firstAnsweredAt,
+		pathEvidence:    prev.pathEvidence,
 	}
 	if prev.active == "tcpws" {
 		tm.selState.rollbackAt = now

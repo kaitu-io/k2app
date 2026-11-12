@@ -486,6 +486,9 @@ func (e *Engine) Start(cfg Config) error {
 		}
 		return e.fail(fmt.Errorf("outbound setup: %w", firstErr))
 	}
+	// Same network as the last session, and that session found the QUIC path
+	// bad? Start on tcpws instead of re-learning it (ticket #4055).
+	applyPathMemory(allOTs, time.Now())
 
 	// TUN mode requires at least one k2v5 outbound for DNS proxy transport.
 	// Before the per-outbound refactor, wire.ParseURL(client.Server) in step 2
@@ -791,6 +794,9 @@ func (e *Engine) reconnect(preserveScoreboard bool) bool {
 			ot.tm.Reset()
 		}
 	}
+	if !preserveScoreboard {
+		pathMemory.clear() // the path the verdict described is gone
+	}
 	if pdns != nil {
 		pdns.ResetConnections()
 	}
@@ -1093,7 +1099,14 @@ func (e *Engine) Stop() error {
 	nc := e.netCoord
 	e.netCoord = nil
 	e.dnsH = nil
+	memTM := e.primaryTM
 	e.mu.Unlock()
+
+	// What this session learned about the QUIC path goes to the next one.
+	// Read before teardown; outside e.mu (takes TransportManager.mu).
+	if memTM != nil {
+		pathMemory.record(memTM.tm, time.Now())
+	}
 
 	// Stop goroutines WITHOUT holding e.mu — health monitor's onReconnect
 	// callback calls OnNetworkChanged() which briefly acquires e.mu.
