@@ -426,9 +426,13 @@ func creditAppleTransaction(ctx context.Context, tx *gorm.DB, userID uint64, inf
 	// 与 Stripe 同口径。sub 行已在上面 Save 过，这里单独更新。已接受的偏差：宽限期后续订成功时
 	// granted 从 graceEnd 起算，PaidThrough 比真实付费段少一个宽限窗（≤16 天）；赠送在购买之前
 	// 叠加时按"先消耗付费段"计数，晚退款时用户保留 min(赠送, 已用) 天——都是向用户倾斜的偏差。
+	//
+	// 起点还要取 purchaseDate：Apple 在周期开始前就投递续订（试用转付费实测提前约 8 小时），这笔
+	// 付费段从 purchaseDate 起算而不是 now。只按 now 起算时 PaidThrough 比本期末短这段提前量，
+	// 试用结束后退款会给用户留下同样长的时长（2026-11 的 6 笔试用转年付退款里 5 笔各多留约 8 小时）。
 	if granted := max(user.ExpiredAt-paidBase, 0); granted > 0 && !isTrialTxn {
 		if err := tx.Model(&Subscription{}).Where("id = ?", sub.ID).
-			Update("paid_through", max(sub.PaidThrough, now)+granted).Error; err != nil {
+			Update("paid_through", max(sub.PaidThrough, now, info.PurchaseDate/1000)+granted).Error; err != nil {
 			return fmt.Errorf("update paid_through for sub %d: %w", sub.ID, err)
 		}
 	}

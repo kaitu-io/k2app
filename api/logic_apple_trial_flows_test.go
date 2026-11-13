@@ -255,6 +255,36 @@ func TestTrial_ConvertedThenPaidTxnRefunded(t *testing.T) {
 	assert.True(t, alerts.has("[APPLE-REFUND]"))
 }
 
+// Apple 在试用结束前约 8 小时就投递转付费那笔交易（purchaseDate 在未来）：PaidThrough 必须覆盖到本期末，
+// 否则试用结束后退款会留下这段提前量。线上 6 笔试用转年付退款里 5 笔各多留了约 8 小时。
+func TestTrial_PaidTxnDeliveredBeforeTrialEnd_RefundLeavesNothing(t *testing.T) {
+	trialDB(t)
+	captureBillingAlerts(t)
+	f := setupIAPOrderFixture(t, 30, 10)
+	const early = 8 * 3600
+	now := time.Now().Unix()
+	trialEnd := now + early
+	periodEnd := trialEnd + 365*aDay
+
+	require.NoError(t, creditInfo(t, f.buyer.ID, f.trialTxn("TR-EA1", trialEnd-7*aDay, trialEnd)))
+	// 试用入账按"从现在起发一整期"算；这里要的是试用已用掉 7 天少 8 小时的状态。
+	require.NoError(t, db.Get().Model(&User{}).Where("id = ?", f.buyer.ID).Update("expired_at", trialEnd).Error)
+	require.NoError(t, creditInfo(t, f.buyer.ID, f.paidTxn("TR-EA2", trialEnd, periodEnd)))
+	s := f.subNow(t)
+	assert.InDelta(t, periodEnd, s.PaidThrough, 60, "付费段从 purchaseDate 起算，覆盖到本期末")
+
+	// 把账本整体前移 9 小时 = 试用结束 1 小时后才退款。
+	const shift = early + 3600
+	require.NoError(t, db.Get().Model(&User{}).Where("id = ?", f.buyer.ID).
+		Update("expired_at", f.userNow(t, f.buyer.ID).ExpiredAt-shift).Error)
+	require.NoError(t, db.Get().Model(&Subscription{}).Where("id = ?", s.ID).
+		Updates(map[string]any{"paid_through": s.PaidThrough - shift, "current_period_end": s.CurrentPeriodEnd - shift}).Error)
+
+	out := f.refundEv(t, "TR-EA2", trialEnd-shift, periodEnd-shift, appleRefundEvidence{SignedAt: time.Now().UnixMilli()})
+	require.True(t, out.Adopted)
+	assert.InDelta(t, time.Now().Unix(), f.userNow(t, f.buyer.ID).ExpiredAt, 180, "试用已结束：退款后不留时长")
+}
+
 // 2(c)：overleap 品牌（apple_iap 在其支付渠道里）的免费试用与 kaitu 同语义：不建单、不返佣、设 in_trial。
 func TestTrial_OverleapBrandTrial(t *testing.T) {
 	trialDB(t)
