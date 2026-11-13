@@ -43,7 +43,7 @@ Invariants from the 2026-08-10 sandbox-order incident (narrative: `docs/incident
 ## Apple 退款收回（spec `2026-10-08-apple-refund-design.md`，两品牌同一规则）
 
 - **规则**：收回被退交易自身尚未消耗的付费时长；不碰赠送；不追讨已消耗的旧期；退款被撤销就还回去。入口 `applyAppleRefund`（webhook `REFUND`/`REVOKE`、对账发现 Revoked）/ `reverseAppleRefund`（`REFUND_REVERSED`、对账探测）——`logic_apple_refund.go`。**不写品牌分支**：开途特有风险挂在开途独有功能上（邀请、钱包、分销），Overleap 这三项关闭。
-- **`PaidThrough` 现在 Apple 也维护**（`creditAppleTransaction` 入账后单独 `Update`）。扣减量 = `min(PaidThrough−now, 到期−now, 本期长度)`；更新的一期已入账（`CurrentPeriodEnd > tExp`：Apple 提前 24h 扣续费 / 迟到处理）时只收 `tExp−now`。宽限期 cover-through 不动 `PaidThrough`。
+- **`PaidThrough` 现在 Apple 也维护**（`creditAppleTransaction` 入账后单独 `Update`）。扣减量 = `min(PaidThrough−now, 到期−now, 本期长度)`；更新的一期已入账（`CurrentPeriodEnd > tExp`：Apple 提前 24h 扣续费 / 迟到处理）时只收 `tExp−now`。宽限期 cover-through 不动 `PaidThrough`。入账时 `PaidThrough` 的起点是 `max(旧值, now, purchaseDate)`：Apple 在周期开始前就投递续订（试用转付费实测提前约 8 小时），只按 `now` 起算会比本期末短这段提前量，退款后给用户留下同样长的时长。
 - **退款不改 `current_period_end`，只置 revoked**；退款之后的新付款（同 otx）按**首购口径**入账（`revival`：整期、从 `max(到期, 购买时刻)` 起叠、覆盖周期末），离开 revoked 只走 `deriveActiveOrExpired`——`deriveVerifiedStatus` 对 revoked 恒返回 revoked。被退交易从未入账则**永不入账**（`errAppleTxnRevoked`：verify 报"已退款"，webhook/对账视为已处理）。revoked 守卫：`applyRenewalInfo` 与 `setSubStatus` 的 SQL 带 `status<>'revoked'`。
 - **先后按 Apple 签名时刻（毫秒）判定，不按到达顺序**：`AppleRefund`（每笔交易一行）的 `RefundSignedAt` / `ReversedSignedAt` / `Active`。撤销先到建占位行；已在退款状态时只用 Apple 给出的时刻推后证据（now 兜底不推后——否则撤销探测冷却永不到期）；再次退款封顶 `CutSeconds − (now − RestoredAt)`，仅当上一轮确实收过也还过。
 - **webhook 信任边界**：通知与交易的 bundleId 必须是该订阅品牌的 bundle（Apple 根证书签所有 app 的通知）；`REFUND_REVERSED` 恢复前经 `fetchAppleTransaction` 复核（授予动作都过第二层）。`appleRootCAPEM` 是 var 仅供端到端测试注入。
