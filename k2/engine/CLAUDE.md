@@ -155,6 +155,9 @@ missReporter.Stop()      // last — may flush a final batch, blocks ≤5s
 - `deadlock_test.go` — Deadlock detection tests (Stop vs health goroutine)
 - `slog_migration_test.go` — Guard: no old `log.Printf` calls
 
+- `path_memory.go` — process-scoped carry-over of the channel selector's verdict on the QUIC path (`wire.PathVerdict`): recorded from the primary outbound at `Stop`, applied to every outbound after the race in `Start`, cleared by a network-change reconnect (`reconnect(false)`), 10 min TTL because a network change while disconnected raises no event — counted from `PathVerdict.EvidenceAt` (the last quality/data-path switch-away any session observed), never from the Stop that saved it: a session that only inherited the verdict cannot renew it. One-file disk copy (`path-memory.json` beside the rule cache dir: three numbers + a timestamp) so the verdict survives the iOS extension exiting with the tunnel and Android killing the app process; `bind` adopts it only when the process holds none, `clear`/proven remove it. Package-level state — tests use `resetPathMemoryForTest`. The Stop / network-change hooks are mutation-pinned by `TestEngine_StopRecordsPathMemory` and `TestEngine_NetworkChangeClearsPathMemory_HealthReconnectKeepsIt`; the Start hook only by `test/netem/nslab.sh RECONNECT_AT`.
+- `health.go` `noteActiveChannelLocked` — a change of serving channel restarts the health grade (EWMA + streaks). Without it a clean tcpws is graded critical on QUIC's loss history for a few samples and `maybeAct` reconnects the channel that just took over (ticket #4055).
+
 ## Testing
 
 ```bash

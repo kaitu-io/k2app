@@ -1709,3 +1709,58 @@ func TestEchoStep_NotProbedMatchesUnsupportedArithmetic(t *testing.T) {
 		t.Fatalf("not-probed must match unsupported arithmetic %+v, got %+v", ref, res)
 	}
 }
+
+// --- channel-switch hardening (ticket #4054/#4055) ------------------------
+
+func TestSample_ChannelSwitchDoesNotReconnectOnStaleQUICLoss(t *testing.T) {
+	// Field log, 2026-11-12T11:29:44Z: the selector moved the outbound to
+	// tcpws (reason=quic-quality-degraded); one sample later the health FSM
+	// fired "full reconnect (wire quality critical)" and closed the tcpws
+	// session that had just taken over. smoothWireLoss is an EWMA of QUIC's
+	// loss; tcpws reports none, so for the few samples the EWMA needs to
+	// decay under 0.25 a clean tcpws was graded critical on QUIC's history.
+	// A change of serving channel must start the health grade from scratch.
+	quic := &statsEchoStub{stats: wire.WireStats{
+		Transport: "quic", PacketLossRate: 0.5,
+		RTT: 500 * time.Millisecond, MinRTT: 500 * time.Millisecond,
+	}}
+	tcpws := &statsEchoStub{stats: wire.WireStats{Transport: "tcpws"}}
+	tm := wire.NewTransportManager()
+	tm.SetPrimary(quic, "quic-443")
+	tm.SetTCPWS(tcpws)
+
+	var reconnects int
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot},
+		core.NewClientTunnel(core.ClientTunnelConfig{}), nil, func() { reconnects++ }, time.Now())
+
+	// QUIC has been critical for a while; its one immediate reconnect is
+	// held back by the cooldown so this phase only establishes the baseline.
+	hm.health = HealthCritical
+	hm.criticalStreak = 5
+	hm.smoothWireLoss = 0.5
+	hm.ewmaInitialized = true
+	hm.actionRepeats = 1
+	hm.lastAction = time.Now()
+	hm.sample()
+	if reconnects != 0 {
+		t.Fatalf("setup: cooldown should hold the reconnect back, got %d", reconnects)
+	}
+	if hm.health != HealthCritical {
+		t.Fatalf("setup: want critical on the lossy quic path, got %s", hm.health)
+	}
+
+	// The episode's immediate reconnect is available again (the log line
+	// carries repeat=1), and the selector switches to tcpws.
+	hm.actionRepeats = 0
+	tm.SetFallbackActiveWithReason(true, "test")
+	hm.sample()
+
+	if reconnects != 0 {
+		t.Fatalf("a reconnect fired right after the switch to tcpws (smoothWireLoss=%.3f, health=%s) — it closes the channel that just took over",
+			hm.smoothWireLoss, hm.health)
+	}
+	if hm.health == HealthCritical {
+		t.Fatalf("tcpws is still graded critical on quic's loss history (smoothWireLoss=%.3f)", hm.smoothWireLoss)
+	}
+}
