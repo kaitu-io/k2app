@@ -1,7 +1,10 @@
 package engine
 
 import (
+	"encoding/json"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/kaitu-io/k2/wire"
@@ -23,13 +26,82 @@ const pathMemoryTTL = 10 * time.Minute
 
 // pathMemoryStore carries the channel selector's verdict on the QUIC path
 // from one Engine session to the next (wire.PathVerdict explains why).
-// Process-scoped and in-memory only: an iOS extension process recycled
-// between two connects starts with none, which is the pre-existing behavior.
+// Process-scoped, with a one-file disk copy when the shell supplies a cache
+// directory (bind): the iOS Network Extension process exits with the tunnel,
+// and Android may kill the app process between two connects, so memory alone
+// would lose the verdict exactly on the platforms it is for. The file holds
+// three numbers and a timestamp — no addresses, no identifiers.
 type pathMemoryStore struct {
 	mu      deadlock.Mutex
 	verdict wire.PathVerdict
 	savedAt time.Time
 	valid   bool
+	file    string // "" = memory only
+}
+
+const pathMemoryFileName = "path-memory.json"
+
+type pathMemoryFile struct {
+	ReviewAt     time.Time `json:"review_at"`
+	FailedTrials int       `json:"failed_trials"`
+	FlapCount    int       `json:"flap_count"`
+	SavedAt      time.Time `json:"saved_at"`
+}
+
+// bind points the store at dir and, if the process holds no verdict, adopts
+// the one on disk. A file from the future (clock change) or one that does not
+// parse is ignored; expiry is load's job. dir == "" leaves the store
+// memory-only.
+func (s *pathMemoryStore) bind(dir string, now time.Time) {
+	if dir == "" {
+		return
+	}
+	file := filepath.Join(dir, pathMemoryFileName)
+	var disk pathMemoryFile
+	haveDisk := false
+	if b, err := os.ReadFile(file); err == nil {
+		if json.Unmarshal(b, &disk) == nil && !disk.SavedAt.IsZero() && !disk.SavedAt.After(now) &&
+			disk.FailedTrials >= 0 && disk.FlapCount >= 0 {
+			haveDisk = true
+		}
+	}
+	s.mu.Lock()
+	s.file = file
+	if !s.valid && haveDisk {
+		s.verdict = wire.PathVerdict{ReviewAt: disk.ReviewAt, FailedTrials: disk.FailedTrials, FlapCount: disk.FlapCount}
+		s.savedAt = disk.SavedAt
+		s.valid = true
+	}
+	s.mu.Unlock()
+}
+
+// persist mirrors the in-memory state to disk. Best effort: a failed write
+// costs one session's memory, never a connect. File I/O outside s.mu.
+func (s *pathMemoryStore) persist() {
+	s.mu.Lock()
+	file, valid := s.file, s.valid
+	disk := pathMemoryFile{ReviewAt: s.verdict.ReviewAt, FailedTrials: s.verdict.FailedTrials,
+		FlapCount: s.verdict.FlapCount, SavedAt: s.savedAt}
+	s.mu.Unlock()
+	if file == "" {
+		return
+	}
+	if !valid {
+		_ = os.Remove(file)
+		return
+	}
+	b, err := json.Marshal(disk)
+	if err != nil {
+		return
+	}
+	tmp := file + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		slog.Debug("engine: path memory not persisted", "err", err)
+		return
+	}
+	if err := os.Rename(tmp, file); err != nil {
+		_ = os.Remove(tmp)
+	}
 }
 
 var pathMemory pathMemoryStore
@@ -38,6 +110,9 @@ var pathMemory pathMemoryStore
 // was known — a 45s session that never got as far as a switch says nothing.
 func (s *pathMemoryStore) record(tm *wire.TransportManager, now time.Time) {
 	v, outcome := tm.PathVerdict(now) // outside s.mu (concurrency rule #1)
+	if outcome == wire.PathNoOpinion {
+		return
+	}
 	s.mu.Lock()
 	switch outcome {
 	case wire.PathQUICBad:
@@ -46,6 +121,7 @@ func (s *pathMemoryStore) record(tm *wire.TransportManager, now time.Time) {
 		s.valid = false
 	}
 	s.mu.Unlock()
+	s.persist()
 }
 
 // load returns the verdict to seed a new session with, if one is still
@@ -68,11 +144,23 @@ func (s *pathMemoryStore) clear() {
 	s.mu.Lock()
 	s.valid = false
 	s.mu.Unlock()
+	s.persist()
+}
+
+// pathMemoryDir is where the disk copy lives: beside the rule cache
+// (ClientConfig.CacheDir is the shell's cache dir + "/rules"), not inside it.
+func pathMemoryDir(ruleCacheDir string) string {
+	if ruleCacheDir == "" {
+		return ""
+	}
+	return filepath.Dir(ruleCacheDir)
 }
 
 // applyPathMemory seeds freshly built outbound transports with the remembered
-// verdict. Called once per Start, after the transport race.
-func applyPathMemory(ots []*outboundTransport, now time.Time) {
+// verdict. Called once per Start, after the transport race. cacheDir is the
+// client's cache directory ("" = memory only).
+func applyPathMemory(ots []*outboundTransport, cacheDir string, now time.Time) {
+	pathMemory.bind(cacheDir, now)
 	v, ok := pathMemory.load(now)
 	if !ok {
 		return

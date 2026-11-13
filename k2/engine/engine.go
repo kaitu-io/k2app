@@ -488,7 +488,7 @@ func (e *Engine) Start(cfg Config) error {
 	}
 	// Same network as the last session, and that session found the QUIC path
 	// bad? Start on tcpws instead of re-learning it (ticket #4055).
-	applyPathMemory(allOTs, time.Now())
+	applyPathMemory(allOTs, pathMemoryDir(client.CacheDir), time.Now())
 
 	// TUN mode requires at least one k2v5 outbound for DNS proxy transport.
 	// Before the per-outbound refactor, wire.ParseURL(client.Server) in step 2
