@@ -157,3 +157,51 @@ func TestReset_ForgetsPathEvidence(t *testing.T) {
 		t.Fatalf("a new network starts with no opinion, got %v", o)
 	}
 }
+
+func TestPathVerdict_EvidenceTimeIsTheQualitySwitch(t *testing.T) {
+	// The time worth remembering is when QUIC was last SEEN bad, not when the
+	// session ended and not when a later session merely carried the verdict:
+	// a memory dated by Stop renews itself on every reconnect (real-device
+	// run 2026-11-13: seed → 88s session → the 10-minute bound restarted).
+	now := time.Unix(10_000, 0)
+	tm := qualitySwitchedTM(t, now)
+	v, o := tm.PathVerdict(now.Add(5 * time.Minute))
+	if o != PathQUICBad || !v.EvidenceAt.Equal(now) {
+		t.Fatalf("want evidence dated at the switch-away, got outcome=%v evidenceAt=+%v", o, v.EvidenceAt.Sub(now))
+	}
+
+	// A session that only carried the verdict reports the original date, also
+	// when it ends on an unproven rollback trial.
+	next := NewTransportManager()
+	next.SetPrimary(&mockDialer{}, "quic-443")
+	next.SetTCPWS(&mockDialer{})
+	start := now.Add(6 * time.Minute)
+	next.ApplyPathVerdict(v, start)
+	if got, _ := next.PathVerdict(start.Add(time.Minute)); !got.EvidenceAt.Equal(now) {
+		t.Fatalf("carried verdict re-dated: evidenceAt=+%v", got.EvidenceAt.Sub(now))
+	}
+	back := v.ReviewAt.Add(time.Second)
+	if !back.After(start) {
+		back = start.Add(time.Second)
+	}
+	next.quicEchoRecovered.Store(true)
+	if d := next.evaluateSelector(back); d != channelSwitchToQUIC {
+		t.Fatalf("setup: want rollback, got %v", d)
+	}
+	got, o := next.PathVerdict(back.Add(time.Minute))
+	if o != PathQUICBad || !got.EvidenceAt.Equal(now) {
+		t.Fatalf("unproven trial at stop re-dated the evidence: outcome=%v evidenceAt=+%v", o, got.EvidenceAt.Sub(now))
+	}
+}
+
+func TestReplacePrimary_KeepsPathEvidenceAndItsDate(t *testing.T) {
+	// A re-race installs a new primary on the SAME network: what the selector
+	// learned about the path, and when, must survive it.
+	now := time.Unix(10_000, 0)
+	tm := qualitySwitchedTM(t, now)
+	tm.ReplacePrimary(&mockDialer{}, "quic-443")
+	v, o := tm.PathVerdict(now.Add(time.Minute))
+	if o != PathQUICBad || !v.EvidenceAt.Equal(now) {
+		t.Fatalf("re-race lost the path evidence: outcome=%v evidenceAt=%v", o, v.EvidenceAt)
+	}
+}

@@ -264,6 +264,11 @@ type selectorState struct {
 	// the same network — see PathVerdict. Path-scoped: survives
 	// ReplacePrimary, cleared by Reset.
 	pathEvidence bool
+	// pathEvidenceAt is when that last happened (or, in a session seeded by
+	// ApplyPathVerdict, when it happened in the session the verdict came
+	// from). It dates the memory: nothing but a fresh quality/data-path
+	// switch-away moves it.
+	pathEvidenceAt time.Time
 }
 
 // selectorInput is one evaluation's observations. All scores are ChannelScore.Value.
@@ -872,6 +877,7 @@ func (tm *TransportManager) evaluateSelector(now time.Time) channelDecision {
 	newState, decision := selectorStep(tm.selState, in)
 	if decision == channelSwitchToTCPWS && in.consecConnFails < quicConnFailThreshold {
 		newState.pathEvidence = true
+		newState.pathEvidenceAt = now
 	}
 	tm.selState = newState
 	if decision == channelSwitchToQUIC {
@@ -1039,6 +1045,7 @@ func (tm *TransportManager) ReplacePrimary(d Dialer, transportType string) {
 		trialProven:     prev.trialProven,
 		firstAnsweredAt: prev.firstAnsweredAt,
 		pathEvidence:    prev.pathEvidence,
+		pathEvidenceAt:  prev.pathEvidenceAt,
 	}
 	if prev.active == "tcpws" {
 		tm.selState.rollbackAt = now

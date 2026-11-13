@@ -34,6 +34,11 @@ type PathVerdict struct {
 	ReviewAt     time.Time
 	FailedTrials int
 	FlapCount    int
+	// EvidenceAt is when QUIC was last observed bad (the quality/data-path
+	// switch-away), carried unchanged through sessions that only inherit the
+	// verdict. The engine ages the memory from it, so reconnecting cannot
+	// renew a verdict that no session has re-observed.
+	EvidenceAt time.Time
 }
 
 // PathVerdict reports what this TransportManager learned about the QUIC path.
@@ -66,6 +71,7 @@ func (tm *TransportManager) PathVerdict(now time.Time) (PathVerdict, PathOutcome
 		ReviewAt:     st.nextReviewAt,
 		FailedTrials: st.failedTrials,
 		FlapCount:    st.flapCount,
+		EvidenceAt:   st.pathEvidenceAt,
 	}, PathQUICBad
 }
 
@@ -92,6 +98,7 @@ func (tm *TransportManager) ApplyPathVerdict(v PathVerdict, now time.Time) bool 
 	tm.selState.active = "tcpws"
 	tm.selState.aboveSince = time.Time{}
 	tm.selState.pathEvidence = true
+	tm.selState.pathEvidenceAt = v.EvidenceAt
 	if v.ReviewAt.After(tm.selState.nextReviewAt) {
 		tm.selState.nextReviewAt = v.ReviewAt
 	}

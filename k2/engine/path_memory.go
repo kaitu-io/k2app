@@ -22,6 +22,12 @@ import (
 // outage), then the normal echo-verified rollback. Deliberately the
 // selector's own first-failed-trial window rather than the 1h sticky one; a
 // carried FailedTrials still lets a session that fails its trial escalate.
+//
+// Counted from the EVIDENCE (wire.PathVerdict.EvidenceAt: the last time a
+// session actually watched QUIC go bad), not from the Stop that saved it. A
+// session that merely inherited the verdict cannot renew it — otherwise a
+// user who reconnects every few minutes stays on tcpws for as long as they
+// keep reconnecting, on a network nobody has re-measured.
 const pathMemoryTTL = 10 * time.Minute
 
 // pathMemoryStore carries the channel selector's verdict on the QUIC path
@@ -32,11 +38,11 @@ const pathMemoryTTL = 10 * time.Minute
 // would lose the verdict exactly on the platforms it is for. The file holds
 // three numbers and a timestamp — no addresses, no identifiers.
 type pathMemoryStore struct {
-	mu      deadlock.Mutex
-	verdict wire.PathVerdict
-	savedAt time.Time
-	valid   bool
-	file    string // "" = memory only
+	mu         deadlock.Mutex
+	verdict    wire.PathVerdict
+	evidenceAt time.Time // when QUIC was last observed bad; ages the memory
+	valid      bool
+	file       string // "" = memory only
 }
 
 const pathMemoryFileName = "path-memory.json"
@@ -45,7 +51,7 @@ type pathMemoryFile struct {
 	ReviewAt     time.Time `json:"review_at"`
 	FailedTrials int       `json:"failed_trials"`
 	FlapCount    int       `json:"flap_count"`
-	SavedAt      time.Time `json:"saved_at"`
+	EvidenceAt   time.Time `json:"evidence_at"`
 }
 
 // bind points the store at dir and, if the process holds no verdict, adopts
@@ -60,7 +66,7 @@ func (s *pathMemoryStore) bind(dir string, now time.Time) {
 	var disk pathMemoryFile
 	haveDisk := false
 	if b, err := os.ReadFile(file); err == nil {
-		if json.Unmarshal(b, &disk) == nil && !disk.SavedAt.IsZero() && !disk.SavedAt.After(now) &&
+		if json.Unmarshal(b, &disk) == nil && !disk.EvidenceAt.IsZero() && !disk.EvidenceAt.After(now) &&
 			disk.FailedTrials >= 0 && disk.FlapCount >= 0 {
 			haveDisk = true
 		}
@@ -68,8 +74,8 @@ func (s *pathMemoryStore) bind(dir string, now time.Time) {
 	s.mu.Lock()
 	s.file = file
 	if !s.valid && haveDisk {
-		s.verdict = wire.PathVerdict{ReviewAt: disk.ReviewAt, FailedTrials: disk.FailedTrials, FlapCount: disk.FlapCount}
-		s.savedAt = disk.SavedAt
+		s.verdict = wire.PathVerdict{ReviewAt: disk.ReviewAt, FailedTrials: disk.FailedTrials, FlapCount: disk.FlapCount, EvidenceAt: disk.EvidenceAt}
+		s.evidenceAt = disk.EvidenceAt
 		s.valid = true
 	}
 	s.mu.Unlock()
@@ -81,7 +87,7 @@ func (s *pathMemoryStore) persist() {
 	s.mu.Lock()
 	file, valid := s.file, s.valid
 	disk := pathMemoryFile{ReviewAt: s.verdict.ReviewAt, FailedTrials: s.verdict.FailedTrials,
-		FlapCount: s.verdict.FlapCount, SavedAt: s.savedAt}
+		FlapCount: s.verdict.FlapCount, EvidenceAt: s.evidenceAt}
 	s.mu.Unlock()
 	if file == "" {
 		return
@@ -116,7 +122,12 @@ func (s *pathMemoryStore) record(tm *wire.TransportManager, now time.Time) {
 	s.mu.Lock()
 	switch outcome {
 	case wire.PathQUICBad:
-		s.verdict, s.savedAt, s.valid = v, now, true
+		at := v.EvidenceAt
+		if at.IsZero() || at.After(now) {
+			at = now
+		}
+		v.EvidenceAt = at
+		s.verdict, s.evidenceAt, s.valid = v, at, true
 	case wire.PathQUICProven:
 		s.valid = false
 	}
@@ -125,15 +136,15 @@ func (s *pathMemoryStore) record(tm *wire.TransportManager, now time.Time) {
 }
 
 // load returns the verdict to seed a new session with, if one is still
-// current. ReviewAt is capped at savedAt+pathMemoryTTL.
+// current. ReviewAt is capped at evidenceAt+pathMemoryTTL.
 func (s *pathMemoryStore) load(now time.Time) (wire.PathVerdict, bool) {
 	s.mu.Lock()
-	v, savedAt, valid := s.verdict, s.savedAt, s.valid
+	v, evidenceAt, valid := s.verdict, s.evidenceAt, s.valid
 	s.mu.Unlock()
-	if !valid || now.Sub(savedAt) > pathMemoryTTL {
+	if !valid || now.Sub(evidenceAt) > pathMemoryTTL {
 		return wire.PathVerdict{}, false
 	}
-	if limit := savedAt.Add(pathMemoryTTL); v.ReviewAt.After(limit) {
+	if limit := evidenceAt.Add(pathMemoryTTL); v.ReviewAt.After(limit) {
 		v.ReviewAt = limit
 	}
 	return v, true

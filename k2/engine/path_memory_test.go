@@ -96,7 +96,7 @@ func resetPathMemoryForTest(t *testing.T) {
 func simulateProcessRestart() {
 	pathMemory.mu.Lock()
 	pathMemory.valid, pathMemory.file = false, ""
-	pathMemory.verdict, pathMemory.savedAt = wire.PathVerdict{}, time.Time{}
+	pathMemory.verdict, pathMemory.evidenceAt = wire.PathVerdict{}, time.Time{}
 	pathMemory.mu.Unlock()
 }
 
@@ -155,9 +155,9 @@ func TestPathMemory_BadDiskCopyIsIgnored(t *testing.T) {
 	cases := map[string]string{
 		"garbage":     "{not json",
 		"empty":       "",
-		"from future": `{"review_at":"2999-01-01T00:00:00Z","failed_trials":1,"flap_count":1,"saved_at":"2999-01-01T00:00:00Z"}`,
-		"negative":    `{"review_at":"2020-01-01T00:00:00Z","failed_trials":-5,"flap_count":1,"saved_at":"2020-01-01T00:00:00Z"}`,
-		"expired":     `{"review_at":"2020-01-01T00:10:00Z","failed_trials":1,"flap_count":1,"saved_at":"2020-01-01T00:00:00Z"}`,
+		"from future": `{"review_at":"2999-01-01T00:00:00Z","failed_trials":1,"flap_count":1,"evidence_at":"2999-01-01T00:00:00Z"}`,
+		"negative":    `{"review_at":"2020-01-01T00:00:00Z","failed_trials":-5,"flap_count":1,"evidence_at":"2020-01-01T00:00:00Z"}`,
+		"expired":     `{"review_at":"2020-01-01T00:10:00Z","failed_trials":1,"flap_count":1,"evidence_at":"2020-01-01T00:00:00Z"}`,
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -224,5 +224,48 @@ func TestEngine_StopRecordsPathMemory(t *testing.T) {
 	v, ok := pathMemory.load(time.Now())
 	if !ok || v.FailedTrials != 1 {
 		t.Fatalf("Stop did not hand the session's verdict to the next one: ok=%v %+v", ok, v)
+	}
+}
+
+func TestPathMemory_CarryingSessionsCannotExtendTheTTL(t *testing.T) {
+	// Real-device run 2026-11-13 (iPhone): verdict → 88s session on tcpws →
+	// reconnect → rollback → stop before the trial was proven. Each Stop
+	// re-dated the memory, so a user with short sessions stayed on tcpws for
+	// as long as they kept reconnecting. The bound is pathMemoryTTL from the
+	// last time QUIC was actually observed bad.
+	resetPathMemoryForTest(t)
+	evidence := time.Now()
+
+	s1 := quicPrimaryTM()
+	s1.ApplyPathVerdict(wire.PathVerdict{ReviewAt: evidence.Add(4 * time.Minute), FailedTrials: 1, EvidenceAt: evidence}, evidence)
+	pathMemory.record(s1, evidence.Add(time.Minute))
+
+	s2 := &outboundTransport{tm: quicPrimaryTM(), name: "s2"}
+	applyPathMemory([]*outboundTransport{s2}, "", evidence.Add(2*time.Minute))
+	if got := s2.tm.ActiveChannel(); got != "tcpws" {
+		t.Fatalf("setup: second session on %s, want tcpws", got)
+	}
+	pathMemory.record(s2.tm, evidence.Add(9*time.Minute))
+
+	if _, ok := pathMemory.load(evidence.Add(pathMemoryTTL + time.Second)); ok {
+		t.Fatal("memory outlived pathMemoryTTL from the evidence because a later session re-dated it")
+	}
+}
+
+func TestPathMemory_UndatedVerdictIsDatedOnceNotOnEveryCarry(t *testing.T) {
+	// A verdict that arrives without an evidence date is dated when first
+	// recorded, and that date sticks: the carry must not fall back to "now"
+	// a second time.
+	resetPathMemoryForTest(t)
+	t0 := time.Now()
+	s1 := quicPrimaryTM()
+	s1.ApplyPathVerdict(wire.PathVerdict{ReviewAt: t0.Add(4 * time.Minute), FailedTrials: 1}, t0)
+	pathMemory.record(s1, t0)
+
+	s2 := &outboundTransport{tm: quicPrimaryTM(), name: "s2"}
+	applyPathMemory([]*outboundTransport{s2}, "", t0.Add(2*time.Minute))
+	pathMemory.record(s2.tm, t0.Add(9*time.Minute))
+	if _, ok := pathMemory.load(t0.Add(pathMemoryTTL + time.Second)); ok {
+		t.Fatal("an undated verdict was re-dated by the session that carried it")
 	}
 }
