@@ -41,6 +41,7 @@ A directory's `CLAUDE.md` auto-loads once you read a file under it; under `k2/` 
 | `api/` | Center API — Gin, GORM, MySQL, Redis, Asynq; `cloudprovider/` multi-cloud VPS; `api/cmd/` = separate module (`center` binary) | `api/CLAUDE.md` |
 | `webapp/` | React 18, MUI 5, Zustand, React Router 7, i18next — shared UI | `webapp/CLAUDE.md` |
 | `web/` | kaitu.io + admin — Next.js 15, React 19, Tailwind 4, shadcn/ui, next-intl | `web/CLAUDE.md` |
+| `overleap/` | Overleap home-IP marketplace: constitution, glossary, product and design docs; later the Box Agent, Image and Update tooling. English only | `overleap/CLAUDE.md` |
 | `sites/overleap/` | overleap.io — standalone Next app, no code shared with `web/` | `sites/overleap/CLAUDE.md` |
 | `desktop/` | Tauri v2 Rust shell (macOS + Windows) | `desktop/CLAUDE.md` |
 | `mobile/` | Capacitor 8; `mobile/plugins/` = K2Plugin (Swift/Kotlin) VPN bridge | `mobile/CLAUDE.md` |
