@@ -1,5 +1,5 @@
 import { posts } from '#velite';
-import { siteBrand } from '@/lib/brands';
+import { siteBrand, localizedWordmark } from '@/lib/brands';
 import { isPostVisibleToBrand } from '@/lib/k2-posts';
 import { categorySlugs } from '@/lib/content-posts';
 
@@ -23,9 +23,9 @@ export function GET(): Response {
     .sort((a, b) => +new Date(b.date) - +new Date(a.date));
 
   const lines = [
-    `# ${brand.displayName}`,
+    `# ${localizedWordmark(brand, brand.defaultLocale)}`,
     '',
-    `> ${brand.taglineZh ?? brand.displayName}`,
+    `> ${brand.taglineZh ?? localizedWordmark(brand, brand.defaultLocale)}`,
     '',
     '## Articles',
     '',

@@ -11,6 +11,7 @@ describe('llms.txt', () => {
     const links = [...body.matchAll(/\]\((https?:\/\/[^)]+)\)/g)].map((m) => m[1]);
     expect(links.length).toBeGreaterThan(5);
     for (const l of links) expect(l.startsWith(`${brand.baseUrl}/${brand.defaultLocale}/`)).toBe(true);
+    expect(body).not.toMatch(/\bKaitu\b/);
     expect(links.some((l) => l.includes('/guides/'))).toBe(true);
   });
 });
