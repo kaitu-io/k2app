@@ -47,7 +47,7 @@ Outbound table is `[]Outbound` indexed by `rule.Target` value. `nil` entry = rej
 - `sniffSNI` — domain extraction: direct→wire (TLS SNI on 443, HTTP Host on non-443, QUIC SNI on 443)
 - `blockQUIC` — block browser QUIC via ICMP reject (default: false — browser QUIC then rides the wire's DATAGRAM path: unreliable, no tunnel-layer retransmission; the inner browser CC (BBR/Cubic) adapts to the outer K2CC throughput. `block_quic: true` in client config restores ICMP-reject)
 
-**IPv6 destinations** (not a flag — always on): k2s has no IPv6 egress, so `HandleTCP` rejects an IPv6-literal dest up front (close → gVisor RST) and `HandleUDP` drops it silently (an ICMPv6 reply races gVisor buffer refcounts and panics under load); both let Happy Eyeballs fall back to IPv4. The "IPv6→hostname via SNI" branches later in `HandleTCP` are unreachable behind that early reject.
+**IPv6 destinations** (not a flag — always on): k2s has no IPv6 egress, so `HandleTCP` rejects an IPv6-literal dest up front (close → gVisor RST) and `HandleUDP` drops it silently (an ICMPv6 reply races gVisor buffer refcounts and panics under load); both let Happy Eyeballs fall back to IPv4. The "IPv6→hostname via SNI" branches later in `HandleTCP` are unreachable behind that early reject — **kept on purpose for future IPv6 support (David, 2026-11-14); do not delete them as dead code**.
 
 **Traffic counting**: `txBytes`/`rxBytes` `atomic.Int64` count all bytes through `pipe()`/`pipePacket()`.
 
