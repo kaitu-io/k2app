@@ -553,6 +553,9 @@ export default function Feedback() {
             height: "100%",
             pr: 0.5,
             pb: 4,
+            // 子项一律不收缩：MUI Card 自带 overflow:hidden，作为 flex 子项时
+            // min-height 变成 0，对话一长回复框就被压成 0 高（工单 #4057）。
+            "& > *": { flexShrink: 0 },
           }}
         >
           {selectedTicketId !== null ? (
