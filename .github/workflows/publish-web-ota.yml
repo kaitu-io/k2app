@@ -193,7 +193,12 @@ jobs:
   build:
     needs: [plan, precheck]
     if: needs.precheck.outputs.proceed == 'true'
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: the smoke gate installs Playwright Chromium with
+    # --with-deps, and the pinned Playwright refuses an OS it does not know
+    # ("does not support chromium on ubuntu26.04-x64" — ubuntu-latest moved to
+    # 26.04 on 2026-11-14 and every publish went red). Bump this together with
+    # @playwright/test.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
       version: ${{ steps.ver.outputs.version }}
