@@ -40,13 +40,14 @@ Outbound table is `[]Outbound` indexed by `rule.Target` value. `nil` entry = rej
 2. `outbound(target)` → lookup Outbound (nil = reject)
 3. Sniff (single peek): BT (uTP/UDPTracker) → force direct; WebRTC (STUN/DTLS) → detected and **kept on the tunnel** (ticket #3051 — forcing it direct broke calls behind the GFW); QUIC SNI (443) → upgrade direct→wire; then **protocol re-route** — `Router.RouteConnProto(sniffed SNI or host, meta+protocol)` lets an explicit `{protocol: [...]}` rule override those defaults (no such rule → unchanged). Note `blockQUIC` can drop a proxy-bound QUIC packet before this step ever runs
 4. `outbound.DialUDP` returns `(PacketConn, destAddr)` — destAddr non-nil for direct (WriteTo target), nil for wire (pre-connected)
-5. `pipePacket(local, remote, destAddr)` bidirectional copy. `pipePacket` treats the session's first observed destination as `primary`: packets to `primary` keep using the outbound's `destAddr` (preserves the domain label from an SNI upgrade / IPv6 rewrite instead of a bare IP), packets to any other destination are forwarded with their real, per-packet address. This is what lets one UDP socket (game server + matchmaker + STUN reflector, say) fan out correctly instead of pinning every packet to the first peer it talked to. See `pipePacket` in `tunnel.go`.
+5. `pipePacket(local, remote, destAddr)` bidirectional copy. `pipePacket` treats the session's first observed destination as `primary`: packets to `primary` keep using the outbound's `destAddr` (preserves the domain label from an SNI upgrade instead of a bare IP), packets to any other destination are forwarded with their real, per-packet address. This is what lets one UDP socket (game server + matchmaker + STUN reflector, say) fan out correctly instead of pinning every packet to the first peer it talked to. See `pipePacket` in `tunnel.go`.
 
 **Sniff flags** (set by engine, disabled in global mode):
 - `sniffBT` — BT/WebRTC detection. BitTorrent (TCP handshake, uTP, UDPTracker) → wire→direct. STUN/DTLS are detected but **stay on the wire** (ticket #3051); they set `ConnMeta.Protocol` so a `protocol:` rule can act on them. Only fires on connections headed for the wire — already-direct traffic is never sniffed
 - `sniffSNI` — domain extraction: direct→wire (TLS SNI on 443, HTTP Host on non-443, QUIC SNI on 443)
 - `blockQUIC` — block browser QUIC via ICMP reject (default: false — browser QUIC then rides the wire's DATAGRAM path: unreliable, no tunnel-layer retransmission; the inner browser CC (BBR/Cubic) adapts to the outer K2CC throughput. `block_quic: true` in client config restores ICMP-reject)
-- `rewriteIPv6` — replace IPv6 wire dests with hostname via SNI (when server lacks IPv6)
+
+**IPv6 destinations** (not a flag — always on): k2s has no IPv6 egress, so `HandleTCP` rejects an IPv6-literal dest up front (close → gVisor RST) and `HandleUDP` drops it silently (an ICMPv6 reply races gVisor buffer refcounts and panics under load); both let Happy Eyeballs fall back to IPv4. The "IPv6→hostname via SNI" branches later in `HandleTCP` are unreachable behind that early reject.
 
 **Traffic counting**: `txBytes`/`rxBytes` `atomic.Int64` count all bytes through `pipe()`/`pipePacket()`.
 

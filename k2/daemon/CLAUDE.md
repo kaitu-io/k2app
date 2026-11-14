@@ -68,7 +68,7 @@ Android ADB install helper. Separate endpoint from `/api/core`.
 
 Phases: `idle` → `prepare_adb` → `downloading` → `pushing` → `installing` → `done` | `error`
 
-**adb discovery** (`findAdbCandidates`): When daemon runs as root, `$PATH` differs from user. Searches: `exec.LookPath`, Android SDK in all `/Users/*/`, Homebrew paths. Falls back to CDN download from `tools/tools.json`.
+**adb** (`prepareAdb` in `helper_adb.go`): reuse an adb server already answering on the default port (`tryReuseExistingServer`); otherwise download the daemon's own adb from the CDN manifest `tools/tools.json` (`downloadAdbBinary`) and start it (`startOwnAdbServer`: default 5037, falls back to 5038). There is no `$PATH` / Android SDK search — the root daemon's `$PATH` is not the user's.
 
 **Webapp routing**: Tauri bridge routes `adb-*` actions to Rust IPC `daemon_helper_exec`. Standalone bridge routes to `/api/helper` (not `/api/core`).
 
