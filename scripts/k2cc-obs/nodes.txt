@@ -1,4 +1,4 @@
-# Active k2s nodes as of 2026-11-11 — refresh from the kaitu-center MCP `list_nodes` (skip tunnels=[]).
+# Active k2s nodes as of 2026-11-14 — refresh from the kaitu-center MCP `list_nodes` (skip tunnels=[]).
 3.114.62.205
 13.213.183.161
 13.230.162.99
@@ -27,6 +27,8 @@
 65.49.200.32
 93.179.114.62
 93.179.114.208
+95.40.141.234
+95.40.247.38
 97.64.25.90
 104.194.75.144
 114.29.236.222
