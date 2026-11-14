@@ -2,6 +2,8 @@
 
 Central API service for authentication, user management, payments, tunnel management, and cloud infrastructure. 本文件只留"改 api 必须知道、违反了不会报错"的规则 + 指向 `docs/api/` 的指针；细节用到时再读。
 
+**Long-form notes (not auto-loaded — read the one you need before changing that code):** `docs/api/tunnel-scoring.md` (score model, pressure mode, list vs subs) · `docs/api/testing.md` (silent-skip history, viper / Redis / migrate mechanics) · `docs/api/domain-notes.md` (approvals, chat, enterprise, campaign matcher history + recall offers, device-account restore). Older moves: see Related Docs.
+
 ## Commands
 
 ```bash
@@ -165,11 +167,11 @@ Unified `Provider` interface (`provider.go`), one `<provider>.go` per provider: 
 
 ## Approval Workflow (Maker-Checker)
 
-Critical admin operations (EDM, campaigns, plans, withdrawals, hard delete, license key batches, order refunds, Stripe withdrawal) go through `SubmitApproval()`. Superadmin bypasses and executes synchronously; others create a pending record another admin approves.
+Critical admin operations go through `SubmitApproval()`; superadmin executes synchronously, others create a pending record. Full pattern: `docs/api/domain-notes.md`.
 
-- **Files**: `logic_approval.go` (service + action labels), `logic_approval_callbacks.go`, `api_admin_approval.go`. Callbacks are registered by `RegisterApprovalCallback(action, cb)` in `InitWorker()` — that list is the source of truth for actions.
-- **Pattern**: validate → `approvalID, executed, err := SubmitApproval(c, action, params, summary)` → `!executed` ⇒ `PendingApproval(c, approvalID)`; superadmin path continues to `Success`. **Each callback re-validates preconditions** (state may have changed since submission).
-- **Concurrency**: atomic `UPDATE WHERE status='pending'` + `RowsAffected` check prevents double-approve. Slack DM notifications are best-effort.
+- Actions = the `RegisterApprovalCallback(action, cb)` list in `InitWorker()` (source of truth).
+- `!executed` ⇒ `PendingApproval(c, approvalID)`. **Each callback re-validates preconditions** (state may have changed since submission).
+- Double-approve is prevented by atomic `UPDATE WHERE status='pending'` + `RowsAffected` — keep it.
 
 ## Brand (双品牌拆分: kaitu / overleap)
 
@@ -234,21 +236,21 @@ Registries, lanes/hops, retention math, inferred attribution: **`docs/api/funnel
 
 ## Chat (访客客服聊天 + AI)
 
-Spec `docs/superpowers/specs/2026-10-01-support-chat-design.md`. Entry: `api_chat.go` (`/api/chat/*`), `api_chat_slack_events.go`, `api_admin_chat.go`, `logic_chat_*.go`, `model_chat.go` (`Guest`, `GuestIdentity`, …), `worker_chat.go`.
+Spec `docs/superpowers/specs/2026-10-01-support-chat-design.md`; files and Slack / AI mechanics: `docs/api/domain-notes.md`.
 - Gates: viper `chat.enabled` + `chat.preview_enabled` (both false = hard off, even for existing cookies) and `chat.brands` allow-list (empty = all brands off).
-- Slack is the agent's primary UI: one private channel per conversation, every message mirrored in id order; `slack_mirrored_at` is an outbox marker backfilled by the `chat:slack-sweep` cron. Slack failures only log — they never fail `appendMessage`.
-- AI replies via `qtoolkit/openai/filesearch` against the brand's `BrandConfig.ChatAIStore` (KB sources in `docs/customer-service/<brand>/`, synced by `scripts/sync-kb.sh`); errors / empty / cap (`chatAIMaxReplies`) hand off to a human.
+- Slack failures only log — they never fail `appendMessage`; `slack_mirrored_at` is an outbox marker backfilled by the `chat:slack-sweep` cron.
+- AI errors / empty / cap (`chatAIMaxReplies`) hand off to a human.
 
 ## Device Account (零身份设备账号)
 
 Spec `docs/superpowers/specs/2026-10-20-ios-device-account-design.md`. `POST /api/auth/device-account`, `/device-account/restore` (`api_device_account.go`, `logic_device_account.go`). Gated by `BrandConfig.DeviceAccount` (kaitu only → else 403004); router (gateway) clients are refused.
 - "零身份" is decided **only** by `userHasIdentity` (no `login_identifies` row) — don't hand-count elsewhere.
 - **A udid is not a secret**: an existing device row never gets a token by udid — 403005 (owner has an identity → log in) / 403006 (device account → Keychain token or Apple-transaction restore).
-- **The subscription follows the Apple ID** (App Review 5.1.1(v), 4.4.16 rejection; spec revision 2026-11-10): `/device-account/restore` admits a device into the subscription owner's account whatever the owner's identity — zero-identity owner = move (cap 1), identity owner = join (`checkDeviceLimitOrKick`). Never reintroduce "owner has an identity → 409004 / ask to sign in". A device held by an identity account is switched only when the request is authenticated as that account (route carries `AuthOptional`).
+- **The subscription follows the Apple ID**: `/device-account/restore` admits a device into the subscription owner's account whatever the owner's identity (zero-identity owner = move, cap 1; identity owner = join, `checkDeviceLimitOrKick`); a device held by an identity account is switched only when the request is authenticated as that account (route carries `AuthOptional`). Never reintroduce "owner has an identity → 409004 / ask to sign in" (App Review rejection) — why + rules: `docs/api/domain-notes.md`.
 
 ## Enterprise (企业路由器多 SSID)
 
-Spec `docs/superpowers/specs/2026-07-22-enterprise-router-multi-ssid-design.md`. Admin `/app/enterprise/*` (`api_admin_enterprise.go`, opsAdmin: read `RoleDevopsViewer|Editor`, write `RoleDevopsEditor`); models `EnterpriseCustomer` / `EnterpriseLine` / `EnterpriseRouterBinding` (`model.go`). `/api/subs` adds `slot_bindings` via `resolveSlotBindings` (`logic_enterprise.go`) — snake_case wire contract with k2 `config.SlotBinding`, `tunnel_index` indexes the same response's `tunnels`. **Deliberately health-blind**: quota cutoff / node death never remove a slot; only a human rebind does.
+Spec `docs/superpowers/specs/2026-07-22-enterprise-router-multi-ssid-design.md`; files / roles: `docs/api/domain-notes.md`. `/api/subs` `slot_bindings` (`resolveSlotBindings`) is a snake_case wire contract with k2 `config.SlotBinding`; `tunnel_index` indexes the same response's `tunnels`. **Deliberately health-blind**: quota cutoff / node death never remove a slot; only a human rebind does.
 
 ## Campaign Matcher Semantics (single source of truth)
 
@@ -262,21 +264,22 @@ Campaign `matcherType` gates who may redeem a code (`logic_campaign.go getCampai
 | `paid_before` | first paid before `matcherParams.beforeDate` | 时间窗定向 |
 | `paid_before_active` | `paid_before` AND membership still active | 时间窗定向且在期 |
 
-`first_order` and `vip` are exact mirrors and must never collapse into the same meaning — `logic_campaign_matcher_test.go` pins both. **History (do not repeat):** `first_order` once meant "已付费" while every author read it as "new customer" — all 5 `first_order` campaigns (FIRST_ORDER_20, READY4U, STAYFREE, SMOOTHDAY, KEEPGOING) silently rejected 100% of recipients with `ErrorInvalidCampaignCode` (fixed 2026-06-06). Keep new matcher names describing the **audience**, and mirror the admin UI label in `web/.../manager/campaigns/page.tsx`.
+`first_order` and `vip` are exact mirrors and must never collapse into the same meaning — `logic_campaign_matcher_test.go` pins both (`TestGetCampaignMatcherWithDB_FirstOrder` / `_Vip`); a mis-read name once silently rejected 100% of recipients. Keep new matcher names describing the **audience**, and mirror the admin UI label in `web/.../manager/campaigns/page.tsx`.
 
-**召回邮件优惠（abandoned / winback / trial-recall）只有两个码，不随阶段加深**：新客 `NEW10`、老客 `BACK10`（`logic_recall_offer.go`）；邮件标价调纯函数 `campaignPrice`，**绝不调 `applyCampaign`**（它累加使用次数）。10% 对照组记为 `email_send_logs` skipped + `error_msg=holdout`，`GET /app/recall-stats` 据此算增量——新召回链路要沿用 `recallMailer`，否则没有对照组。Spec `docs/superpowers/specs/2026-11-03-recall-offer-flatten-design.md`。
-
-**`LicenseKeyBatch` is a different thing — don't fold it into campaigns**: 授权码批次自带渠道标签 (`sourceTag`)、兑换条件 (`recipientMatcher`)、过期时间，统计兑换率与兑换→付费转化；创建走审批。
+- **Recall-email offers have two codes only** (`NEW10` new / `BACK10` returning, `logic_recall_offer.go`); price via pure `campaignPrice`, **never `applyCampaign`** (it increments usage). New recall paths go through `recallMailer` — it records the 10% holdout that `GET /app/recall-stats` needs.
+- **`LicenseKeyBatch` is not a campaign** — don't fold it in.
+- History, holdout encoding, license-key batch fields: `docs/api/domain-notes.md`.
 
 ## Tunnel Scoring
 
-- **Model = time-gated usage-sensitivity**: `score = 1 − trafficRatio · w(timeRatio)`, `w(t) = 0.15 + 0.85·t²` — generous early in the cycle, strict late. **Not an exhaustion check**: exhaustion is the hard cutoff / hide path (`isNodeOverQuota`), never score 0. Replaced an earlier `trafficRatio − timeRatio` pacing model plus warmup/headroom terms; don't reintroduce those.
-- **Pressure mode (default off, viper `node_pressure.enabled`)**: when on, `buildTunnelInstanceDataFromUsage(u, effectivePressure(u, fleet, now))` sets `inst.Pressure` and the score becomes `0.9·(1−p) + 0.1·quotaScore` (p quantized to 0.05 buckets; capped by `quotaScore` when `quotaScore<0.3`; floor 0.05). Missing data takes the fleet median and is never penalised: a node with no usage row (switch on) is scored by `recommendScoreForUsage` with fleet pressure and a neutral quota (`quotaScore` 1.0, i.e. TrafficRatio 0), as is stale/missing pressure on an existing row; switch off keeps the fixed 0.5 for no-usage nodes (bit-identical) (`fleetPressure`, computed once before each handler's loop, over shared nodes only — private nodes are excluded from the usage map); no fresh pressure at all → 0. Switch off → `Pressure=nil` → bit-identical quota formula. **score 是主线，配额是防御**; over-quota/offline hiding (`shouldHideTunnelForUser`) is untouched.
+Full model + rationale: `docs/api/tunnel-scoring.md`. Invariants:
+
 - **Single authority**: `ComputeRecommendScore(inst *DataTunnelInstance) float64` (`logic_tunnel_score.go`); `/api/tunnels` and `/api/subs` both call it — never inline a formula.
-- **List vs subs**: `/api/tunnels` returns `listRecommendScore` (healthy projected into `[0.6, 1]`, exhausted 0.45, so the client shows yellow only when a node is out of quota); `/api/subs` keeps the raw score, because the daemon splits traffic by its proportions.
-- **Nil instance = 0.5** (non-cloud nodes neutral; 0 would blacklist them from `pickWeighted` / `Subscription.Pick`).
-- **Dual-emit**: `/api/subs` emits `recommendScore` and legacy `weight = round(score*100)` for pre-e210564 daemons; drop `weight` one release after rollout is confirmed.
-- **No Redis penalty layer** (`subsPenalty*` / `applyPenaltyWeights` removed in `9e12d0b`) — no request-side rate-limiting in the subscription response; compute a score server-side instead.
+- **Model** `score = 1 − trafficRatio · w(timeRatio)`, `w(t) = 0.15 + 0.85·t²` (`TestComputeRecommendScore_Formula`). **Not an exhaustion check** — exhaustion is the hard cutoff / hide path (`isNodeOverQuota`, `shouldHideTunnelForUser`), never score 0: clients treat score 0 as a hard blacklist (webapp `auto-tunnel-pick.ts`). Don't reintroduce the old pacing model or warmup/headroom terms.
+- **Nil instance = 0.5** (non-cloud nodes neutral; 0 would blacklist them from `pickWeighted` / `Subscription.Pick`) — `TestScore_NilInstanceStillNeutral`.
+- **Pressure mode** (viper `node_pressure.enabled`, default off): off → `Pressure=nil` → bit-identical quota formula (`TestEffectivePressure_DisabledIsNil`); missing / stale data takes the fleet median, never penalised; the fleet median is over shared nodes only (`TestApiSubs_PressureFleet_ExcludesPrivateNodes`).
+- **List vs subs**: `/api/tunnels` returns `listRecommendScore` (healthy in `[0.6, 1]`, exhausted 0.45 — yellow only when out of quota; `TestListRecommendScore`); `/api/subs` keeps the raw score (the daemon splits traffic by it) and dual-emits legacy `weight = round(score*100)`.
+- **No Redis penalty layer** in the subscription response — compute a score server-side instead.
 
 ## Logging Convention
 
@@ -290,10 +293,11 @@ Campaign `matcherType` gates who may redeem a code (`logic_campaign.go getCampai
 | Mock DB | `SetupMockDB(t)` (`mock_db_test.go`: `SkipInitializeWithVersion`, `QueryMatcherRegexp`) — always use it | `testInitConfig()` — called by `SetupTestRouter()` / `skipIfNoConfig()`, **not** by `SetupMockDB` | None |
 | Integration | Real MySQL | `../center/config.yml` (repo-root `center/`) | `skipIfNoConfig(t)` at the top of each test |
 
-- **Silent skip is the default — a green `go test ./...` proves nothing about the DB half.** `skipIfNoConfig` looks for `../center/config.yml` while `start`/`migrate` read `api/config.yml`; both gitignored (in the main checkout `center` is a local symlink to `api`, so they are the same file there; a fresh worktree has neither). `.github/ci/center-config.yml` is the only in-repo template. The CI mock job silently skipped **256 of 1085** tests at 0.4.8 and reported green; the `test-api-db` job (`scripts/ci/api-db-test.sh`: throwaway MariaDB + real `migrate`) **fails on any config-skip**. Locally the discriminator is `-v` showing 0 `config.yml not available` skips.
-- **Restore viper keys to their original value, never to a literal**: one shared viper; `center/config.yml` sets `mail.dev_mode: true`. `defer viper.Set("mail.dev_mode", false)` makes every later worker test really send — capture `viper.Get(key)` and restore in `t.Cleanup` (`restoreViper` in `logic_email_sender_test.go`).
-- **Tests never touch real Redis**: `testInitConfig()` (`testutil_test.go`) starts miniredis, overrides `redis.*` before and after the config load, sets `EnableMockVerificationCode = true`. `testInitOnce` is a plain bool, not `sync.Once` — unsafe under `t.Parallel`. Never panic on missing config (`testConfigAvailable = false`).
-- **New GORM columns need a manual migrate before integration tests see them**: the long-lived test DB is migrated out-of-band (`testInitConfig`/`skipIfNoConfig` never `AutoMigrate`). After adding a field to a model in `migrate.go`'s list, run `cd api/cmd && go run . migrate --config ../../center/config.yml` once, or integration tests fail with `Unknown column`. Production runs `center.Migrate()` on start.
+- **Silent skip is the default — a green `go test ./...` proves nothing about the DB half.** `skipIfNoConfig` looks for `../center/config.yml` (repo-root `center/`, gitignored; a fresh worktree has none — `.github/ci/center-config.yml` is the only in-repo template). Locally the discriminator is `-v` showing 0 `config.yml not available` skips; CI `test-api-db` (`scripts/ci/api-db-test.sh`) **fails on any config-skip**.
+- **Restore viper keys to their original value, never to a literal** (one shared viper; `center/config.yml` sets `mail.dev_mode: true`) — use `restoreViper` (`logic_email_sender_test.go`).
+- **Tests never touch real Redis** — `testInitConfig()` (`testutil_test.go`) swaps in miniredis; `testInitOnce` is a plain bool — unsafe under `t.Parallel`. Never panic on missing config (`testConfigAvailable = false`).
+- **New GORM columns need a manual migrate before integration tests see them** (`testInitConfig`/`skipIfNoConfig` never `AutoMigrate`): `cd api/cmd && go run . migrate --config ../../center/config.yml`, or tests fail with `Unknown column`.
+- Why each of these bit (CI skipped 256 of 1085 green, the `mail.dev_mode` trap, symlinked `center`): `docs/api/testing.md`.
 - **Avoid zero-value assertions**: `assert.Equal(t, 0, resp.Code)` passes trivially on unmarshal failure — verify the positive case.
 - **File naming**: `api_*_test.go` handler tests, `db_mock_test.go` shared mock utilities, `mock_db_test.go` MockDB struct, `testutil_test.go` `testInitConfig` / `skipIfNoConfig` / `SetupTestRouter`.
 
@@ -304,4 +308,4 @@ Campaign `matcherType` gates who may redeem a code (`logic_campaign.go getCampai
 ## Related Docs
 
 - [Client Architecture](../CLAUDE.md) · [Webapp Frontend](../webapp/CLAUDE.md)
-- `docs/api/`: [brand](../docs/api/brand.md) · [payments](../docs/api/payments.md) · [router-edition](../docs/api/router-edition.md) · [social-login](../docs/api/social-login.md) · [funnel](../docs/api/funnel.md) · [workers](../docs/api/workers.md) · [uat](../docs/api/uat.md)
+- `docs/api/`: [brand](../docs/api/brand.md) · [payments](../docs/api/payments.md) · [router-edition](../docs/api/router-edition.md) · [social-login](../docs/api/social-login.md) · [funnel](../docs/api/funnel.md) · [workers](../docs/api/workers.md) · [uat](../docs/api/uat.md) · [tunnel-scoring](../docs/api/tunnel-scoring.md) · [testing](../docs/api/testing.md) · [domain-notes](../docs/api/domain-notes.md)
