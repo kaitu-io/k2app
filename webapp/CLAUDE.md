@@ -2,6 +2,8 @@
 
 Shared React UI codebase running on Web, Desktop (Tauri), and Mobile (Capacitor).
 
+**Long-form notes (not auto-loaded — read the one you need before changing that code):** `docs/webapp/runtime-notes.md` (兼容模型 rationale, Router Tab mechanism, Key Patterns history: revision token, config/failover fields, funnel, viewport) · `docs/webapp/brand-details.md` (full Brand rules, Stripe flow, icons, kaitu-only surfaces).
+
 ## Constitutional Rule: Bridge Layer Boundary
 
 **Webapp 代码绝不可跨越 bridge 层直接访问底层服务。** 所有对 desktop daemon / mobile engine / router 的调用，必须且只能通过 `window._k2` 和 `window._platform` 完成。
@@ -21,34 +23,15 @@ Bridge 层（`tauri-k2.ts` / `capacitor-k2.ts` / `standalone-k2.ts`）是唯一�
 
 ## 兼容模型：支持地板 + 运行时能力探测（Web OTA R2）
 
-**只有一个真理的 webapp 版本——最新版。** 最新 webapp 必须在支持地板
-（`contracts/webapp-support-floor.json`）以上的**所有** app 版本上正确运行。
-Spec: `docs/superpowers/specs/2026-08-14-web-ota-design.md` §4。
+**只有一个真理的 webapp 版本——最新版。** 最新 webapp 必须在支持地板（`contracts/webapp-support-floor.json`）以上的**所有** app 版本上正确运行。Spec: `docs/superpowers/specs/2026-08-14-web-ota-design.md` §4。全文（含理由）：`docs/webapp/runtime-notes.md`。
 
 规矩（违反即 bug）：
 
-- 新 bridge 能力（`BRIDGE_API_VERSION` bump 引入的方法）的每一处使用都必须有
-  运行时探测分支——**优先存在性检测**（`typeof fn === 'function'`），版本比较
-  只做兜底。存在性检测天然免疫"TS 声明了但某平台 native 未实现"的平台漂移盲区。
-- 调用完全封闭在 bridge 文件内的能力（`ui_boot_ok`、`storage_migration_*`、
-  `confirmWebBootOk`）就地 try/catch 静默降级，bridge 层即唯一供给者（Linux 那份
-  额外自我门控 `window.__K2_GATEWAY__`）。会漏进业务代码（显示/隐藏、改文案）的
-  能力必须由唯一供给者模块导出语义化 flag——目前还没有这样的模块；`capacitor-k2.ts`
-  的 `appList` 是仅剩的 `getPlatform() === 'android'` 平台门（channel 门已改为
-  `getUpdateChannel` 能力探测）。禁止页面/组件直接探测 `window._k2` /
-  `window._platform` 方法存在性或散落 raw 版本比较。
-- **契约门**：`types/__tests__/bridge-contract.test.ts` 把整个 bridge 方法面快照进
-  `contracts/bridge-api.json`（golden，只读）——方法表漂移而不 bump 版本即红。故意改
-  bridge 后：bump `BRIDGE_API_VERSION` → `cd webapp && UPDATE_BRIDGE_CONTRACT=1 npx vitest run src/types/__tests__/bridge-contract.test.ts`
-  → 同步壳镜像：Android `K2PluginUtils.BRIDGE_API_VERSION`、iOS `k2BridgeApiVersion`、
-  desktop `DESKTOP_BRIDGE_VERSION`（web_ota.rs）由同一测试门控；**Linux `LinuxBridgeVersion`
-  （`k2/webui/webota.go`）不门控**——k2 已 in-tree，同一次提交手动改它。现状：Linux = 4，
-  其余 = 6。地板 `bridge` = 1，暂无影响；地板一旦升到 > 4，Linux 壳会被 `min_bridge`
-  静默挡在所有 web OTA 之外，没有任何测试会红。
-- `src/__tests__/boot-handshake-wiring.test.ts` 断言 `main.tsx` **源码顺序**：
-  `confirmUiBootOk` / `confirmWebBootOk` 必须在 `ReactDOM.createRoot` 之后——重排 boot 序列即红。
-- `min_*` 闸门是安全刹车不是兼容手段：bump 地板文件 = 显式砍旧版本支持的
-  决策，须 review 给理由；bump `BRIDGE_API_VERSION` 不许顺手改地板。
+- 新 bridge 能力（`BRIDGE_API_VERSION` bump 引入的方法）的每一处使用都必须有运行时探测分支——**优先存在性检测**（`typeof fn === 'function'`），版本比较只做兜底。
+- 封闭在 bridge 文件内的能力（`ui_boot_ok`、`storage_migration_*`、`confirmWebBootOk`）就地 try/catch 静默降级（Linux 那份额外自我门控 `window.__K2_GATEWAY__`）。会漏进业务代码的能力必须由唯一供给者模块导出语义化 flag（目前还没有）；`capacitor-k2.ts` 的 `appList` 是仅剩的 `getPlatform() === 'android'` 平台门（channel 门已改为 `getUpdateChannel` 能力探测）。禁止页面/组件直接探测 `window._k2` / `window._platform` 方法存在性或散落 raw 版本比较。
+- **契约门**：`types/__tests__/bridge-contract.test.ts` 把整个 bridge 方法面快照进 `contracts/bridge-api.json`（golden，只读）——方法表漂移而不 bump 版本即红。故意改 bridge 后：bump `BRIDGE_API_VERSION` → `cd webapp && UPDATE_BRIDGE_CONTRACT=1 npx vitest run src/types/__tests__/bridge-contract.test.ts` → 同步壳镜像：Android `K2PluginUtils.BRIDGE_API_VERSION`、iOS `k2BridgeApiVersion`、desktop `DESKTOP_BRIDGE_VERSION`（web_ota.rs）由同一测试门控；**Linux `LinuxBridgeVersion`（`k2/webui/webota.go`）不门控**——同一次提交手动改它。现状：Linux = 4，其余 = 6。地板 `bridge` = 1；地板一旦升到 > 4，Linux 壳会被 `min_bridge` 静默挡在所有 web OTA 之外，没有任何测试会红。
+- `src/__tests__/boot-handshake-wiring.test.ts` 断言 `main.tsx` **源码顺序**：`confirmUiBootOk` / `confirmWebBootOk` 必须在 `ReactDOM.createRoot` 之后。
+- `min_*` 闸门是安全刹车不是兼容手段：bump 地板文件 = 显式砍旧版本支持的决策，须 review 给理由；bump `BRIDGE_API_VERSION` 不许顺手改地板。
 
 ## Hard Rules
 
@@ -75,13 +58,9 @@ DO:
 
 **Rule: `response.message` is for debug logs only. Users see i18n text mapped from `response.code`.**
 
-| Reason | Detail |
-|--------|--------|
-| Technical gibberish | `"request failed: POST /api/xxx"` is meaningless to users |
-| No i18n | Backend messages are English-only |
-| Security | Exposes internal API paths |
+Why: backend messages are English-only technical text that exposes internal API paths (table in `docs/webapp/runtime-notes.md`).
 
-**Where the mapping lives**: `utils/errorCatalog.ts` — the single declaration of code → i18n key, split into **two** tables by ORIGIN because the Center API and the k2 engine independently chose HTTP-aligned codes whose meanings collide (400/401/403/503 mean different things on each side):
+**Where the mapping lives**: `utils/errorCatalog.ts` — the single declaration of code → i18n key, split into **two** tables by ORIGIN because Center API and k2 engine codes collide (400/401/403/503 mean different things on each side):
 
 | Table | Channel | Rendered by |
 |---|---|---|
@@ -90,7 +69,7 @@ DO:
 
 Never hand-write a code→key mapping outside that file. In catch blocks, log the raw error and show an i18n fallback string to the user.
 
-`ENGINE_ERROR_CODES` in the same file mirrors `k2/engine/error.go`; `services/__tests__/k2-engine-codes.test.ts` parses the Go source and fails on drift. It is **fail-closed**: a missing `k2/engine/error.go` throws at load (never skips) — k2 is in-tree, so it is always there. `utils/__tests__/errorCatalog.test.ts` fails if any declared code lacks copy in every locale. `i18n/__tests__/static-keys.test.ts` does the same for every statically-written `t('key')` in `src/` (dynamic template keys are a known blind spot).
+Guards: `ENGINE_ERROR_CODES` mirrors `k2/engine/error.go` — `services/__tests__/k2-engine-codes.test.ts` parses the Go source, **fail-closed** (a missing `k2/engine/error.go` throws, never skips). `utils/__tests__/errorCatalog.test.ts`: every declared code has copy in every locale. `i18n/__tests__/static-keys.test.ts`: every static `t('key')` in `src/` exists (dynamic template keys are a blind spot).
 
 ### API Error Code Constitution
 
@@ -121,8 +100,8 @@ Code ranges (all in one `ERROR_CODES` object — the numeric ranges **overlap**,
 Two globals, installed by `main.tsx` before stores init (see Bootstrap), plus one internal module:
 
 - `window._k2: IK2Vpn` -- VPN tunnel control only (single `run(action, params)` method)
-- `window._platform: IPlatform` -- Platform capabilities (storage, clipboard, updater, routerRequest, appList, iap …). **The member list lives in `types/kaitu-core.ts` `IPlatform`** — read it there, don't copy it here.
-- `cloudApi` (`services/cloud-api.ts`) -- `request(method, path, body?) -> SResponse`: Bearer injection, `X-K2-Brand`, single-flight 401 refresh (`_doRefresh()`), 403003 session clear. `cacheStore` (`services/cache-store.ts`) is the read-through cache / SWR layer callers compose on top.
+- `window._platform: IPlatform` -- Platform capabilities. **The member list lives in `types/kaitu-core.ts` `IPlatform`** — read it there, don't copy it here.
+- `cloudApi` (`services/cloud-api.ts`) -- `request(method, path, body?) -> SResponse`: Bearer injection, `X-K2-Brand`, single-flight 401 refresh (`_doRefresh()`), 403003 session clear. Caching / SWR is **not** a wrapper — callers compose `cacheStore` (`services/cache-store.ts`) around it themselves (`hooks/useUser.ts`, `pages/Purchase.tsx`).
 
 ```
 main.tsx ─▶ tauri-k2 | capacitor-k2 | standalone-k2  (bridge, chosen at boot)
@@ -133,82 +112,26 @@ core/      getK2(), isK2Ready(), waitForK2()   (core/polling.ts useStatusPolling
 
 `webapp/scripts/` (brand purity, tz-country generator, `smoke-dist.mjs`) is **not** the repo-root `scripts/`.
 
-### VPN Actions (via window._k2.run)
+**VPN actions** (`window._k2.run`): `up`, `down`, `status`, `version`, `probe` (probe-service), `classify-apps` (App Bypass), `adb-*` (helper endpoint — see Key Patterns), `sync-credential` (Capacitor only), `relay-fetch` / `relay-add-nodes` (antiblock relay — disabled, below)
 
-`up`, `down`, `status`, `version`, `probe` (probe-service), `classify-apps` (App Bypass), `adb-*` (helper endpoint — see Key Patterns), `sync-credential` (Capacitor only), `relay-fetch` / `relay-add-nodes` (antiblock relay — currently disabled, below)
-
-### API Calls (via cloudApi / cacheStore)
-
-Cloud API calls go through `cloudApi.request()` (auth headers, token refresh, 401 / 403003 side effects). Caching / SWR is **not** a wrapper — callers compose `cacheStore.get/set` around `cloudApi` themselves (`hooks/useUser.ts`, `pages/Purchase.tsx`).
-
-**⛔ Relay 已由 kill-switch 关停（2026-07-17）**：`services/relay-flag.ts` `RELAY_ENABLED = false` → 传输为**直连 only**（`resolve-and-fetch.ts`，14s 直连预算；relay 开启时为 relay-first 5s 探测 + 直连兜底，控制面 SNI `k2.52j.me`），并一次性清除 relay 时代污染的 `k2_entry_url` 缓存。relay 代码全保留，恢复 = 改一行重发版；relay 行为细节见 `docs/superpowers/specs/2026-07-17-disable-relay-restore-direct-design.md`。
+**⛔ Relay 已由 kill-switch 关停（2026-07-17）**：`services/relay-flag.ts` `RELAY_ENABLED = false` → 传输为**直连 only**（`resolve-and-fetch.ts`）。relay 代码全保留，恢复 = 改一行重发版；细节见 `docs/webapp/runtime-notes.md` 与 `docs/superpowers/specs/2026-07-17-disable-relay-restore-direct-design.md`。
 
 ## Brand (双品牌: kaitu / overleap)
 
 **Spec**: `docs/superpowers/specs/2026-07-14-brand-split-design.md` §4. Brand is baked at
 BUILD TIME — env `K2_BRAND=kaitu|overleap` (default `kaitu`) → Vite/Vitest define
 `__K2_BRAND__` → `src/brands/index.ts` selects `KAITU_BRAND` / `OVERLEAP_BRAND`. No runtime switch.
+Full rule text, Stripe flow, icons, kaitu-only surfaces: `docs/webapp/brand-details.md`.
 
-- **`src/brands/` is the single source of truth**: `brandConfig` carries productName /
-  domainLabel / baseURL / supportEmail / locale-aware names & slogans /
-  defaultLocale / MUI theme tokens / feature gates. Never fork on brand id in
-  components — add a gate to `BrandFeatures` and read it via
-  `getCurrentAppConfig().features.*` (config/apps.ts merges brand gates with
-  platform-static features).
-- **品牌差异只进 `src/brands/<id>/{index,theme,assets,locales}`** — 共享代码里禁止品牌
-  id 分叉（唯一 resolver 是 `brandConfig`）。IAP 商品 id（`iapProductIds`）、FAQ 品牌
-  key（`faqExtraKeys`）、antiblock CDN 镜像（`antiblockCdnSources`）均为品牌配置字段，
-  消费方读 config，不留硬编码副本（Phase A defork）。
-- **Stripe 购买流**（overleap，`features.stripeCheckout`）→ `components/stripe/StripePurchasePanel`；
-  入账只由服务端 Stripe webhook 完成，客户端不落账。细节见 `docs/webapp/brand-details.md`。
-- **`X-K2-Brand` header**: injected ONLY in `services/cloud-api.ts` (`request()` +
-  `_doRefresh()`), riding both relay and direct transports. 403003 (BRAND_MISMATCH)
-  clears the session and opens LoginDialog, mirroring 403002.
-- **i18n is brand-neutral**: locale files use `{{brand}}` / `{{brandDomain}}` /
-  `{{brandBaseUrl}}` / `{{supportEmail}}` interpolation (defaultVariables installed in
-  `i18n/i18n.ts`, refreshed on languageChanged via `brands/i18n-vars.ts`). Brand-exclusive
-  copy lives in `src/brands/<brand>/locales/<lang>/<ns>.json` overlays (deep-merged at load;
-  only the active brand's overlays are bundled). Guard test:
-  `src/i18n/__tests__/brand-literals.test.ts`. Kaitu default locale zh-CN; overleap en-US.
-- **Languages**: `languages` in `i18n/i18n.ts` is the registry (native name, English name, direction); `src/i18n/locales/` holds 23 locale dirs, but a brand OFFERS only its `brandConfig.locales` (kaitu 7 = zh-CN / zh-TW / zh-HK / en-US / ko / ja / ru — the same list as the kaitu.io site `web/src/i18n/routing.ts`, change both together; overleap all 23) — the picker (`components/LanguageDialog.tsx`), boot detection and `normalizeLanguageCode` all stay inside that whitelist. Boot language = stored choice if still offered (a stored choice no longer offered is matched first, e.g. kaitu en-GB → en-US), else `matchLocale(navigator.languages)` (`i18n/match-locale.ts`), else brand default; auto-detection is never persisted. `ar` / `fa` are RTL: `<html dir>` + MUI `direction` + the stylis RTL plugin (`contexts/ThemeContext.tsx`) mirror emotion styles automatically — inline `style={{ marginLeft }}` is NOT mirrored. Adding a language: registry entry + `locales/<lang>/` with every namespace (`i18n/__tests__/locale-coverage.test.ts`, structure via `scripts/i18n-check-translation.mjs`) + the brand's `locales`. The brand name is never translated — copy uses `{{brand}}`.
-- **Tests must be brand-adaptive**: `vitest` bakes the brand the same way builds do, so
-  `K2_BRAND=overleap npx vitest run` must also exit 0. Never hardcode brand identity in
-  assertions — assert against `brandConfig.*` / `getBrandName()`, or against the
-  `KAITU_BRAND` / `OVERLEAP_BRAND` named imports for registry contracts. Gate
-  brand-divergent suites with `describe.runIf(brandConfig.features.x)` and give the
-  closed-gate branch a **real assertion** (see `Tunnels.test.tsx` "brand gate" and
-  `Purchase.privateNode.test.tsx` "brand payment-channel gate"), not a bare skip.
-  Brand literals inside a test are only OK as mock fixtures.
-- **Brand literals belong in `src/brands/<brand>/index.ts`, never in a page/component**: pages are
-  statically imported, so a literal there ships in EVERY brand's bundle and breaks purity
-  (this is why `k2sInstallUrl` lives in the registry). `src/brands/overleap/index.ts` and
-  `src/brands/i18n-vars.ts` ship in overleap artifacts — keep them free of `kaitu.io` /
-  `开途` / `開途` **even in comments**; don't make the minifier's comment stripping
-  load-bearing. (`types.ts` is type-only → erased, so it's exempt.)
-- **Artifact purity**: `webapp/scripts/check-brand-purity.sh <brand> dist` (lives in
-  `webapp/scripts/`, not the repo-root `scripts/`) — kaitu build must contain zero
-  `overleap.io`; overleap build zero `kaitu.io|开途|開途`. Run after any build-affecting change. Bare `kaitu` protocol tokens (X-K2-Client `kaitu-service/`,
-  `kaitu-language` storage key) are intentional and excluded.
-- **Icons/title**: brand icons only in `src/brands/<brand>/assets/` (`public/` holds none); the
-  `k2-brand` vite plugin copies them and rewrites `<title>`. Bitmaps are generated from
-  `brand-assets/<brand>/logo.svg` + `generate.sh` — regenerate, never edit a PNG
-  (`docs/webapp/brand-details.md`).
-- **Purchase surface gate**: `utils/purchase-surface.ts` `purchaseSurfaceAvailable()` is the single
-  authority for showing any purchase / subscription-management entry point — the `/purchase` route
-  (`App.tsx`), the Side/BottomNavigation items, the CloudTunnelList renew CTA and the Account CTAs
-  all consult it; never re-derive the condition at a call site. iOS without the StoreKit bridge →
-  false (Apple 3.1.1); Android when `features.androidPurchase` is false (overleap: Google-Play-only,
-  Play Payments policy) → false, and Account renders `components/SubscriptionStatusOnly` instead
-  (status + expiry + `account.managedElsewhere`; no buttons, links or prices). Guard:
-  `pages/__tests__/Account.android-overleap.test.tsx` (each brand runs the case that applies to it,
-  so the `K2_BRAND=overleap` vitest run exercises the closed gate). `storeUrls: { ios, android }`
-  in the registry feeds `ForceUpgradeDialog` (store listing first, `''` = fall back to `/install`).
-  Kaitu-only surfaces (delegate / wallet / invite) are gated through `getCurrentAppConfig().features`
-  (list in `docs/webapp/brand-details.md`). A platform-only (`os !== 'ios'`) gate is never enough
-  for a kaitu payment/programme surface — the overleap build ships it otherwise.
-- **Shells** never import webapp brand code: `make build-*` exports `K2_BRAND=$(BRAND)`
-  (`Makefile`, `BRAND ?= kaitu`) into `yarn build`; the shared contract is only that env var
-  name and the `src/brands/<brand>/assets/` artwork directory.
+- **`src/brands/` is the single source of truth** (`brandConfig`): brand differences go only into `src/brands/<id>/{index,theme,assets,locales}`. Never fork on brand id in components — add a gate to `BrandFeatures`, read `getCurrentAppConfig().features.*`.
+- **Brand literals belong in `src/brands/<brand>/index.ts`, never in a page/component** — pages are statically imported, so a literal ships in EVERY brand's bundle (why `k2sInstallUrl` lives in the registry). `src/brands/overleap/index.ts` and `src/brands/i18n-vars.ts` stay free of `kaitu.io` / `开途` / `開途` **even in comments** (`types.ts` is type-only → exempt).
+- **Artifact purity**: `webapp/scripts/check-brand-purity.sh <brand> dist` after any build-affecting change — kaitu build zero `overleap.io`; overleap build zero `kaitu.io|开途|開途` (bare `kaitu` protocol tokens like `kaitu-service/` and `kaitu-language` are intentional).
+- **`X-K2-Brand` header**: injected ONLY in `services/cloud-api.ts` (`request()` + `_doRefresh()`). 403003 (BRAND_MISMATCH) clears the session and opens LoginDialog, mirroring 403002.
+- **i18n is brand-neutral**: `{{brand}}` / `{{brandDomain}}` / `{{brandBaseUrl}}` / `{{supportEmail}}` interpolation, brand-exclusive copy in `src/brands/<brand>/locales/` overlays (guard `src/i18n/__tests__/brand-literals.test.ts`); the brand name is never translated.
+- **Languages**: a brand OFFERS only `brandConfig.locales` (kaitu 7 = zh-CN / zh-TW / zh-HK / en-US / ko / ja / ru — **same list as `web/src/i18n/routing.ts`, change both together**; overleap all 23). Auto-detection is never persisted. `ar` / `fa` are RTL — inline `style={{ marginLeft }}` is NOT mirrored. Adding a language: `languages` registry + `locales/<lang>/` with every namespace (`i18n/__tests__/locale-coverage.test.ts`; structure via the repo-root `scripts/i18n-check-translation.mjs`, not `webapp/scripts/`) + the brand's `locales`.
+- **Tests must be brand-adaptive**: `K2_BRAND=overleap npx vitest run` must also exit 0. Assert against `brandConfig.*` / `getBrandName()` (or `KAITU_BRAND` / `OVERLEAP_BRAND` for registry contracts); gate with `describe.runIf(brandConfig.features.x)` and give the closed-gate branch a **real assertion** (`Tunnels.test.tsx` "brand gate", `Purchase.privateNode.test.tsx` "brand payment-channel gate"). Brand literals in a test only as mock fixtures.
+- **Purchase surface gate**: `utils/purchase-surface.ts` `purchaseSurfaceAvailable()` is the single authority for every purchase / subscription-management entry point — never re-derive at a call site (iOS without StoreKit bridge → false, Apple 3.1.1; Android with `features.androidPurchase` false → false). Guard: `pages/__tests__/Account.android-overleap.test.tsx`. A platform-only (`os !== 'ios'`) gate is never enough for a kaitu payment/programme surface — the overleap build ships it.
+- **Icons**: only in `src/brands/<brand>/assets/`, generated from `brand-assets/<brand>/logo.svg` + `generate.sh` — never edit a PNG. **Shells** never import webapp brand code; the shared contract is the `K2_BRAND` env var and that assets directory.
 
 ## Bootstrap (main.tsx)
 
@@ -226,14 +149,13 @@ Namespaces: `i18n/locales/namespaces.ts` `namespaces` (account, auth, common, da
 
 ## Router Tab (k2r headless + app direct-control)
 
-App is the sole UI for a headless k2r router. Discovery and control both use the single anchor `http://10.17.79.1:1779` (`ROUTER_ANCHOR`, `services/router-service.ts`) that k2r DNAT-intercepts on its forwarding path — no gateway probing, no `lanIP` concept. Design: `docs/superpowers/specs/2026-07-17-k2r-headless-app-control-design.md`.
+App is the sole UI for a headless k2r router; discovery and control use the single anchor `http://10.17.79.1:1779` (`ROUTER_ANCHOR`, `services/router-service.ts`) — no gateway probing, no `lanIP`. Design: `docs/superpowers/specs/2026-07-17-k2r-headless-app-control-design.md`; mechanism (`router.store.ts` phases, `RouterPage.tsx`, retired gateway leftovers): `docs/webapp/runtime-notes.md`.
 
-- **`router-service.ts`**: `probeRouter()` GETs `{ROUTER_ANCHOR}/ping` (1.5s) and requires the `k2r: true` signature. `getControlKey(forceRefresh?)` caches locally, refetching via `POST /api/user/router-control-key`. `routerFetch()` (shared by `routerCore()` / `routerDevicesGet/Post()`) sends `Bearer <controlKey>`; on 401 it force-refreshes once and retries, and if still 401 **backs off 60s** (`force401BackoffUntil`) so the 2s poll doesn't hammer Center during k2r's key-rotation window. Everything goes through `_platform.routerRequest`, never raw `fetch`.
-- **`router.store.ts`**: phases `none` / `unconfigured` / `online` / `offline` (tab stays visible when offline). `startPolling()` hits `routerCore('status')` every 2s **only while the Router tab is mounted** (no SSE — CapacitorHttp can't stream); a late poll is dropped if `unbindRouter()` cleared `router` meanwhile. `isRouterTakeover(s)` = `phase === 'online' && status?.state === 'connected'` — the shared predicate for `RouterTakeoverBanner` (Dashboard, when local VPN isn't `connected`) and `RouterExclusionDialog`.
-- **`RouterExclusionDialog.tsx`** (`useExclusionGuard`): dual-connection warning fires **only when a second connection is about to start** (Router-tab connect while local VPN is connected, or Dashboard connect while takeover) — never on tab switch. Also owns the unbind confirm (MUI, not `window.confirm`).
-- **`RouterPage.tsx`**: `/router` tab appended to `Layout.tsx` once `phase !== 'none'`; enterprise multi-slot routers (`routerSlots(s) !== null`) auto-redirect to `/router` (`Layout.tsx`). Device list uses `routerDevicesGet/Post`.
-- **Bridge boundary**: LAN traffic goes through `_platform.routerRequest` (Tauri: Rust `router_http_request`, SSRF-gated; Capacitor: `CapacitorHttp` + TS-side SSRF gate — see `desktop/CLAUDE.md` / `mobile/CLAUDE.md`). `_platform.getDefaultGateway()` exists on both bridges but is **unconsumed**.
-- **Retired** embedded gateway mode (`gateway-k2.ts`, `gateway-core.ts`, `gateway-storage.ts`, `GatewaySetup.tsx` — deleted in `521d346d`): the k2sub tab / `K2subConfig` / `GatewayUpgradeBanner` / `serverMode==='k2sub'` / `subsCountry` / `buildSubsUrl` are removed too (k2r production ships `-tags nowebapp`, so it never serves this webapp). Leftovers that still read `platformType === 'gateway'`: `standalone-k2.ts` platform detection, `cloud-api.ts` UA class, `social-sign-in.ts`; `k2/gateway` still reports `gateway` on `/api/platform` for non-nowebapp dev builds.
+- All LAN traffic goes through `_platform.routerRequest` (SSRF-gated on both bridges), never raw `fetch`. `_platform.getDefaultGateway()` is **unconsumed**.
+- `routerFetch()`: on 401 refresh the control key once and retry; still 401 → **back off 60s** (`force401BackoffUntil`) so the 2s poll doesn't hammer Center during k2r key rotation.
+- Status polls only while the Router tab is mounted (no SSE — CapacitorHttp can't stream). `isRouterTakeover(s)` is the shared predicate for `RouterTakeoverBanner` and `RouterExclusionDialog`.
+- `RouterExclusionDialog.tsx` warns **only when a second connection is about to start**, never on tab switch.
+- Embedded gateway mode is retired (deleted in `521d346d`) — don't resurrect it.
 
 ## Bridge & VPN State Contract
 
@@ -246,32 +168,24 @@ App is the sole UI for a headless k2r router. Discovery and control both use the
 
 ## Key Patterns
 
-- **Store init**: `initializeAllStores()` runs layout → config.loadConfig (then `detectGeo`) → selfHosted.loadTunnel → appRoutes.load (legacy-key migration) → auth → vpn-machine → connection, in order; returns a cleanup function.
-- **VPN state machine**: `vpn-machine.store.ts` — explicit 6-state machine (`idle`, `connecting`, `connected`, `reconnecting`, `disconnecting`, `serviceDown`) with transition table. Error is a field overlay (`error: ControlError | null`), not a state — `BACKEND_ERROR` routes to `idle` (terminal) or `reconnecting` (retrying). Module-level `dispatch(event, payload)` is the only way to change state. 3s debounce for `connected → reconnecting` is the only state timer. `initializeVPNMachine()` owns status delivery: event-driven (`onStatusChange` SSE / native) plus a safety-net poll (iOS never fires for engine error-overlay changes), else a 2s poll. `core/polling.ts useStatusPolling()` has no consumers — don't build on it.
-  - **Staleness token (`revision`)**: every applied transition bumps a monotonic `revision`. Any code that issues an async `run('status')` must snapshot `currentRevision()` **before** the call and pass it to `applyStatus(status, rev)`; a mismatch drops the whole snapshot (state *and* `startAt`). Without it a poll issued while connected can land after an SSE `disconnected` and re-enter `connected` via `idle + BACKEND_CONNECTED` — UI claims protected while traffic runs in the clear. Push deliveries (SSE/native) pass no revision: they have no in-flight window. `connectEpoch` cannot serve this role — it lives in connection.store (which imports this file, so reading it back would be a cycle) and only bumps on user intent, missing backend-initiated drops.
-- **Connection store**: `connection.store.ts` — owns tunnel selection, connect/disconnect orchestration, `connectedTunnel` snapshot (frozen at connect time for stable UI), and `connectEpoch` guard (prevents stale async ops — checked both *before* `run('up')` and *after* it returns, so a superseded attempt's failure can't tear down the live one)
-- **Keep-alive tabs**: Layout caches visited tab outlets, hides inactive with `visibility:hidden`. Tab paths: `/`, `/invite`, `/discover`, `/account`, plus `/router` once `router.store.phase !== 'none'`
-- **Keep-alive + GPU layers gotcha**: WebKit doesn't recomposite layers when `opacity`/`filter` are removed while an element is `visibility:hidden`. Dashboard uses a `translateZ(0)` toggle on hidden→visible transitions to force layer rebuild. Any new compositing-layer CSS changes on keep-alive tabs need similar consideration.
-- **Config store (v3)**: `useConfigStore()` in `stores/config.store.ts` persists `defaultVia`/`countryVia`/`country`/`autoDetect` (key `k2.vpn.config`; legacy v0/v1/v2 shapes auto-migrate on first load). `buildConnectConfig({serverUrl})` assembles the wire-contract `ClientConfig` — emits `routes[]`, forces `log.level = __K2_BUILD_LOG_LEVEL__` (build-time constant). **Country detection is fully client-side** (`detectGeo` → `utils/geo-detect.ts`, system timezone via the committed `tz-country.gen.ts` artifact — regenerate with `cd webapp && node scripts/generate-tz-country.mjs`, drift-locked by `tz-country.gen.test.ts`); the server's `/api/geo` is frozen (hotfix, always `cn`) and no longer consulted. Any country written into `country` MUST pass `routableCountry()` (utils/routes.ts) — an unclamped bundle-less country 504s pre-2026-06-14 engines and silently routes as cn on newer ones; `buildRoutes` falls back to the global shape as the in-depth defense, and `connection.store.connect()` retries once with `forceGlobalRoutes` on 504.
-- **Failover fields (F2)**: `buildConnectConfig` also emits `fallbacks: { [serverUrl]: fallbackUrls }` (Auto mode: ≤3 k2v5 URLs on other machines, picked by `utils/auto-tunnel-pick.ts`, keyed by the exact route `via`), `netcheck` (always — `brandConfig.netcheck`, plain-HTTP vendor endpoints with exact status/body, see `brands/types.ts`) and `netcheck_dns` (only when `brandConfig.netcheckDns` is non-empty: overleap's overseas resolvers; resolves the netcheck hosts only). It never sends `dns.direct` — direct-routed lookups keep the engine default for both brands, and since `dns.direct` is an old field, a web OTA that set it would change DNS on every installed engine. Old engines ignore `fallbacks` / `netcheck` / `netcheck_dns`. While reconnecting, the engine's hold code drives the reason line (`RECONNECT_REASON_CATALOG`); `ServiceAlert` shows its network banner for 101/106/107/108 but **not** for a reconnecting 503 (the engine just judged the network fine; 503 after a disconnect keeps the banner).
-- **Last server URL persistence**: The k2v5 URL sent on last connect is persisted separately by `connection.store` under key `k2.vpn.last_server_url` (not inside `ClientConfig`, which mirrors the Go wire contract). Used only for cold-start restore when the webapp process was killed while VPN stayed up. Cleared on explicit `disconnect()`.
-- **k2subs is desktop-only** (root CLAUDE.md "k2subs"): the webapp never resolves `k2subs://`; on mobile it passes one `k2v5://` URL — a raw `k2subs://` reaching the mobile engine (code 570) is always a webapp bug.
-- **Probe service (retained, not wired up)**: `services/probe-service.ts` `runProbe(tunnels)` calls `_k2.run('probe', {urls, timeoutMs})`, records results into `probe.store`. Self-gates on `platformType === 'web'` and on any VPN state other than `idle` / `serviceDown` (probing while VPN is up would loop UDP through TUN). **`runProbe()` has no production caller** (`CloudTunnelList` dropped it in 528fe6027) and **`ProbeChip` has no importer**, so `probe.store` stays empty in production; Auto pick (`utils/auto-tunnel-pick.ts`) reads only `recommendScore`.
-- **Funnel events (services)**: `statsService.trackFunnel` / `trackFunnelOnce` (once per install) / `trackFunnelDaily` (once per UTC day, `connect_ok`) (`services/stats.ts`) is the only entry for conversion-funnel events; call sites are fire-and-forget (`void …`), never awaited, never change control flow. Event names and paywall sources are typed by `services/funnel-events.ts` and locked to the Center registry by the cross-layer contract test — add a name there (and in the API) before using it.
-- **Funnel + links to the brand site**: every platform `openExternal` (tauri-k2 / capacitor-k2 / web-platform) passes the URL through `withAppAttribution` (`utils/site-link.ts`), which adds `utm_source=app&utm_medium=<os>&utm_campaign=<first route segment>` to brand-site page links only (not third-party payment / store URLs, not `/api` / `/app`, not `embed=true`, never over an existing `utm_source`). Center's `app_to_web` path enters on that tag — open the site through `openExternal`, never `window.open` directly, or the visit counts as direct traffic.
-- **Funnel + preview effect**: never instrument `Purchase.tsx`'s preview effect or `handleOrder({preview:true})` — that effect has a documented infinite-loop history (2026-09-11) and tracking there would also count quotes as checkouts. `paywall_view` is its own effect keyed on one boolean (`paywallReady`), reported at most once per mount and only when the rendered branch is a purchase surface (kaitu order UI, Stripe purchase state, iOS subscribe panel) and — for a signed-in user — the user record has loaded; members landing on a manage/status panel report nothing. `paywallSurface` mirrors the early returns at the bottom of the component: change one, change the other. `checkout_start` only fires for `!preview` and always carries `plan`.
-- **Funnel + /purchase entry points**: every in-app navigation to `/purchase` passes `state: { from: <PaywallSource> }` — including the nav entries (`BottomNavigation` / `SideNavigation` → `nav`); Purchase maps anything outside `PAYWALL_SOURCES` to `direct`.
-- **LoginDialog**: Global modal via `login-dialog.store`. Guards call `useLoginDialogStore(s => s.open)` (`LoginRequiredGuard` aliases it `openLoginDialog`) instead of redirecting
-- **Feature flags**: `getCurrentAppConfig().features` controls route/tab visibility
-- **Dev proxy**: Vite proxies `/api/core`, `/api/helper`, `/api/device`, `/ping` to `:1777` (or `K2_DAEMON_PORT`). Production uses absolute URL
-- **Helper API routing**: `adb-*` actions route to `/api/helper` (not `/api/core`). Tauri bridge uses `daemon_helper_exec` IPC command. Standalone bridge checks `action.startsWith('adb-')` to pick endpoint. New daemon helper actions must follow this pattern.
-- **Config-driven connect**: `_k2.run('up', config)` where config is assembled from the selected tunnel URL + user preferences via `buildConnectConfig`
-- **AuthGate**: loading gate only — renders `LoadingPage` while `auth.store.isAuthChecking`, then children regardless of login (open access). Per-page login enforcement is `LoginRequiredGuard`; there is no service/version check here.
-- **Viewport scaling**: `main.tsx` puts CSS `zoom` (not `transform:scale()`) on **`#root`** when the window is narrower than the 430px design width — `transform` would create a containing block and break `position:fixed`. `--app-zoom` on `<html>` mirrors the factor. Two consequences that bite:
-  - **Anything measured in design-space pixels must render inside `#root`.** A MUI `<Portal>` defaults to `document.body`, which is *outside* the zoom — design-space coordinates are then read as device pixels. This clipped half of `FeedbackButton` on every sub-430px viewport (all iPhones below Pro Max) until it was given `container={() => document.getElementById('root')}`. Pass that container to any portal you position numerically; `useDraggable` documents the contract.
-  - `#discover-overlay` is the deliberate *opposite*: a `<body>` sibling of `#root` with no zoom, so the Discover tab's cross-origin iframe renders at native scale (WebKit mis-renders zoomed iframes).
-- **Web OTA stale chunks**: `utils/chunk-reload-guard.ts` (installed at the top of `main.tsx`) catches `vite:preloadError` — a lazy chunk 404 after a mid-session OTA swap of `current/` — and reloads **once**, guarded by sessionStorage `k2_chunk_reload_once`; never loops.
-- **Dev mode**: `_platform.setDevEnabled?.(true)` enables WebView inspection (iOS `isInspectable`, Android `WebContentsDebugging`). State persisted to localStorage, auto-restored on launch
+Invariants only; store-init order, keep-alive tabs, last-server-URL, probe, dev proxy / dev mode and the history behind each rule are in `docs/webapp/runtime-notes.md` "Key Patterns".
+
+- **VPN state machine** (`vpn-machine.store.ts`): 6 states (`idle`, `connecting`, `connected`, `reconnecting`, `disconnecting`, `serviceDown`); error is a field overlay, never a state. Module-level `dispatch(event, payload)` is the only way to change state. `initializeVPNMachine()` owns status delivery — `core/polling.ts useStatusPolling()` has no consumers, don't build on it.
+  - **Staleness token**: any async `run('status')` must snapshot `currentRevision()` **before** the call and pass it to `applyStatus(status, rev)` — else a late poll re-enters `connected` after an SSE `disconnected` (UI claims protected, traffic in the clear). `connectEpoch` cannot serve this role. Pin: `vpn-machine.store.test.ts` "applyStatus: rejects a superseded revision".
+- **Connection store**: `connectEpoch` is checked both *before* `run('up')` and *after* it returns, so a superseded attempt's failure can't tear down the live one.
+- **Keep-alive tabs** hide with `visibility:hidden`; WebKit doesn't recomposite `opacity`/`filter` changes made while hidden — Dashboard's `translateZ(0)` toggle is the fix, new compositing-layer CSS there needs the same.
+- **Config store (v3)** (`stores/config.store.ts`): `buildConnectConfig({serverUrl})` assembles the wire `ClientConfig`. Country detection is client-side only (`utils/geo-detect.ts` + committed `tz-country.gen.ts`, regen `cd webapp && node scripts/generate-tz-country.mjs`, locked by `tz-country.gen.test.ts`). **Any country written into `country` MUST pass `routableCountry()`** (utils/routes.ts).
+- **Failover fields (F2)**: `buildConnectConfig` emits `fallbacks`, `netcheck` and `netcheck_dns` but **never `dns.direct`** — an OTA that set it would change DNS on every installed engine (`config.store.test.ts` "never dns.direct"). `ServiceAlert` shows its network banner for 101/106/107/108 but **not** for a reconnecting 503.
+- **`ClientConfig` mirrors the Go wire contract** — webapp-only state stays outside it (e.g. `k2.vpn.last_server_url`, persisted by `connection.store` for cold-start restore, cleared on explicit `disconnect()`).
+- **k2subs is desktop-only** (root CLAUDE.md "k2subs"): a raw `k2subs://` reaching the mobile engine (code 570) is always a webapp bug.
+- **Funnel events**: `statsService.trackFunnel` / `trackFunnelOnce` / `trackFunnelDaily` (`services/stats.ts`) is the only entry; fire-and-forget, never awaited. Names typed by `services/funnel-events.ts`, locked to the Center registry by the cross-layer contract test — add there (and in the API) first.
+  - Open brand-site links through `openExternal` (applies `withAppAttribution`), never `window.open`, or the visit counts as direct traffic.
+  - **Never instrument `Purchase.tsx`'s preview effect or `handleOrder({preview:true})`** (infinite-loop history, 2026-09-11). `paywallSurface` mirrors the component's early returns — change one, change the other. `checkout_start` only for `!preview`, always with `plan` (`Purchase.funnel.test.tsx`).
+  - Every in-app navigation to `/purchase` passes `state: { from: <PaywallSource> }`.
+- **LoginDialog** is a global modal (`login-dialog.store`); guards open it instead of redirecting. **AuthGate** is a loading gate only; per-page login is `LoginRequiredGuard`.
+- **Helper API routing**: `adb-*` actions route to `/api/helper`, not `/api/core` (Tauri `daemon_helper_exec`); new daemon helper actions follow this pattern.
+- **Viewport scaling**: `main.tsx` puts CSS `zoom` (not `transform:scale()`) on **`#root`** below the 430px design width. **Anything positioned in design-space pixels must render inside `#root`** — pass `container={() => document.getElementById('root')}` to a numerically positioned MUI portal (`FeedbackButton`, `useDraggable`). `#discover-overlay` is deliberately outside `#root` (WebKit mis-renders zoomed iframes).
+- **Web OTA stale chunks**: `utils/chunk-reload-guard.ts` reloads **once** on `vite:preloadError` (`k2_chunk_reload_once`); never loops.
 
 ## Commands
 
