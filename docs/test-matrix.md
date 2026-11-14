@@ -880,7 +880,7 @@ base 只取 `max(expired_at, priorPeriodEnd)`。两者都在过去时，整个�
 永远验不出"有效期正确增加"。必须**换一个全新的沙盒 Apple ID 做首购**——那条路走
 `isFirst` 分支、`applyGiftCredit` 从当下起算 3600 秒，有效期会变成"1 小时后"，肉眼可验，
 建单与分销返现也才会被触发（沙盒交易按设计不建单，D08 的建单断言需要生产交易或
-mock 环境，见 `api/CLAUDE.md` 的 `iapOrderFixture` 段）。
+mock 环境，见 `api/logic_apple_iap_order_test.go` 的 `iapOrderFixture`，约束在 `docs/api/payments.md`）。
 
 ## 阶段 C — k2 核心回归（`ef6c0b2 → 6bc70b0`，上轮 UAT 未覆盖段）
 

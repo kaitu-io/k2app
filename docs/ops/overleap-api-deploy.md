@@ -29,7 +29,7 @@ edm_overleap:
 - **发件走阿里云 DirectMail，不是 SES。** 整个 AWS 账号 186180737711 的 SES 在所有区域都还在沙盒，且生产权限申请已被拒（case 177513165600562）；开途生产环境本来就走 `smtpdm-ap-southeast-1.aliyun.com`。`qtoolkit/mail` 的 `provider` 缺省即 `smtp`，两个前缀都支持。
 - **发信域 `em.overleap.io` 已就绪**（2026-09-08 建好并验证：DirectMail DomainId 227691，MX/SPF/DKIM/DMARC/CNAME 五条记录已进 Route 53 zone `Z0660232TESUJOGFHJV8` 并 INSYNC，`CheckDomain` 返回 `DomainStatus: 0`）。发信地址 `noreply@em.overleap.io`（trigger）与 `news@em.overleap.io`（batch）已创建，reply-to 都是 `support@overleap.io`。**只差 SMTP 密码**——在 DirectMail 控制台「发信地址 → 设置 SMTP 密码」设置后填进上面两个 `password`。
 - 用 `em.` 而不是 `mail.`：`mail.overleap.io` 已被 SES 的 MAIL FROM 占用（MX → `feedback-smtp.ap-northeast-1.amazonses.com` + SPF TXT），没去动它。
-- `mail_overleap` 与 `edm_overleap` 是两个前缀：前者管系统邮件（验证码 / 登录提醒 / 密码 / 设备踢出 / 工单回复），后者管 EDM。`edm_overleap` 另有 `edm.overleap_from_email` 门，两者要一起填（见 `api/CLAUDE.md` Brand 段）。
+- `mail_overleap` 与 `edm_overleap` 是两个前缀：前者管系统邮件（验证码 / 登录提醒 / 密码 / 设备踢出 / 工单回复），后者管 EDM。`edm_overleap.send_from` 为空时 Overleap 的 EDM 拒发并告警（`edmSenderForBrand`，`api/logic_email_task.go`），两者要一起填。
 - 判据是 `send_from` 非空：填了 `provider` 没填 `send_from` 等于没填。
 
 ## 2. 部署二进制
@@ -75,7 +75,7 @@ GET /app/nodes  X-Access-Key: <key> → 行里只有 id/name/country/region/ipv4
 - [ ] 后台 `GET /app/nodes?brand=overleap` 非空且行里带 `brands` / `visibleKaitu` / `visibleOverleap` —— **这三个字段就是本次部署的判别式**（部署前它们不存在）。
   节点侧的声明本身早已生效：`GET /api/v20260717/tunnels` 带 `X-K2-Brand: overleap` 2026-09-09 实测返回 15 台（= 15 台节点 `.env` 里写了 `K2_NODE_BRANDS=kaitu,overleap`；其余 12 台是 11 台 SNI 伪装 `www.<省>.people.cn` 的按设计排除 + 1 台无 tunnel 的 `hk.aliyun.wm01`）
 - [ ] `GET /api/antiblock/seed` 不含任何 `visibleKaitu=false` 或未声明 kaitu 的节点 IP（seed 是 kaitu 反封锁通道）
-- [ ] 沙盒 IAP：Overleap TestFlight 构建购买一次 → `subscriptions` 表出现 `provider=apple` 行；订单表**不**出现行（沙盒交易只授权益不建 Order，见 `api/CLAUDE.md` Apple IAP 段）
+- [ ] 沙盒 IAP：Overleap TestFlight 构建购买一次 → `subscriptions` 表出现 `provider=apple` 行；订单表**不**出现行（沙盒交易只授权益不建 Order，见 `api/CLAUDE.md` Payments 段）
 - [ ] `mail_overleap` 填好后：注册一个 overleap 账号，验证码邮件 From 为 `Overleap <noreply@em.overleap.io>`、Reply-To 为 `support@overleap.io`；同时注册一个 kaitu 账号确认 From 仍是 `joshua@mail.allnationconnect.com`
 - [ ] 用 overleap 账号提一张工单并后台回复一次 → 用户收到 `[Overleap] New reply on your ticket (#N)`（英文）；kaitu 账号同操作仍是 `[Kaitu] 您的工单有新回复 (#N)`
 - [ ] 两台 `app.log` 各 grep 一次 `mail_overleap.send_from not configured`：配置到位后不应再出现
