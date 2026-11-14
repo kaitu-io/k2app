@@ -1,6 +1,6 @@
 # k2app — Kaitu VPN Client
 
-Tauri desktop + Capacitor mobile clients around the k2 Go core, plus sites and Center API. **Loads every session — only the map, cross-layer rules and silent-failure rules; layer detail goes in the layer doc.**
+Tauri desktop + Capacitor mobile clients around the k2 Go core, plus sites and Center API. **Loads every session — only the map, cross-layer rules and silent-failure rules; layer detail goes in the layer doc.** Layer docs hold invariants + their pinning tests; long rationale, incident / review history and code narration go to non-auto-loaded notes (`<layer>/docs/*-notes.md` or `docs/<layer>/`) with a one-line pointer.
 
 ## Quick Commands
 
